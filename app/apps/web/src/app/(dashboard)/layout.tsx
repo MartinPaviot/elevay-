@@ -15,6 +15,7 @@ const navSections = [
     label: "Outreach",
     items: [
       { label: "Sequences", href: "/sequences" },
+      { label: "Deliverability", href: "/deliverability" },
     ],
   },
   {
