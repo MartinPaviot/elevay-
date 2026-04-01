@@ -213,5 +213,55 @@
     "id": "G20", "name": "Suggested chat prompts", "area": "Intelligence", "milestone": "M8",
     "description": "8 pre-built prompts on empty chat state for discoverability",
     "dependencies": ["F6.1"], "passes": true, "attempts": 1, "completeness_target": 6
+  },
+  {
+    "id": "G3", "name": "Contact auto-suggestion", "area": "Prospecting", "milestone": "M9",
+    "description": "Expand account row to see auto-discovered contacts with names, titles, Suggested status",
+    "dependencies": ["F3.2"], "passes": false, "attempts": 0, "completeness_target": 8
+  },
+  {
+    "id": "G7", "name": "Auto-generated follow-up emails", "area": "Outreach", "milestone": "M9",
+    "description": "After meetings/interactions, auto-generate follow-up email with extracted action items",
+    "dependencies": ["F4.2"], "passes": false, "attempts": 0, "completeness_target": 8
+  },
+  {
+    "id": "G8", "name": "Deal timeline from interactions", "area": "Pipeline", "milestone": "M9",
+    "description": "Auto-generated timeline with dated entries from emails, meetings, activities on deal detail",
+    "dependencies": ["F5.1"], "passes": false, "attempts": 0, "completeness_target": 8
+  },
+  {
+    "id": "G9", "name": "Structured data extraction", "area": "Intelligence", "milestone": "M9",
+    "description": "Extract budget, team size, competitor tools from meeting notes into structured deal fields",
+    "dependencies": ["F6.1"], "passes": false, "attempts": 0, "completeness_target": 8
+  },
+  {
+    "id": "G10", "name": "Multi-language chat support", "area": "Intelligence", "milestone": "M9",
+    "description": "French/Spanish/etc queries get responses in the same language",
+    "dependencies": ["F6.1"], "passes": false, "attempts": 0, "completeness_target": 7
+  },
+  {
+    "id": "G12", "name": "Suggested replies to incoming emails", "area": "Outreach", "milestone": "M9",
+    "description": "AI pre-drafts replies to incoming emails, user edits and sends via composer",
+    "dependencies": ["F4.2", "G5"], "passes": false, "attempts": 0, "completeness_target": 8
+  },
+  {
+    "id": "G16", "name": "7 account lifecycle stages", "area": "Prospecting", "milestone": "M10",
+    "description": "New, Prospecting, Opportunity, Customer, Disqualified, Inbound, Nurture stages with color-coded pills",
+    "dependencies": ["F3.1"], "passes": false, "attempts": 0, "completeness_target": 7
+  },
+  {
+    "id": "G17", "name": "Momentum indicator on deals", "area": "Pipeline", "milestone": "M10",
+    "description": "Lightning bolt icon on deals with high recent activity in kanban view",
+    "dependencies": ["F5.1"], "passes": false, "attempts": 0, "completeness_target": 6
+  },
+  {
+    "id": "G18", "name": "Custom boolean signal columns", "area": "Prospecting", "milestone": "M10",
+    "description": "Configurable Yes/No columns like Common Investor, Sales-led growth, YC Company",
+    "dependencies": ["F3.5"], "passes": false, "attempts": 0, "completeness_target": 7
+  },
+  {
+    "id": "G19", "name": "Chat history persistence", "area": "Intelligence", "milestone": "M10",
+    "description": "Previous chat threads saved in sidebar, browsable and resumable",
+    "dependencies": ["F6.1"], "passes": false, "attempts": 0, "completeness_target": 7
   }
 ]
