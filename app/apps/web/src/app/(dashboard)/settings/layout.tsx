@@ -12,6 +12,7 @@ import {
   GitBranch,
   Bell,
   Mail,
+  Database,
 } from "lucide-react";
 
 const settingsNav = [
@@ -28,6 +29,7 @@ const settingsNav = [
       { label: "General", href: "/settings/workspace", icon: Building },
       { label: "Members", href: "/settings/members", icon: Users },
       { label: "Knowledge", href: "/settings/knowledge", icon: BookOpen },
+      { label: "Data Model", href: "/settings/data-model", icon: Database },
       { label: "Opportunity Stages", href: "/settings/stages", icon: GitBranch },
       { label: "Notifications", href: "/settings/notifications", icon: Bell },
     ],

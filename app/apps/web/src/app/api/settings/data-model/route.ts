@@ -1,0 +1,50 @@
+import { auth } from "@/auth";
+import { db } from "@/db";
+import { tenants } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, "default")).limit(1);
+    if (!tenant) {
+      return Response.json({ fields: [] });
+    }
+
+    const settings = (tenant.settings || {}) as Record<string, unknown>;
+    return Response.json({ fields: settings.customFields || [] });
+  } catch (error) {
+    console.error("Failed to fetch custom fields:", error);
+    return Response.json({ error: "Failed to fetch fields" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { fields } = await req.json();
+
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, "default")).limit(1);
+    if (!tenant) {
+      return Response.json({ error: "Workspace not found" }, { status: 404 });
+    }
+
+    const settings = (tenant.settings || {}) as Record<string, unknown>;
+    await db.update(tenants).set({
+      settings: { ...settings, customFields: fields },
+    }).where(eq(tenants.id, "default"));
+
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error("Failed to save custom fields:", error);
+    return Response.json({ error: "Failed to save" }, { status: 500 });
+  }
+}
