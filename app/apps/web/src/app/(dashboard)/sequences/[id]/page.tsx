@@ -220,6 +220,19 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </section>
 
+      {/* AI-Suggested Enrollments (G4: Approve/Reject Flow) */}
+      {sequence.status === "active" && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-[#5a5a70]">
+            AI Suggestions
+          </h2>
+          <p className="mt-1 text-xs text-[#5a5a70]">
+            Contacts recommended for enrollment based on scoring and signals.
+          </p>
+          <AISuggestions sequenceId={id} onApprove={fetchSequence} />
+        </section>
+      )}
+
       {/* Enrollments */}
       <section className="mt-8">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[#5a5a70]">
@@ -261,6 +274,113 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+// G4: AI-suggested enrollment cards with approve/reject
+function AISuggestions({ sequenceId, onApprove }: { sequenceId: string; onApprove: () => void }) {
+  const [suggestions, setSuggestions] = useState<Array<{
+    contactId: string;
+    contactName: string;
+    companyName: string;
+    reason: string;
+    score: number;
+  }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+  const [enrolling, setEnrolling] = useState<Record<string, boolean>>({});
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  async function fetchSuggestions() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/sequences/${sequenceId}/suggestions`);
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestions(data.suggestions || []);
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setLoading(false);
+      setFetched(true);
+    }
+  }
+
+  async function approveSuggestion(contactId: string) {
+    setEnrolling((prev) => ({ ...prev, [contactId]: true }));
+    try {
+      const res = await fetch(`/api/sequences/${sequenceId}/enroll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds: [contactId] }),
+      });
+      if (res.ok) {
+        setSuggestions((prev) => prev.filter((s) => s.contactId !== contactId));
+        onApprove();
+      }
+    } catch {
+      // Handle error
+    } finally {
+      setEnrolling((prev) => ({ ...prev, [contactId]: false }));
+    }
+  }
+
+  function rejectSuggestion(contactId: string) {
+    setDismissed((prev) => new Set(prev).add(contactId));
+  }
+
+  const visible = suggestions.filter((s) => !dismissed.has(s.contactId));
+
+  if (!fetched) {
+    return (
+      <button
+        onClick={fetchSuggestions}
+        disabled={loading}
+        className="mt-2 rounded-lg border border-dashed border-[#1e1f2a] px-4 py-3 text-sm text-[#6366f1] hover:border-[#6366f1] hover:bg-[#6366f1]/5 w-full"
+      >
+        {loading ? "Finding suggestions..." : "Get AI Suggestions"}
+      </button>
+    );
+  }
+
+  if (visible.length === 0) {
+    return <p className="mt-2 text-xs text-[#5a5a70]">No suggestions right now.</p>;
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      {visible.map((suggestion) => (
+        <div
+          key={suggestion.contactId}
+          className="flex items-center justify-between rounded-lg border border-[#1e1f2a] bg-[#12131a] p-3"
+        >
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-[#e8e8ed]">{suggestion.contactName}</p>
+              <span className="text-xs text-[#6366f1]">{suggestion.companyName}</span>
+            </div>
+            <p className="mt-0.5 text-xs text-[#5a5a70]">{suggestion.reason}</p>
+          </div>
+          <div className="flex items-center gap-2 ml-3">
+            <button
+              onClick={() => rejectSuggestion(suggestion.contactId)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#1e1f2a] text-[#5a5a70] hover:border-red-500/30 hover:text-red-400"
+              title="Reject"
+            >
+              👎
+            </button>
+            <button
+              onClick={() => approveSuggestion(suggestion.contactId)}
+              disabled={enrolling[suggestion.contactId]}
+              className="rounded-lg bg-white px-4 py-1.5 text-sm font-semibold text-[#0a0b0f] hover:bg-gray-100 disabled:opacity-50"
+            >
+              {enrolling[suggestion.contactId] ? "..." : "Start"}
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
