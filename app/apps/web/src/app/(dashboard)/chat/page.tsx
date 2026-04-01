@@ -3,6 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { TextStreamChatTransport } from "ai";
 import { useRef, useEffect, useState } from "react";
+import { EmailComposer } from "@/components/email-composer";
 
 export default function ChatPage() {
   const chat = useChat({
@@ -11,6 +12,11 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [localInput, setLocalInput] = useState("");
+  const [emailComposer, setEmailComposer] = useState<{
+    to: string;
+    subject: string;
+    body: string;
+  } | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -29,6 +35,25 @@ export default function ChatPage() {
   function useSuggestion(text: string) {
     setLocalInput(text);
     inputRef.current?.focus();
+  }
+
+  function detectEmail(text: string): { to: string; subject: string; body: string } | null {
+    // Detect "Subject:" and email-like patterns in AI responses
+    const subjectMatch = text.match(/Subject:\s*(.+)/i);
+    const toMatch = text.match(/To:\s*(.+@.+)/i);
+    if (!subjectMatch) return null;
+    const subject = subjectMatch[1].trim();
+    // Extract body: everything after "Subject:" line, or after greeting
+    const bodyStart = text.indexOf(subjectMatch[0]) + subjectMatch[0].length;
+    let body = text.slice(bodyStart).trim();
+    // Clean up any "---" separators
+    body = body.replace(/^[-—]+\n?/, "").trim();
+    if (!body || body.length < 20) return null;
+    return {
+      to: toMatch ? toMatch[1].trim() : "",
+      subject,
+      body,
+    };
   }
 
   return (
@@ -89,6 +114,22 @@ export default function ChatPage() {
                     <span key={i}>{"text" in part ? part.text : ""}</span>
                   ))}
               </div>
+              {message.role === "assistant" && (() => {
+                const fullText = message.parts
+                  .filter((p) => p.type === "text")
+                  .map((p) => ("text" in p ? p.text : ""))
+                  .join("");
+                const emailData = detectEmail(fullText);
+                if (!emailData) return null;
+                return (
+                  <button
+                    onClick={() => setEmailComposer(emailData)}
+                    className="mt-2 flex items-center gap-1.5 rounded-lg border border-[#1e1f2a] bg-[#12131a] px-3 py-1.5 text-xs text-[#6366f1] hover:border-[#6366f1]"
+                  >
+                    ✉️ Open in Composer
+                  </button>
+                );
+              })()}
             </div>
           </div>
         ))}
@@ -123,6 +164,14 @@ export default function ChatPage() {
           </button>
         </form>
       </div>
+      {emailComposer && (
+        <EmailComposer
+          to={emailComposer.to}
+          subject={emailComposer.subject}
+          body={emailComposer.body}
+          onClose={() => setEmailComposer(null)}
+        />
+      )}
     </div>
   );
 }
