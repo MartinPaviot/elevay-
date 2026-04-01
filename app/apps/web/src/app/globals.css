@@ -1,8 +1,129 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  /* === BACKGROUND === */
+  --color-bg-base: #09090b;
+  --color-bg-surface: #121214;
+  --color-bg-elevated: #1a1a1f;
+  --color-bg-muted: #222228;
+  --color-bg-emphasis: #2a2a31;
+
+  /* === TEXT (transparency-based) === */
+  --color-text-primary: rgba(255, 255, 255, 0.92);
+  --color-text-secondary: rgba(255, 255, 255, 0.64);
+  --color-text-tertiary: rgba(255, 255, 255, 0.45);
+  --color-text-muted: rgba(255, 255, 255, 0.28);
+
+  /* === BORDER (transparency-based) === */
+  --color-border-default: rgba(255, 255, 255, 0.08);
+  --color-border-moderate: rgba(255, 255, 255, 0.12);
+  --color-border-strong: rgba(255, 255, 255, 0.20);
+  --color-border-focus: rgba(99, 102, 241, 0.5);
+
+  /* === ACCENT === */
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-soft: rgba(99, 102, 241, 0.12);
+  --color-accent-muted: rgba(99, 102, 241, 0.06);
+
+  /* === SEMANTIC === */
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.12);
+  --color-warning: #f59e0b;
+  --color-warning-soft: rgba(245, 158, 11, 0.12);
+  --color-error: #ef4444;
+  --color-error-soft: rgba(239, 68, 68, 0.12);
+  --color-info: #3b82f6;
+  --color-info-soft: rgba(59, 130, 246, 0.12);
+
+  /* === BADGE CATEGORY COLORS (10 hues) === */
+  --color-badge-0: #3b82f6;
+  --color-badge-0-bg: rgba(59, 130, 246, 0.10);
+  --color-badge-1: #22c55e;
+  --color-badge-1-bg: rgba(34, 197, 94, 0.10);
+  --color-badge-2: #a855f7;
+  --color-badge-2-bg: rgba(168, 85, 247, 0.10);
+  --color-badge-3: #f97316;
+  --color-badge-3-bg: rgba(249, 115, 22, 0.10);
+  --color-badge-4: #06b6d4;
+  --color-badge-4-bg: rgba(6, 182, 212, 0.10);
+  --color-badge-5: #ef4444;
+  --color-badge-5-bg: rgba(239, 68, 68, 0.10);
+  --color-badge-6: #84cc16;
+  --color-badge-6-bg: rgba(132, 204, 22, 0.10);
+  --color-badge-7: #6366f1;
+  --color-badge-7-bg: rgba(99, 102, 241, 0.10);
+  --color-badge-8: #ec4899;
+  --color-badge-8-bg: rgba(236, 72, 153, 0.10);
+  --color-badge-9: #f59e0b;
+  --color-badge-9-bg: rgba(245, 158, 11, 0.10);
+
+  /* === SHADOWS === */
+  --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-floating: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 6px 18px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* === LAYOUT === */
+  --sidebar-width: 240px;
+  --header-height: 44px;
+  --filter-bar-height: 40px;
+  --table-row-height: 40px;
+  --detail-panel-width: 400px;
+  --kanban-column-width: 260px;
+
+  /* === TYPOGRAPHY === */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'DM Mono', monospace;
+}
+
 @layer base {
   body {
-    @apply bg-[#0a0b0f] text-[#e8e8ed] antialiased;
+    @apply antialiased;
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
   }
+
+  /* Sub-pixel borders */
+  * {
+    border-color: var(--color-border-default);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-moderate);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
+  }
+}
+
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-muted) 25%,
+    var(--color-bg-emphasis) 50%,
+    var(--color-bg-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
 }
