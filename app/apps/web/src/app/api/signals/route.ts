@@ -14,6 +14,13 @@ const signalSchema = z.object({
       title: z.string().describe("Short signal title"),
       description: z.string().describe("1-2 sentence description of the signal"),
       relevance: z.enum(["high", "medium", "low"]),
+      reasoning: z.string().describe("Detailed explanation of WHY this signal matters for sales outreach — what it implies about their buying intent or timing"),
+      sources: z.array(
+        z.object({
+          url: z.string().describe("URL where this information can be verified (company website, news article, job board, LinkedIn)"),
+          title: z.string().describe("Title of the source page"),
+        })
+      ).describe("1-3 sources where this signal can be verified"),
     })
   ),
 });
@@ -74,6 +81,10 @@ Signal types to look for:
 - news: Company news, product launches, partnerships
 - expansion: New offices, market expansion, international growth
 - leadership_change: New C-suite hires, board changes
+
+For each signal, provide:
+1. A detailed "reasoning" explaining WHY this signal matters for sales — what it implies about buying intent, budget availability, or timing
+2. 1-3 "sources" with realistic URLs where this information could be verified (use the company domain, LinkedIn, Crunchbase, TechCrunch, etc.)
 
 Only include signals you're reasonably confident about. Return an empty array if no clear signals.`,
         });

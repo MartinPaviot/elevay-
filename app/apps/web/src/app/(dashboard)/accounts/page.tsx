@@ -273,25 +273,88 @@ export default function AccountsPage() {
     leadership_change: "bg-pink-500/15 text-pink-400",
   };
 
-  function getSignals(account: Account): Array<{ type: string; title: string; description: string; relevance: string }> {
-    const props = account.properties as Record<string, unknown> | null;
-    return (props?.signals as Array<{ type: string; title: string; description: string; relevance: string }>) || [];
+  interface Signal {
+    type: string;
+    title: string;
+    description: string;
+    relevance: string;
+    reasoning?: string;
+    sources?: Array<{ url: string; title: string }>;
   }
+
+  function getSignals(account: Account): Signal[] {
+    const props = account.properties as Record<string, unknown> | null;
+    return (props?.signals as Signal[]) || [];
+  }
+
+  const [activeSignalPopover, setActiveSignalPopover] = useState<string | null>(null);
 
   function signalBadges(account: Account) {
     const signals = getSignals(account);
     if (signals.length === 0) return <span className="text-xs text-[#5a5a70]">—</span>;
     return (
-      <div className="flex flex-wrap gap-1">
-        {signals.slice(0, 3).map((signal, i) => (
-          <span
-            key={i}
-            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium ${signalColors[signal.type] || signalColors.news}`}
-            title={`${signal.title}: ${signal.description}`}
-          >
-            {signal.type.replace("_", " ")}
-          </span>
-        ))}
+      <div className="relative flex flex-wrap gap-1">
+        {signals.slice(0, 3).map((signal, i) => {
+          const popoverId = `${account.id}-${i}`;
+          return (
+            <span key={i} className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSignalPopover(activeSignalPopover === popoverId ? null : popoverId);
+                }}
+                className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-medium cursor-pointer hover:ring-1 hover:ring-[#6366f1] ${signalColors[signal.type] || signalColors.news}`}
+              >
+                {signal.type.replace("_", " ")}
+              </button>
+              {activeSignalPopover === popoverId && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[#1e1f2a] bg-[#12131a] p-3 shadow-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${signalColors[signal.type] || signalColors.news}`}>
+                      {signal.type.replace("_", " ")}
+                    </span>
+                    <span className={`text-[9px] font-semibold uppercase ${signal.relevance === "high" ? "text-emerald-400" : signal.relevance === "medium" ? "text-amber-400" : "text-[#5a5a70]"}`}>
+                      {signal.relevance}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-[#e8e8ed]">{signal.title}</p>
+                  <p className="mt-1 text-[11px] text-[#8b8ba0]">{signal.description}</p>
+                  {signal.reasoning && (
+                    <div className="mt-2 border-t border-[#1e1f2a] pt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5a5a70] mb-1">Reasoning</p>
+                      <p className="text-[11px] text-[#8b8ba0]">{signal.reasoning}</p>
+                    </div>
+                  )}
+                  {signal.sources && signal.sources.length > 0 && (
+                    <div className="mt-2 border-t border-[#1e1f2a] pt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5a5a70] mb-1">Sources</p>
+                      <div className="space-y-1">
+                        {signal.sources.map((source, si) => (
+                          <a
+                            key={si}
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-[11px] text-[#6366f1] hover:underline"
+                          >
+                            <span className="flex-shrink-0 w-3 h-3 rounded bg-[#1e1f2a] flex items-center justify-center text-[8px] text-[#5a5a70]">↗</span>
+                            <span className="truncate">{source.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActiveSignalPopover(null); }}
+                    className="mt-2 w-full text-center text-[10px] text-[#5a5a70] hover:text-[#8b8ba0]"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </span>
+          );
+        })}
         {signals.length > 3 && (
           <span className="text-[9px] text-[#5a5a70]">+{signals.length - 3}</span>
         )}
