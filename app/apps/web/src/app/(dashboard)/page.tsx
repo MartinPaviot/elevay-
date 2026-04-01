@@ -123,7 +123,6 @@ export default function DashboardPage() {
   };
 
   const ws = summary?.weekSummary;
-  const hasActivity = ws && (ws.sequencesLaunched + ws.responsesReceived + ws.meetingsBooked + ws.opportunitiesClosed > 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -181,48 +180,24 @@ export default function DashboardPage() {
               borderRadius: "6px",
             }}
           >
-            {hasActivity ? (
-              <p
-                className="text-sm"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                This week, you&apos;ve launched{" "}
-                <span
-                  className="font-semibold"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {ws!.sequencesLaunched} sequences
-                </span>,
-                received{" "}
-                <span
-                  className="font-semibold"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {ws!.responsesReceived} responses
-                </span>,
-                booked{" "}
-                <span
-                  className="font-semibold"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {ws!.meetingsBooked} meetings
-                </span>,
-                and closed{" "}
-                <span
-                  className="font-semibold"
-                  style={{ color: "var(--color-text-primary)" }}
-                >
-                  {ws!.opportunitiesClosed} opportunities
-                </span>.
-              </p>
-            ) : (
-              <p
-                className="text-sm"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                No activity this week yet. Let&apos;s change that.
-              </p>
-            )}
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-semibold" style={{ color: "var(--color-text-primary)" }}>{ws!.sequencesLaunched}</span>
+                <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>sequences</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-semibold" style={{ color: "var(--color-text-primary)" }}>{ws!.responsesReceived}</span>
+                <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>responses</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-semibold" style={{ color: "var(--color-text-primary)" }}>{ws!.meetingsBooked}</span>
+                <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>meetings</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-semibold" style={{ color: "var(--color-text-primary)" }}>{ws!.opportunitiesClosed}</span>
+                <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>closed</span>
+              </div>
+            </div>
           </div>
         )}
 
