@@ -103,8 +103,24 @@ export default function ChatPage() {
               }`}
             >
               {message.role === "assistant" && (
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-[#5a5a70]">
-                  <span className="text-[#6366f1]">✦</span> LeadSens
+                <div className="mb-1">
+                  <div className="flex items-center gap-1.5 text-xs text-[#5a5a70]">
+                    <span className="text-[#6366f1]">✦</span> LeadSens
+                  </div>
+                  {(() => {
+                    const text = message.parts
+                      .filter((p) => p.type === "text")
+                      .map((p) => ("text" in p ? p.text : ""))
+                      .join("");
+                    const hasData = /\d+ (contact|deal|account|opportunit|task|meeting)/i.test(text);
+                    const hasEmail = /Subject:/i.test(text);
+                    const hasAnalysis = /(should|recommend|priorit|focus|risk|stall|prepare)/i.test(text);
+                    const indicator = hasEmail ? "Drafted email" : hasData ? "Retrieved CRM data" : hasAnalysis ? "Analyzed data" : null;
+                    if (!indicator) return null;
+                    return (
+                      <span className="ml-5 text-[10px] text-amber-400/70">{indicator}</span>
+                    );
+                  })()}
                 </div>
               )}
               <div className="whitespace-pre-wrap text-sm leading-relaxed">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { EmailComposer } from "@/components/email-composer";
 
 interface Action {
   action: string;
@@ -51,6 +52,11 @@ export default function DashboardPage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loadingActions, setLoadingActions] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(true);
+  const [emailComposer, setEmailComposer] = useState<{
+    to: string;
+    subject: string;
+    body: string;
+  } | null>(null);
 
   useEffect(() => {
     // Load summary
@@ -152,7 +158,16 @@ export default function DashboardPage() {
                 {actions.slice(0, 5).map((action, i) => (
                   <div
                     key={i}
-                    className={`rounded-lg border border-[#1e1f2a] border-l-2 p-4 ${priorityColors[action.priority] || ""}`}
+                    className={`rounded-lg border border-[#1e1f2a] border-l-2 p-4 ${priorityColors[action.priority] || ""} ${action.stalledDays && action.stalledDays >= 3 ? "cursor-pointer hover:border-[#6366f1]/50" : ""}`}
+                    onClick={() => {
+                      if (action.stalledDays && action.stalledDays >= 3 && action.dealName) {
+                        setEmailComposer({
+                          to: "",
+                          subject: `Following up — ${action.dealName}`,
+                          body: `Hi,\n\nI wanted to follow up on our conversation about ${action.dealName}. ${action.why}\n\nWould you have time for a quick call this week?\n\nBest regards`,
+                        });
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium text-[#e8e8ed]">{action.action}</p>
@@ -284,6 +299,15 @@ export default function DashboardPage() {
           Ask LeadSens...
         </Link>
       </div>
+
+      {emailComposer && (
+        <EmailComposer
+          to={emailComposer.to}
+          subject={emailComposer.subject}
+          body={emailComposer.body}
+          onClose={() => setEmailComposer(null)}
+        />
+      )}
     </div>
   );
 }
