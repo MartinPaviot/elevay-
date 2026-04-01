@@ -4,136 +4,114 @@
 
 Dense when data matters. Clean when conversation matters. The chat is Lightfield-clean. The pipeline is Monaco-dense. The transition should feel natural.
 
-## Color System
+## Source of Truth
+
+All design tokens are defined in `app/apps/web/src/app/globals.css` via `@theme {}` block.
+Detailed specification: `_research/ui-teardown/our-design-system.md`
+
+## Color System — CSS Custom Properties
 
 ```css
-/* Base — dark mode default */
---bg-primary: #0a0b0f;          /* Main background */
---bg-surface: #12131a;          /* Cards, panels */
---bg-elevated: #1a1b24;         /* Modals, dropdowns */
---border: #1e1f2a;              /* Subtle borders */
+/* Backgrounds */
+--color-bg-base: #09090b;        /* Page background */
+--color-bg-surface: #121214;      /* Cards, panels */
+--color-bg-elevated: #1a1a1f;     /* Modals, dropdowns */
+--color-bg-muted: #222228;        /* Hover states, inputs */
+--color-bg-emphasis: #2a2a31;     /* Selected, pressed */
 
-/* Text */
---text-primary: #e8e8ed;        /* Primary text */
---text-secondary: #8b8ba0;      /* Muted, labels */
---text-tertiary: #5a5a70;       /* Disabled, hints */
+/* Text (transparency-based) */
+--color-text-primary: rgba(255,255,255,0.92);    /* Primary text */
+--color-text-secondary: rgba(255,255,255,0.64);  /* Labels, headers */
+--color-text-tertiary: rgba(255,255,255,0.45);   /* Descriptions, hints */
+--color-text-muted: rgba(255,255,255,0.28);      /* Disabled, faint */
 
-/* Accent — indigo, inspired by Monaco */
---accent: #6366f1;              /* Primary actions, links */
---accent-soft: rgba(99,102,241,0.12);  /* Hover states, badges */
---accent-strong: #818cf8;       /* Accent on dark backgrounds */
+/* Borders (transparency-based) */
+--color-border-default: rgba(255,255,255,0.08);  /* Subtle borders */
+--color-border-moderate: rgba(255,255,255,0.12); /* Visible borders */
+--color-border-strong: rgba(255,255,255,0.20);   /* Active elements */
+--color-border-focus: rgba(99,102,241,0.5);      /* Focus rings */
+
+/* Accent — indigo */
+--color-accent: #6366f1;
+--color-accent-hover: #818cf8;
+--color-accent-soft: rgba(99,102,241,0.12);
+--color-accent-muted: rgba(99,102,241,0.06);
 
 /* Semantic */
---green: #22c55e;               /* Won, positive, hot */
---green-soft: rgba(34,197,94,0.12);
---amber: #f59e0b;               /* Warm, warning, in progress */
---amber-soft: rgba(245,158,11,0.12);
---red: #ef4444;                 /* Risk, lost, error */
---red-soft: rgba(239,68,68,0.12);
---blue: #3b82f6;                /* Info, links */
+--color-success: #22c55e;
+--color-warning: #f59e0b;
+--color-error: #ef4444;
+--color-info: #3b82f6;
 ```
 
 ## Typography
 
 ```css
-/* Font stack — Inter for UI, system fallbacks */
---font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
---font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+--font-mono: 'JetBrains Mono', 'DM Mono', monospace;
 
 /* Scale */
---text-xs: 11px;    /* Badges, meta */
---text-sm: 13px;    /* Secondary text, table cells */
---text-base: 14px;  /* Primary text */
---text-lg: 16px;    /* Subheadings */
---text-xl: 20px;    /* Page titles */
---text-2xl: 24px;   /* Stats, hero numbers */
-
-/* Weight */
---font-normal: 400;
---font-medium: 500;
---font-semibold: 600;
---font-bold: 700;
+24px / 600 / -0.3px — Page titles (settings)
+20px / 600 / -0.2px — Hero numbers, date headers
+16px / 500 — Section headers
+15px / 450 — Chat messages (special)
+14px / 400 — Body text
+13px / 400-500 — Nav items, secondary text
+12px / 500 — Buttons, badges, labels
+11px / 500 — Section headers (sidebar), smallest labels
 ```
 
-## Spacing
+## Key Design Decisions
 
-Base unit: 4px. Everything is multiples of 4.
-- `xs`: 4px
-- `sm`: 8px
-- `md`: 12px
-- `lg`: 16px
-- `xl`: 24px
-- `2xl`: 32px
+### Sub-pixel borders (0.5px)
+Adds definition without visual weight. Inspired by Lightfield's 0.666px borders.
 
-## Components
+### Transparency-based text/borders
+Text uses rgba white values, borders use rgba white values. Both work automatically across any background shade.
 
-### Cards
-- Background: `--bg-surface`
-- Border: 1px solid `--border`
-- Border-radius: 10px
-- Padding: 16px
+### Badge auto-coloring
+10 category colors assigned via hash function: `hash(string) % 10`. Each gets a 10% opacity background + darker text color.
+
+### Chat distinction
+Chat messages use 15px at weight 450 — larger and slightly bolder than the 13px nav/body text. This makes the AI conversation feel like a different mode.
+
+## Layout Constants
+
+```css
+--sidebar-width: 240px;
+--header-height: 44px;
+--filter-bar-height: 40px;
+--table-row-height: 40px;
+--detail-panel-width: 400px;
+--kanban-column-width: 260px;
+```
+
+## Component Patterns
+
+### Page structure
+Every page follows: Header bar (44px) → Filter bar (40px, on list pages) → Content area
 
 ### Buttons
-- Primary: `--accent` background, white text, rounded-lg
-- Secondary: transparent, `--border` border, `--text-primary` text
-- Ghost: transparent, no border, `--text-secondary`
-- All: 8px 16px padding, 14px text, 500 weight
+- Primary: accent bg, white text, 28px height, 12px font, rounded-md
+- Secondary: transparent, 0.5px border, rounded-md
+- Ghost: transparent, no border, color transitions on hover
 
-### Score Badges
-- Letter grade (A, B, C, D) with semantic color
-- Fire icon for "burning" / hot accounts
-- Pill shape, small (--text-xs)
+### Tables
+- 40px row height, sticky headers, sub-pixel borders
+- Headers: 11px uppercase, text-tertiary
+- Hover: bg-muted background
 
-### Signal Tags
-- Colored pills: green for positive, amber for neutral, red for negative
-- Industry tags: distinct muted colors per category
-- Rounded-full, padding 2px 8px
+### Cards
+- bg-surface, 0.5px border, rounded-lg (8px)
+- No shadows in dark mode
 
-### Chat
-- User messages: right-aligned, subtle background
-- AI messages: left-aligned, full width, markdown-rendered
-- Streaming: character-by-character with cursor
-- Citations: inline links to original source with hover preview
-- Input: Bottom-fixed, full-width, minimal border
+### Empty states
+- Centered icon (32px, text-muted) + title + description + CTA
 
-### Tables (Pipeline, TAM)
-- Dense: 13px text, 40px row height
-- Column headers: uppercase, 11px, muted
-- Hover: subtle row highlight
-- Sticky headers
-- Sortable, filterable
+## Icons
+Using lucide-react throughout. Standard size: 16px in nav, 13px in buttons, 32px in empty states.
 
-### Sidebar
-- 220px width, collapsible
-- Section headers: uppercase, 11px, muted
-- Active item: accent-soft background, accent text
-- Icons: 18px, muted until active
-
-## States
-
-### Empty
-- Centered illustration or icon
-- Helpful text explaining what will appear
-- Clear CTA to populate ("Connect email" / "Build TAM")
-
-### Loading
-- Skeleton screens, not spinners
-- Chat: typing indicator dots
-
-### Error
-- Red accent, clear message, retry action
-- Never technical jargon in error messages
-
-## Motion
-
-- Transitions: 150ms ease
-- Page transitions: none (instant)
-- Chat streaming: real-time characters
-- Sidebar collapse: 200ms ease-in-out
-
-## Responsive
-
-- Desktop-first (founders use laptops)
-- Min-width: 1024px
-- Sidebar collapses below 1280px
-- Mobile: not a priority for V1
+## Animations
+- Hover transitions: 150ms ease
+- Skeleton shimmer: 1.5s linear infinite
+- Page transitions: instant (no animation)
