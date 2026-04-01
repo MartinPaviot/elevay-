@@ -16,9 +16,25 @@
 | 3 | F3.5 Signal Overlay | 1 | PASS | 0.78 | 6 signal types, colored badges, tooltips |
 | 3 | F3.6 AI Semantic Search | 1 | PASS | 0.78 | pgvector search + entity hydration, dual-mode search bar |
 
-**Pass rate**: 25/25 features pass on first attempt (100% since M3)
-**Health**: Excellent — all M1-M7 features pass, 64 tests
-**Date**: 2026-03-31
+**Pass rate**: 52/53 features pass (98%). Only F2.2 Calendar sync blocked on Google OAuth.
+**Health**: Excellent — M1-M10 complete, 99 tests across 19 files
+**Date**: 2026-04-01
+
+## Latest sprint (M9+M10 + SETTINGS-V2 + Lightfield research)
+| Sprint | Feature | Attempt | Result | Notes |
+|--------|---------|---------|--------|-------|
+| M9 | G3 Contact auto-suggestion | 1 | PASS | API: contacts by companyId |
+| M9 | G7 Follow-up email generation | 1 | PASS | LLM + action items |
+| M9 | G8 Deal timeline | 1 | PASS | Activities query |
+| M9 | G9 Structured extraction | 1 | PASS | Budget/team/competitors from notes |
+| M9 | G10 Multi-language chat | 1 | PASS | 12-language detection |
+| M9 | G12 Suggested replies | 1 | PASS | brief/detailed/decline options |
+| M10 | G16 Lifecycle stages | 1 | PASS | 7 stages, color-coded |
+| M10 | G17 Momentum indicator | 1 | PASS | high/medium/low from activity |
+| M10 | G18 Custom signal columns | 1 | PASS | Configurable boolean signals |
+| M10 | G19 Chat history | 1 | PASS | Already working (sidebar) |
+| — | SETTINGS-V2 | 1 | PASS | 7 sections matching Lightfield |
+| — | Lightfield teardown | — | DONE | 18 settings sections documented |
 
 ## Sprint updates
 | Sprint | Feature | Attempt | Result | Score | Notes |
