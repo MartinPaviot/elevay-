@@ -751,8 +751,8 @@
     "dependencies": [
       "F3.1"
     ],
-    "passes": false,
-    "attempts": 0,
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 7
   },
   {
@@ -881,8 +881,8 @@
     "dependencies": [
       "F1.5"
     ],
-    "passes": false,
-    "attempts": 0,
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 6
   }
 ]

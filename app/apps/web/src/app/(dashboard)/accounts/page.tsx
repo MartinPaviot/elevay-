@@ -334,19 +334,39 @@ export default function AccountsPage() {
                       </div>
                     </td>
 
-                    {/* Account name */}
+                    {/* Account name with logo */}
                     <td className="px-3">
-                      <a href={`/accounts/${account.id}`}
-                        className="text-[13px] font-medium transition-colors hover:underline"
-                        style={{ color: "var(--color-text-primary)" }}>
-                        {account.name}
-                      </a>
-                      {account.description && (
-                        <p className="mt-0.5 max-w-[180px] truncate text-[11px]"
-                          style={{ color: "var(--color-text-tertiary)" }} title={account.description}>
-                          {account.description}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {account.domain ? (
+                          <img
+                            src={`https://logo.clearbit.com/${account.domain}`}
+                            alt=""
+                            className="h-5 w-5 shrink-0 rounded"
+                            style={{ background: "var(--color-bg-muted)" }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-semibold"
+                            style={{ background: "var(--color-bg-emphasis)", color: "var(--color-text-tertiary)" }}
+                          >
+                            {account.name.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <a href={`/accounts/${account.id}`}
+                            className="text-[13px] font-medium transition-colors hover:underline"
+                            style={{ color: "var(--color-text-primary)" }}>
+                            {account.name}
+                          </a>
+                          {account.description && (
+                            <p className="mt-0.5 max-w-[180px] truncate text-[11px]"
+                              style={{ color: "var(--color-text-tertiary)" }} title={account.description}>
+                              {account.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </td>
 
                     {/* Domain */}
