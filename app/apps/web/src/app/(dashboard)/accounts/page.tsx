@@ -580,7 +580,7 @@ export default function AccountsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm whitespace-nowrap">
               <thead>
                 <tr className="border-b border-[#1e1f2a] text-[11px] uppercase tracking-wider text-[#5a5a70]">
                   <th className="pb-2 pr-4">Status</th>
@@ -614,11 +614,11 @@ export default function AccountsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 pr-4">
+                    <td className="py-3 pr-4 max-w-[200px]">
                       <div>
                         <a href={`/accounts/${account.id}`} className="font-medium text-[#e8e8ed] hover:text-[#6366f1]">{account.name}</a>
                         {account.description && (
-                          <p className="mt-0.5 truncate text-xs text-[#5a5a70]" title={account.description}>
+                          <p className="mt-0.5 max-w-[200px] truncate text-xs text-[#5a5a70]" title={account.description}>
                             {account.description}
                           </p>
                         )}
