@@ -111,25 +111,25 @@ Display (no bubble for AI, subtle bubble for user)
 | Capability | Lightfield | Us | Gap |
 |-----------|:----------:|:--:|-----|
 | Free-text NL query | YES | YES | Similar |
-| Suggestion prompts | YES (8 items, vertical list) | NO | Need to add |
-| Entity-scoped chat | YES (contact + account detail pages) | NO | Critical gap |
-| Inline entity links | YES (contacts, accounts, opps, tasks) | NO | Critical gap |
-| Process transparency | YES (collapsible tool call results) | NO | Important gap |
-| Table responses | YES (HTML tables with entity links) | Partial | Need entity links |
-| Email drafting | YES (real composer slide-over) | NO | Critical gap |
-| Record creation via chat | YES (confirmation cards, sequential) | NO | Critical gap |
-| Confirmation cards | YES (editable, with permission dropdown) | NO | Critical gap |
+| Suggestion prompts | YES (8 items, vertical list) | **YES** | CLOSED — 8 suggestions, send on click |
+| Entity-scoped chat | YES (contact + account detail pages) | **YES** | CLOSED — ScopedChat on all detail pages |
+| Inline entity links | YES (contacts, accounts, opps, tasks) | **YES** | CLOSED — EntityLink + ChatMarkdown |
+| Process transparency | YES (collapsible tool call results) | **YES** | CLOSED — ToolCallGroup panels |
+| Table responses | YES (HTML tables with entity links) | **YES** | CLOSED — ChatMarkdown table styling |
+| Email drafting | YES (real composer slide-over) | **YES** | CLOSED — EmailComposer + detection |
+| Record creation via chat | YES (confirmation cards, sequential) | **YES** | CLOSED — ActionCard for creates |
+| Confirmation cards | YES (editable, with permission dropdown) | **PARTIAL** | ActionCard exists, no editable fields yet |
 | Permission control | YES ("Ask every time" dropdown) | NO | Future feature |
-| Conversation memory (session) | YES (pronoun resolution works) | YES | Similar |
-| Cross-session history | YES (threads in sidebar, persistent) | YES | Similar |
-| Multi-language | YES (French tested, full response in French) | Partial | Need to verify |
-| Off-topic handling | YES (polite deflection, no hallucination) | YES | Similar |
-| Delete prevention | YES (refuses, not a capability) | YES | Similar |
-| Nonexistent record handling | YES (truthful, offers alternatives) | YES | Similar |
-| Contextual awareness | YES ("this person" on contact page) | NO | Critical gap |
-| Slide-over panels from chat | YES (entities open inline) | NO | Important gap |
+| Conversation memory (session) | YES (pronoun resolution works) | **YES** | CLOSED — AI SDK manages context |
+| Cross-session history | YES (threads in sidebar, persistent) | **YES** | CLOSED — Thread persistence API |
+| Multi-language | YES (French tested, full response in French) | **YES** | CLOSED — system prompt instructs match language |
+| Off-topic handling | YES (polite deflection, no hallucination) | **YES** | CLOSED |
+| Delete prevention | YES (refuses, not a capability) | **YES** | CLOSED |
+| Nonexistent record handling | YES (truthful, offers alternatives) | **YES** | CLOSED |
+| Contextual awareness | YES ("this person" on contact page) | **YES** | CLOSED — ScopedChat passes entity context |
+| Slide-over panels from chat | YES (entities open inline) | **YES** | CLOSED — EntityLink opens SlideOver |
 | Upload file | YES (button present) | NO | Future feature |
-| Bulk actions | NOT TESTED | NO | Unknown |
+| Bulk actions | NOT TESTED | NO | Future feature |
 
 ---
 
