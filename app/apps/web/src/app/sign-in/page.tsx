@@ -92,6 +92,13 @@ export default function SignInPage() {
           </button>
         </form>
 
+        <p className="text-center text-sm text-[var(--color-text-tertiary)]">
+          Don&apos;t have an account?{" "}
+          <a href="/sign-up" className="text-[var(--color-accent)] hover:underline">
+            Sign up
+          </a>
+        </p>
+
         <p className="text-center text-[10px] leading-relaxed text-[var(--color-text-tertiary)]">
           By signing in, you agree to our{" "}
           <a href="/terms" className="underline hover:text-[var(--color-text-secondary)]">

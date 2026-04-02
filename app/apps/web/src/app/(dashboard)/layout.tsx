@@ -19,12 +19,22 @@ export default async function DashboardLayout({
 
   let recentChats: Array<{ id: string; title: string | null }> = [];
   try {
-    recentChats = await db
-      .select({ id: chatThreads.id, title: chatThreads.title })
-      .from(chatThreads)
-      .where(eq(chatThreads.userId, session.user.id!))
-      .orderBy(desc(chatThreads.updatedAt))
-      .limit(5);
+    // Resolve app user ID from auth user ID for thread lookup
+    const { users } = await import("@/db/schema");
+    const [appUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.clerkId, session.user.id!))
+      .limit(1);
+
+    if (appUser) {
+      recentChats = await db
+        .select({ id: chatThreads.id, title: chatThreads.title })
+        .from(chatThreads)
+        .where(eq(chatThreads.userId, appUser.id))
+        .orderBy(desc(chatThreads.updatedAt))
+        .limit(5);
+    }
   } catch {
     // DB not available
   }

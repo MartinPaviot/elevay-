@@ -12,7 +12,7 @@ export async function POST(req: Request) {
 
   const [thread] = await db.insert(chatThreads).values({
     tenantId: authCtx.tenantId,
-    userId: authCtx.userId,
+    userId: authCtx.appUserId,
     title: title || null,
     contextType: contextType || "global",
     contextId: contextId || null,
@@ -43,7 +43,7 @@ export async function GET() {
       updatedAt: chatThreads.updatedAt,
     })
     .from(chatThreads)
-    .where(eq(chatThreads.userId, authCtx.userId))
+    .where(eq(chatThreads.userId, authCtx.appUserId))
     .orderBy(desc(chatThreads.updatedAt))
     .limit(20);
 

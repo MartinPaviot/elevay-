@@ -17,7 +17,7 @@ export async function GET(
   const [thread] = await db
     .select()
     .from(chatThreads)
-    .where(and(eq(chatThreads.id, id), eq(chatThreads.userId, authCtx.userId)))
+    .where(and(eq(chatThreads.id, id), eq(chatThreads.userId, authCtx.appUserId)))
     .limit(1);
 
   if (!thread) return Response.json({ error: "Thread not found" }, { status: 404 });
@@ -54,7 +54,7 @@ export async function POST(
   const [thread] = await db
     .select()
     .from(chatThreads)
-    .where(and(eq(chatThreads.id, id), eq(chatThreads.userId, authCtx.userId)))
+    .where(and(eq(chatThreads.id, id), eq(chatThreads.userId, authCtx.appUserId)))
     .limit(1);
 
   if (!thread) return Response.json({ error: "Thread not found" }, { status: 404 });
