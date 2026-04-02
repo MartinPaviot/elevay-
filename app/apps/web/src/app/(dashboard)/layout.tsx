@@ -21,6 +21,7 @@ import {
   Zap,
 } from "lucide-react";
 import { PersistentChatBar } from "@/components/persistent-chat-bar";
+import { PostHogPageTracker } from "@/components/posthog-provider";
 
 const navSections = [
   {
@@ -198,6 +199,10 @@ export default async function DashboardLayout({
             <Settings size={16} className="shrink-0 opacity-60 group-hover:opacity-80" />
             <span>Settings</span>
           </Link>
+          <div className="mt-1 flex gap-3 px-2">
+            <Link href="/terms" className="text-[10px] hover:underline" style={{ color: "var(--color-text-muted)" }}>Terms</Link>
+            <Link href="/privacy" className="text-[10px] hover:underline" style={{ color: "var(--color-text-muted)" }}>Privacy</Link>
+          </div>
         </div>
       </aside>
 
@@ -205,6 +210,7 @@ export default async function DashboardLayout({
       <main className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-auto">{children}</div>
         <PersistentChatBar />
+        <PostHogPageTracker userId={session.user.id} />
       </main>
 
       {/* Sidebar nav hover/active styles */}
