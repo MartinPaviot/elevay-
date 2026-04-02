@@ -39,7 +39,7 @@ export default function MailboxesPage() {
   const [loading, setLoading] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
 
-  // Pre-connection settings (Lightfield pattern)
+  // Pre-connection settings
   const [backsyncRange, setBacksyncRange] = useState("1m");
   const [contactCreation, setContactCreation] = useState("selective");
   const [doNotTrack, setDoNotTrack] = useState("");

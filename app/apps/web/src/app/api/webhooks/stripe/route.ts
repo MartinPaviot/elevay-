@@ -73,6 +73,13 @@ function advanceDate(
 }
 
 export async function POST(request: Request) {
+  if (!stripe) {
+    return Response.json(
+      { error: "Stripe is not configured" },
+      { status: 503 }
+    );
+  }
+
   const body = await request.text();
   const signature = request.headers.get("stripe-signature");
 
@@ -83,13 +90,20 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    return Response.json(
+      { error: "Stripe webhook secret is not configured" },
+      { status: 503 }
+    );
+  }
+
   let event: Stripe.Event;
 
   try {
     event = stripe.webhooks.constructEvent(
       body,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
     console.error("Webhook signature verification failed:", err);

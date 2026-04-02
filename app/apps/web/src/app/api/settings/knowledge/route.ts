@@ -74,8 +74,14 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const body = await req.json();
-    const { id, topic, content } = body;
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const { id, topic, content } = body as { id?: string; topic?: string; content?: string };
 
     if (!id) {
       return Response.json({ error: "Topic ID required" }, { status: 400 });
@@ -89,8 +95,8 @@ export async function PUT(req: Request) {
     const idx = knowledge.findIndex((k) => k.id === id);
     if (idx === -1) return Response.json({ error: "Topic not found" }, { status: 404 });
 
-    if (topic !== undefined) knowledge[idx].topic = topic.trim();
-    if (content !== undefined) knowledge[idx].content = content.trim();
+    if (topic != null && typeof topic === "string") knowledge[idx].topic = topic.trim();
+    if (content != null && typeof content === "string") knowledge[idx].content = content.trim();
 
     await db.update(tenants).set({
       settings: { ...settings, knowledge },
@@ -111,8 +117,13 @@ export async function DELETE(req: Request) {
   }
 
   try {
-    const url = new URL(req.url);
-    const id = url.searchParams.get("id");
+    let id: string | null = null;
+    try {
+      const url = new URL(req.url, "http://localhost");
+      id = url.searchParams.get("id");
+    } catch {
+      return Response.json({ error: "Invalid request URL" }, { status: 400 });
+    }
 
     if (!id) {
       return Response.json({ error: "Topic ID required" }, { status: 400 });

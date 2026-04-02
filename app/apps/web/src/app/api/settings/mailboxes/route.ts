@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
-import { connectedMailboxes } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { connectedMailboxes, outboundEmails, warmupEmails } from "@/db/schema";
+import { and, eq, or } from "drizzle-orm";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -115,20 +115,42 @@ export async function DELETE(req: Request) {
     return Response.json({ error: "id required" }, { status: 400 });
   }
 
-  // Delete from EmailEngine
+  // Look up the mailbox first
   const [mailbox] = await db
     .select()
     .from(connectedMailboxes)
     .where(and(eq(connectedMailboxes.id, id), eq(connectedMailboxes.tenantId, authCtx.tenantId)))
     .limit(1);
 
-  if (mailbox) {
-    const eeBase = process.env.EMAILENGINE_URL || "http://localhost:3100";
-    try {
-      await fetch(`${eeBase}/v1/account/${mailbox.eeAccountId}`, { method: "DELETE" });
-    } catch {}
+  if (!mailbox) {
+    return Response.json({ error: "mailbox not found" }, { status: 404 });
+  }
 
-    await db.delete(connectedMailboxes).where(and(eq(connectedMailboxes.id, id), eq(connectedMailboxes.tenantId, authCtx.tenantId)));
+  // Delete from EmailEngine
+  const eeBase = process.env.EMAILENGINE_URL || "http://localhost:3100";
+  try {
+    await fetch(`${eeBase}/v1/account/${mailbox.eeAccountId}`, { method: "DELETE" });
+  } catch {}
+
+  // Delete dependent records first to avoid FK constraint violations
+  try {
+    await db.delete(warmupEmails).where(
+      or(
+        eq(warmupEmails.mailboxId, id),
+        eq(warmupEmails.targetMailboxId, id),
+      )
+    );
+    await db.delete(outboundEmails).where(eq(outboundEmails.mailboxId, id));
+  } catch {}
+
+  // Delete the mailbox itself
+  try {
+    await db.delete(connectedMailboxes).where(
+      and(eq(connectedMailboxes.id, id), eq(connectedMailboxes.tenantId, authCtx.tenantId))
+    );
+  } catch (err) {
+    console.error("Failed to delete mailbox:", err);
+    return Response.json({ error: "Failed to delete mailbox — it may have dependent records" }, { status: 500 });
   }
 
   return Response.json({ success: true });
@@ -141,13 +163,22 @@ export async function PATCH(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-  const action = searchParams.get("action");
+  const body = await req.json().catch(() => ({}));
+
+  // Accept id from query params OR request body
+  const id = searchParams.get("id") || body.id;
+  const action = searchParams.get("action") || body.action;
 
   if (!id) {
     return Response.json({ error: "id required" }, { status: 400 });
   }
 
+  const condition = and(
+    eq(connectedMailboxes.id, id),
+    eq(connectedMailboxes.tenantId, authCtx.tenantId),
+  );
+
+  // Handle skip-warmup action (legacy query-param style)
   if (action === "skip-warmup") {
     await db
       .update(connectedMailboxes)
@@ -157,10 +188,39 @@ export async function PATCH(req: Request) {
         dailyLimit: 50,
         updatedAt: new Date(),
       })
-      .where(and(eq(connectedMailboxes.id, id), eq(connectedMailboxes.tenantId, authCtx.tenantId)));
+      .where(condition);
 
     return Response.json({ success: true });
   }
 
-  return Response.json({ error: "Unknown action" }, { status: 400 });
+  // Handle general field updates from body (status, displayName, dailyLimit, etc.)
+  const allowedFields = [
+    "status", "displayName", "dailyLimit",
+    "sendWindowStart", "sendWindowEnd", "sendDays",
+  ] as const;
+
+  const updates: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      updates[field] = body[field];
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return Response.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  updates.updatedAt = new Date();
+
+  const [updated] = await db
+    .update(connectedMailboxes)
+    .set(updates)
+    .where(condition)
+    .returning();
+
+  if (!updated) {
+    return Response.json({ error: "mailbox not found" }, { status: 404 });
+  }
+
+  return Response.json({ mailbox: updated });
 }

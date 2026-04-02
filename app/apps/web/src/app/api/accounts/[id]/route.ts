@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { companies, deals, contacts, activities } from "@/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 
 export async function GET(
   req: Request,
@@ -115,4 +115,51 @@ export async function GET(
     contacts: accountContacts,
     timeline: allActivities,
   });
+}
+
+export async function PUT(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const authCtx = await getAuthContext();
+  if (!authCtx) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  // Verify the account exists and belongs to this tenant
+  const [existing] = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId)))
+    .limit(1);
+
+  if (!existing) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const body = await req.json();
+
+  const updateData: Record<string, unknown> = {};
+  if (body.name !== undefined) updateData.name = body.name;
+  if (body.domain !== undefined) updateData.domain = body.domain;
+  if (body.industry !== undefined) updateData.industry = body.industry;
+  if (body.size !== undefined) updateData.size = body.size;
+  if (body.revenue !== undefined) updateData.revenue = body.revenue;
+  if (body.description !== undefined) updateData.description = body.description;
+
+  if (Object.keys(updateData).length === 0) {
+    return Response.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  updateData.updatedAt = sql`now()`;
+
+  const [updated] = await db
+    .update(companies)
+    .set(updateData)
+    .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId)))
+    .returning();
+
+  return Response.json({ account: updated });
 }

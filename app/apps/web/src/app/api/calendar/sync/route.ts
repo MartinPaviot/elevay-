@@ -97,6 +97,15 @@ export async function POST() {
   } catch (error) {
     console.error("Calendar sync failed:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
+
+    // Google Calendar not connected is not a server error — return a structured response
+    if (message === "Google Calendar not connected") {
+      return Response.json(
+        { status: "not_connected", message: "Google Calendar is not connected. Please connect your Google account first." },
+        { status: 200 }
+      );
+    }
+
     return Response.json({ error: `Calendar sync failed: ${message}` }, { status: 500 });
   }
 }

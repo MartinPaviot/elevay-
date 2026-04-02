@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { activities, sequenceEnrollments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 
-export async function GET() {
+async function handleDeliverability() {
   const authCtx = await getAuthContext();
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -97,4 +97,12 @@ export async function GET() {
     console.error("Deliverability check failed:", error);
     return Response.json({ error: "Failed to compute deliverability" }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return handleDeliverability();
+}
+
+export async function POST() {
+  return handleDeliverability();
 }

@@ -183,7 +183,7 @@ export default function LandingPage() {
             Everything you need to close deals
           </h2>
           <p className="mt-3 text-[var(--color-text-secondary)]">
-            Monaco-grade intelligence. Lightfield-grade memory. One tool.
+            Enterprise-grade intelligence. Perfect memory. One tool.
           </p>
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">

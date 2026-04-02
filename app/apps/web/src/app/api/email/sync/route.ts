@@ -99,6 +99,15 @@ export async function POST() {
     console.error("Email sync failed:", error);
     const message =
       error instanceof Error ? error.message : "Unknown error";
+
+    // Gmail not connected is not a server error — return a structured response
+    if (message === "Gmail not connected") {
+      return Response.json(
+        { status: "not_connected", message: "Gmail is not connected. Please connect your Google account first." },
+        { status: 200 }
+      );
+    }
+
     return Response.json({ error: `Sync failed: ${message}` }, { status: 500 });
   }
 }

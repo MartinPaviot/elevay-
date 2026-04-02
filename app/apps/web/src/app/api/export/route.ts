@@ -44,7 +44,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const format = searchParams.get("format") || "json";
-  const entity = searchParams.get("entity"); // contacts, companies, deals, activities, etc.
+  const entity = searchParams.get("entity") || searchParams.get("type"); // contacts, companies, deals, activities, etc.
 
   const tenantId = authCtx.tenantId;
 
@@ -224,6 +224,62 @@ export async function GET(req: Request) {
         },
       },
     };
+
+    if (format === "csv") {
+      // For full export CSV, concatenate all entity tables with a blank line separator
+      const sections: string[] = [];
+      const entityMap: Record<string, Record<string, unknown>[]> = {
+        contacts: contactsData.map((r) => ({
+          id: r.id, firstName: r.firstName, lastName: r.lastName, email: r.email,
+          phone: r.phone, title: r.title, linkedinUrl: r.linkedinUrl,
+          companyId: r.companyId, score: r.score, createdAt: r.createdAt?.toISOString(),
+        })),
+        companies: companiesData.map((r) => ({
+          id: r.id, name: r.name, domain: r.domain, industry: r.industry,
+          size: r.size, revenue: r.revenue, description: r.description,
+          score: r.score, createdAt: r.createdAt?.toISOString(),
+        })),
+        deals: dealsData.map((r) => ({
+          id: r.id, name: r.name, stage: r.stage, value: r.value, currency: r.currency,
+          companyId: r.companyId, contactId: r.contactId,
+          expectedCloseDate: r.expectedCloseDate?.toISOString(), score: r.score,
+          summary: r.summary, createdAt: r.createdAt?.toISOString(),
+        })),
+        activities: activitiesData.map((r) => ({
+          id: r.id, entityType: r.entityType, entityId: r.entityId,
+          activityType: r.activityType, channel: r.channel, direction: r.direction,
+          summary: r.summary, occurredAt: r.occurredAt?.toISOString(),
+        })),
+        notes: notesData.map((r) => ({
+          id: r.id, entityType: r.entityType, entityId: r.entityId,
+          title: r.title, content: r.content, createdAt: r.createdAt?.toISOString(),
+        })),
+        tasks: tasksData.map((r) => ({
+          id: r.id, title: r.title, description: r.description, status: r.status,
+          priority: r.priority, dueDate: r.dueDate?.toISOString(),
+          entityType: r.entityType, entityId: r.entityId, createdAt: r.createdAt?.toISOString(),
+        })),
+        outboundEmails: emailsData.map((r) => ({
+          id: r.id, ...Object.fromEntries(
+            Object.entries(r).filter(([k]) => k !== "id" && k !== "tenantId")
+          ),
+        })),
+      };
+
+      for (const [name, rows] of Object.entries(entityMap)) {
+        if (rows.length > 0) {
+          sections.push(`# ${name}\n${toCsv(rows)}`);
+        }
+      }
+
+      const csv = sections.join("\n\n");
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="leadsens-full-export-${new Date().toISOString().split("T")[0]}.csv"`,
+        },
+      });
+    }
 
     return new Response(JSON.stringify(exportData, null, 2), {
       headers: {

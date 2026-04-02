@@ -25,11 +25,14 @@ export async function embedEntity(
   const vector = await embedText(truncated);
   const vectorStr = `[${vector.join(",")}]`;
 
+  // Delete any existing embedding for this entity+tenant first, then insert fresh
+  await sql`
+    DELETE FROM embeddings
+    WHERE tenant_id = ${tenantId} AND entity_type = ${entityType} AND entity_id = ${entityId}
+  `;
   await sql`
     INSERT INTO embeddings (tenant_id, entity_type, entity_id, content, embedding)
     VALUES (${tenantId}, ${entityType}, ${entityId}, ${truncated}, ${vectorStr}::vector)
-    ON CONFLICT (entity_type, entity_id)
-    DO UPDATE SET content = ${truncated}, embedding = ${vectorStr}::vector, created_at = NOW()
   `;
 }
 
@@ -117,6 +120,26 @@ export function activityToText(activity: {
   if (activity.summary) parts.push(activity.summary);
   if (activity.occurredAt) parts.push(`on ${activity.occurredAt.toISOString().split("T")[0]}`);
   if (activity.rawContent) parts.push(activity.rawContent.slice(0, 2000));
+  return parts.join(". ");
+}
+
+export function dealToText(deal: {
+  name: string;
+  stage?: string | null;
+  value?: number | null;
+  currency?: string | null;
+  expectedCloseDate?: Date | null;
+  summary?: string | null;
+  companyName?: string | null;
+  contactName?: string | null;
+}): string {
+  const parts = [deal.name];
+  if (deal.companyName) parts.push(`Company: ${deal.companyName}`);
+  if (deal.contactName) parts.push(`Contact: ${deal.contactName}`);
+  if (deal.stage) parts.push(`Stage: ${deal.stage}`);
+  if (deal.value) parts.push(`Value: ${deal.currency || "USD"} ${deal.value.toLocaleString()}`);
+  if (deal.expectedCloseDate) parts.push(`Expected close: ${deal.expectedCloseDate.toISOString().split("T")[0]}`);
+  if (deal.summary) parts.push(deal.summary);
   return parts.join(". ");
 }
 

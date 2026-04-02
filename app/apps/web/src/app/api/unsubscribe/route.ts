@@ -156,6 +156,13 @@ export async function GET(req: Request) {
   return processUnsubscribe(email, tenantId, token);
 }
 
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export async function POST(req: Request) {
   // Support List-Unsubscribe-Post header (RFC 8058)
   // The POST body is typically "List-Unsubscribe=One-Click"
@@ -177,20 +184,62 @@ export async function POST(req: Request) {
     try {
       if (contentType.includes("application/json")) {
         const body = await req.json();
-        email = email || body.email;
-        tenantId = tenantId || body.tenant;
-        token = token || body.token;
+        email = email || body.email || null;
+        // Accept both "tenant" and "tenantId" field names
+        tenantId = tenantId || body.tenant || body.tenantId || null;
+        token = token || body.token || null;
       } else if (contentType.includes("application/x-www-form-urlencoded")) {
         const text = await req.text();
         const params = new URLSearchParams(text);
         email = email || params.get("email");
-        tenantId = tenantId || params.get("tenant");
+        tenantId = tenantId || params.get("tenant") || params.get("tenantId");
         token = token || params.get("token");
       }
     } catch {
-      // Fall through to validation
+      return jsonResponse({ error: "Invalid request body" }, 400);
     }
   }
 
-  return processUnsubscribe(email, tenantId, token);
+  if (!email || !tenantId || !token) {
+    return jsonResponse(
+      { error: "Missing required parameters: email, tenant, and token are required" },
+      400
+    );
+  }
+
+  if (!verifyToken(tenantId, email, token)) {
+    return jsonResponse(
+      { error: "Invalid or tampered unsubscribe token" },
+      403
+    );
+  }
+
+  // Verify tenant exists
+  const [tenant] = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId));
+  if (!tenant) {
+    return jsonResponse({ error: "Tenant not found" }, 404);
+  }
+
+  // Insert opt-out (ignore conflict if already unsubscribed)
+  try {
+    await db
+      .insert(emailOptouts)
+      .values({
+        tenantId,
+        emailAddress: email.toLowerCase(),
+        reason: "unsubscribe",
+      })
+      .onConflictDoNothing();
+  } catch (error) {
+    console.error("Failed to process unsubscribe:", error);
+    return jsonResponse(
+      { error: "Failed to process unsubscribe request" },
+      500
+    );
+  }
+
+  return jsonResponse({ success: true, email, tenantId });
 }

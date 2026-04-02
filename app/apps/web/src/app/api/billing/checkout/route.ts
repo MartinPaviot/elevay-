@@ -5,10 +5,29 @@ import { subscriptions } from "@/db/billing-schema";
 import { stripe } from "@/lib/stripe";
 import { and, eq } from "drizzle-orm";
 
+/** Check if an error indicates a missing table / relation */
+function isTableMissing(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes("does not exist") ||
+    msg.includes("relation") ||
+    msg.includes("undefined table") ||
+    msg.includes("no such table")
+  );
+}
+
 export async function POST(request: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Guard: Stripe must be configured
+  if (!stripe) {
+    return Response.json(
+      { error: "Billing is not configured. Stripe API key is missing." },
+      { status: 503 }
+    );
   }
 
   try {
@@ -28,16 +47,26 @@ export async function POST(request: Request) {
       return Response.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Find or create Stripe customer
+    // Find or create Stripe customer — tolerate missing subscriptions table
     let stripeCustomerId: string;
-    const [existingSub] = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.tenantId, tenantId))
-      .limit(1);
+    let existingSub: Record<string, unknown> | undefined;
+    try {
+      const rows = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.tenantId, tenantId))
+        .limit(1);
+      existingSub = rows[0] as Record<string, unknown> | undefined;
+    } catch (e) {
+      if (isTableMissing(e)) {
+        existingSub = undefined;
+      } else {
+        throw e;
+      }
+    }
 
     if (existingSub?.stripeCustomerId) {
-      stripeCustomerId = existingSub.stripeCustomerId;
+      stripeCustomerId = existingSub.stripeCustomerId as string;
     } else {
       const customer = await stripe.customers.create({
         email: user.email,
@@ -45,12 +74,17 @@ export async function POST(request: Request) {
       });
       stripeCustomerId = customer.id;
 
-      // Create a subscription record to store the customer ID
-      await db.insert(subscriptions).values({
-        tenantId,
-        stripeCustomerId,
-        status: "trialing",
-      });
+      // Create a subscription record to store the customer ID — skip if table missing
+      try {
+        await db.insert(subscriptions).values({
+          tenantId,
+          stripeCustomerId,
+          status: "trialing",
+        });
+      } catch (e) {
+        if (!isTableMissing(e)) throw e;
+        console.warn("subscriptions table missing — skipping record insert");
+      }
     }
 
     // Create checkout session

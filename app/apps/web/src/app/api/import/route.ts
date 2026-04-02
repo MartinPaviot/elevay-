@@ -11,14 +11,29 @@ export async function POST(req: Request) {
   }
 
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    let csvText: string;
+    const contentType = req.headers.get("content-type") || "";
 
-    if (!file) {
-      return Response.json({ error: "No file provided" }, { status: 400 });
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      const csvData = body.csvData ?? body.csv_data ?? body.csv;
+      if (!csvData || typeof csvData !== "string") {
+        return Response.json(
+          { error: "Missing csvData in JSON body" },
+          { status: 400 }
+        );
+      }
+      csvText = csvData;
+    } else {
+      const formData = await req.formData();
+      const file = formData.get("file") as File | null;
+
+      if (!file) {
+        return Response.json({ error: "No file provided" }, { status: 400 });
+      }
+
+      csvText = await file.text();
     }
-
-    const csvText = await file.text();
     const { data, errors } = Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
