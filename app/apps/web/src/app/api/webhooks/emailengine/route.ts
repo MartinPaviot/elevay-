@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { outboundEmails, connectedMailboxes, emailOptouts } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { inngest } from "@/inngest/client";
 
 export async function POST(req: Request) {
   const event = await req.json();
@@ -18,30 +19,27 @@ export async function POST(req: Request) {
           .limit(1);
 
         if (outbound) {
-          // Push to reply classification queue via Redis
-          // For now, store the reply data directly
-          const replyRedisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-          try {
-            const res = await fetch(`${replyRedisUrl.replace("redis://", "http://").replace(":6379", ":3100")}/v1/queue/outbound:reply`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
+          // Update outbound email with reply data
+          await db
+            .update(outboundEmails)
+            .set({
+              repliedAt: new Date(),
+              replySnippet: (text || "").substring(0, 200),
+              updatedAt: new Date(),
+            })
+            .where(eq(outboundEmails.id, outbound.id));
+
+          // Trigger reply classification via Inngest
+          if (outbound.enrollmentId) {
+            await inngest.send({
+              name: "email/reply-received",
+              data: {
+                enrollmentId: outbound.enrollmentId,
+                replyContent: (text || "").substring(0, 1000),
                 outboundEmailId: outbound.id,
-                replyText: text,
                 replyFrom: from,
-                replyMessageId: messageId,
-              }),
+              },
             });
-          } catch {
-            // Direct DB update as fallback
-            await db
-              .update(outboundEmails)
-              .set({
-                repliedAt: new Date(),
-                replySnippet: (text || "").substring(0, 200),
-                updatedAt: new Date(),
-              })
-              .where(eq(outboundEmails.id, outbound.id));
           }
         }
       }

@@ -520,13 +520,39 @@ Classifications:
       });
       classification = result.classification;
 
-      // If unsubscribe, update enrollment
+      // If unsubscribe, update enrollment AND add to global opt-out list
       if (classification === "unsubscribe") {
         await step.run("mark-unsubscribed", async () => {
           await db
             .update(sequenceEnrollments)
             .set({ status: "unsubscribed" })
             .where(eq(sequenceEnrollments.id, enrollmentId));
+        });
+
+        // Add to global opt-out list so ALL future sequences are blocked
+        await step.run("add-to-optout", async () => {
+          const [enrollment] = await db
+            .select()
+            .from(sequenceEnrollments)
+            .where(eq(sequenceEnrollments.id, enrollmentId))
+            .limit(1);
+          if (!enrollment) return;
+
+          const [contact] = await db
+            .select()
+            .from(contacts)
+            .where(eq(contacts.id, enrollment.contactId))
+            .limit(1);
+          if (!contact?.email) return;
+
+          await db
+            .insert(emailOptouts)
+            .values({
+              tenantId: contact.tenantId || "default",
+              emailAddress: contact.email.toLowerCase(),
+              reason: "unsubscribe",
+            })
+            .onConflictDoNothing();
         });
       }
     }
