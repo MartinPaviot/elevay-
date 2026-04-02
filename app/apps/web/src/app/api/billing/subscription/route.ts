@@ -19,13 +19,19 @@ export async function GET() {
       .from(tenants)
       .where(eq(tenants.id, tenantId));
 
-    // Get subscription
-    const [sub] = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.tenantId, tenantId))
-      .orderBy(sql`${subscriptions.createdAt} desc`)
-      .limit(1);
+    // Get subscription (table may not exist if billing schema not migrated)
+    let sub = null;
+    try {
+      const [row] = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.tenantId, tenantId))
+        .orderBy(sql`${subscriptions.createdAt} desc`)
+        .limit(1);
+      sub = row || null;
+    } catch {
+      // Billing table doesn't exist yet — that's OK
+    }
 
     return Response.json({
       plan: tenant?.plan ?? "trial",
