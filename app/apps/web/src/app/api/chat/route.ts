@@ -257,10 +257,15 @@ export async function POST(req: Request) {
 
 ## Rules:
 - ALWAYS use real data from the CRM. Never make up company names, contact details, or statistics.
-- When citing data, reference the specific record (e.g., "Sarah Chen at Acme Corp").
+- When citing data, ALWAYS include a clickable link to the source record using this format:
+  - Contacts: [Name](/contacts/{id})
+  - Accounts: [Name](/accounts/{id})
+  - Deals: [Name](/opportunities/{id})
+  Example: "According to your last email with [Sarah Chen](/contacts/abc-123), she mentioned..."
 - If the CRM is empty, acknowledge it and guide the user to populate it (import CSV, connect Gmail, or build TAM).
 - If data is missing or incomplete, say so honestly. Never hallucinate details.
 - When the user asks about records you can see in the snapshot below, answer directly. For deeper searches, use the searchCRM tool.
+- When answering questions about timing ("when did I last...", "how long since..."), use the queryActivities tool to get exact dates.
 - Respond in the same language as the user's message.
 ${crmSnapshot}${ragContext}${entityContext}`;
 
