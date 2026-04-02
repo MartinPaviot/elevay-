@@ -189,3 +189,64 @@ Score: 26 ✅ / 21 🟡 / 24 ❌ across 4 categories
 - CI/CD pipeline
 - Load testing
 - pgvector HNSW index
+
+---
+
+BROWSER-COMPLETE (2026-04-02)
+
+Score: 13.5 ✅ / 57.5 ❌ across 6 categories (19%)
+
+## BROWSER Category Scores
+
+| Category | Items | ✅ | ❌ | Score |
+|----------|-------|----|----|-------|
+| 6: UX/UI | 23 | 9 | 14 | 39% |
+| 7: Onboarding | 8 | 0 | 8 | 0% |
+| 8: Customer Memory | 12 | 0.5 | 11.5 | 4% |
+| 9: Coaching | 6 | 0 | 6 | 0% |
+| 10: Chat & AI | 20 | 4 | 16 | 20% |
+| 21: Founder Sanity | 11 | 0 | 11 | 0% |
+| **TOTAL** | **80** | **13.5** | **66.5** | **17%** |
+
+## Critical Findings
+
+### 1. Chat data pipeline is broken (Cat 10)
+Chat shows "Analyzed data" tag but responds "I don't have access to your CRM data."
+The RAG/data retrieval pipeline fails silently. Chat should at minimum return "0 accounts."
+**Impact:** Blocks ALL chat & AI features. P0 fix.
+
+### 2. No autonomous onboarding (Cat 7)
+User signs in to completely empty product. No auto-TAM, no auto-enrichment,
+no email sync triggered, no guided onboarding wizard. Monaco builds TAM on Day 1.
+**Impact:** Product fails its core value prop "autonomous GTM engine." P0 to build.
+
+### 3. Customer memory has infrastructure but no wiring (Cat 8)
+Gmail OAuth scopes configured. Email/Calendar sync APIs exist.
+But nothing triggers automatically after OAuth connection.
+**Impact:** Manual-only product. Lightfield captures everything automatically.
+
+### 4. UX is decent but needs polish (Cat 6)
+Dark mode works. Design system is consistent. Empty states are helpful.
+But: sidebar clips at bottom, page titles are generic, no table sorting,
+form validation untested, WCAG compliance not audited.
+**Impact:** Looks like 70% of a $99/mo product, not 100%.
+
+## API Keys Status
+
+| Service | Status |
+|---------|--------|
+| Resend | ✅ API key obtained, domain needs DNS verification |
+| Google Calendar | ✅ Scopes already in auth.ts (calendar.readonly) |
+| Microsoft/Azure | 🟡 BLOCKED — MS blocked signup, Martin must register manually |
+| Slack | 🟡 BLOCKED — reCAPTCHA image challenge |
+| Recall.AI | 🟡 PENDING — account created, verification email not arriving |
+
+## Priority Fix Order
+
+1. Fix chat data pipeline (P0 — makes chat usable)
+2. Wire email/calendar sync to auto-trigger after Gmail OAuth (P0 — enables data capture)
+3. Build auto-TAM on signup (P1 — core onboarding)
+4. Add signup flow (P1 — currently login-only)
+5. Fix sidebar bottom clipping (P2 — cosmetic)
+6. Add contextual page titles (P2 — cosmetic)
+7. Add table sorting/filtering (P2 — usability)
