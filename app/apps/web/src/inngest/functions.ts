@@ -7,13 +7,13 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { embedEntity, companyToText, contactToText } from "@/lib/embeddings";
-
-const enrichmentSchema = z.object({
-  industry: z.string().describe("Primary industry (e.g. Fintech, SaaS, AI/ML, Healthcare)"),
-  description: z.string().describe("1-2 sentence company description"),
-  size: z.string().describe("Employee count range (e.g. 1-10, 11-50, 51-200, 201-500, 501-1000, 1000+)"),
-  revenue: z.string().describe("Estimated annual revenue range (e.g. <$1M, $1M-$10M, $10M-$50M, $50M-$100M, $100M+)"),
-});
+import {
+  enrichOrganization,
+  enrichPerson,
+  employeeCountToRange,
+  revenueToRange,
+  isApolloAvailable,
+} from "@/lib/apollo-client";
 
 function getLLMModel() {
   if (process.env.ANTHROPIC_API_KEY) return anthropic("claude-sonnet-4-20250514");
@@ -21,7 +21,7 @@ function getLLMModel() {
   return null;
 }
 
-// Enrich a company after creation
+// Enrich a company after creation — uses Apollo API only, no LLM fallback
 export const enrichCompany = inngest.createFunction(
   {
     id: "enrich-company",
@@ -34,11 +34,6 @@ export const enrichCompany = inngest.createFunction(
       companyId: string;
       tenantId: string;
     };
-
-    const model = getLLMModel();
-    if (!model) {
-      return { companyId, enriched: false, reason: "No LLM API key" };
-    }
 
     const company = await step.run("fetch-company", async () => {
       const [c] = await db
@@ -53,29 +48,73 @@ export const enrichCompany = inngest.createFunction(
       return { companyId, enriched: false, reason: "Company not found" };
     }
 
-    if (company.industry && company.description) {
-      return { companyId, enriched: false, reason: "Already enriched" };
+    const props = (company.properties || {}) as Record<string, unknown>;
+    if (props.enrichment_source === "apollo" && company.industry && company.description) {
+      return { companyId, enriched: false, reason: "Already enriched from Apollo" };
     }
 
-    const enrichment = await step.run("enrich-from-llm", async () => {
-      const { object } = await generateObject({
-        model: model!,
-        schema: enrichmentSchema,
-        prompt: `Research the company "${company.name}"${company.domain ? ` (domain: ${company.domain})` : ""}.
-Provide accurate firmographic data. If you're not sure about exact numbers, give your best estimate based on what you know.
-If you don't recognize the company, provide reasonable estimates based on the name and domain.`,
-      });
-      return object;
+    if (!isApolloAvailable()) {
+      return { companyId, enriched: false, reason: "Apollo API key not configured" };
+    }
+
+    if (!company.domain) {
+      return { companyId, enriched: false, reason: "No domain — cannot enrich without domain" };
+    }
+
+    const org = await step.run("enrich-from-apollo", async () => {
+      try {
+        return await enrichOrganization(company.domain!);
+      } catch (err) {
+        console.warn(`Apollo enrichment failed for ${company.domain}:`, err);
+        return null;
+      }
     });
+
+    if (!org) {
+      await step.run("mark-unenriched", async () => {
+        await db
+          .update(companies)
+          .set({
+            properties: {
+              ...props,
+              enrichment_source: "unavailable",
+              enrichment_attempted_at: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(companies.id, companyId));
+      });
+      return { companyId, enriched: false, reason: "Apollo returned no data" };
+    }
 
     await step.run("update-company", async () => {
       await db
         .update(companies)
         .set({
-          industry: enrichment.industry,
-          description: enrichment.description,
-          size: enrichment.size,
-          revenue: enrichment.revenue,
+          industry: org.industry || company.industry,
+          description: org.description || company.description,
+          size: employeeCountToRange(org.estimated_num_employees),
+          revenue: revenueToRange(org.annual_revenue),
+          properties: {
+            ...props,
+            enrichment_source: "apollo",
+            apollo_id: org.id,
+            linkedin_url: org.linkedin_url,
+            website_url: org.website_url,
+            founded_year: org.founded_year,
+            technologies: org.technology_names,
+            total_funding: org.total_funding,
+            total_funding_printed: org.total_funding_printed,
+            latest_funding_stage: org.latest_funding_stage,
+            employee_count: org.estimated_num_employees,
+            annual_revenue: org.annual_revenue,
+            annual_revenue_printed: org.annual_revenue_printed,
+            city: org.city,
+            state: org.state,
+            country: org.country,
+            keywords: org.keywords,
+            enriched_at: new Date().toISOString(),
+          },
           updatedAt: new Date(),
         })
         .where(eq(companies.id, companyId));
@@ -85,30 +124,21 @@ If you don't recognize the company, provide reasonable estimates based on the na
       const text = companyToText({
         name: company.name,
         domain: company.domain,
-        industry: enrichment.industry,
-        revenue: enrichment.revenue,
-        size: enrichment.size,
-        description: enrichment.description,
+        industry: org.industry,
+        revenue: revenueToRange(org.annual_revenue),
+        size: employeeCountToRange(org.estimated_num_employees),
+        description: org.description,
       });
       if (text && process.env.OPENAI_API_KEY) {
         await embedEntity("default", "company", companyId, text);
       }
     });
 
-    return { companyId, enriched: true };
+    return { companyId, enriched: true, source: "apollo" };
   }
 );
 
-const contactEnrichmentSchema = z.object({
-  title: z.string().describe("Job title"),
-  seniority: z.string().describe("Seniority: C-Suite, VP, Director, Manager, IC, Unknown"),
-  department: z.string().describe("Department: Engineering, Sales, Marketing, Product, Operations, Finance, HR, Other"),
-  linkedinUrl: z.string().nullable().describe("LinkedIn URL if identifiable, null otherwise"),
-  phone: z.string().nullable().describe("Phone if known, null otherwise"),
-  companyName: z.string().nullable().describe("Company name if identifiable"),
-});
-
-// Enrich a contact after creation
+// Enrich a contact after creation — uses Apollo API only, no LLM fallback
 export const enrichContact = inngest.createFunction(
   {
     id: "enrich-contact",
@@ -118,11 +148,6 @@ export const enrichContact = inngest.createFunction(
   },
   async ({ event, step }: { event: { data: { contactId: string; tenantId: string } }; step: any }) => {
     const { contactId } = event.data;
-
-    const model = getLLMModel();
-    if (!model) {
-      return { contactId, enriched: false, reason: "No LLM API key" };
-    }
 
     const contact = await step.run("fetch-contact", async () => {
       const [c] = await db
@@ -137,48 +162,80 @@ export const enrichContact = inngest.createFunction(
       return { contactId, enriched: false, reason: "Contact not found" };
     }
 
-    const props = contact.properties as Record<string, unknown> | null;
-    if (contact.title && (contact.linkedinUrl || props?.seniority)) {
-      return { contactId, enriched: false, reason: "Already enriched" };
+    const props = (contact.properties || {}) as Record<string, unknown>;
+    if (props.enrichment_source === "apollo" && contact.title) {
+      return { contactId, enriched: false, reason: "Already enriched from Apollo" };
     }
 
-    const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+    if (!isApolloAvailable()) {
+      return { contactId, enriched: false, reason: "Apollo API key not configured" };
+    }
 
-    const enrichment = await step.run("enrich-from-llm", async () => {
-      const { object } = await generateObject({
-        model: model!,
-        schema: contactEnrichmentSchema,
-        prompt: `Research this professional contact and provide their details.
-Name: ${name || "Unknown"}
-Email: ${contact.email || "unknown"}
-Provide accurate professional data.`,
-      });
-      return object;
+    const person = await step.run("enrich-from-apollo", async () => {
+      try {
+        const domain = contact.email?.split("@")[1];
+        return await enrichPerson({
+          email: contact.email || undefined,
+          first_name: contact.firstName || undefined,
+          last_name: contact.lastName || undefined,
+          domain: domain || undefined,
+        });
+      } catch (err) {
+        console.warn(`Apollo contact enrichment failed for ${contact.email}:`, err);
+        return null;
+      }
     });
+
+    if (!person) {
+      await step.run("mark-unenriched", async () => {
+        await db
+          .update(contacts)
+          .set({
+            properties: {
+              ...props,
+              enrichment_source: "unavailable",
+              enrichment_attempted_at: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(contacts.id, contactId));
+      });
+      return { contactId, enriched: false, reason: "Apollo returned no data" };
+    }
 
     await step.run("update-contact", async () => {
       let companyId = contact.companyId;
-      if (!companyId && enrichment.companyName) {
+      if (!companyId && person.organization?.name) {
         const [existing] = await db
           .select()
           .from(companies)
-          .where(eq(companies.name, enrichment.companyName))
+          .where(eq(companies.name, person.organization.name))
           .limit(1);
         if (existing) companyId = existing.id;
       }
 
+      const phone = person.phone_numbers?.[0]?.raw_number || contact.phone;
+
       await db
         .update(contacts)
         .set({
-          title: enrichment.title || contact.title,
-          linkedinUrl: enrichment.linkedinUrl || contact.linkedinUrl,
-          phone: enrichment.phone || contact.phone,
+          title: person.title || contact.title,
+          linkedinUrl: person.linkedin_url || contact.linkedinUrl,
+          phone: phone,
           companyId: companyId || contact.companyId,
           properties: {
-            ...(props || {}),
-            seniority: enrichment.seniority,
-            department: enrichment.department,
-            enrichedCompanyName: enrichment.companyName,
+            ...props,
+            enrichment_source: "apollo",
+            apollo_id: person.id,
+            seniority: person.seniority,
+            departments: person.departments,
+            email_status: person.email_status,
+            headline: person.headline,
+            city: person.city,
+            state: person.state,
+            country: person.country,
+            organization_name: person.organization?.name,
+            enriched_at: new Date().toISOString(),
           },
           updatedAt: new Date(),
         })
@@ -189,17 +246,17 @@ Provide accurate professional data.`,
       const text = contactToText({
         firstName: contact.firstName,
         lastName: contact.lastName,
-        title: enrichment.title,
+        title: person.title,
         email: contact.email,
-        phone: enrichment.phone,
-        companyName: enrichment.companyName,
+        phone: person.phone_numbers?.[0]?.raw_number,
+        companyName: person.organization?.name,
       });
       if (text && process.env.OPENAI_API_KEY) {
         await embedEntity("default", "contact", contactId, text);
       }
     });
 
-    return { contactId, enriched: true };
+    return { contactId, enriched: true, source: "apollo" };
   }
 );
 

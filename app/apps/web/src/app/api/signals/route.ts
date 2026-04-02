@@ -1,7 +1,7 @@
-import { auth } from "@/auth";
+import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { companies } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { generateObject } from "ai";
@@ -21,8 +21,8 @@ const signalInterpretationSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
+  const authCtx = await getAuthContext();
+  if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
         const [company] = await db
           .select()
           .from(companies)
-          .where(eq(companies.id, id))
+          .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId)))
           .limit(1);
 
         if (!company) continue;
@@ -79,6 +79,11 @@ export async function POST(req: Request) {
 
         if (facts.length === 0) {
           // No enrichment data — can't generate meaningful signals
+          continue;
+        }
+
+        // Only generate signals from Apollo-verified data — not from LLM fallback
+        if (props.enrichment_source !== "apollo") {
           continue;
         }
 
@@ -115,7 +120,7 @@ Return only signals you can directly support with the facts provided.`,
             },
             updatedAt: new Date(),
           })
-          .where(eq(companies.id, id));
+          .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId)));
 
         if (object.signals.length > 0) detected++;
         totalSignals += object.signals.length;

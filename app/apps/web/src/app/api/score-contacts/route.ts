@@ -1,32 +1,118 @@
 import { auth } from "@/auth";
 import { db } from "@/db";
-import { contacts, companies } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
-import { openai } from "@ai-sdk/openai";
-import { generateObject } from "ai";
-import { z } from "zod";
+import { contacts, companies, activities } from "@/db/schema";
+import { eq, and, gte, sql } from "drizzle-orm";
 
-const contactScoreSchema = z.object({
-  score: z.number().min(0).max(100).describe("Contact priority score 0-100"),
-  reasons: z.array(z.string()).describe("2-3 reasons for the score"),
-  grade: z.enum(["A", "B", "C", "D", "F"]).describe("Letter grade"),
-});
+// Rule-based contact scoring — no LLM, uses real data signals
+function calculateContactFitScore(
+  contact: Record<string, unknown>,
+  props: Record<string, unknown>,
+  company: Record<string, unknown> | null,
+  companyProps: Record<string, unknown> | null
+): { score: number; reasons: string[]; grade: string } {
+  let score = 0;
+  const reasons: string[] = [];
+
+  // Seniority scoring (0-30)
+  const seniority = (props?.seniority as string)?.toLowerCase() || "";
+  if (seniority.includes("c-suite") || seniority.includes("founder") || seniority.includes("owner")) {
+    score += 30;
+    reasons.push(`Decision maker: ${seniority}`);
+  } else if (seniority.includes("vp") || seniority.includes("vice president")) {
+    score += 25;
+    reasons.push(`Senior leader: ${seniority}`);
+  } else if (seniority.includes("director")) {
+    score += 20;
+    reasons.push(`Director level: ${seniority}`);
+  } else if (seniority.includes("manager") || seniority.includes("head")) {
+    score += 15;
+    reasons.push(`Manager level: ${seniority}`);
+  } else if (seniority.includes("senior") || seniority.includes("lead")) {
+    score += 10;
+  } else if (seniority) {
+    score += 5;
+  }
+
+  // Title keyword scoring (0-10)
+  const title = ((contact.title as string) || "").toLowerCase();
+  const highValueTitles = ["ceo", "cto", "cfo", "coo", "cro", "cmo", "founder", "president", "partner"];
+  if (highValueTitles.some((t) => title.includes(t))) {
+    score += 10;
+    if (!reasons.some((r) => r.includes("Decision maker"))) {
+      reasons.push(`High-value title: ${contact.title}`);
+    }
+  }
+
+  // Department relevance (0-15) — scoring higher for buying departments
+  const department = ((props?.department as string) || (props?.departments as string[])?.join(", ") || "").toLowerCase();
+  const buyingDepartments = ["engineering", "product", "technology", "it", "operations"];
+  const influencerDepartments = ["marketing", "sales", "business development", "growth"];
+  if (buyingDepartments.some((d) => department.includes(d))) {
+    score += 15;
+    reasons.push(`Buying department: ${department}`);
+  } else if (influencerDepartments.some((d) => department.includes(d))) {
+    score += 10;
+    reasons.push(`Influencer department: ${department}`);
+  } else if (department) {
+    score += 3;
+  }
+
+  // Email verification status (0-10)
+  const emailStatus = props?.email_status as string;
+  if (emailStatus === "verified") {
+    score += 10;
+    reasons.push("Email verified");
+  } else if (emailStatus === "likely") {
+    score += 5;
+  }
+
+  // Has LinkedIn profile (0-5)
+  if (contact.linkedinUrl) {
+    score += 5;
+  }
+
+  // Has phone (0-5)
+  if (contact.phone) {
+    score += 5;
+  }
+
+  // Enrichment source quality (0-5)
+  if (props?.enrichment_source === "apollo") {
+    score += 5;
+    reasons.push("Verified by Apollo enrichment");
+  }
+
+  // Company score contribution (0-20)
+  if (company) {
+    const companyScore = company.score as number | null;
+    if (companyScore && companyScore >= 60) {
+      score += 20;
+      reasons.push(`High-scoring company: ${company.name} (${companyScore})`);
+    } else if (companyScore && companyScore >= 40) {
+      score += 10;
+    } else if (companyScore && companyScore >= 20) {
+      score += 5;
+    }
+  }
+
+  // Cap at 100
+  score = Math.min(100, score);
+
+  // Grade
+  let grade: string;
+  if (score >= 80) grade = "A";
+  else if (score >= 60) grade = "B";
+  else if (score >= 40) grade = "C";
+  else if (score >= 20) grade = "D";
+  else grade = "F";
+
+  return { score, reasons, grade };
+}
 
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const model = process.env.ANTHROPIC_API_KEY
-    ? anthropic("claude-sonnet-4-20250514")
-    : process.env.OPENAI_API_KEY
-      ? openai("gpt-4o-mini")
-      : null;
-
-  if (!model) {
-    return Response.json({ error: "No LLM API key configured" }, { status: 500 });
   }
 
   try {
@@ -49,43 +135,76 @@ export async function POST(req: Request) {
 
         if (!contact) continue;
 
+        const props = (contact.properties || {}) as Record<string, unknown>;
+
         // Get company info if available
-        let companyInfo = "";
+        let company: Record<string, unknown> | null = null;
+        let companyProps: Record<string, unknown> | null = null;
         if (contact.companyId) {
-          const [company] = await db
+          const [c] = await db
             .select()
             .from(companies)
             .where(eq(companies.id, contact.companyId))
             .limit(1);
-          if (company) {
-            companyInfo = `Company: ${company.name}, Industry: ${company.industry || "unknown"}, Size: ${company.size || "unknown"}, Score: ${company.score ?? "unscored"}`;
+          if (c) {
+            company = c as Record<string, unknown>;
+            companyProps = (c.properties || {}) as Record<string, unknown>;
           }
         }
 
-        const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-        const props = contact.properties as Record<string, unknown> | null;
+        // Calculate engagement boost from activities
+        let engagementBoost = 0;
+        const engagementReasons: string[] = [];
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const { object } = await generateObject({
-          model,
-          schema: contactScoreSchema,
-          prompt: `Score this contact as a sales prospect on a scale of 0-100.
+        const [activityCount] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(activities)
+          .where(
+            and(
+              eq(activities.entityType, "contact"),
+              eq(activities.entityId, id),
+              gte(activities.occurredAt, thirtyDaysAgo)
+            )
+          );
 
-Name: ${name || "unknown"}
-Title: ${contact.title || "unknown"}
-Email: ${contact.email || "unknown"}
-Seniority: ${(props?.seniority as string) || "unknown"}
-Department: ${(props?.department as string) || "unknown"}
-${companyInfo}
+        const recentActivities = Number(activityCount?.count || 0);
+        if (recentActivities > 5) {
+          engagementBoost = 10;
+          engagementReasons.push(`${recentActivities} recent interactions`);
+        } else if (recentActivities > 0) {
+          engagementBoost = 5;
+        }
 
-Score higher for: decision makers (C-Suite, VP, Director), relevant departments (Engineering, Product for B2B SaaS), contacts at high-scoring companies.
-Score lower for: junior roles, irrelevant departments, no company association.`,
-        });
+        const fit = calculateContactFitScore(
+          contact as Record<string, unknown>,
+          props,
+          company,
+          companyProps
+        );
+
+        const totalScore = Math.min(100, fit.score + engagementBoost);
+        const allReasons = [...fit.reasons, ...engagementReasons];
+
+        // Re-calculate grade with engagement
+        let grade = fit.grade;
+        if (totalScore >= 80) grade = "A";
+        else if (totalScore >= 60) grade = "B";
+        else if (totalScore >= 40) grade = "C";
+        else if (totalScore >= 20) grade = "D";
 
         await db
           .update(contacts)
           .set({
-            score: object.score,
-            scoreReasons: object.reasons,
+            score: totalScore,
+            scoreReasons: allReasons,
+            properties: {
+              ...props,
+              score_grade: grade,
+              scored_at: new Date().toISOString(),
+              scoring_method: "rule_based",
+            },
             updatedAt: new Date(),
           })
           .where(eq(contacts.id, id));

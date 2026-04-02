@@ -117,55 +117,25 @@ export async function POST(req: Request) {
           }
         }
 
-        // LLM fallback — only if Apollo didn't work
-        const model = process.env.ANTHROPIC_API_KEY
-          ? anthropic("claude-sonnet-4-20250514")
-          : process.env.OPENAI_API_KEY
-            ? openai("gpt-4o-mini")
-            : null;
-
-        if (!model) {
-          failed++;
-          continue;
-        }
-
-        const { object } = await generateObject({
-          model,
-          schema: llmFallbackSchema,
-          prompt: `Research the company "${company.name}"${company.domain ? ` (domain: ${company.domain})` : ""}.
-Provide accurate firmographic data. If you're not sure about exact numbers, give your best estimate based on what you know.
-If you don't recognize the company, provide reasonable estimates based on the name and domain.`,
-        });
-
+        // No LLM fallback — mark as unavailable instead of hallucinating
         await db
           .update(companies)
           .set({
-            industry: object.industry,
-            description: object.description,
-            size: object.size,
-            revenue: object.revenue,
             properties: {
               ...props,
-              enrichment_source: "llm_fallback",
-              enriched_at: new Date().toISOString(),
+              enrichment_source: "unavailable",
+              enrichment_attempted_at: new Date().toISOString(),
+              enrichment_error: !isApolloAvailable()
+                ? "Apollo API key not configured"
+                : !company.domain
+                  ? "No domain available"
+                  : "Apollo returned no data",
             },
             updatedAt: new Date(),
           })
           .where(eq(companies.id, id));
 
-        const text = companyToText({
-          name: company.name,
-          domain: company.domain,
-          industry: object.industry,
-          revenue: object.revenue,
-          size: object.size,
-          description: object.description,
-        });
-        if (text && process.env.OPENAI_API_KEY) {
-          await embedEntity("default", "company", id, text).catch(console.warn);
-        }
-
-        enriched++;
+        failed++;
       } catch (err) {
         console.warn(`Failed to enrich company ${id}:`, err);
         failed++;

@@ -131,76 +131,23 @@ export async function POST(req: Request) {
           }
         }
 
-        // LLM fallback
-        const model = process.env.ANTHROPIC_API_KEY
-          ? anthropic("claude-sonnet-4-20250514")
-          : process.env.OPENAI_API_KEY
-            ? openai("gpt-4o-mini")
-            : null;
-
-        if (!model) {
-          failed++;
-          continue;
-        }
-
-        const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-
-        const { object } = await generateObject({
-          model,
-          schema: llmFallbackSchema,
-          prompt: `Research this professional contact and provide their details.
-
-Name: ${name || "Unknown"}
-Email: ${contact.email || "unknown"}
-
-Provide accurate professional data. If you can infer the company from the email domain, do so.
-If you're not sure about exact details, give your best estimate. Set nullable fields to null if unknown.`,
-        });
-
-        let companyId = contact.companyId;
-        if (!companyId && object.companyName) {
-          const [existingCompany] = await db
-            .select()
-            .from(companies)
-            .where(eq(companies.name, object.companyName))
-            .limit(1);
-          if (existingCompany) {
-            companyId = existingCompany.id;
-          }
-        }
-
+        // No LLM fallback — mark as unavailable instead of hallucinating
         await db
           .update(contacts)
           .set({
-            title: object.title || contact.title,
-            linkedinUrl: object.linkedinUrl || contact.linkedinUrl,
-            phone: object.phone || contact.phone,
-            companyId: companyId || contact.companyId,
             properties: {
               ...props,
-              enrichment_source: "llm_fallback",
-              seniority: object.seniority,
-              department: object.department,
-              enrichedCompanyName: object.companyName,
-              enriched_at: new Date().toISOString(),
+              enrichment_source: "unavailable",
+              enrichment_attempted_at: new Date().toISOString(),
+              enrichment_error: !isApolloAvailable()
+                ? "Apollo API key not configured"
+                : "Apollo returned no data for this contact",
             },
             updatedAt: new Date(),
           })
           .where(eq(contacts.id, id));
 
-        const text = contactToText({
-          firstName: contact.firstName,
-          lastName: contact.lastName,
-          title: object.title,
-          email: contact.email,
-          phone: object.phone,
-          companyName: object.companyName,
-        });
-        if (text && process.env.OPENAI_API_KEY) {
-          await embedEntity("default", "contact", id, text).catch(console.warn);
-        }
-
-        enriched++;
+        failed++;
       } catch (err) {
         console.warn(`Failed to enrich contact ${id}:`, err);
         failed++;

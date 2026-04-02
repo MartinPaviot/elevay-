@@ -179,66 +179,11 @@ If no location is mentioned, return an empty array.`,
       }
     }
 
-    // LLM fallback — generates company names that may exist but aren't verified
-    const model = process.env.ANTHROPIC_API_KEY
-      ? anthropic("claude-sonnet-4-20250514")
-      : process.env.OPENAI_API_KEY
-        ? openai("gpt-4o-mini")
-        : null;
-
-    if (!model) {
-      return Response.json({ error: "No LLM or Apollo API configured" }, { status: 500 });
-    }
-
-    const { object } = await generateObject({
-      model,
-      schema: llmFallbackSchema,
-      prompt: `You are a B2B sales intelligence system. Generate a list of 30 REAL companies that match this Ideal Customer Profile (ICP):
-
-"${icp.trim()}"
-
-Requirements:
-- Generate REAL companies that actually exist, not fictional ones
-- Include a mix of well-known and lesser-known companies
-- Each company should genuinely match the ICP criteria
-- Provide accurate firmographic data based on what you know
-- Do NOT include these companies: ${Array.from(existingNames).slice(0, 50).join(", ")}`,
-    });
-
-    for (const company of object.companies) {
-      if (existingNames.has(company.name.toLowerCase())) {
-        skipped++;
-        continue;
-      }
-      try {
-        await db.insert(companies).values({
-          name: company.name,
-          domain: company.domain,
-          industry: company.industry,
-          size: company.size,
-          revenue: company.revenue,
-          description: company.description,
-          tenantId: "default",
-          properties: {
-            source: "tam",
-            enrichment_source: "llm_fallback",
-            whyItFits: company.whyItFits,
-            icpUsed: icp.trim(),
-          },
-        });
-        existingNames.add(company.name.toLowerCase());
-        created++;
-      } catch {
-        skipped++;
-      }
-    }
-
+    // No LLM fallback for TAM — Apollo is required to ensure real companies
     return Response.json({
-      success: true,
-      source: "llm_fallback",
-      companiesCreated: created,
-      companiesSkipped: skipped,
-    });
+      error: "Apollo API key required for TAM building. LLM-generated company lists are not reliable.",
+      suggestion: "Configure APOLLO_API_KEY in environment variables to enable TAM building with verified company data.",
+    }, { status: 503 });
   } catch (error) {
     console.error("TAM generation failed:", error);
     return Response.json({ error: "TAM generation failed" }, { status: 500 });
