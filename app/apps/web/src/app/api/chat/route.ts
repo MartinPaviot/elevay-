@@ -593,7 +593,7 @@ ${crmSnapshot}${ragContext}${entityContext}`;
       execute: async (input) => {
         const [created] = await db.insert(tasks).values({
           tenantId,
-          assigneeId: authCtx.userId,
+          assigneeId: authCtx.appUserId,
           title: input.title,
           description: input.description,
           dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
@@ -627,7 +627,7 @@ ${crmSnapshot}${ragContext}${entityContext}`;
         await db.insert(activities).values({
           tenantId,
           actorType: "user",
-          actorId: authCtx.userId,
+          actorId: authCtx.appUserId,
           entityType: "deal",
           entityId: input.dealId,
           activityType: input.newStage === "won" ? "deal_won" : input.newStage === "lost" ? "deal_lost" : "deal_stage_changed",

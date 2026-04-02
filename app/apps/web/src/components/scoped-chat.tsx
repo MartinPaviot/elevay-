@@ -16,6 +16,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
   const chat = useChat({
     transport: new TextStreamChatTransport({
       api: "/api/chat",
+      credentials: "include",
       body: { contextType, contextId },
     }),
   });

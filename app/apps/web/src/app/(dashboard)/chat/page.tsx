@@ -18,7 +18,10 @@ export default function ChatPage() {
   const [threadLoaded, setThreadLoaded] = useState(!searchParams.get("thread"));
 
   const chat = useChat({
-    transport: new TextStreamChatTransport({ api: "/api/chat" }),
+    transport: new TextStreamChatTransport({
+      api: "/api/chat",
+      credentials: "include",
+    }),
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
