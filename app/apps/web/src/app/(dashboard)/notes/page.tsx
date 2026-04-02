@@ -1,22 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FileText, Plus } from "lucide-react";
 
 interface Note {
   id: string;
+  title: string | null;
   content: string;
+  entityType: string | null;
+  entityId: string | null;
   createdAt: string;
 }
 
 export default function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  function addNote() {
+  const fetchNotes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notes");
+      if (res.ok) {
+        const data = await res.json();
+        setNotes(data.notes || []);
+      }
+    } catch { /* */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchNotes(); }, [fetchNotes]);
+
+  async function addNote() {
     if (!newNote.trim()) return;
-    setNotes([{ id: crypto.randomUUID(), content: newNote.trim(), createdAt: new Date().toISOString() }, ...notes]);
-    setNewNote("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newNote.trim() }),
+      });
+      if (res.ok) {
+        setNewNote("");
+        fetchNotes();
+      }
+    } catch { /* */ }
+    finally { setSaving(false); }
   }
 
   return (
@@ -47,16 +76,20 @@ export default function NotesPage() {
           style={{ background: "var(--color-bg-surface)", border: "0.5px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
         />
         {newNote.trim() && (
-          <button onClick={addNote} className="mt-1.5 rounded-md px-3 py-1 text-[12px] font-medium text-white"
+          <button onClick={addNote} disabled={saving} className="mt-1.5 rounded-md px-3 py-1 text-[12px] font-medium text-white disabled:opacity-40"
             style={{ background: "var(--color-accent)" }}>
-            Save note
+            {saving ? "Saving..." : "Save note"}
           </button>
         )}
       </div>
 
       {/* Notes list */}
       <div className="flex-1 overflow-auto">
-        {notes.length === 0 ? (
+        {loading ? (
+          <div className="space-y-1 p-6">
+            {[1, 2, 3].map((i) => <div key={i} className="skeleton h-16 rounded-md" />)}
+          </div>
+        ) : notes.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <FileText size={32} style={{ color: "var(--color-text-muted)" }} />
             <p className="mt-3 text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>No notes yet</p>
