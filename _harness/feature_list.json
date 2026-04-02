@@ -470,7 +470,7 @@
     "name": "Per-signal reasoning with citations",
     "area": "Prospecting",
     "milestone": "M8",
-    "description": "Click any signal value → popover with Reasoning tab (AI explanation) + Sources tab (URLs with favicons)",
+    "description": "Click any signal value \u00e2\u2020\u2019 popover with Reasoning tab (AI explanation) + Sources tab (URLs with favicons)",
     "dependencies": [
       "F3.5"
     ],
@@ -773,7 +773,7 @@
     "name": "Score visualization upgrade",
     "area": "Prospecting",
     "milestone": "M11",
-    "description": "Replace numeric scores with letter grades (A-F) + fire emoji + heat label (Burning/Warm/Cool/Cold). Map: 90+→A, 75+→B, 60+→C, below→D",
+    "description": "Replace numeric scores with letter grades (A-F) + fire emoji + heat label (Burning/Warm/Cool/Cold). Map: 90+\u00e2\u2020\u2019A, 75+\u00e2\u2020\u2019B, 60+\u00e2\u2020\u2019C, below\u00e2\u2020\u2019D",
     "dependencies": [
       "F3.4"
     ],
@@ -838,7 +838,7 @@
     "name": "Slide-over detail panels",
     "area": "UI Polish",
     "milestone": "M11",
-    "description": "Click row in list → 400px slide-over panel from right with entity details, properties, related records. Close/expand buttons. Lightfield pattern",
+    "description": "Click row in list \u00e2\u2020\u2019 400px slide-over panel from right with entity details, properties, related records. Close/expand buttons. Lightfield pattern",
     "dependencies": [
       "F1.3"
     ],
@@ -864,7 +864,7 @@
     "name": "Notification 3-channel system",
     "area": "Settings",
     "milestone": "M12",
-    "description": "6 notification types × 3 channels (Slack/Email/In-app) with per-type toggles and timing config for task reminders",
+    "description": "6 notification types \u00c3\u2014 3 channels (Slack/Email/In-app) with per-type toggles and timing config for task reminders",
     "dependencies": [
       "F1.5"
     ],
@@ -891,9 +891,11 @@
     "area": "Architecture",
     "milestone": "M13",
     "description": "New custom_field_definitions table + pipeline_stage_definitions table. CRUD settings UI for custom fields per entity (account/contact/deal) with field types (text, date, single_select, multi_select, url, social, address, markdown), AI fill modes (auto/suggest/off), editable-by. Migrate deal_stage enum to configurable stages.",
-    "dependencies": ["F1.3"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "F1.3"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 10
   },
   {
@@ -902,9 +904,11 @@
     "area": "Architecture",
     "milestone": "M13",
     "description": "Refactor entity tables (accounts, contacts, deals) to dynamically render columns from custom_field_definitions + JSONB properties. Include custom fields in filter/sort. Render in detail panels and slide-overs.",
-    "dependencies": ["S1"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "S1"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 9
   },
   {
@@ -913,9 +917,12 @@
     "area": "Architecture",
     "milestone": "M13",
     "description": "AI reads custom_field_definitions with aiFillMode. For 'auto' fields: populate from conversation/enrichment data automatically. For 'suggest' fields: propose values for user confirmation. Per-field AI integration.",
-    "dependencies": ["S1", "F2.6"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "S1",
+      "F2.6"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 9
   },
   {
@@ -924,9 +931,12 @@
     "area": "Memory",
     "milestone": "M13",
     "description": "Measure recall accuracy with 20+ test queries against known data. Fix embedding coverage gaps. Add pgvector index. Verify citation links resolve. Test cross-entity and date-range queries. Target: 90%+ recall on known data.",
-    "dependencies": ["F2.6", "F2.7"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "F2.6",
+      "F2.7"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 10
   },
   {
@@ -935,9 +945,12 @@
     "area": "Memory",
     "milestone": "M13",
     "description": "After email sync, aggregate conversation data per account. AI generates 'Account summary' and 'About their business' fields. Store as system-managed custom fields with AI fill: auto.",
-    "dependencies": ["S1", "F2.1"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "S1",
+      "F2.1"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 8
   },
   {
@@ -946,9 +959,12 @@
     "area": "Memory",
     "milestone": "M13",
     "description": "During email sync, if a new external domain is detected (not in company domain exclusion list), auto-create a company record. Enrich it. Link contacts. Makes conversations a first-class data source.",
-    "dependencies": ["F2.1", "G33"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "F2.1",
+      "G33"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 8
   },
   {
@@ -957,9 +973,12 @@
     "area": "Intelligence",
     "milestone": "M13",
     "description": "Add missing AI tools to chat: createTask (link to entity), updateDealStage (move deal), sendEmail (via connected mailbox with approval), bulkUpdateDeals, bulkDraftEmails. Wire human-in-the-loop approval for destructive actions.",
-    "dependencies": ["F6.1", "F4.4"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "F6.1",
+      "F4.4"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 9
   },
   {
@@ -968,9 +987,11 @@
     "area": "Memory",
     "milestone": "M13",
     "description": "Build F2.2: Google Calendar sync via OAuth. Detect meetings with external participants. Create activity records. Extract participant info. Foundation for meeting intelligence.",
-    "dependencies": ["F2.1"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "F2.1"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 8
   },
   {
@@ -978,10 +999,13 @@
     "name": "Transcript processing + meeting prep + follow-up generation",
     "area": "Intelligence",
     "milestone": "M13",
-    "description": "Minimum viable call intelligence without recording: (1) paste/upload transcript → AI extracts summary, key points, action items, structured data (budget, team size, tools). (2) Meeting prep from account data + history. (3) Post-meeting follow-up email generation from transcript.",
-    "dependencies": ["S8", "F6.1"],
-    "passes": false,
-    "attempts": 0,
+    "description": "Minimum viable call intelligence without recording: (1) paste/upload transcript \u00e2\u2020\u2019 AI extracts summary, key points, action items, structured data (budget, team size, tools). (2) Meeting prep from account data + history. (3) Post-meeting follow-up email generation from transcript.",
+    "dependencies": [
+      "S8",
+      "F6.1"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 8
   },
   {
@@ -990,9 +1014,12 @@
     "area": "Settings",
     "milestone": "M13",
     "description": "Replace hardcoded deal_stage enum with pipeline_stage_definitions table. Settings UI: add/remove/reorder stages, write descriptions that AI reads for auto-progression, AI fill mode per stage, optional custom AI prompt. In Progress vs Done categories.",
-    "dependencies": ["S1", "F5.2"],
-    "passes": false,
-    "attempts": 0,
+    "dependencies": [
+      "S1",
+      "F5.2"
+    ],
+    "passes": true,
+    "attempts": 1,
     "completeness_target": 9
   }
 ]
