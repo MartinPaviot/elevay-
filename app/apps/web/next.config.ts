@@ -1,15 +1,9 @@
 import type { NextConfig } from "next";
-import { join } from "path";
 
 const nextConfig: NextConfig = {
   // Do NOT set output: "standalone" for Vercel — it uses its own build output.
   // standalone is only needed for Docker / self-hosted Node.js deployments.
   poweredByHeader: false,
-
-  // Fix: tell Next.js where the monorepo root is so file tracing works correctly.
-  // Without this, Next.js detects multiple lockfiles and picks the wrong root.
-  // process.cwd() in next.config is always the app root (apps/web/).
-  outputFileTracingRoot: join(process.cwd(), "../../"),
 
   async headers() {
     return [
