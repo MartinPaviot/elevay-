@@ -1,0 +1,165 @@
+import { db } from "@/db";
+import { activities, deals, notifications, tenants, contacts, companies, users } from "@/db/schema";
+import { eq, and, desc, sql, or, ne } from "drizzle-orm";
+
+/**
+ * Stale Deal Detection — finds deals with no recent activity
+ * that had positive signals, and creates notifications.
+ *
+ * Run as cron every 24h or on-demand.
+ */
+export async function GET(req: Request) {
+  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (secret !== process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const allTenants = await db.select({ id: tenants.id }).from(tenants);
+    const results = [];
+
+    for (const tenant of allTenants) {
+      const result = await detectStaleDealsByTenant(tenant.id);
+      results.push({ tenantId: tenant.id, ...result });
+    }
+
+    return Response.json({ success: true, results });
+  } catch (error) {
+    return Response.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+// Also support POST for on-demand trigger with auth
+export async function POST() {
+  const { getAuthContext } = await import("@/lib/auth-utils");
+  const authCtx = await getAuthContext();
+  if (!authCtx) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const result = await detectStaleDealsByTenant(authCtx.tenantId);
+  return Response.json(result);
+}
+
+async function detectStaleDealsByTenant(tenantId: string) {
+  // Get all active deals (not won/lost)
+  const activeDeals = await db.select().from(deals)
+    .where(and(
+      eq(deals.tenantId, tenantId),
+      ne(deals.stage, "won"),
+      ne(deals.stage, "lost"),
+    ));
+
+  if (activeDeals.length === 0) return { staleDeals: 0, notificationsCreated: 0 };
+
+  const staleDeals: Array<{
+    dealId: string;
+    dealName: string;
+    stage: string | null;
+    daysSinceLastActivity: number;
+    lastActivityType: string | null;
+    lastActivityDate: Date | null;
+    companyName: string | null;
+    contactName: string | null;
+  }> = [];
+
+  for (const deal of activeDeals) {
+    // Get last activity for this deal or its related contact
+    const conditions = [
+      eq(activities.tenantId, tenantId),
+      or(
+        and(eq(activities.entityType, "deal"), eq(activities.entityId, deal.id)),
+        ...(deal.contactId ? [and(eq(activities.entityType, "contact"), eq(activities.entityId, deal.contactId))] : []),
+      )!,
+    ];
+
+    const [lastActivity] = await db.select({
+      activityType: activities.activityType,
+      occurredAt: activities.occurredAt,
+    }).from(activities)
+      .where(and(...conditions))
+      .orderBy(desc(activities.occurredAt))
+      .limit(1);
+
+    const lastDate = lastActivity?.occurredAt;
+    const daysSince = lastDate
+      ? Math.floor((Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24))
+      : 999;
+
+    // Stale = no activity for 7+ days in active pipeline stages
+    const staleThreshold = deal.stage === "lead" ? 14 : 7;
+
+    if (daysSince >= staleThreshold) {
+      // Get company and contact names for the notification
+      let companyName: string | null = null;
+      let contactName: string | null = null;
+
+      if (deal.companyId) {
+        const [company] = await db.select({ name: companies.name }).from(companies)
+          .where(eq(companies.id, deal.companyId)).limit(1);
+        companyName = company?.name || null;
+      }
+      if (deal.contactId) {
+        const [contact] = await db.select({ firstName: contacts.firstName, lastName: contacts.lastName })
+          .from(contacts).where(eq(contacts.id, deal.contactId)).limit(1);
+        contactName = contact ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") : null;
+      }
+
+      staleDeals.push({
+        dealId: deal.id,
+        dealName: deal.name,
+        stage: deal.stage,
+        daysSinceLastActivity: daysSince,
+        lastActivityType: lastActivity?.activityType || null,
+        lastActivityDate: lastDate || null,
+        companyName,
+        contactName,
+      });
+    }
+  }
+
+  // Get all users in this tenant for notifications
+  const tenantUsers = await db.select({ id: users.id }).from(users)
+    .where(eq(users.tenantId, tenantId));
+
+  // Create notifications for stale deals
+  let notificationsCreated = 0;
+  for (const staleDeal of staleDeals) {
+    // Check if we already sent a notification for this deal recently (within 3 days)
+    const existingNotification = await db.select({ id: notifications.id, createdAt: notifications.createdAt }).from(notifications)
+      .where(and(
+        eq(notifications.tenantId, tenantId),
+        eq(notifications.type, "deal_risk"),
+        eq(notifications.entityId, staleDeal.dealId),
+      ))
+      .orderBy(desc(notifications.createdAt))
+      .limit(1);
+
+    if (existingNotification.length > 0) {
+      const notifDate = new Date(existingNotification[0].createdAt || 0);
+      const daysSinceNotif = Math.floor((Date.now() - notifDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysSinceNotif < 3) continue; // Already notified recently
+    }
+
+    // Send notification to each user in the tenant
+    for (const user of tenantUsers) {
+      await db.insert(notifications).values({
+        tenantId,
+        userId: user.id,
+        type: "deal_risk",
+        title: `Deal going stale: ${staleDeal.dealName}`,
+        body: `No activity for ${staleDeal.daysSinceLastActivity} days${staleDeal.companyName ? ` with ${staleDeal.companyName}` : ""}. Stage: ${staleDeal.stage || "unknown"}${staleDeal.contactName ? `. Contact: ${staleDeal.contactName}` : ""}.`,
+        entityType: "deal",
+        entityId: staleDeal.dealId,
+      });
+    }
+    notificationsCreated++;
+  }
+
+  return {
+    activeDeals: activeDeals.length,
+    staleDeals: staleDeals.length,
+    notificationsCreated,
+    details: staleDeals,
+  };
+}
