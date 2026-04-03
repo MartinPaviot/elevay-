@@ -25,6 +25,11 @@ export async function POST(req: Request) {
     return Response.json({ error: "csvText is required" }, { status: 400 });
   }
 
+  // File size limit: 5MB
+  if (csvText.length > 5 * 1024 * 1024) {
+    return Response.json({ error: "CSV data too large. Maximum size is 5MB." }, { status: 413 });
+  }
+
   try {
     // Parse CSV headers and sample rows
     const lines = csvText.split("\n").map((l) => l.trim()).filter(Boolean);

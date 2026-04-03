@@ -10,6 +10,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // File size limit: 5MB
+  const MAX_SIZE = 5 * 1024 * 1024;
+  const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+  if (contentLength > MAX_SIZE) {
+    return Response.json(
+      { error: "File too large. Maximum size is 5MB." },
+      { status: 413 }
+    );
+  }
+
   try {
     let csvText: string;
     const contentType = req.headers.get("content-type") || "";
@@ -23,6 +33,12 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
+      if (csvData.length > MAX_SIZE) {
+        return Response.json(
+          { error: "CSV data too large. Maximum size is 5MB." },
+          { status: 413 }
+        );
+      }
       csvText = csvData;
     } else {
       const formData = await req.formData();
@@ -30,6 +46,13 @@ export async function POST(req: Request) {
 
       if (!file) {
         return Response.json({ error: "No file provided" }, { status: 400 });
+      }
+
+      if (file.size > MAX_SIZE) {
+        return Response.json(
+          { error: "File too large. Maximum size is 5MB." },
+          { status: 413 }
+        );
       }
 
       csvText = await file.text();
