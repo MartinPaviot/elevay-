@@ -112,6 +112,72 @@ export default function DealDetailPage() {
           );
         })()}
 
+        {/* Deal Coaching Card — proactive coaching for at-risk or stalled deals */}
+        {(() => {
+          const props = deal.properties as Record<string, unknown> | null;
+          const riskLevel = props?.riskLevel as string | undefined;
+          const risks = (props?.risks as string[]) || [];
+          const nextActions = (props?.nextActions as string[]) || [];
+          const daysSinceActivity = timeline.length > 0
+            ? Math.floor((Date.now() - new Date(timeline[0].occurredAt).getTime()) / 86400000)
+            : null;
+          const isStalled = daysSinceActivity !== null && daysSinceActivity >= 7;
+          const showCoaching = riskLevel === "high" || riskLevel === "medium" || isStalled;
+
+          if (!showCoaching) return null;
+
+          return (
+            <Card className="mt-4" style={{
+              borderLeft: riskLevel === "high" || (daysSinceActivity && daysSinceActivity >= 14)
+                ? "3px solid var(--color-error)"
+                : "3px solid var(--color-warning)",
+            }}>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-semibold">
+                    {riskLevel === "high" ? "⚠️ High Risk" : isStalled ? "⏸️ Stalled" : "⚡ Needs Attention"}
+                  </span>
+                  {daysSinceActivity !== null && (
+                    <Badge variant={daysSinceActivity >= 14 ? "error" : "warning"} size="sm">
+                      {daysSinceActivity}d since last activity
+                    </Badge>
+                  )}
+                </div>
+
+                {risks.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1">Risks</p>
+                    <ul className="space-y-0.5">
+                      {risks.map((r, i) => (
+                        <li key={i} className="text-sm text-[var(--color-text-secondary)] flex items-start gap-1.5">
+                          <span className="text-red-400 mt-0.5 text-xs">●</span> {r}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {nextActions.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1">Suggested Next Steps</p>
+                    <ul className="space-y-0.5">
+                      {nextActions.map((a, i) => (
+                        <li key={i} className="text-sm text-[var(--color-text-secondary)] flex items-start gap-1.5">
+                          <span className="text-blue-400 mt-0.5 text-xs">→</span> {a}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-xs text-[var(--color-text-tertiary)] mt-2">
+                  Ask the chat below for personalized coaching on this deal.
+                </p>
+              </CardBody>
+            </Card>
+          );
+        })()}
+
         {/* G8: Deal Timeline */}
         <div className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">

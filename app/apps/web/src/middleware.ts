@@ -54,6 +54,7 @@ export default auth((req) => {
     "/api/unsubscribe",
     "/api/webhooks",
     "/api/inngest",
+    "/api/track",
   ];
 
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));

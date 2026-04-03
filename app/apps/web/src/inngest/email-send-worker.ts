@@ -15,6 +15,36 @@ const resend = process.env.RESEND_API_KEY
 // Fallback from address using Resend test domain
 const FALLBACK_FROM = "LeadSens <outbound@resend.dev>";
 
+// ── Email tracking ──
+
+/** Inject a 1x1 tracking pixel before </body> */
+function injectTrackingPixel(html: string, emailId: string, appUrl: string): string {
+  const pixelUrl = `${appUrl}/api/track/open?id=${encodeURIComponent(emailId)}`;
+  const pixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none;width:1px;height:1px;" alt="" />`;
+
+  // Insert before </body> if present, otherwise append
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${pixel}</body>`);
+  }
+  return html + pixel;
+}
+
+/** Rewrite links in HTML to go through click tracking redirect */
+function rewriteLinks(html: string, emailId: string, appUrl: string): string {
+  // Match href="https://..." links but skip unsubscribe and tracking links
+  return html.replace(
+    /href="(https?:\/\/[^"]+)"/gi,
+    (match, url: string) => {
+      // Don't rewrite our own tracking/unsubscribe links
+      if (url.includes("/api/track/") || url.includes("/api/unsubscribe")) {
+        return match;
+      }
+      const trackUrl = `${appUrl}/api/track/click?id=${encodeURIComponent(emailId)}&url=${encodeURIComponent(url)}`;
+      return `href="${trackUrl}"`;
+    }
+  );
+}
+
 // CAN-SPAM compliant footer — physical address + unsubscribe link
 function buildComplianceFooter(unsubUrl: string, companyName?: string): string {
   const name = companyName || "LeadSens";
@@ -167,10 +197,14 @@ export const processOutboundEmails = inngest.createFunction(
 
           // CAN-SPAM: append compliance footer to HTML body
           const footer = buildComplianceFooter(unsubUrl);
-          const htmlWithFooter = email.bodyHtml.replace(
+          let processedHtml = email.bodyHtml.replace(
             /<\/body>/i,
             `${footer}</body>`
           ) || `${email.bodyHtml}${footer}`;
+
+          // Inject tracking: open pixel + click redirect links
+          processedHtml = rewriteLinks(processedHtml, email.id, appUrl);
+          processedHtml = injectTrackingPixel(processedHtml, email.id, appUrl);
 
           const textWithFooter = (email.bodyText || "") +
             `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
@@ -179,7 +213,7 @@ export const processOutboundEmails = inngest.createFunction(
             from: fromAddress,
             to: [email.toAddress],
             subject: email.subject,
-            html: htmlWithFooter,
+            html: processedHtml,
             text: textWithFooter,
             headers: {
               "List-Unsubscribe": `<${unsubUrl}>`,
@@ -313,10 +347,14 @@ export const sendSingleEmail = inngest.createFunction(
 
       // CAN-SPAM: append compliance footer
       const footer = buildComplianceFooter(unsubUrl);
-      const htmlWithFooter = email.bodyHtml.replace(
+      let processedHtml = email.bodyHtml.replace(
         /<\/body>/i,
         `${footer}</body>`
       ) || `${email.bodyHtml}${footer}`;
+
+      // Inject tracking: open pixel + click redirect links
+      processedHtml = rewriteLinks(processedHtml, emailId, appUrl);
+      processedHtml = injectTrackingPixel(processedHtml, emailId, appUrl);
 
       const textWithFooter = (email.bodyText || "") +
         `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
@@ -325,7 +363,7 @@ export const sendSingleEmail = inngest.createFunction(
         from: email.fromAddress === "pending@rotation" ? FALLBACK_FROM : email.fromAddress,
         to: [email.toAddress],
         subject: email.subject,
-        html: htmlWithFooter,
+        html: processedHtml,
         text: textWithFooter,
         headers: {
           "List-Unsubscribe": `<${unsubUrl}>`,

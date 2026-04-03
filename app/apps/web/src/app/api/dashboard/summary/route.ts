@@ -1,8 +1,8 @@
 import { auth } from "@/auth";
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
-import { activities, deals, tasks, sequenceEnrollments, companies } from "@/db/schema";
-import { sql, eq, and, gte, lte, or } from "drizzle-orm";
+import { activities, deals, tasks, sequenceEnrollments, companies, contacts, outboundEmails } from "@/db/schema";
+import { sql, eq, and, gte, lte, or, ne, desc } from "drizzle-orm";
 import { getTenantSettings } from "@/lib/tenant-settings";
 
 function getGreeting(): string {
@@ -134,7 +134,88 @@ export async function GET() {
       )
       .orderBy(activities.occurredAt);
 
-    const settings = await getTenantSettings(authCtx.tenantId);
+    // ── Founder metrics (parallel) ──
+    const [
+      pipelineData,
+      contactsCount,
+      accountsCount,
+      emailHealthData,
+      dealsAtRisk,
+      settings,
+    ] = await Promise.all([
+      // Pipeline value + deal counts
+      db
+        .select({
+          totalValue: sql<number>`COALESCE(SUM(${deals.value}), 0)::int`,
+          activeDeals: sql<number>`count(*)::int`,
+          wonValue: sql<number>`COALESCE(SUM(CASE WHEN ${deals.stage} = 'won' THEN ${deals.value} ELSE 0 END), 0)::int`,
+          wonCount: sql<number>`SUM(CASE WHEN ${deals.stage} = 'won' THEN 1 ELSE 0 END)::int`,
+          lostCount: sql<number>`SUM(CASE WHEN ${deals.stage} = 'lost' THEN 1 ELSE 0 END)::int`,
+        })
+        .from(deals)
+        .where(eq(deals.tenantId, authCtx.tenantId)),
+      // Total contacts
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(contacts)
+        .where(eq(contacts.tenantId, authCtx.tenantId)),
+      // Total accounts
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(companies)
+        .where(eq(companies.tenantId, authCtx.tenantId)),
+      // Email deliverability (last 7 days)
+      db
+        .select({
+          sent: sql<number>`count(*)::int`,
+          opened: sql<number>`SUM(CASE WHEN ${outboundEmails.openedAt} IS NOT NULL THEN 1 ELSE 0 END)::int`,
+          replied: sql<number>`SUM(CASE WHEN ${outboundEmails.repliedAt} IS NOT NULL THEN 1 ELSE 0 END)::int`,
+          bounced: sql<number>`SUM(CASE WHEN ${outboundEmails.bouncedAt} IS NOT NULL THEN 1 ELSE 0 END)::int`,
+        })
+        .from(outboundEmails)
+        .where(
+          and(
+            eq(outboundEmails.tenantId, authCtx.tenantId),
+            eq(outboundEmails.status, "sent"),
+            gte(outboundEmails.sentAt, new Date(Date.now() - 7 * 86400000))
+          )
+        ),
+      // Top deals at risk (stalled 7+ days)
+      db
+        .select({
+          id: deals.id,
+          name: deals.name,
+          stage: deals.stage,
+          value: deals.value,
+          updatedAt: deals.updatedAt,
+        })
+        .from(deals)
+        .where(
+          and(
+            eq(deals.tenantId, authCtx.tenantId),
+            ne(deals.stage, "won"),
+            ne(deals.stage, "lost"),
+            lte(deals.updatedAt, new Date(Date.now() - 7 * 86400000))
+          )
+        )
+        .orderBy(desc(deals.value))
+        .limit(5),
+      // Tenant settings
+      getTenantSettings(authCtx.tenantId),
+    ]);
+
+    const pipeline = pipelineData[0];
+    const wonCount = pipeline?.wonCount || 0;
+    const lostCount = pipeline?.lostCount || 0;
+    const winRate = wonCount + lostCount > 0
+      ? Math.round((wonCount / (wonCount + lostCount)) * 100)
+      : null;
+
+    const emailHealth = emailHealthData[0];
+    const openRate = emailHealth?.sent > 0
+      ? Math.round((emailHealth.opened / emailHealth.sent) * 100)
+      : null;
+
     const firstName = settings.onboardingFullName?.split(" ")[0]
       || (await auth())?.user?.name?.split(" ")[0]
       || "there";
@@ -149,6 +230,24 @@ export async function GET() {
         responsesReceived: (activityCounts["email_replied"] || 0) + (activityCounts["email_received"] || 0),
         meetingsBooked: activityCounts["meeting_scheduled"] || 0,
         opportunitiesClosed: dealsWon[0]?.count || 0,
+      },
+      // Founder metrics
+      founderMetrics: {
+        pipelineValue: pipeline?.totalValue || 0,
+        activeDeals: pipeline?.activeDeals || 0,
+        wonValue: pipeline?.wonValue || 0,
+        winRate,
+        totalContacts: contactsCount[0]?.count || 0,
+        totalAccounts: accountsCount[0]?.count || 0,
+        emailsSent7d: emailHealth?.sent || 0,
+        openRate,
+        dealsAtRisk: dealsAtRisk.map((d) => ({
+          id: d.id,
+          name: d.name,
+          stage: d.stage,
+          value: d.value,
+          daysSilent: Math.floor((Date.now() - (d.updatedAt?.getTime() || 0)) / 86400000),
+        })),
       },
       todayTasks: enrichedTasks,
       todayMeetings: todayMeetings.map((m) => ({
