@@ -247,9 +247,9 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-white">
+    <div className="min-h-screen bg-white">
       {/* NAV */}
-      <nav className={`fixed top-0 z-50 w-full transition-all duration-300 ${scrolled ? "bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md" : "bg-transparent"}`}>
+      <nav className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md" : "bg-white"}`}>
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4">
           <Link href="/" className="text-xl font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>LeadSens</Link>
           <div className="hidden items-center gap-8 md:flex">
@@ -265,7 +265,7 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO */}
-      <Section className="relative pb-24 pt-[140px]">
+      <Section className="relative pb-24 pt-20">
         <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
         <div className="relative mx-auto max-w-[1400px] px-6 text-center">
           <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-500">Get started in minutes</p></Animate>
@@ -462,7 +462,7 @@ export default function LandingPage() {
           SECTION 8: FAQ
           ============================================================ */}
       <Section className="pt-32">
-        <div className="mx-auto max-w-[720px] px-6">
+        <div className="mx-auto max-w-3xl px-6">
           <Animate>
             <h2 className="text-3xl font-bold tracking-tight text-gray-900">
               Questions
