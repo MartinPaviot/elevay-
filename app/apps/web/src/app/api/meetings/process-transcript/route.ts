@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { activities, contacts, companies, deals } from "@/db/schema";
 import { eq, and, ilike, or } from "drizzle-orm";
@@ -44,6 +45,9 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("llm", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   const model = process.env.ANTHROPIC_API_KEY
     ? anthropic("claude-sonnet-4-6")

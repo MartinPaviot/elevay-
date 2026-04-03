@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { activities, companies, contacts, notes } from "@/db/schema";
 import { eq, and, desc, or } from "drizzle-orm";
@@ -12,6 +13,9 @@ export async function GET() {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("llm", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   try {
     // Get all email and meeting activities with content

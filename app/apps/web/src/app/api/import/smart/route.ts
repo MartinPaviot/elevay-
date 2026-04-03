@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { companies, contacts, deals } from "@/db/schema";
 
@@ -14,6 +15,9 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("bulk", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   const { csvText, entityType } = await req.json();
 

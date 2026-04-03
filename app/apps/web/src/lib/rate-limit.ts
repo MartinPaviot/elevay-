@@ -43,3 +43,39 @@ export function rateLimitResponse(resetAt: number): Response {
     }
   );
 }
+
+// ── Preset tiers for common use cases ──
+
+/** Rate limit for LLM-calling routes: 20 req/min per user */
+export function rateLimitLLM(userId: string): { success: boolean; remaining: number; resetAt: number } {
+  return rateLimit(`llm:${userId}`, 20, 60 * 1000);
+}
+
+/** Rate limit for Apollo/enrichment routes: 30 req/min per user */
+export function rateLimitEnrich(userId: string): { success: boolean; remaining: number; resetAt: number } {
+  return rateLimit(`enrich:${userId}`, 30, 60 * 1000);
+}
+
+/** Rate limit for bulk/import routes: 5 req/min per user */
+export function rateLimitBulk(userId: string): { success: boolean; remaining: number; resetAt: number } {
+  return rateLimit(`bulk:${userId}`, 5, 60 * 1000);
+}
+
+/** Rate limit for auth/public routes: 10 req/min per IP */
+export function rateLimitAuth(ip: string): { success: boolean; remaining: number; resetAt: number } {
+  return rateLimit(`auth:${ip}`, 10, 60 * 1000);
+}
+
+/**
+ * Apply rate limiting and return 429 if exceeded.
+ * Returns null if allowed, or a Response to return immediately.
+ */
+export function checkRateLimit(
+  tier: "llm" | "enrich" | "bulk",
+  userId: string
+): Response | null {
+  const fn = tier === "llm" ? rateLimitLLM : tier === "enrich" ? rateLimitEnrich : rateLimitBulk;
+  const rl = fn(userId);
+  if (!rl.success) return rateLimitResponse(rl.resetAt);
+  return null;
+}

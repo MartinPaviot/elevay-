@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { searchSimilar } from "@/lib/embeddings";
 import { db } from "@/db";
 import { companies, contacts, deals } from "@/db/schema";
@@ -9,6 +10,9 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("enrich", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   try {
     const body = await req.json();

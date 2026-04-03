@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { tenants, tasks, activities } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { tenants, tasks, activities, outboundEmails, contacts, companies } from "@/db/schema";
+import { eq, and } from "drizzle-orm";
 import { sendNotification } from "@/lib/notifications";
 import type { WorkflowDef } from "@/app/api/settings/workflows/route";
 
@@ -101,16 +101,71 @@ export const executeWorkflow = inngest.createFunction(
               }
               break;
 
-            case "send_email":
-              // TODO: Wire to email sending infrastructure
-              break;
+            case "send_email": {
+              // Queue an outbound email and trigger immediate send
+              const contactId = (triggerData.contactId || action.params.contactId) as string | undefined;
+              const toAddress = (triggerData.contactEmail || action.params.toAddress) as string | undefined;
 
-            case "update_field":
-              // TODO: Wire to entity update
+              // Resolve recipient email
+              let recipientEmail = toAddress;
+              if (!recipientEmail && contactId) {
+                const [c] = await db.select({ email: contacts.email }).from(contacts)
+                  .where(and(eq(contacts.id, contactId), eq(contacts.tenantId, tenantId))).limit(1);
+                recipientEmail = c?.email || undefined;
+              }
+
+              if (recipientEmail) {
+                const [email] = await db.insert(outboundEmails).values({
+                  tenantId,
+                  contactId: contactId || null,
+                  fromAddress: "pending@rotation",
+                  toAddress: recipientEmail,
+                  subject: action.params.subject || `From workflow: ${workflow.name}`,
+                  bodyHtml: `<div>${(action.params.body || "").replace(/\n/g, "<br>")}</div>`,
+                  bodyText: action.params.body || "",
+                  status: "queued",
+                  queuedAt: new Date(),
+                }).returning();
+
+                // Fire event for immediate send
+                await inngest.send({
+                  name: "email/send-now",
+                  data: { emailId: email.id },
+                });
+              }
               break;
+            }
+
+            case "update_field": {
+              // Update a field on the triggered entity
+              const entityType = (triggerData.entityType || action.params.entityType) as string;
+              const entityId = (triggerData.entityId || action.params.entityId) as string;
+              const fieldName = action.params.fieldName as string;
+              const fieldValue = action.params.fieldValue;
+
+              if (entityType && entityId && fieldName) {
+                if (entityType === "company") {
+                  await db.update(companies).set({ [fieldName]: fieldValue, updatedAt: new Date() })
+                    .where(and(eq(companies.id, entityId), eq(companies.tenantId, tenantId)));
+                } else if (entityType === "contact") {
+                  await db.update(contacts).set({ [fieldName]: fieldValue, updatedAt: new Date() })
+                    .where(and(eq(contacts.id, entityId), eq(contacts.tenantId, tenantId)));
+                }
+              }
+              break;
+            }
 
             case "ai_action":
-              // TODO: Wire to AI tool execution
+              // AI actions are handled by the chat system — log as activity for now
+              await db.insert(activities).values({
+                tenantId,
+                actorType: "system",
+                actorId: null,
+                entityType: (triggerData.entityType as string) || "system",
+                entityId: (triggerData.entityId as string) || tenantId,
+                activityType: "system_event",
+                summary: `AI action from workflow "${workflow.name}": ${action.params.instruction || "no instruction"}`,
+              });
               break;
           }
         });

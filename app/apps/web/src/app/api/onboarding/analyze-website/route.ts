@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateObject } from "ai";
 import { z } from "zod";
@@ -116,6 +117,9 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("llm", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   const body = await req.json();
   const { domain, productDescription } = body;

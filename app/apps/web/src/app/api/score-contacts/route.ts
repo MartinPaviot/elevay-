@@ -1,4 +1,5 @@
 import { getAuthContext } from "@/lib/auth-utils";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { contacts, companies, activities } from "@/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
@@ -10,6 +11,9 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const rlResponse = checkRateLimit("enrich", authCtx.userId);
+  if (rlResponse) return rlResponse;
 
   try {
     const body = await req.json();

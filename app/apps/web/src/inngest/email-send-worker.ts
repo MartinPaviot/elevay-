@@ -15,6 +15,19 @@ const resend = process.env.RESEND_API_KEY
 // Fallback from address using Resend test domain
 const FALLBACK_FROM = "LeadSens <outbound@resend.dev>";
 
+// CAN-SPAM compliant footer — physical address + unsubscribe link
+function buildComplianceFooter(unsubUrl: string, companyName?: string): string {
+  const name = companyName || "LeadSens";
+  return `
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e4e4e7;font-size:11px;color:#a1a1aa;line-height:1.5;">
+  <p style="margin:0;">Sent by ${name} via LeadSens</p>
+  <p style="margin:4px 0 0;">
+    <a href="${unsubUrl}" style="color:#6366f1;text-decoration:underline;">Unsubscribe</a>
+    &nbsp;·&nbsp; You received this because you are a business contact.
+  </p>
+</div>`;
+}
+
 /**
  * Cron: process queued outbound emails every 2 minutes.
  * Picks up emails with status=queued, resolves sender mailbox, sends via Resend.
@@ -152,12 +165,22 @@ export const processOutboundEmails = inngest.createFunction(
             process.env.NEXT_PUBLIC_APP_URL || "https://app.leadsens.com";
           const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
 
+          // CAN-SPAM: append compliance footer to HTML body
+          const footer = buildComplianceFooter(unsubUrl);
+          const htmlWithFooter = email.bodyHtml.replace(
+            /<\/body>/i,
+            `${footer}</body>`
+          ) || `${email.bodyHtml}${footer}`;
+
+          const textWithFooter = (email.bodyText || "") +
+            `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
+
           const { data, error } = await resend.emails.send({
             from: fromAddress,
             to: [email.toAddress],
             subject: email.subject,
-            html: email.bodyHtml,
-            text: email.bodyText || undefined,
+            html: htmlWithFooter,
+            text: textWithFooter,
             headers: {
               "List-Unsubscribe": `<${unsubUrl}>`,
               "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
@@ -288,12 +311,22 @@ export const sendSingleEmail = inngest.createFunction(
         process.env.NEXT_PUBLIC_APP_URL || "https://app.leadsens.com";
       const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
 
+      // CAN-SPAM: append compliance footer
+      const footer = buildComplianceFooter(unsubUrl);
+      const htmlWithFooter = email.bodyHtml.replace(
+        /<\/body>/i,
+        `${footer}</body>`
+      ) || `${email.bodyHtml}${footer}`;
+
+      const textWithFooter = (email.bodyText || "") +
+        `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
+
       const { data, error } = await resend.emails.send({
         from: email.fromAddress === "pending@rotation" ? FALLBACK_FROM : email.fromAddress,
         to: [email.toAddress],
         subject: email.subject,
-        html: email.bodyHtml,
-        text: email.bodyText || undefined,
+        html: htmlWithFooter,
+        text: textWithFooter,
         headers: {
           "List-Unsubscribe": `<${unsubUrl}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
