@@ -31,6 +31,8 @@ interface Insight {
 interface DashboardSummary {
   greeting: string;
   firstName: string;
+  role: string | null;
+  challenge: string | null;
   weekSummary: {
     sequencesLaunched: number;
     responsesReceived: number;
@@ -130,7 +132,15 @@ export default function DashboardPage() {
             {summary ? `${summary.greeting}, ${summary.firstName}` : "Welcome back"}
           </h1>
           <p className="mt-0.5 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>
-            {today}
+            {summary?.challenge === "Finding the right leads"
+              ? "Let\u2019s find your next best prospects."
+              : summary?.challenge === "Getting responses"
+                ? "Let\u2019s get more replies today."
+                : summary?.challenge === "Closing deals"
+                  ? "Let\u2019s move your deals forward."
+                  : summary?.challenge === "Expanding accounts"
+                    ? "Let\u2019s grow your accounts."
+                    : today}
           </p>
         </div>
 

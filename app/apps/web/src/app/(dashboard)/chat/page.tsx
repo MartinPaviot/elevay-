@@ -35,6 +35,7 @@ export default function ChatPage() {
     subject: string;
     body: string;
   } | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   // Load existing thread messages on mount
   useEffect(() => {
@@ -65,6 +66,20 @@ export default function ChatPage() {
       setThreadLoaded(true);
     })();
   }, [searchParams, threadLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch contextual suggestions based on onboarding data
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/suggestions");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.suggestions) setSuggestions(data.suggestions);
+      } catch {
+        // Silent fail — static fallback will show if suggestions remain empty
+      }
+    })();
+  }, []);
 
   // Auto-send query from persistent chat bar
   useEffect(() => {
@@ -222,7 +237,7 @@ export default function ChatPage() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-auto px-6 py-8">
-        {chat.messages.length === 0 && (
+        {chat.messages.length === 0 && threadLoaded && (
           <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center">
             <div
               className="flex h-10 w-10 items-center justify-center rounded-xl"
@@ -234,7 +249,7 @@ export default function ChatPage() {
               className="mt-4 text-xl font-semibold"
               style={{ color: "var(--color-text-primary)" }}
             >
-              Ask LeadSens
+              What can I help you with?
             </h2>
             <p
               className="mt-1.5 text-[13px]"
@@ -242,32 +257,26 @@ export default function ChatPage() {
             >
               Ask about your pipeline, accounts, or get help with outreach.
             </p>
-            <div className="mt-8 w-full max-w-lg">
-              {[
-                "What should I focus on today?",
-                "Summarize my active opportunities",
-                "Which deals are at risk of stalling?",
-                "Draft a follow-up email to my last meeting",
-                "Who haven't I followed up with?",
-                "What's my pipeline value by stage?",
-                "Help me prepare for my next meeting",
-                "Research my top accounts to refine my ICP",
-              ].map((suggestion) => (
+            <div className="mt-8 grid grid-cols-2 gap-2 w-full max-w-lg">
+              {(suggestions.length > 0
+                ? suggestions
+                : [
+                    "What should I focus on today?",
+                    "Summarize my active opportunities",
+                    "Which deals are at risk of stalling?",
+                    "Draft a follow-up email to my last meeting",
+                    "Who haven't I followed up with?",
+                    "Research my top accounts to refine my ICP",
+                  ]
+              ).map((suggestion) => (
                 <button
                   key={suggestion}
                   onClick={() => useSuggestion(suggestion)}
-                  className="flex w-full items-center px-2 py-2.5 text-left text-[14px] transition-colors"
+                  className="text-left rounded-lg px-4 py-3 text-[13px] transition-all hover:brightness-95"
                   style={{
+                    background: "var(--color-bg-card)",
                     color: "var(--color-text-secondary)",
-                    borderBottom: "1px solid var(--color-border-default)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = "var(--color-accent)";
-                    e.currentTarget.style.background = "var(--color-bg-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = "var(--color-text-secondary)";
-                    e.currentTarget.style.background = "transparent";
+                    border: "1px solid var(--color-border-default)",
                   }}
                 >
                   {suggestion}
@@ -313,35 +322,42 @@ export default function ChatPage() {
                     <span style={{ fontWeight: 500 }}>LeadSens</span>
                   </div>
 
-                  {/* Tool call transparency panels */}
+                  {/* Tool call transparency panels — show both in-progress and completed */}
                   {(() => {
                     const toolCalls = message.parts
                       .filter((p) => p.type === "tool-invocation")
                       .map((p) => {
                         const inv = (p as unknown as { toolInvocation: { state: string; toolName: string; args: Record<string, unknown>; result: unknown } }).toolInvocation;
-                        if (!inv || inv.state !== "result") return null;
-                        return { toolName: inv.toolName, args: inv.args, result: inv.result };
+                        if (!inv) return null;
+                        return {
+                          toolName: inv.toolName,
+                          args: inv.args || {},
+                          result: inv.state === "result" ? inv.result : undefined,
+                          isStreaming: inv.state !== "result",
+                        };
                       })
-                      .filter(Boolean) as { toolName: string; args: Record<string, unknown>; result: unknown }[];
+                      .filter(Boolean) as { toolName: string; args: Record<string, unknown>; result: unknown; isStreaming: boolean }[];
                     if (toolCalls.length === 0) return null;
                     return (
                       <>
                         <ToolCallGroup calls={toolCalls} />
-                        {/* Action cards for create/update tool calls */}
-                        {toolCalls.map((call, idx) => {
-                          const cardData = parseToolResultForCard(call.toolName, call.args, call.result);
-                          if (!cardData) return null;
-                          return (
-                            <ActionCard
-                              key={idx}
-                              actionType={cardData.actionType}
-                              entityType={cardData.entityType}
-                              entityName={cardData.entityName}
-                              fields={cardData.fields}
-                              status="approved"
-                            />
-                          );
-                        })}
+                        {/* Action cards for create/update tool calls (only completed ones) */}
+                        {toolCalls
+                          .filter((call) => !call.isStreaming)
+                          .map((call, idx) => {
+                            const cardData = parseToolResultForCard(call.toolName, call.args, call.result);
+                            if (!cardData) return null;
+                            return (
+                              <ActionCard
+                                key={idx}
+                                actionType={cardData.actionType}
+                                entityType={cardData.entityType}
+                                entityName={cardData.entityName}
+                                fields={cardData.fields}
+                                status="approved"
+                              />
+                            );
+                          })}
                       </>
                     );
                   })()}
