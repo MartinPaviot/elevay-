@@ -599,3 +599,183 @@ export const notificationPreferences = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   }
 );
+
+// ============================================================
+// CHAT MEMORY (persistent cross-session memory for AI agent)
+// ============================================================
+
+export const chatMemories = pgTable(
+  "chat_memories",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    userId: text("user_id").references(() => users.id).notNull(),
+    // Memory category: user_preference, decision, learned_context, relationship_note
+    category: text("category").notNull().default("learned_context"),
+    // Short key for retrieval (e.g. "communication_style", "deal_strategy_acme")
+    key: text("key").notNull(),
+    // The actual memory content
+    content: text("content").notNull(),
+    // Relevance metadata for retrieval
+    metadata: jsonb("metadata").default({}),
+    // Auto-expire stale memories
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("chat_memories_tenant_user_idx").on(table.tenantId, table.userId),
+    index("chat_memories_category_idx").on(table.category),
+  ]
+);
+
+// ============================================================
+// CONTEXT GRAPH — Bi-temporal knowledge graph for agent memory
+// ============================================================
+
+export const contextGraphNodes = pgTable(
+  "context_graph_nodes",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    entityType: text("entity_type").notNull(), // person, company, deal, email, meeting, event, topic
+    entityId: text("entity_id"), // FK to existing CRM record (contacts.id, companies.id, etc.) — null for external/extracted entities
+    name: text("name").notNull(),
+    summary: text("summary"),
+    properties: jsonb("properties").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("cgn_tenant_idx").on(table.tenantId),
+    index("cgn_entity_idx").on(table.tenantId, table.entityType, table.entityId),
+    index("cgn_name_idx").on(table.tenantId, table.name),
+  ]
+);
+
+export const contextGraphEdges = pgTable(
+  "context_graph_edges",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    sourceNodeId: text("source_node_id").references(() => contextGraphNodes.id).notNull(),
+    targetNodeId: text("target_node_id").references(() => contextGraphNodes.id).notNull(),
+    relationType: text("relation_type").notNull(), // WORKS_AT, INVOLVED_IN, DISCUSSED, ATTENDED, SENT_EMAIL, MENTIONED, etc.
+    fact: text("fact").notNull(), // Human-readable fact description
+    confidence: real("confidence").default(1.0),
+    // Bi-temporal model
+    tValid: timestamp("t_valid", { withTimezone: true }).defaultNow(), // When the fact became true in reality
+    tInvalid: timestamp("t_invalid", { withTimezone: true }), // When the fact stopped being true (null = still valid)
+    tCreated: timestamp("t_created", { withTimezone: true }).defaultNow(), // When we ingested this edge
+    tExpired: timestamp("t_expired", { withTimezone: true }), // When this edge was superseded by new info
+    // Source provenance
+    sourceType: text("source_type"), // email, meeting, note, enrichment, manual
+    sourceId: text("source_id"), // activity.id, note.id, etc.
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("cge_tenant_idx").on(table.tenantId),
+    index("cge_source_idx").on(table.sourceNodeId),
+    index("cge_target_idx").on(table.targetNodeId),
+    index("cge_relation_idx").on(table.tenantId, table.relationType),
+    index("cge_valid_idx").on(table.tenantId, table.tValid, table.tInvalid),
+  ]
+);
+
+// Community clusters for the context graph
+export const contextGraphCommunities = pgTable(
+  "context_graph_communities",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    name: text("name").notNull(),
+    summary: text("summary"),
+    nodeIds: jsonb("node_ids").default([]), // array of node IDs in this community
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("cgc_tenant_idx").on(table.tenantId),
+  ]
+);
+
+// ============================================================
+// EVAL SYSTEM — Automated agent evaluation pipeline
+// ============================================================
+
+export const evalRunStatusEnum = pgEnum("eval_run_status", [
+  "pending", "running", "completed", "failed",
+]);
+
+export const evalDatasets = pgTable(
+  "eval_datasets",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("ed_tenant_idx").on(table.tenantId),
+  ]
+);
+
+export const evalCases = pgTable(
+  "eval_cases",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    datasetId: text("dataset_id").references(() => evalDatasets.id, { onDelete: "cascade" }).notNull(),
+    input: text("input").notNull(), // The user query / prompt
+    expectedOutput: text("expected_output"), // What the agent should produce (null = open-ended, graded by rubric)
+    context: text("context"), // Additional context injected for this case
+    tags: jsonb("tags").default([]), // string[] for categorization: "recall", "reasoning", "tool_use", etc.
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("ec_dataset_idx").on(table.datasetId),
+  ]
+);
+
+export const evalRuns = pgTable(
+  "eval_runs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    datasetId: text("dataset_id").references(() => evalDatasets.id).notNull(),
+    model: text("model").notNull(), // Model being evaluated (e.g. "claude-sonnet-4-6")
+    graderModel: text("grader_model").notNull(), // Model used for grading (cross-model per Anthropic)
+    status: evalRunStatusEnum("status").notNull().default("pending"),
+    summary: jsonb("summary").default({}), // { passRate, meanScore, totalCases, regressions, perTagScores }
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("er_tenant_idx").on(table.tenantId),
+    index("er_dataset_idx").on(table.datasetId),
+  ]
+);
+
+export const evalResults = pgTable(
+  "eval_results",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    runId: text("run_id").references(() => evalRuns.id, { onDelete: "cascade" }).notNull(),
+    caseId: text("case_id").references(() => evalCases.id).notNull(),
+    agentOutput: text("agent_output"), // What the agent actually produced
+    score: real("score"), // 0.0 - 1.0
+    pass: boolean("pass"),
+    graderReasoning: text("grader_reasoning"), // LLM judge's reasoning
+    latencyMs: integer("latency_ms"),
+    toolCallsCount: integer("tool_calls_count"),
+    metadata: jsonb("metadata").default({}), // Full transcript, tool calls, etc.
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("eres_run_idx").on(table.runId),
+    index("eres_case_idx").on(table.caseId),
+  ]
+);

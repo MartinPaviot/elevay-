@@ -15,6 +15,20 @@
       "when": 1775034901213,
       "tag": "0001_aberrant_domino",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775089800645,
+      "tag": "0002_naive_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775169195528,
+      "tag": "0003_striped_speed_demon",
+      "breakpoints": true
     }
   ]
 }
