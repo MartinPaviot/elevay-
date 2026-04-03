@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/components/ui/theme-provider";
 import { Avatar } from "@/components/ui/avatar";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface SidebarProps {
   userName: string;
@@ -101,6 +102,7 @@ export function Sidebar({ userName, userInitials, recentChats, onSignOut }: Side
               LeadSens
             </span>
             <div className="flex-1" />
+            <NotificationBell collapsed={false} />
             <button
               onClick={() => setCollapsed(true)}
               className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
@@ -111,14 +113,17 @@ export function Sidebar({ userName, userInitials, recentChats, onSignOut }: Side
             </button>
           </>
         ) : (
-          <button
-            onClick={() => setCollapsed(false)}
-            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-            style={{ color: "var(--color-text-tertiary)" }}
-            title="Expand sidebar"
-          >
-            <ChevronsRight size={14} />
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => setCollapsed(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+              style={{ color: "var(--color-text-tertiary)" }}
+              title="Expand sidebar"
+            >
+              <ChevronsRight size={14} />
+            </button>
+            <NotificationBell collapsed={true} />
+          </div>
         )}
       </div>
 

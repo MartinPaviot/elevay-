@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { CircleDot, Plus, BarChart3, ChevronDown, ChevronUp } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
 import { usePipelineStages } from "@/hooks/use-custom-fields";
@@ -62,6 +63,7 @@ interface Deal {
 }
 
 export default function OpportunitiesPage() {
+  const router = useRouter();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const { stages: pipelineStages } = usePipelineStages();
@@ -72,6 +74,11 @@ export default function OpportunitiesPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(true);
+
+  // Drag & drop state
+  const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const isDraggingRef = useRef(false);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -161,6 +168,77 @@ export default function OpportunitiesPage() {
     const props = deal.properties as Record<string, unknown> | null;
     const activityCount = (props?.recentActivityCount as number) || 0;
     return activityCount >= 3;
+  }
+
+  // Drag & drop handlers
+  function handleDragStart(e: React.DragEvent, dealId: string) {
+    isDraggingRef.current = true;
+    setDraggedDealId(dealId);
+    e.dataTransfer.setData("text/plain", dealId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragEnd() {
+    // Delay resetting isDragging so the click handler can check it
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 0);
+    setDraggedDealId(null);
+    setDragOverStage(null);
+  }
+
+  function handleDragOver(e: React.DragEvent, stageId: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverStage(stageId);
+  }
+
+  function handleDragLeave(e: React.DragEvent, columnEl: HTMLDivElement) {
+    // Only clear if we actually left the column (not entering a child)
+    if (!columnEl.contains(e.relatedTarget as Node)) {
+      setDragOverStage(null);
+    }
+  }
+
+  async function handleDrop(e: React.DragEvent, newStageId: string) {
+    e.preventDefault();
+    const dealId = e.dataTransfer.getData("text/plain");
+    setDragOverStage(null);
+    setDraggedDealId(null);
+
+    if (!dealId) return;
+
+    const deal = deals.find((d) => d.id === dealId);
+    if (!deal || deal.stage === newStageId) return;
+
+    // Optimistic update
+    const previousDeals = [...deals];
+    setDeals((prev) =>
+      prev.map((d) => (d.id === dealId ? { ...d, stage: newStageId } : d))
+    );
+
+    try {
+      const res = await fetch(`/api/deals/${dealId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: newStageId }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setDeals(previousDeals);
+      } else {
+        // Refresh analytics after stage change
+        fetchAnalytics();
+      }
+    } catch {
+      // Revert on error
+      setDeals(previousDeals);
+    }
+  }
+
+  function handleCardClick(dealId: string) {
+    if (isDraggingRef.current) return;
+    router.push(`/opportunities/${dealId}`);
   }
 
   function getRiskBadge(deal: Deal) {
@@ -480,12 +558,19 @@ export default function OpportunitiesPage() {
               return (
               <div
                 key={stage.id}
-                className="flex flex-shrink-0 flex-col rounded-md"
+                className="flex flex-shrink-0 flex-col rounded-md transition-colors duration-150"
                 style={{
                   width: 260,
-                  background: "var(--color-bg-hover)",
-                  border: "1px solid var(--color-border-default)",
+                  background: dragOverStage === stage.id
+                    ? "var(--color-bg-tertiary, var(--color-bg-hover))"
+                    : "var(--color-bg-hover)",
+                  border: dragOverStage === stage.id
+                    ? "1px solid var(--color-accent)"
+                    : "1px solid var(--color-border-default)",
                 }}
+                onDragOver={(e) => handleDragOver(e, stage.id)}
+                onDragLeave={(e) => handleDragLeave(e, e.currentTarget)}
+                onDrop={(e) => handleDrop(e, stage.id)}
               >
                 <div
                   className="px-3 py-2"
@@ -526,8 +611,16 @@ export default function OpportunitiesPage() {
                   {stageDeals.map((deal) => (
                     <Card
                       key={deal.id}
+                      draggable
+                      onDragStart={(e: React.DragEvent) => handleDragStart(e, deal.id)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleCardClick(deal.id)}
+                      className={`transition-opacity duration-150 ${
+                        draggedDealId === deal.id ? "opacity-40" : ""
+                      }`}
                       style={{
                         borderLeft: `2px solid ${getRiskBorderColor(deal)}`,
+                        cursor: draggedDealId === deal.id ? "grabbing" : "grab",
                       }}
                     >
                       <CardBody className="p-3">

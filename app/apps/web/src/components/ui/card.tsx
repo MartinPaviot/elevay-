@@ -1,4 +1,4 @@
-interface CardProps {
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   interactive?: boolean;
   className?: string;
@@ -6,7 +6,7 @@ interface CardProps {
   onClick?: () => void;
 }
 
-export function Card({ children, interactive, className = "", style, onClick }: CardProps) {
+export function Card({ children, interactive, className = "", style, onClick, ...rest }: CardProps) {
   return (
     <div
       className={`rounded-lg ${interactive ? "cursor-pointer" : ""} ${className}`}
@@ -23,6 +23,7 @@ export function Card({ children, interactive, className = "", style, onClick }: 
       onMouseLeave={interactive ? (e) => {
         e.currentTarget.style.borderColor = "var(--color-border-default)";
       } : undefined}
+      {...rest}
     >
       {children}
     </div>
