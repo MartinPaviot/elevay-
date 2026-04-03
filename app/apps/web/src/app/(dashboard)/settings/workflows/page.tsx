@@ -26,15 +26,28 @@ interface WorkflowDef {
 
 const TRIGGER_TYPES = [
   { value: "deal_stage_changed", label: "Deal stage changed" },
+  { value: "deal_won", label: "Deal won" },
+  { value: "deal_lost", label: "Deal lost" },
   { value: "contact_created", label: "New contact created" },
+  { value: "account_created", label: "New account created" },
   { value: "email_received", label: "Email received" },
   { value: "task_due", label: "Task due" },
+  { value: "score_changed", label: "Score changed" },
+  { value: "enrichment_completed", label: "Enrichment completed" },
+  { value: "sequence_reply_received", label: "Sequence reply received" },
+  { value: "meeting_completed", label: "Meeting completed" },
 ];
 
 const ACTION_TYPES = [
   { value: "send_notification", label: "Send notification" },
   { value: "create_task", label: "Create task" },
+  { value: "send_email", label: "Send email" },
+  { value: "enroll_sequence", label: "Enroll in sequence" },
+  { value: "assign_owner", label: "Assign owner" },
+  { value: "add_tag", label: "Add tag" },
+  { value: "update_field", label: "Update field" },
   { value: "call_webhook", label: "Call webhook" },
+  { value: "ai_action", label: "AI action" },
 ];
 
 export default function WorkflowsPage() {
@@ -50,6 +63,13 @@ export default function WorkflowsPage() {
     actionTitle: "",
     actionBody: "",
     actionUrl: "",
+    actionSequenceId: "",
+    actionOwnerId: "",
+    actionTag: "",
+    actionFieldName: "",
+    actionFieldValue: "",
+    actionInstruction: "",
+    actionSubject: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -91,6 +111,13 @@ export default function WorkflowsPage() {
           ...(newWorkflow.actionTitle ? { title: newWorkflow.actionTitle } : {}),
           ...(newWorkflow.actionBody ? { body: newWorkflow.actionBody } : {}),
           ...(newWorkflow.actionUrl ? { url: newWorkflow.actionUrl } : {}),
+          ...(newWorkflow.actionSequenceId ? { sequenceId: newWorkflow.actionSequenceId } : {}),
+          ...(newWorkflow.actionOwnerId ? { ownerId: newWorkflow.actionOwnerId } : {}),
+          ...(newWorkflow.actionTag ? { tag: newWorkflow.actionTag } : {}),
+          ...(newWorkflow.actionFieldName ? { fieldName: newWorkflow.actionFieldName } : {}),
+          ...(newWorkflow.actionFieldValue ? { fieldValue: newWorkflow.actionFieldValue } : {}),
+          ...(newWorkflow.actionInstruction ? { instruction: newWorkflow.actionInstruction } : {}),
+          ...(newWorkflow.actionSubject ? { subject: newWorkflow.actionSubject } : {}),
         },
       }],
       createdAt: new Date().toISOString(),
@@ -100,7 +127,7 @@ export default function WorkflowsPage() {
     setWorkflows(updated);
     saveWorkflows(updated);
     setShowCreate(false);
-    setNewWorkflow({ name: "", triggerType: "deal_stage_changed", conditionKey: "", conditionValue: "", actionType: "send_notification", actionTitle: "", actionBody: "", actionUrl: "" });
+    setNewWorkflow({ name: "", triggerType: "deal_stage_changed", conditionKey: "", conditionValue: "", actionType: "send_notification", actionTitle: "", actionBody: "", actionUrl: "", actionSequenceId: "", actionOwnerId: "", actionTag: "", actionFieldName: "", actionFieldValue: "", actionInstruction: "", actionSubject: "" });
   }
 
   function toggleWorkflow(id: string) {
@@ -163,14 +190,14 @@ export default function WorkflowsPage() {
                   </select>
                 </div>
               </div>
-              {newWorkflow.triggerType === "deal_stage_changed" && (
+              {["deal_stage_changed", "score_changed", "enrichment_completed", "sequence_reply_received"].includes(newWorkflow.triggerType) && (
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <Input
                       label="Condition: field"
                       value={newWorkflow.conditionKey}
                       onChange={(e) => setNewWorkflow({ ...newWorkflow, conditionKey: e.target.value })}
-                      placeholder="e.g. newStage"
+                      placeholder={newWorkflow.triggerType === "score_changed" ? "e.g. scoreDirection" : newWorkflow.triggerType === "deal_stage_changed" ? "e.g. newStage" : "e.g. field name"}
                     />
                   </div>
                   <div className="flex-1">
@@ -178,7 +205,7 @@ export default function WorkflowsPage() {
                       label="equals"
                       value={newWorkflow.conditionValue}
                       onChange={(e) => setNewWorkflow({ ...newWorkflow, conditionValue: e.target.value })}
-                      placeholder="e.g. proposal"
+                      placeholder={newWorkflow.triggerType === "score_changed" ? "e.g. increased" : newWorkflow.triggerType === "deal_stage_changed" ? "e.g. proposal" : "e.g. value"}
                     />
                   </div>
                 </div>
@@ -189,6 +216,74 @@ export default function WorkflowsPage() {
                   value={newWorkflow.actionTitle}
                   onChange={(e) => setNewWorkflow({ ...newWorkflow, actionTitle: e.target.value })}
                   placeholder="e.g. Deal moved to proposal stage!"
+                />
+              )}
+              {newWorkflow.actionType === "send_email" && (
+                <div className="space-y-2">
+                  <Input
+                    label="Subject"
+                    value={newWorkflow.actionSubject}
+                    onChange={(e) => setNewWorkflow({ ...newWorkflow, actionSubject: e.target.value })}
+                    placeholder="e.g. Follow-up on your inquiry"
+                  />
+                  <Input
+                    label="Body"
+                    value={newWorkflow.actionBody}
+                    onChange={(e) => setNewWorkflow({ ...newWorkflow, actionBody: e.target.value })}
+                    placeholder="Email body text"
+                  />
+                </div>
+              )}
+              {newWorkflow.actionType === "enroll_sequence" && (
+                <Input
+                  label="Sequence ID"
+                  value={newWorkflow.actionSequenceId}
+                  onChange={(e) => setNewWorkflow({ ...newWorkflow, actionSequenceId: e.target.value })}
+                  placeholder="Paste the sequence ID to enroll contacts into"
+                />
+              )}
+              {newWorkflow.actionType === "assign_owner" && (
+                <Input
+                  label="Owner user ID"
+                  value={newWorkflow.actionOwnerId}
+                  onChange={(e) => setNewWorkflow({ ...newWorkflow, actionOwnerId: e.target.value })}
+                  placeholder="User ID to assign as owner"
+                />
+              )}
+              {newWorkflow.actionType === "add_tag" && (
+                <Input
+                  label="Tag"
+                  value={newWorkflow.actionTag}
+                  onChange={(e) => setNewWorkflow({ ...newWorkflow, actionTag: e.target.value })}
+                  placeholder="e.g. high-priority, hot-lead"
+                />
+              )}
+              {newWorkflow.actionType === "update_field" && (
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <Input
+                      label="Field name"
+                      value={newWorkflow.actionFieldName}
+                      onChange={(e) => setNewWorkflow({ ...newWorkflow, actionFieldName: e.target.value })}
+                      placeholder="e.g. status"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      label="New value"
+                      value={newWorkflow.actionFieldValue}
+                      onChange={(e) => setNewWorkflow({ ...newWorkflow, actionFieldValue: e.target.value })}
+                      placeholder="e.g. qualified"
+                    />
+                  </div>
+                </div>
+              )}
+              {newWorkflow.actionType === "ai_action" && (
+                <Input
+                  label="AI instruction"
+                  value={newWorkflow.actionInstruction}
+                  onChange={(e) => setNewWorkflow({ ...newWorkflow, actionInstruction: e.target.value })}
+                  placeholder="e.g. Draft a congratulations email for this deal"
                 />
               )}
               {newWorkflow.actionType === "call_webhook" && (

@@ -540,6 +540,186 @@ export default function OpportunitiesPage() {
                 </div>
               </CardBody>
             </Card>
+
+            {/* Conversion Funnel */}
+            <Card className="mt-3">
+              <CardBody className="p-3">
+                <p
+                  className="mb-2 text-[10px] uppercase tracking-wider"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Conversion Funnel
+                </p>
+                {(() => {
+                  const funnelData = analytics.funnel.filter(
+                    (s) => s.stage !== "won" && s.stage !== "lost"
+                  );
+                  if (funnelData.length === 0) {
+                    return (
+                      <p className="py-4 text-center text-xs" style={{ color: "var(--color-text-tertiary)" }}>
+                        No funnel data
+                      </p>
+                    );
+                  }
+                  const maxCount = Math.max(...funnelData.map((s) => s.count), 1);
+                  const barHeight = 32;
+                  const gap = 4;
+                  const svgHeight = funnelData.length * (barHeight + gap) - gap;
+                  const svgWidth = 500;
+                  const minBarWidth = 60;
+                  const maxBarWidth = svgWidth - 20;
+
+                  return (
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                      width="100%"
+                      style={{ maxWidth: svgWidth }}
+                      preserveAspectRatio="xMidYMin meet"
+                    >
+                      {funnelData.map((s, i) => {
+                        const barWidth =
+                          maxCount > 0
+                            ? minBarWidth + ((s.count / maxCount) * (maxBarWidth - minBarWidth))
+                            : minBarWidth;
+                        const x = (svgWidth - barWidth) / 2;
+                        const y = i * (barHeight + gap);
+                        const conversionRate =
+                          i > 0 && funnelData[i - 1].count > 0
+                            ? Math.round((s.count / funnelData[i - 1].count) * 100)
+                            : null;
+
+                        return (
+                          <g key={s.stage}>
+                            <rect
+                              x={x}
+                              y={y}
+                              width={barWidth}
+                              height={barHeight}
+                              rx={4}
+                              ry={4}
+                              fill="var(--color-accent)"
+                              opacity={0.15 + (0.85 * (funnelData.length - i)) / funnelData.length}
+                            />
+                            <text
+                              x={svgWidth / 2}
+                              y={y + barHeight / 2}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill="var(--color-text-primary)"
+                              fontSize="11"
+                              fontWeight="600"
+                            >
+                              {STAGE_LABELS[s.stage] || s.stage} — {s.count}
+                              {conversionRate !== null ? ` (${conversionRate}%)` : ""}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  );
+                })()}
+              </CardBody>
+            </Card>
+
+            {/* Win Rate Trend — Won vs Lost Comparison */}
+            <Card className="mt-3">
+              <CardBody className="p-3">
+                <p
+                  className="mb-2 text-[10px] uppercase tracking-wider"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Won vs Lost
+                </p>
+                {(() => {
+                  const total = analytics.wonCount + analytics.lostCount;
+                  if (total === 0) {
+                    return (
+                      <p className="py-4 text-center text-xs" style={{ color: "var(--color-text-tertiary)" }}>
+                        No closed deals yet
+                      </p>
+                    );
+                  }
+                  const wonPct = (analytics.wonCount / total) * 100;
+                  const lostPct = (analytics.lostCount / total) * 100;
+                  const svgWidth = 500;
+                  const barHeight = 28;
+                  const svgHeight = 80;
+                  const barY = 24;
+                  const wonWidth = (wonPct / 100) * (svgWidth - 20);
+                  const lostWidth = (lostPct / 100) * (svgWidth - 20);
+                  const barX = 10;
+
+                  return (
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                      width="100%"
+                      style={{ maxWidth: svgWidth }}
+                      preserveAspectRatio="xMidYMin meet"
+                    >
+                      {/* Won bar */}
+                      <rect
+                        x={barX}
+                        y={barY}
+                        width={wonWidth}
+                        height={barHeight}
+                        rx={4}
+                        ry={4}
+                        fill="var(--color-success)"
+                      />
+                      {/* Lost bar */}
+                      <rect
+                        x={barX + wonWidth}
+                        y={barY}
+                        width={lostWidth}
+                        height={barHeight}
+                        rx={4}
+                        ry={4}
+                        fill="var(--color-error)"
+                      />
+                      {/* Won label */}
+                      {wonPct > 15 && (
+                        <text
+                          x={barX + wonWidth / 2}
+                          y={barY + barHeight / 2}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill="white"
+                          fontSize="11"
+                          fontWeight="600"
+                        >
+                          Won {analytics.wonCount} ({Math.round(wonPct)}%)
+                        </text>
+                      )}
+                      {/* Lost label */}
+                      {lostPct > 15 && (
+                        <text
+                          x={barX + wonWidth + lostWidth / 2}
+                          y={barY + barHeight / 2}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill="white"
+                          fontSize="11"
+                          fontWeight="600"
+                        >
+                          Lost {analytics.lostCount} ({Math.round(lostPct)}%)
+                        </text>
+                      )}
+                      {/* Win rate summary text */}
+                      <text
+                        x={svgWidth / 2}
+                        y={barY + barHeight + 18}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="var(--color-text-secondary)"
+                        fontSize="10"
+                      >
+                        Win Rate: {analytics.winRate}% — {total} closed deal{total !== 1 ? "s" : ""}
+                      </text>
+                    </svg>
+                  );
+                })()}
+              </CardBody>
+            </Card>
           </div>
         )}
 

@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { tenants, tasks, activities, outboundEmails, contacts, companies } from "@/db/schema";
+import { tenants, tasks, activities, outboundEmails, contacts, companies, sequenceEnrollments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { sendNotification } from "@/lib/notifications";
 import type { WorkflowDef } from "@/app/api/settings/workflows/route";
@@ -11,8 +11,11 @@ import type { WorkflowDef } from "@/app/api/settings/workflows/route";
  * Listens for CRM events, checks if any user-defined workflows match,
  * and executes the configured actions.
  *
- * Triggers: deal_stage_changed, contact_created, email_received, task_due
- * Actions: send_notification, create_task, call_webhook, update_field
+ * Triggers: deal_stage_changed, contact_created, email_received, task_due,
+ *           deal_won, deal_lost, score_changed, enrichment_completed,
+ *           sequence_reply_received, meeting_completed, account_created
+ * Actions:  send_notification, create_task, call_webhook, update_field,
+ *           send_email, ai_action, enroll_sequence, assign_owner, add_tag
  */
 export const executeWorkflow = inngest.createFunction(
   {
@@ -167,6 +170,92 @@ export const executeWorkflow = inngest.createFunction(
                 summary: `AI action from workflow "${workflow.name}": ${action.params.instruction || "no instruction"}`,
               });
               break;
+
+            case "enroll_sequence": {
+              // Enroll a contact into a sequence
+              const seqId = action.params.sequenceId as string;
+              const enrollContactId = (triggerData.contactId || action.params.contactId) as string | undefined;
+
+              if (seqId && enrollContactId) {
+                await db.insert(sequenceEnrollments).values({
+                  sequenceId: seqId,
+                  contactId: enrollContactId,
+                  status: "active",
+                  currentStep: 1,
+                  enrolledAt: new Date(),
+                  nextStepAt: new Date(), // first step fires immediately
+                });
+
+                await db.insert(activities).values({
+                  tenantId,
+                  actorType: "system",
+                  actorId: null,
+                  entityType: "contact",
+                  entityId: enrollContactId,
+                  activityType: "system_event",
+                  summary: `Auto-enrolled in sequence via workflow "${workflow.name}"`,
+                });
+              }
+              break;
+            }
+
+            case "assign_owner": {
+              // Assign a user/owner to the triggered entity
+              const ownerEntityType = (triggerData.entityType || action.params.entityType) as string;
+              const ownerEntityId = (triggerData.entityId || action.params.entityId) as string;
+              const ownerId = action.params.ownerId as string;
+
+              if (ownerEntityType && ownerEntityId && ownerId) {
+                if (ownerEntityType === "company") {
+                  await db.update(companies).set({ ownerId, updatedAt: new Date() })
+                    .where(and(eq(companies.id, ownerEntityId), eq(companies.tenantId, tenantId)));
+                } else if (ownerEntityType === "contact") {
+                  await db.update(contacts).set({ ownerId, updatedAt: new Date() })
+                    .where(and(eq(contacts.id, ownerEntityId), eq(contacts.tenantId, tenantId)));
+                }
+              }
+              break;
+            }
+
+            case "add_tag": {
+              // Add a tag to the triggered entity's properties JSON
+              const tagEntityType = (triggerData.entityType || action.params.entityType) as string;
+              const tagEntityId = (triggerData.entityId || action.params.entityId) as string;
+              const tag = action.params.tag as string;
+
+              if (tagEntityType && tagEntityId && tag) {
+                if (tagEntityType === "company") {
+                  const [entity] = await db.select().from(companies)
+                    .where(and(eq(companies.id, tagEntityId), eq(companies.tenantId, tenantId))).limit(1);
+                  if (entity) {
+                    const props = (entity.properties || {}) as Record<string, unknown>;
+                    const existingTags = Array.isArray(props.tags) ? props.tags as string[] : [];
+                    if (!existingTags.includes(tag)) {
+                      existingTags.push(tag);
+                    }
+                    await db.update(companies).set({
+                      properties: { ...props, tags: existingTags },
+                      updatedAt: new Date(),
+                    }).where(and(eq(companies.id, tagEntityId), eq(companies.tenantId, tenantId)));
+                  }
+                } else if (tagEntityType === "contact") {
+                  const [entity] = await db.select().from(contacts)
+                    .where(and(eq(contacts.id, tagEntityId), eq(contacts.tenantId, tenantId))).limit(1);
+                  if (entity) {
+                    const props = (entity.properties || {}) as Record<string, unknown>;
+                    const existingTags = Array.isArray(props.tags) ? props.tags as string[] : [];
+                    if (!existingTags.includes(tag)) {
+                      existingTags.push(tag);
+                    }
+                    await db.update(contacts).set({
+                      properties: { ...props, tags: existingTags },
+                      updatedAt: new Date(),
+                    }).where(and(eq(contacts.id, tagEntityId), eq(contacts.tenantId, tenantId)));
+                  }
+                }
+              }
+              break;
+            }
           }
         });
       }

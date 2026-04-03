@@ -8,12 +8,33 @@ export interface WorkflowDef {
   name: string;
   enabled: boolean;
   trigger: {
-    type: "deal_stage_changed" | "contact_created" | "email_received" | "task_due" | "schedule";
+    type:
+      | "deal_stage_changed"
+      | "contact_created"
+      | "email_received"
+      | "task_due"
+      | "schedule"
+      | "deal_won"
+      | "deal_lost"
+      | "score_changed"
+      | "enrichment_completed"
+      | "sequence_reply_received"
+      | "meeting_completed"
+      | "account_created";
     conditions?: Record<string, string>;  // e.g. { newStage: "proposal" }
     schedule?: string;  // cron expression for scheduled triggers
   };
   actions: Array<{
-    type: "send_notification" | "create_task" | "send_email" | "call_webhook" | "update_field" | "ai_action";
+    type:
+      | "send_notification"
+      | "create_task"
+      | "send_email"
+      | "call_webhook"
+      | "update_field"
+      | "ai_action"
+      | "enroll_sequence"
+      | "assign_owner"
+      | "add_tag";
     params: Record<string, string>;
   }>;
   createdAt: string;
