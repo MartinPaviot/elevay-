@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ScopedChat } from "@/components/scoped-chat";
 import { EmailComposer } from "@/components/email-composer";
 import { Card, CardBody } from "@/components/ui/card";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 
 interface Company {
   id: string;
@@ -111,7 +112,14 @@ export default function ContactDetailPage() {
     <div className="flex h-full">
       {/* Main content */}
       <div className="flex-1 overflow-auto p-6">
-        <div className="flex items-center gap-4">
+        <Breadcrumbs
+          items={[
+            { label: "Contacts", href: "/contacts" },
+            { label: name },
+          ]}
+        />
+
+        <div className="mt-4 flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-accent)] text-lg font-bold text-white">
             {initials}
           </div>

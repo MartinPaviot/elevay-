@@ -7,6 +7,7 @@ import { ScopedChat } from "@/components/scoped-chat";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 
 interface Deal {
   id: string;
@@ -70,9 +71,12 @@ export default function DealDetailPage() {
   return (
     <div className="flex h-full">
       <div className="flex-1 overflow-auto p-6">
-        <Link href="/opportunities" className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-          ← Back to Pipeline
-        </Link>
+        <Breadcrumbs
+          items={[
+            { label: "Pipeline", href: "/opportunities" },
+            { label: deal.name },
+          ]}
+        />
 
         <div className="mt-4 flex items-center gap-3">
           <h1 className="text-xl font-semibold">{deal.name}</h1>

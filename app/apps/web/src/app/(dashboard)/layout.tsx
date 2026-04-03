@@ -9,6 +9,7 @@ import { PostHogPageTracker } from "@/components/posthog-provider";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts-provider";
 
 export default async function DashboardLayout({
   children,
@@ -65,6 +66,7 @@ export default async function DashboardLayout({
           </main>
 
           <CommandPalette />
+          <KeyboardShortcutsProvider />
         </div>
       </ToastProvider>
     </ThemeProvider>

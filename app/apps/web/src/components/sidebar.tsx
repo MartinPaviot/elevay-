@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Calendar,
   FileText,
+  FileBarChart,
   MessageSquare,
   MessageCircle,
   Network,
@@ -55,6 +56,7 @@ const navSections = [
     items: [
       { label: "Sequences", href: "/sequences", icon: Zap },
       { label: "Deliverability", href: "/deliverability", icon: Shield },
+      { label: "Reports", href: "/reports", icon: FileBarChart },
     ],
   },
   {

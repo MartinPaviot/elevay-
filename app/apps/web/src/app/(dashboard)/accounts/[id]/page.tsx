@@ -7,6 +7,7 @@ import { ScopedChat } from "@/components/scoped-chat";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 
 interface Account {
   id: string;
@@ -61,9 +62,12 @@ export default function AccountDetailPage() {
     <div className="flex h-full">
       {/* Main content */}
       <div className="flex-1 overflow-auto p-6">
-        <Link href="/accounts" className="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-          ← Back to Accounts
-        </Link>
+        <Breadcrumbs
+          items={[
+            { label: "Accounts", href: "/accounts" },
+            { label: account.name },
+          ]}
+        />
 
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg font-bold text-white">

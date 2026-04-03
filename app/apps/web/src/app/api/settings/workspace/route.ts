@@ -2,6 +2,7 @@ import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "@/lib/audit-log";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -53,6 +54,27 @@ export async function PUT(req: Request) {
     if (body.agentApprovalMode !== undefined) updates.agentApprovalMode = body.agentApprovalMode;
 
     await db.update(tenants).set({ settings: updates, updatedAt: new Date() }).where(eq(tenants.id, authCtx.tenantId));
+
+    // Build a changes record for the audit log
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+    if (body.name !== undefined) {
+      changes.name = { old: tenant.name, new: body.name.trim() };
+    }
+    if (body.companyDomains !== undefined) {
+      changes.companyDomains = { old: currentSettings.companyDomains, new: body.companyDomains };
+    }
+    if (body.agentApprovalMode !== undefined) {
+      changes.agentApprovalMode = { old: currentSettings.agentApprovalMode, new: body.agentApprovalMode };
+    }
+
+    await logAudit({
+      tenantId: authCtx.tenantId,
+      userId: authCtx.appUserId,
+      action: "update",
+      entityType: "workspace",
+      entityId: authCtx.tenantId,
+      changes,
+    });
 
     return Response.json({ success: true });
   } catch (error) {

@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { deals } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
 import { eq } from "drizzle-orm";
+import { logAudit } from "@/lib/audit-log";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -42,6 +43,19 @@ export async function POST(req: Request) {
         tenantId: authCtx.tenantId,
       })
       .returning();
+
+    await logAudit({
+      tenantId: authCtx.tenantId,
+      userId: authCtx.appUserId,
+      action: "create",
+      entityType: "deal",
+      entityId: deal.id,
+      metadata: {
+        name: deal.name,
+        stage: deal.stage,
+        value: deal.value,
+      },
+    });
 
     return Response.json({ deal }, { status: 201 });
   } catch (error) {

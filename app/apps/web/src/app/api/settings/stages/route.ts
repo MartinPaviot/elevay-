@@ -2,6 +2,7 @@ import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "@/lib/audit-log";
 
 interface PipelineStage {
   id: string;
@@ -59,10 +60,23 @@ export async function PUT(req: Request) {
     if (!tenant) return Response.json({ error: "Not found" }, { status: 404 });
 
     const settings = (tenant.settings || {}) as Record<string, unknown>;
+    const oldStages = settings.pipelineStages || null;
+
     await db.update(tenants).set({
       settings: { ...settings, pipelineStages: stages },
       updatedAt: new Date(),
     }).where(eq(tenants.id, authCtx.tenantId));
+
+    await logAudit({
+      tenantId: authCtx.tenantId,
+      userId: authCtx.appUserId,
+      action: "update",
+      entityType: "pipeline_config",
+      entityId: authCtx.tenantId,
+      changes: {
+        pipelineStages: { old: oldStages, new: stages },
+      },
+    });
 
     return Response.json({ success: true });
   } catch (error) {
