@@ -147,11 +147,76 @@ Step 6: Ready         → Dashboard with data, first suggested action (done)
 
 ---
 
-## Step 3: Your Customer (ICP Definition)
+## Step 3: Connect Your Email (The Essential Step)
+
+**URL**: `/onboarding/connect`
+**Headline**: "Connect your email to unlock LeadSens"
+**Subheadline**: "This is how LeadSens learns who your customers are, what you've discussed, and who needs follow-up."
+
+### Why email is Step 3 (not Step 4)
+
+Email is the most important input. It's not a "nice to have" — it IS the product. Without email:
+- No customer memory (can't answer "what did we discuss with X?")
+- No auto-created contacts/accounts (CRM stays empty)
+- No conversation-aware outbound (emails are generic, not personalized to history)
+- No meeting prep (no context about attendees)
+- No follow-up detection (doesn't know who's gone cold)
+
+We move it BEFORE ICP definition because:
+1. Email sync starts a background job that takes minutes → start early, ready by Step 5
+2. The contacts discovered from email will be CROSS-REFERENCED with TAM in Step 5
+3. It demonstrates immediate value: "We found 47 contacts from your inbox"
+
+### Layout
+
+#### Hero section: What you'll get
+Three value bullets with icons (shown ABOVE the connect buttons):
+- "**Customer memory** — every conversation, searchable and cited"
+- "**Auto-built CRM** — contacts and accounts created from your emails"
+- "**Smart outbound** — AI references your actual history when writing to prospects"
+
+#### Connect buttons
+- "Continue with Google" (Google OAuth — primary, larger)
+- "Continue with Microsoft" (Microsoft OAuth)
+- Both should show the permission scope: "Read-only email + calendar access"
+
+#### After connecting (inline, same page — don't navigate away)
+The page transforms to show:
+- Animated sync indicator: "Syncing your last 3 months... 142 emails processed"
+- Counter ticking up in real-time
+- First discoveries appearing live:
+  ```
+  Found: sarah@stripe.com (12 conversations)
+  Found: mike@plaid.com (8 conversations)
+  Found: team@ramp.com (3 conversations)
+  ```
+- Toggle: "Also use this email for sending outbound" (default: ON)
+
+#### Advanced (collapsed)
+| Setting | Type | Default |
+|---------|------|---------|
+| Backsync range | dropdown | 3 months |
+| Do not track | text | "Domains to exclude..." |
+
+### Buttons
+- "← Back"
+- "Skip for now" (small, de-emphasized — this is the ONLY skippable step, and we show a warning: "Without email, LeadSens can't build your customer memory or personalize outbound.")
+- "Continue →" (primary, appears after connecting. If sync is running, text says "Continue — sync runs in background")
+
+### Design notes
+- **DO NOT gate progress on sync completion.** Start the sync, show the first few results, let them continue. Sync runs in background.
+- The live discovery feed is the first "wow" — "it's already finding my contacts!" within seconds
+- We DON'T show 4 config sections before connecting like Lightfield. Smart defaults + one collapsed "Advanced" section. Reduce anxiety, increase connection rate.
+
+---
+
+## Step 4: Your Customer (ICP Definition)
 
 **URL**: `/onboarding/icp`
 **Headline**: "Who is your ideal customer?"
-**Subheadline**: "We'll use this to find real companies that match your ICP."
+**Subheadline**: "We'll find companies that match — and flag which ones you're already talking to."
+
+Note the subheadline change: "flag which ones you're already talking to" — this signals the email + TAM cross-reference.
 
 ### Fields
 
@@ -162,128 +227,118 @@ Step 6: Ready         → Dashboard with data, first suggested action (done)
 | Target role/title | text with suggestions | "e.g., VP Engineering, CTO, Head of Product" | Yes | Auto-suggest from common titles |
 | Geography | multi-select pills | - | Yes (min 1) | North America, Europe, UK, APAC, LATAM, Global |
 
-### Buttons
-- "← Back"
-- "Find my prospects →" (primary — action-oriented CTA, not just "Continue")
-
-### Design notes
-- This is the step that differentiates us from Lightfield. They never ask for ICP because they don't do prospecting.
-- The CTA "Find my prospects" signals that something will HAPPEN with this data
-- Show a small counter: "We'll search X,XXX,XXX+ companies" (updates dynamically as they select filters)
-- Target role field has autocomplete from a predefined list of common B2B titles
-
----
-
-## Step 4: Connect (Email + Calendar)
-
-**URL**: `/onboarding/connect`
-**Headline**: "Connect your email"
-**Subheadline**: "We'll sync your conversations to build complete customer context — and use it for outbound."
-
-### Layout: Two sections
-
-#### Section A: Sync inbox (read-only access)
-- "Continue with Google" button (Google OAuth)
-- "Continue with Microsoft" button (Microsoft OAuth)
-- Helper text: "We read your emails to build customer memory. We never send emails from this connection."
-
-#### Section B: Sending mailbox (only shown after connecting inbox)
-- Toggle: "Use this email for sending outbound too" (default: ON)
-- If OFF: text field "Sending email address" with placeholder "outbound@yourcompany.com"
-- Helper text: "This is the mailbox LeadSens uses to send sequences."
-
-#### Sync configuration (collapsed "Advanced" section — not prominent like Lightfield)
-| Setting | Type | Default |
-|---------|------|---------|
-| Backsync range | dropdown | 3 months |
-| Auto-create contacts from emails | toggle | ON |
+### Contextual intelligence (if email was connected in Step 3)
+Show a hint at the top of this step:
+> "We've already found **47 contacts** from your email. We'll cross-reference them with your ICP."
 
 ### Buttons
 - "← Back"
-- "Skip for now" (secondary text link)
-- "Continue →" (primary, shown after connecting OR clicking skip)
+- "Build my prospect list →" (primary — action-oriented CTA)
 
 ### Design notes
-- Simpler than Lightfield's Step 5. They have 4 configuration sections before connecting. We hide advanced config and use smart defaults.
-- Backsync default is 3 months (Lightfield defaults to 1 month — we go deeper for more context)
-- We explain WHY we need email: "build customer memory" + "use for outbound"
-- The sending mailbox question is LeadSens-specific — Lightfield doesn't ask this because they don't send
+- The CTA "Build my prospect list" signals that something will HAPPEN with this data
+- Show a small counter: "We'll search X,XXX,XXX+ companies" (updates dynamically)
+- Target role field has autocomplete from common B2B titles
 
 ---
 
-## Step 5: Your TAM (Live Building)
+## Step 5: Intelligence Building (The Magic Moment)
 
-**URL**: `/onboarding/tam`
-**Headline**: "Building your prospect list..."
-**Subheadline**: "Finding companies that match your ICP."
+**URL**: `/onboarding/building`
+**Headline**: "LeadSens is learning your world..."
 
-### Layout: Animated progress view
+### Layout: Dual-track animated progress view
 
-This is a **passive step** — the user watches while we work. No form fields.
+This is a **passive step** — the user watches TWO things happening simultaneously.
 
-#### Animation
-- Show a card-based feed of companies being "discovered":
-  ```
-  ✓ Stripe — Fintech, 8,000 employees, San Francisco
-  ✓ Plaid — Fintech, 1,200 employees, San Francisco  
-  ✓ Ramp — Fintech, 800 employees, New York
-  ... finding more ...
-  ```
-- Progress bar: "Found 47 companies matching your ICP"
-- Counter animates up as results come in
-- Show the ICP summary at the top: "SaaS + Fintech · 51-200 employees · VP Engineering · North America"
+#### Track 1: TAM Discovery (left or top)
+```
+Finding prospects matching your ICP...
 
-#### When done (or after 15 seconds minimum)
-- Show summary: "Found **127 companies** and **312 contacts** matching your ICP"
-- Preview 5-6 top companies with logos + basic info
-- CTA changes to "Go to your dashboard →"
+✓ Stripe — Fintech, 8,000 employees, San Francisco        92% fit
+✓ Plaid — Fintech, 1,200 employees, San Francisco         88% fit
+✓ Ramp — Fintech, 800 employees, New York                 85% fit
+... finding more ...
+
+Found 127 companies · 312 contacts
+```
+
+#### Track 2: Email Intelligence (right or bottom — only if email connected)
+```
+Building your customer memory...
+
+✓ 47 contacts discovered from 3 months of email
+✓ 12 active conversations identified
+✓ 3 follow-ups overdue (last contact > 7 days ago)
+✓ 8 companies matched to your ICP                    ← THE CROSS-REFERENCE
+```
+
+#### The Cross-Reference Moment (the real wow)
+When both tracks complete, show a merged insight card:
+
+> **8 of your ICP prospects are already in your inbox.**
+> You've exchanged 34 emails with them. 3 haven't heard from you in over a week.
+>
+> Sarah Chen at Stripe — last email 12 days ago (she asked about pricing)
+> Mike Torres at Plaid — last email 3 days ago (intro meeting scheduled)
+> ...
+
+This is the moment where cold TAM data + warm email data merge into **actionable intelligence**. No competitor does this in onboarding.
+
+#### When done
+- Summary card with 3 numbers:
+  - **127** new prospects found
+  - **47** existing contacts imported
+  - **8** ICP matches already in your inbox
+- CTA: "Go to your dashboard →"
 
 ### Buttons
-- "Go to your dashboard →" (primary, appears when TAM building completes)
+- "Go to your dashboard →" (primary, appears when building completes)
 
 ### Design notes
-- This is the **magic moment**. The user gave us 3 minutes of input and now sees 100+ real companies with real contacts. This is what Monaco does (Day 1 TAM) but self-serve instead of demo-gated.
-- The animation creates anticipation and makes the AI feel alive
-- If TAM building takes >30 seconds, show an interstitial with tips:
-  - "While we search, here's what LeadSens will do for you:"
-  - "Auto-score every account based on fit signals"
-  - "Draft personalized outreach for your top prospects"
-  - "Track every email, meeting, and interaction automatically"
-- If email was connected in Step 4, show BOTH: TAM results + "Syncing 3 months of email..." progress
+- **Minimum display time: 10 seconds** even if data is ready faster. The animation builds anticipation and demonstrates work being done.
+- If email was NOT connected, only show Track 1. But add a subtle nudge: "Connect your email to see which prospects you're already talking to."
+- The cross-reference card is the **single most important moment in the entire onboarding**. It proves that LeadSens isn't just another CRM or another prospecting tool — it's the place where your existing relationships and new opportunities converge.
+- If no ICP matches are found in email (new founder, no sales history), show: "No existing conversations with ICP matches yet — that's why we're here. Let's start your first outreach."
 
 ---
 
 ## Step 6: Ready (First-Run Dashboard)
 
 **URL**: `/` (main dashboard)
-**No separate "all set" page** — we land directly in the product WITH data.
+**No separate "all set" page** — we land directly in the product WITH data AND with intelligence.
 
 ### What the user sees on their dashboard
 
-#### If TAM was built (Steps 3+5 completed):
-- **Top accounts** section: 5-10 highest-scored accounts from TAM
-- **Suggested action card**: "Draft your first outreach sequence → Your top 10 prospects are ready"
-- **Pipeline view**: Pre-seeded with the "Prospecting" stage
-- **Chat**: Pre-populated with "I found 127 companies matching your ICP. Want me to draft outreach to your top 10?"
+#### The dashboard is organized by intelligence, not by record type:
 
-#### If email was connected (Step 4 completed):
-- **Recent contacts**: Auto-discovered contacts from email sync (may still be loading)
-- **Meetings**: Upcoming meetings from calendar
-- **Chat**: "I'm syncing your last 3 months of email. I'll have your customer memory ready in about 15 minutes."
+**Section 1: "Act now" (top priority)**
+- If email connected + overdue follow-ups found: "**3 conversations need follow-up**" with names, last contact date, and AI-drafted follow-up messages
+- If ICP matches in inbox: "**8 warm prospects match your ICP** — they already know you"
+- Each item has a one-click action: "Send follow-up" / "Start sequence" / "View history"
 
-#### If both:
-- Full experience — TAM + conversations + suggested actions
+**Section 2: "New prospects" (TAM results)**
+- Top 10 highest-scored accounts from TAM build
+- Each shows: company name, logo, ICP fit score, key signal (e.g., "Just raised Series B")
+- CTA: "Draft outreach to top 10"
 
-#### If neither (all skipped):
-- Empty state with a prominent "Get started" card:
-  - "Connect your email to build customer memory"
-  - "Define your ICP to build your prospect list"
-  - "Or just chat with me to get started"
+**Section 3: "Your network" (email-discovered)**
+- Contacts auto-created from email, grouped by company
+- Shows: name, company, last interaction date, conversation count
+- Warm contacts (>3 conversations) highlighted
+
+**Section 4: Chat (contextual first message)**
+- If both email + TAM: "I found 127 prospects matching your ICP, and you're already talking to 8 of them. Want me to draft follow-ups for the 3 that have gone quiet?"
+- If TAM only: "I found 127 companies matching your ICP. Want me to draft outreach to your top 10?"
+- If email only: "I'm learning your customer relationships. Ask me anything — 'who should I follow up with?' or 'summarize my conversations with Stripe.'"
+- If neither: "Let's get started. Connect your email so I can learn your business, or define your ICP so I can find prospects."
 
 ### Design notes
-- **NO separate "You're all set" page** — this is where Lightfield fails. Their "all set" page is a dead-end with help links. We go straight to a populated dashboard.
-- The chat is the hero. It should have a contextual first message based on what was set up.
-- If TAM is still building when they arrive, show real-time updates in the dashboard
+- **Act Now > New Prospects > Your Network** — the hierarchy prioritizes warm over cold, action over browsing
+- The dashboard is NOT a static display — it's an intelligence briefing. Like Monaco's daily dashboard but personalized from day 1.
+- Every item has a one-click action. No "view details then figure out what to do." The AI already figured it out.
+- If email sync is still running when user arrives, show a progress bar: "Building customer memory... 67% complete. Some insights are already available."
+- The chat first message is the **most critical copy in the product**. It must reference what was just built and suggest the single most valuable next action.
 
 ---
 
@@ -300,7 +355,9 @@ This is a **passive step** — the user watches while we work. No form fields.
 | Back navigation | No | Yes (every step) |
 | Skip options | 3 steps | 1 step (email connect) |
 | Email config | 4 sub-settings before connecting | Smart defaults, 1 toggle |
-| Value payoff | Delayed until email syncs (hours) | Immediate TAM results (seconds) |
+| Value payoff | Delayed until email syncs (hours) | Dual: TAM instant + email cross-ref in minutes |
+| Cross-referencing | None — email and CRM are separate silos | TAM prospects × email history = warm leads surfaced |
+| Customer memory | Best-in-class after sync | Must match — searchable conversations with citations |
 | Booking a call | Mandatory step (skippable) | Not in onboarding (offer via chat later) |
 | HDYHAU | Yes (onboarding step) | No (track via UTM) |
 
@@ -311,17 +368,39 @@ This is a **passive step** — the user watches while we work. No form fields.
 ```
 Step 1 (Welcome) → Creates user + workspace in DB
 Step 2 (Product) → Saves to workspace settings: product_description, sales_motion, ai_tone, challenge
-Step 3 (ICP)     → Saves to workspace settings: target_industries, company_sizes, target_roles, geographies
-                 → Triggers async TAM build job (Apollo API)
-Step 4 (Connect) → OAuth flow → saves tokens → triggers email backfill job
-Step 5 (TAM)     → Polls TAM build job progress → displays results in real-time
-Step 6 (Ready)   → Dashboard with populated data
+Step 3 (Connect) → OAuth flow → saves tokens → triggers email backfill job (STARTS EARLY)
+Step 4 (ICP)     → Saves ICP settings → triggers async TAM build job (Apollo API)
+Step 5 (Build)   → Polls BOTH jobs → displays dual-track progress → runs CROSS-REFERENCE
+Step 6 (Ready)   → Intelligence-first dashboard with merged warm + cold data
 ```
 
 ### Background jobs triggered during onboarding:
-1. **TAM build** (after Step 3): Apollo People Search with ICP filters → create Account + Contact records → AI-score each account
-2. **Email backfill** (after Step 4): Sync last 3 months of email → create/update Contact records → build customer memory embeddings
-3. **Account enrichment** (after TAM build): For each discovered account, enrich with Apollo Org data (industry, size, funding, tech stack)
+1. **Email backfill** (after Step 3): Sync last 3 months of email → create/update Contact + Account records → build conversation memory embeddings → extract relationship signals (frequency, recency, sentiment)
+2. **TAM build** (after Step 4): Apollo People Search with ICP filters → create Account + Contact records → AI-score each account
+3. **Cross-reference** (after both jobs have partial results): Match TAM accounts against email-discovered accounts → flag warm ICP matches → rank by relationship strength + ICP fit
+4. **Account enrichment** (after TAM build): For each discovered account, enrich with Apollo Org data (industry, size, funding, tech stack)
+5. **Follow-up detection** (after email backfill): Identify conversations with >7 day gap where the prospect was last to respond → flag as "needs follow-up"
+
+### Data intelligence pipeline (what makes this work like Lightfield)
+
+The key insight from Lightfield is that email isn't just a data SOURCE — it's the foundation of customer MEMORY. Every email thread becomes:
+
+1. **A searchable conversation** — user can ask "what did we discuss with Stripe?" and get cited answers
+2. **Auto-created records** — contact + account records created from email domains, not manual entry
+3. **Relationship metadata** — conversation count, last interaction, who initiated, sentiment trend
+4. **AI context for everything** — when drafting outbound, the AI references actual history: "Following up on our conversation about your payment API migration"
+5. **Follow-up intelligence** — "Sarah asked about pricing 12 days ago and you never responded"
+
+This is NOT just "import contacts from Gmail." This is building a MEMORY LAYER that powers every AI action in the product. The quality of this pipeline determines whether LeadSens feels intelligent or generic.
+
+Additional data sources beyond email (what Lightfield also ingests):
+- **Calendar events** → meeting records with attendees, auto-matched to contacts
+- **Meeting transcripts** (future: Recall.ai) → conversation summaries, action items, deal signals
+- **File uploads** → PDFs, decks shared in chat for additional context
+- **Manual notes** → user-added context that enriches the memory
+- **Web enrichment** → company data, news, job postings, funding rounds
+
+All of these feed into the same memory layer. The richer the input, the smarter every AI action becomes.
 
 ---
 
