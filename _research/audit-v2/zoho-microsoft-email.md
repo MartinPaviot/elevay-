@@ -1,0 +1,58 @@
+- generic [ref=e50]:
+  - generic:
+    - region "Passer au contenu principal":
+      - link "Passer au contenu principal" [ref=e51] [cursor=pointer]:
+        - /url: "#"
+  - generic [ref=e53]:
+    - generic [ref=e54]:
+      - link "Aller à E-mail" [ref=e56] [cursor=pointer]:
+        - /url: "#mail"
+        - generic [ref=e58]: 
+        - generic [ref=e59]: E-mail
+      - generic [ref=e60]:
+        - navigation [ref=e63]:
+          - button "E-mail" [ref=e64] [cursor=pointer]
+          - button "Calendrier" [ref=e67] [cursor=pointer]
+          - button "Tâche" [ref=e70] [cursor=pointer]
+          - button "Notes" [ref=e73] [cursor=pointer]
+          - button "Contacts" [ref=e76] [cursor=pointer]
+          - button "Signets" [ref=e79] [cursor=pointer]
+          - button "Ressources" [ref=e321] [cursor=pointer]
+        - navigation "Panneau de navigation gauche" [ref=e83]:
+          - generic [ref=e85]
+          - generic [ref=e90]
+      - button "Changer de volet" [ref=e178] [cursor=pointer]:
+        - generic [ref=e179]: 
+    - generic [ref=e180]:
+      - banner [ref=e181]:
+        - text:  
+        - tablist [ref=e182]:
+          - generic [ref=e183]
+          - list [ref=e184]
+          - list
+        - search [ref=e188]:
+          - generic [ref=e189]
+        - region "Menu principal" [ref=e196]:
+          - button "Activer hors-ligne" [ref=e199] [cursor=pointer]
+          - button "Notifications ( alt + n )" [ref=e203] [cursor=pointer]
+          - button "Gérez votre compte Zoho" [ref=e205] [cursor=pointer]
+          - button "Applications menu" [ref=e212] [cursor=pointer]
+      - generic [ref=e229]:
+        - generic [ref=e231]:
+          - main "E-mail" [ref=e232]
+          - status "A reçu un nouvel e-mail"
+        - region "Barre de menu droite" [ref=e267]:
+          - complementary [ref=e269]
+  - alert [ref=e310]: Restauration de la session
+  - generic [ref=e311]:
+    - generic [ref=e312]:
+      - text:               
+      - generic [ref=e313]:
+        - generic "Conversations" [ref=e314] [cursor=pointer]:  Conversations
+        - generic "Canaux" [ref=e315] [cursor=pointer]:  Canaux
+        - generic "Contacts" [ref=e316] [cursor=pointer]:  Contacts
+    - generic [ref=e317]: Voici votre Smart Chat (Ctrl + espace)
+    - text: 
+    - generic [ref=e320] [cursor=pointer]: 
+    - text:  
+  - generic: 
