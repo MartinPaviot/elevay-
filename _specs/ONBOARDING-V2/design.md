@@ -10,6 +10,41 @@
 
 ---
 
+## Intelligence Loop: How Every Data Point Drives the Product
+
+This is the core of the design. Every piece of data we collect must produce **visible, immediate intelligence**. If we can't explain how a field changes the user's experience, we don't ask for it.
+
+### Input → Intelligence Map
+
+| What We Collect | Where It Shows Up | How It Changes the Experience |
+|----------------|-------------------|------------------------------|
+| **"What do you sell"** (free text) | Email drafts, chat responses, account scoring, deal coaching | AI writes "Saw that Stripe is expanding their payments API — our embedded compliance solution could help" instead of generic "Hope you're doing well." Every email, every score, every coaching tip references the user's actual product. |
+| **ICP (industry + size + role + geo)** | TAM builder, account scoring, lead prioritization, dashboard sorting | Accounts matching ICP get higher scores. Dashboard shows "87% ICP fit" badges. When a new contact is discovered via email, the system flags "This company matches your ICP" vs "Outside your target." |
+| **Sales motion** (founder-led / SDR team / PLG) | Coaching style, suggested actions, dashboard widgets, sequence templates | Founder-led → coaching says "You should handle this yourself — prep notes attached." SDR team → coaching says "Assign to your strongest closer." PLG → coaching says "This user hit 3 activation milestones, time for a personal touch." |
+| **Biggest challenge** (finding / responding / closing / expanding) | Dashboard priority, suggested actions, AI proactive alerts | "Finding leads" → dashboard leads with TAM and new prospects. "Getting responses" → dashboard leads with sequence performance and A/B test suggestions. "Closing" → dashboard leads with deal velocity and stall alerts. |
+| **AI tone** (formal / direct / casual) | Every AI-drafted email, chat responses, suggested messages | Formal: "I hope this message finds you well. I wanted to reach out regarding..." Direct: "Quick question — are you evaluating payment APIs this quarter?" Casual: "Hey! Saw your team just raised a Series A — congrats!" |
+| **Role** (founder / sales / marketing) | Coaching depth, feature emphasis, notification priorities | Founder → strategic coaching ("Your pipeline is 40% concentrated in fintech — diversification risk"). Sales → tactical coaching ("Follow up with Sarah at Plaid — she opened your email 3 times"). |
+| **Company name** | Email signatures, workspace branding, outbound "from" context | AI knows to say "the team at Elevay" not "the team at your company." Sequences reference "Elevay's [product]" naturally. |
+| **Connected email** | Customer memory, contact discovery, conversation history, relationship mapping | Every email becomes searchable context. "What did we discuss with Stripe last month?" returns actual conversation summaries with citations. Meeting prep includes "Last 3 interactions with this person." |
+| **Sending mailbox** | Outbound sequences, deliverability monitoring, reply tracking | Sequences send from the right mailbox. Deliverability dashboard monitors that specific domain. Replies thread correctly. |
+| **Target roles** | Contact prioritization, enrichment focus, email personalization | When we find "Stripe" in TAM, we surface the VP Engineering first (not the HR manager). Emails reference the prospect's specific role challenges. |
+
+### Intelligence Feedback Loops (post-onboarding, powered by onboarding data)
+
+These are the behaviors that make onboarding data compound over time:
+
+1. **ICP Refinement Loop**: As deals close/lose, AI compares won accounts vs ICP definition. "You defined SaaS 51-200 as ICP, but your 3 closed deals are all fintech 201-1000. Want to update your ICP?"
+
+2. **Tone Calibration Loop**: AI tracks reply rates per tone variant. "Direct tone gets 2.3x more replies than formal for your audience. Updating default."
+
+3. **Challenge Evolution Loop**: As the user's pipeline grows, their challenge shifts. AI detects: "You've solved 'finding leads' (312 prospects queued). Your new bottleneck is 'getting responses' (8% reply rate). Shifting dashboard focus."
+
+4. **Product Description Evolution Loop**: As the user's product evolves, AI notices new keywords in sent emails. "You've started mentioning 'compliance' in 60% of recent emails. Should I update your product context?"
+
+5. **Sales Motion Detection**: If a founder starts inviting team members and assigning deals, AI suggests: "Looks like you're moving from founder-led to a small sales team. Want me to adjust coaching to include delegation advice?"
+
+---
+
 ## Flow Overview
 
 ```
