@@ -30,6 +30,10 @@ import { db } from "@/db";
 
 const delivModule = await import("@/app/api/deliverability/route");
 
+function fakeReq() {
+  return new Request("http://localhost/api/deliverability");
+}
+
 describe("GET /api/deliverability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,7 +42,7 @@ describe("GET /api/deliverability", () => {
   it("returns 401 when not authenticated", async () => {
     vi.mocked(getAuthContext).mockResolvedValue(null);
 
-    const res = await delivModule.GET();
+    const res = await delivModule.GET(fakeReq());
     expect(res.status).toBe(401);
   });
 
@@ -51,7 +55,7 @@ describe("GET /api/deliverability", () => {
       .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
     vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
 
-    const res = await delivModule.GET();
+    const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -80,7 +84,7 @@ describe("GET /api/deliverability", () => {
       .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
     vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
 
-    const res = await delivModule.GET();
+    const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -109,7 +113,7 @@ describe("GET /api/deliverability", () => {
       .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
     vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
 
-    const res = await delivModule.GET();
+    const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
     expect(data.bounceRate).toBe(10);
