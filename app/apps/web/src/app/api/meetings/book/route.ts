@@ -51,8 +51,8 @@ export async function POST(req: Request) {
       actorId: authCtx.appUserId,
       entityType: "contact",
       entityId: contactId,
-      activityType: "meeting_booked",
-      channel: "calendar",
+      activityType: "meeting_scheduled",
+      channel: "meeting",
       direction: "outbound",
       summary: `Meeting booked: ${title || `Meeting with ${contactName}`}`,
       metadata: {
