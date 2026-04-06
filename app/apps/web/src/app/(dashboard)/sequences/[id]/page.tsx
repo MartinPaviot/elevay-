@@ -154,12 +154,11 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
       {showCampaignWizard && (
         <CampaignWizard
           sequenceId={id}
-          sequenceName={sequence.name}
-          steps={steps}
           onClose={() => setShowCampaignWizard(false)}
-          onPrepared={() => {
+          onComplete={() => {
             setShowCampaignWizard(false);
-            setCampaignStatus("preparing");
+            setCampaignStatus("launched");
+            fetchSequence();
           }}
         />
       )}

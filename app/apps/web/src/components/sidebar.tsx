@@ -78,7 +78,7 @@ const navSections = [
     label: "Engage",
     items: [
       { label: "Inbox", href: "/inbox", icon: Inbox },
-      { label: "Sequences", href: "/sequences", icon: Zap },
+      { label: "Campaigns", href: "/sequences", icon: Zap },
     ],
   },
   {

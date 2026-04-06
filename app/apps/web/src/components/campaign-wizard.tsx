@@ -2,89 +2,62 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowRight,
-  ArrowLeft,
-  Loader2,
-  Check,
-  Target,
-  Users,
-  Mail,
-  Zap,
-  X,
-  Building2,
-  Sparkles,
+  ArrowRight, ArrowLeft, Loader2, Check, Target, Users, Mail,
+  Zap, X, Sparkles, Send,
 } from "lucide-react";
-import {
-  INDUSTRIES,
-  COMPANY_SIZES,
-  GEOGRAPHIES,
-  DECISION_MAKER_ROLES,
-} from "@/lib/icp-constants";
+import { INDUSTRIES, COMPANY_SIZES, GEOGRAPHIES, DECISION_MAKER_ROLES } from "@/lib/icp-constants";
 
-const pill =
-  "rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all duration-150 cursor-pointer select-none";
-
-interface Step {
-  id: string;
-  stepNumber: number;
-  subjectTemplate: string;
-  bodyTemplate: string;
-  delayDays: number;
-}
+const pill = "rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all duration-150 cursor-pointer select-none";
 
 interface CampaignWizardProps {
-  sequenceId: string;
-  sequenceName: string;
-  steps: Step[];
   onClose: () => void;
-  onPrepared: () => void;
+  onComplete: (sequenceId: string) => void;
+  /** If provided, use this existing sequence instead of creating a new one */
+  sequenceId?: string;
 }
 
-type WizardStep = "segment" | "roles" | "preview" | "confirm";
+type WizardStep = "targets" | "generating" | "review" | "launch";
 
-const WIZARD_STEPS: { key: WizardStep; label: string; icon: React.ReactNode }[] = [
-  { key: "segment", label: "Segment", icon: <Target size={14} /> },
-  { key: "roles", label: "Roles", icon: <Users size={14} /> },
-  { key: "preview", label: "Sequence", icon: <Mail size={14} /> },
-  { key: "confirm", label: "Launch", icon: <Zap size={14} /> },
-];
+export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequenceId }: CampaignWizardProps) {
+  const [step, setStep] = useState<WizardStep>("targets");
 
-export function CampaignWizard({
-  sequenceId,
-  sequenceName,
-  steps: sequenceSteps,
-  onClose,
-  onPrepared,
-}: CampaignWizardProps) {
-  const [currentStep, setCurrentStep] = useState<WizardStep>("segment");
-
-  // Segment filters
+  // ── Step 1: Target selection ──
+  const [campaignName, setCampaignName] = useState("");
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedGeographies, setSelectedGeographies] = useState<string[]>([]);
   const [minScore, setMinScore] = useState(0);
   const [maxCompanies, setMaxCompanies] = useState(50);
-
-  // Role filters
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(["CEO", "CTO", "VP Engineering", "VP Sales", "Head of Growth"]);
   const [maxContactsPerCompany, setMaxContactsPerCompany] = useState(3);
 
-  // Preview data
+  // ── Preview ──
   const [matchCount, setMatchCount] = useState<number | null>(null);
-  const [needsEnrichment, setNeedsEnrichment] = useState(0);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
-  // Preparation status
-  const [preparing, setPreparing] = useState(false);
-  const [campaignStatus, setCampaignStatus] = useState<string>("idle");
-  const [campaignStats, setCampaignStats] = useState<any>(null);
+  // ── Step 2: Generation progress ──
+  const [sequenceId, setSequenceId] = useState<string | null>(existingSequenceId || null);
+  const [genStatus, setGenStatus] = useState<string>("idle");
+  const [genStats, setGenStats] = useState<{ companiesSelected?: number; contactsFound?: number; emailsDrafted?: number }>({});
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch matching company count
+  // ── Step 3: Review ──
+  const [emails, setEmails] = useState<Array<{
+    id: string; toAddress: string; subject: string; bodyHtml: string; status: string; stepNumber: number | null;
+    contact: { firstName: string | null; lastName: string | null; title: string | null } | null;
+  }>>([]);
+  const [reviewFilter, setReviewFilter] = useState<"draft" | "queued">("draft");
+
+  // Toggle pill helper
+  const toggle = (list: string[], val: string, setter: (v: string[]) => void) => {
+    setter(list.includes(val) ? list.filter((v) => v !== val) : [...list, val]);
+  };
+
+  // ── Fetch preview count ──
   const fetchPreview = useCallback(async () => {
+    if (!sequenceId && !existingSequenceId) return;
     setLoadingPreview(true);
     try {
       const params = new URLSearchParams();
@@ -93,69 +66,64 @@ export function CampaignWizard({
       selectedGeographies.forEach((g) => params.append("geography", g));
       if (minScore > 0) params.set("minScore", String(minScore));
 
-      const res = await fetch(`/api/campaigns/${sequenceId}/preview?${params}`);
+      // Use any sequenceId for the preview endpoint (it just needs tenant context)
+      const sid = sequenceId || existingSequenceId || "preview";
+      const res = await fetch(`/api/campaigns/${sid}/preview?${params}`);
       if (res.ok) {
         const data = await res.json();
         setMatchCount(data.matchingCompanies);
-        setNeedsEnrichment(data.needsEnrichment);
       }
-    } catch {
-      setMatchCount(null);
-    } finally {
-      setLoadingPreview(false);
-    }
-  }, [sequenceId, selectedIndustries, selectedSizes, selectedGeographies, minScore]);
+    } catch { /* */ }
+    setLoadingPreview(false);
+  }, [selectedIndustries, selectedSizes, selectedGeographies, minScore, sequenceId, existingSequenceId]);
 
-  useEffect(() => {
-    if (currentStep === "segment") {
-      const timer = setTimeout(fetchPreview, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [currentStep, fetchPreview]);
-
-  // Poll campaign status during preparation
-  useEffect(() => {
-    if (!preparing) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/campaigns/${sequenceId}/status`);
-        if (res.ok) {
-          const data = await res.json();
-          setCampaignStatus(data.status);
-          setCampaignStats(data.stats);
-          if (data.status === "ready") {
-            setPreparing(false);
-          } else if (data.status === "idle" && data.stats === null) {
-            // Failed
-            setPreparing(false);
-            setError("Preparation failed. Check logs.");
-          }
-        }
-      } catch { /* ignore */ }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [preparing, sequenceId]);
-
-  function toggleItem(arr: string[], setArr: (v: string[]) => void, val: string) {
-    setArr(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
-  }
-
-  async function handlePrepare() {
+  // ── Step 2: Create sequence + launch preparation ──
+  async function startCampaign() {
+    setStep("generating");
     setError(null);
-    setPreparing(true);
-    setCampaignStatus("preparing");
+    setGenStatus("creating");
 
     try {
-      const res = await fetch("/api/campaigns/prepare", {
+      // 1. Create sequence if needed
+      let sid = sequenceId || existingSequenceId;
+      if (!sid) {
+        const name = campaignName.trim() || `Campaign ${new Date().toLocaleDateString("en", { month: "short", day: "numeric" })}`;
+        const createRes = await fetch("/api/sequences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!createRes.ok) throw new Error("Failed to create campaign");
+        const { sequence } = await createRes.json();
+        sid = sequence.id;
+        setSequenceId(sid);
+      }
+
+      // 2. Generate AI sequence steps if none exist
+      setGenStatus("generating_steps");
+      const genRes = await fetch("/api/campaigns/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sequenceId: sid }),
+      });
+      if (!genRes.ok) {
+        const data = await genRes.json();
+        // Non-blocking: steps might already exist or generation might fail
+        console.warn("Step generation:", data.error);
+      }
+
+      // 3. Launch campaign preparation (enrichment + contact discovery + email drafting)
+      setGenStatus("preparing");
+      const prepRes = await fetch("/api/campaigns/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sequenceId,
+          sequenceId: sid,
           segmentFilters: {
-            industries: selectedIndustries.length ? selectedIndustries : undefined,
-            sizes: selectedSizes.length ? selectedSizes : undefined,
-            geographies: selectedGeographies.length ? selectedGeographies : undefined,
-            minScore: minScore > 0 ? minScore : undefined,
+            industries: selectedIndustries,
+            sizes: selectedSizes,
+            geographies: selectedGeographies,
+            minScore,
           },
           targetRoles: selectedRoles,
           maxCompanies,
@@ -163,569 +131,367 @@ export function CampaignWizard({
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to start preparation");
-        setPreparing(false);
+      if (!prepRes.ok) {
+        const data = await prepRes.json();
+        throw new Error(data.error || "Campaign preparation failed");
       }
-    } catch {
-      setError("Network error");
-      setPreparing(false);
+
+      // 4. Poll for status
+      setGenStatus("enriching");
+      pollStatus(sid!);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Campaign failed");
+      setGenStatus("error");
     }
   }
 
-  const stepIndex = WIZARD_STEPS.findIndex((s) => s.key === currentStep);
-  const canGoNext = stepIndex < WIZARD_STEPS.length - 1;
-  const canGoBack = stepIndex > 0;
+  function pollStatus(sid: string) {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/campaigns/${sid}/status`);
+        if (!res.ok) return;
+        const data = await res.json();
 
-  const estimatedContacts = Math.min(matchCount || 0, maxCompanies) * maxContactsPerCompany;
-  const estimatedCredits = (needsEnrichment > 0 ? Math.min(needsEnrichment, maxCompanies) : 0) + estimatedContacts;
+        setGenStats(data.stats || {});
+
+        if (data.stats?.companiesEnriched > 0) setGenStatus("discovering");
+        if (data.stats?.contactsFound > 0) setGenStatus("drafting");
+
+        if (data.status === "ready") {
+          clearInterval(interval);
+          setGenStatus("ready");
+          // Auto-advance to review
+          setTimeout(() => {
+            setStep("review");
+            loadReviewEmails(sid);
+          }, 800);
+        } else if (data.status === "idle" && data.error) {
+          clearInterval(interval);
+          setError(data.error);
+          setGenStatus("error");
+        }
+      } catch { /* */ }
+    }, 3000);
+
+    // Safety timeout: stop polling after 5 minutes
+    setTimeout(() => clearInterval(interval), 300000);
+  }
+
+  async function loadReviewEmails(sid: string) {
+    try {
+      const res = await fetch(`/api/outbound/review?sequenceId=${sid}&status=${reviewFilter}`);
+      if (res.ok) {
+        const data = await res.json();
+        setEmails(data.emails || []);
+      }
+    } catch { /* */ }
+  }
+
+  useEffect(() => {
+    if (step === "review" && sequenceId) loadReviewEmails(sequenceId);
+  }, [reviewFilter]);
+
+  async function approveAll() {
+    const draftIds = emails.filter((e) => e.status === "draft").map((e) => e.id);
+    if (draftIds.length === 0) return;
+    await fetch("/api/outbound/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailIds: draftIds, action: "approve_all" }),
+    });
+    if (sequenceId) loadReviewEmails(sequenceId);
+  }
+
+  async function launchCampaign() {
+    if (!sequenceId) return;
+    try {
+      const res = await fetch(`/api/campaigns/${sequenceId}/launch`, { method: "POST" });
+      if (res.ok) {
+        onComplete(sequenceId);
+      }
+    } catch { /* */ }
+  }
+
+  // ── Stage labels ──
+  const stageLabels: Record<string, string> = {
+    creating: "Creating campaign...",
+    generating_steps: "AI is writing your email sequence...",
+    preparing: "Starting campaign preparation...",
+    enriching: "Enriching companies from your TAM...",
+    discovering: "Discovering decision-makers...",
+    drafting: "Writing personalized emails...",
+    ready: "Campaign ready for review!",
+    error: error || "Something went wrong",
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-    >
-      <div
-        className="flex h-full w-full max-w-lg flex-col"
-        style={{ background: "var(--color-bg-surface)", borderLeft: "1px solid var(--color-border-default)" }}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full max-w-2xl mx-4 rounded-2xl overflow-hidden" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+
         {/* Header */}
-        <div
-          className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: "1px solid var(--color-border-default)" }}
-        >
-          <div>
-            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-              Launch Campaign
+        <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+          <div className="flex items-center gap-3">
+            <Zap size={16} style={{ color: "var(--color-accent)" }} />
+            <h2 className="text-[16px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+              {step === "targets" ? "New Campaign" : step === "generating" ? "Building Campaign" : step === "review" ? "Review Emails" : "Launch"}
             </h2>
-            <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">{sequenceName}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 hover:bg-[var(--color-bg-hover)] text-[var(--color-text-tertiary)]"
-          >
+          <button onClick={onClose} className="p-1 rounded-md transition-colors" style={{ color: "var(--color-text-tertiary)" }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "var(--color-bg-hover)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
             <X size={16} />
           </button>
         </div>
 
-        {/* Step indicators */}
-        <div
-          className="flex items-center gap-1 px-5 py-3"
-          style={{ borderBottom: "1px solid var(--color-border-default)" }}
-        >
-          {WIZARD_STEPS.map((ws, i) => {
-            const active = ws.key === currentStep;
-            const completed = i < stepIndex;
-            return (
-              <div key={ws.key} className="flex items-center gap-1">
-                {i > 0 && (
-                  <div
-                    className="h-px w-4"
-                    style={{
-                      background: completed ? "var(--color-accent)" : "var(--color-border-default)",
-                    }}
-                  />
-                )}
-                <div
-                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium"
-                  style={{
-                    background: active
-                      ? "var(--color-accent)"
-                      : completed
-                        ? "rgba(var(--color-accent-rgb, 99,102,241), 0.15)"
-                        : "var(--color-bg-page)",
-                    color: active ? "white" : completed ? "var(--color-accent)" : "var(--color-text-tertiary)",
-                  }}
-                >
-                  {completed ? <Check size={10} /> : ws.icon}
-                  <span>{ws.label}</span>
-                </div>
-              </div>
-            );
-          })}
+        {/* Progress */}
+        <div className="flex items-center gap-1 px-6 py-2 shrink-0" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+          {(["targets", "generating", "review", "launch"] as WizardStep[]).map((s, i) => (
+            <div key={s} className="flex items-center gap-1 flex-1">
+              <div className="h-1 flex-1 rounded-full" style={{
+                background: (["targets", "generating", "review", "launch"].indexOf(step) >= i)
+                  ? "var(--color-accent)" : "var(--color-border-default)"
+              }} />
+            </div>
+          ))}
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
-          {/* Step 1: Segment */}
-          {currentStep === "segment" && (
-            <>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+
+          {/* ══ STEP 1: TARGET SELECTION ══ */}
+          {step === "targets" && (
+            <div className="space-y-5">
+              {/* Campaign name */}
               <div>
-                <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Industries
-                </label>
-                <div className="mt-2 flex flex-wrap gap-1.5 max-h-32 overflow-auto">
-                  {INDUSTRIES.slice(0, 40).map((ind) => {
-                    const active = selectedIndustries.includes(ind);
-                    return (
-                      <button
-                        key={ind}
-                        onClick={() => toggleItem(selectedIndustries, setSelectedIndustries, ind)}
-                        className={pill}
-                        style={{
-                          background: active ? "var(--color-accent)" : "var(--color-bg-page)",
-                          color: active ? "white" : "var(--color-text-secondary)",
-                          border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                        }}
-                      >
-                        {ind}
-                      </button>
-                    );
-                  })}
-                </div>
+                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Campaign name</label>
+                <input
+                  value={campaignName}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  placeholder={`Campaign ${new Date().toLocaleDateString("en", { month: "short", day: "numeric" })}`}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-[13px] outline-none"
+                  style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
+                />
               </div>
 
+              {/* Industries */}
               <div>
-                <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Company Size
-                </label>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {COMPANY_SIZES.map((size) => {
-                    const active = selectedSizes.includes(size);
-                    return (
-                      <button
-                        key={size}
-                        onClick={() => toggleItem(selectedSizes, setSelectedSizes, size)}
-                        className={pill}
-                        style={{
-                          background: active ? "var(--color-accent)" : "var(--color-bg-page)",
-                          color: active ? "white" : "var(--color-text-secondary)",
-                          border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                        }}
-                      >
-                        {size}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Geography
-                </label>
-                <div className="mt-2 flex flex-wrap gap-1.5 max-h-28 overflow-auto">
-                  {GEOGRAPHIES.slice(0, 30).map((geo) => {
-                    const active = selectedGeographies.includes(geo);
-                    return (
-                      <button
-                        key={geo}
-                        onClick={() => toggleItem(selectedGeographies, setSelectedGeographies, geo)}
-                        className={pill}
-                        style={{
-                          background: active ? "var(--color-accent)" : "var(--color-bg-page)",
-                          color: active ? "white" : "var(--color-text-secondary)",
-                          border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                        }}
-                      >
-                        {geo}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div>
-                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    Max Companies
-                  </label>
-                  <input
-                    type="number"
-                    value={maxCompanies}
-                    onChange={(e) => setMaxCompanies(Math.min(500, Math.max(1, Number(e.target.value))))}
-                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-primary)]"
-                    style={{
-                      background: "var(--color-bg-page)",
-                      border: "1px solid var(--color-border-default)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                    Min Score
-                  </label>
-                  <input
-                    type="number"
-                    value={minScore}
-                    onChange={(e) => setMinScore(Math.max(0, Number(e.target.value)))}
-                    min={0}
-                    max={100}
-                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-primary)]"
-                    style={{
-                      background: "var(--color-bg-page)",
-                      border: "1px solid var(--color-border-default)",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Live preview */}
-              <Card>
-                <CardBody>
-                  <div className="flex items-center gap-3">
-                    <Building2 size={16} className="text-[var(--color-accent)]" />
-                    <div>
-                      {loadingPreview ? (
-                        <div className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)]">
-                          <Loader2 size={12} className="animate-spin" /> Counting...
-                        </div>
-                      ) : (
-                        <>
-                          <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                            {matchCount ?? "—"} companies match
-                          </p>
-                          {needsEnrichment > 0 && (
-                            <p className="text-xs text-[var(--color-text-tertiary)]">
-                              {needsEnrichment} need enrichment ({matchCount! - needsEnrichment} already enriched)
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            </>
-          )}
-
-          {/* Step 2: Roles */}
-          {currentStep === "roles" && (
-            <>
-              <div>
-                <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Target Decision-Makers
-                </label>
-                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
-                  Apollo will search for people with these titles at each company
-                </p>
-                <div className="mt-3 flex flex-wrap gap-1.5 max-h-48 overflow-auto">
-                  {DECISION_MAKER_ROLES.map((role) => {
-                    const active = selectedRoles.includes(role);
-                    return (
-                      <button
-                        key={role}
-                        onClick={() => toggleItem(selectedRoles, setSelectedRoles, role)}
-                        className={pill}
-                        style={{
-                          background: active ? "var(--color-accent)" : "var(--color-bg-page)",
-                          color: active ? "white" : "var(--color-text-secondary)",
-                          border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                        }}
-                      >
-                        {role}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Contacts per Company
-                </label>
-                <div className="mt-2 flex gap-2">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setMaxContactsPerCompany(n)}
-                      className="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-                      style={{
-                        background: maxContactsPerCompany === n ? "var(--color-accent)" : "var(--color-bg-page)",
-                        color: maxContactsPerCompany === n ? "white" : "var(--color-text-secondary)",
-                        border: `1px solid ${maxContactsPerCompany === n ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                      }}
-                    >
-                      {n}
-                    </button>
+                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Target industries</label>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {INDUSTRIES.map((ind) => (
+                    <button key={ind} type="button" onClick={() => toggle(selectedIndustries, ind, setSelectedIndustries)}
+                      className={pill} style={{
+                        background: selectedIndustries.includes(ind) ? "var(--color-accent)" : "var(--color-bg-page)",
+                        color: selectedIndustries.includes(ind) ? "white" : "var(--color-text-secondary)",
+                        border: `1px solid ${selectedIndustries.includes(ind) ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                      }}>{ind}</button>
                   ))}
                 </div>
               </div>
 
-              <Card>
-                <CardBody>
-                  <div className="flex items-center gap-3">
-                    <Users size={16} className="text-[var(--color-accent)]" />
-                    <p className="text-sm text-[var(--color-text-primary)]">
-                      ~{estimatedContacts} contacts estimated
-                      <span className="text-[var(--color-text-tertiary)]">
-                        {" "}({Math.min(matchCount || 0, maxCompanies)} companies x {maxContactsPerCompany} contacts)
-                      </span>
-                    </p>
-                  </div>
-                </CardBody>
-              </Card>
-            </>
+              {/* Company size */}
+              <div>
+                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Company size</label>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {COMPANY_SIZES.map((size) => (
+                    <button key={size} type="button" onClick={() => toggle(selectedSizes, size, setSelectedSizes)}
+                      className={pill} style={{
+                        background: selectedSizes.includes(size) ? "var(--color-accent)" : "var(--color-bg-page)",
+                        color: selectedSizes.includes(size) ? "white" : "var(--color-text-secondary)",
+                        border: `1px solid ${selectedSizes.includes(size) ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                      }}>{size}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Target roles */}
+              <div>
+                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Target decision-makers</label>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {DECISION_MAKER_ROLES.slice(0, 20).map((role) => (
+                    <button key={role} type="button" onClick={() => toggle(selectedRoles, role, setSelectedRoles)}
+                      className={pill} style={{
+                        background: selectedRoles.includes(role) ? "var(--color-accent)" : "var(--color-bg-page)",
+                        color: selectedRoles.includes(role) ? "white" : "var(--color-text-secondary)",
+                        border: `1px solid ${selectedRoles.includes(role) ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                      }}>{role}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Max companies */}
+              <div className="flex items-center gap-4">
+                <div>
+                  <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Max companies</label>
+                  <input type="number" value={maxCompanies} onChange={(e) => setMaxCompanies(Number(e.target.value))} min={1} max={500}
+                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-[13px] outline-none"
+                    style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
+                  />
+                </div>
+                <div>
+                  <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Contacts per company</label>
+                  <input type="number" value={maxContactsPerCompany} onChange={(e) => setMaxContactsPerCompany(Number(e.target.value))} min={1} max={5}
+                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-[13px] outline-none"
+                    style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
+                  />
+                </div>
+              </div>
+            </div>
           )}
 
-          {/* Step 3: Preview Sequence */}
-          {currentStep === "preview" && (
-            <PreviewSequenceStep
-              sequenceSteps={sequenceSteps}
-              sequenceId={sequenceId}
-            />
-          )}
-
-          {/* Step 4: Confirm */}
-          {currentStep === "confirm" && (
-            <>
-              {campaignStatus === "idle" && !preparing && (
+          {/* ══ STEP 2: GENERATING ══ */}
+          {step === "generating" && (
+            <div className="flex flex-col items-center justify-center py-12">
+              {genStatus === "error" ? (
                 <>
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Campaign Summary</h3>
-                  <div className="space-y-2">
-                    <SummaryRow label="Companies" value={`${Math.min(matchCount || 0, maxCompanies)}`} />
-                    <SummaryRow label="Target roles" value={selectedRoles.join(", ") || "All"} />
-                    <SummaryRow label="Contacts per company" value={String(maxContactsPerCompany)} />
-                    <SummaryRow label="Estimated contacts" value={`~${estimatedContacts}`} />
-                    <SummaryRow label="Sequence steps" value={String(sequenceSteps.length)} />
-                    <SummaryRow label="Estimated emails" value={`~${estimatedContacts}`} />
+                  <div className="h-12 w-12 rounded-full flex items-center justify-center mb-4" style={{ background: "var(--color-error-soft)" }}>
+                    <X size={20} style={{ color: "var(--color-error)" }} />
                   </div>
-
-                  {estimatedCredits > 0 && (
-                    <Card>
-                      <CardBody>
-                        <p className="text-xs text-[var(--color-text-secondary)]">
-                          <strong>Apollo credit estimate:</strong> ~{estimatedCredits} credits
-                          {needsEnrichment > 0 && ` (${Math.min(needsEnrichment, maxCompanies)} enrich + ${estimatedContacts} people search)`}
-                          {needsEnrichment === 0 && ` (${estimatedContacts} people search)`}
-                        </p>
-                      </CardBody>
-                    </Card>
-                  )}
-
-                  {error && (
-                    <p className="text-xs text-red-400">{error}</p>
-                  )}
+                  <p className="text-[14px] font-medium" style={{ color: "var(--color-error)" }}>{error}</p>
+                  <Button variant="outline" size="sm" className="mt-4" onClick={() => { setStep("targets"); setGenStatus("idle"); }}>
+                    <ArrowLeft size={13} /> Back to targets
+                  </Button>
+                </>
+              ) : genStatus === "ready" ? (
+                <>
+                  <div className="h-12 w-12 rounded-full flex items-center justify-center mb-4" style={{ background: "var(--color-success-soft)" }}>
+                    <Check size={20} style={{ color: "var(--color-success)" }} />
+                  </div>
+                  <p className="text-[14px] font-medium" style={{ color: "var(--color-text-primary)" }}>Campaign ready!</p>
+                  <p className="text-[12px] mt-1" style={{ color: "var(--color-text-tertiary)" }}>Moving to review...</p>
+                </>
+              ) : (
+                <>
+                  <Loader2 size={32} className="animate-spin mb-4" style={{ color: "var(--color-accent)" }} />
+                  <p className="text-[14px] font-medium" style={{ color: "var(--color-text-primary)" }}>{stageLabels[genStatus] || "Working..."}</p>
+                  <div className="mt-4 space-y-2 text-center">
+                    {genStats.companiesSelected != null && (
+                      <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                        {genStats.companiesSelected} companies selected
+                      </p>
+                    )}
+                    {genStats.contactsFound != null && genStats.contactsFound > 0 && (
+                      <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                        {genStats.contactsFound} contacts discovered
+                      </p>
+                    )}
+                    {genStats.emailsDrafted != null && genStats.emailsDrafted > 0 && (
+                      <p className="text-[12px]" style={{ color: "var(--color-accent)" }}>
+                        {genStats.emailsDrafted} emails drafted
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
+            </div>
+          )}
 
-              {(preparing || campaignStatus === "preparing") && (
-                <div className="flex flex-col items-center justify-center py-12 gap-4">
-                  <Loader2 size={32} className="animate-spin text-[var(--color-accent)]" />
-                  <p className="text-sm font-medium text-[var(--color-text-primary)]">
-                    Preparing campaign...
-                  </p>
-                  <p className="text-xs text-[var(--color-text-tertiary)]">
-                    Enriching companies, discovering contacts, generating emails
-                  </p>
-                  {campaignStats && (
-                    <div className="space-y-1 text-center">
-                      <p className="text-xs text-[var(--color-text-secondary)]">
-                        {campaignStats.companiesEnriched || 0} enriched,{" "}
-                        {campaignStats.contactsFound || 0} contacts,{" "}
-                        {campaignStats.emailsDrafted || 0} emails
-                      </p>
-                    </div>
-                  )}
+          {/* ══ STEP 3: REVIEW ══ */}
+          {step === "review" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {(["draft", "queued"] as const).map((f) => (
+                    <button key={f} onClick={() => setReviewFilter(f)}
+                      className="rounded-full px-3 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: reviewFilter === f ? "var(--color-accent)" : "var(--color-bg-page)",
+                        color: reviewFilter === f ? "white" : "var(--color-text-secondary)",
+                        border: `1px solid ${reviewFilter === f ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                      }}
+                    >{f === "draft" ? `Drafts (${emails.filter(e => e.status === "draft").length})` : `Approved (${emails.filter(e => e.status === "queued").length})`}</button>
+                  ))}
                 </div>
-              )}
-
-              {campaignStatus === "ready" && (
-                <div className="flex flex-col items-center justify-center py-12 gap-4">
-                  <div
-                    className="flex h-12 w-12 items-center justify-center rounded-full"
-                    style={{ background: "rgba(34,197,94,0.1)" }}
-                  >
-                    <Check size={24} className="text-green-500" />
-                  </div>
-                  <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                    Campaign ready
-                  </p>
-                  {campaignStats && (
-                    <div className="space-y-1 text-center">
-                      <p className="text-xs text-[var(--color-text-secondary)]">
-                        {campaignStats.companiesSelected} companies / {campaignStats.contactsFound} contacts / {campaignStats.emailsDrafted} emails drafted
-                      </p>
-                    </div>
-                  )}
-                  <Button
-                    variant="gradient"
-                    onClick={() => {
-                      onPrepared();
-                      onClose();
-                    }}
-                  >
-                    Go to Review Queue
+                {emails.some((e) => e.status === "draft") && (
+                  <Button variant="gradient" size="sm" onClick={approveAll}>
+                    <Check size={13} /> Approve all
                   </Button>
+                )}
+              </div>
+
+              {emails.length === 0 ? (
+                <p className="text-center py-8 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>No emails to review.</p>
+              ) : (
+                <div className="space-y-2">
+                  {emails.filter((e) => reviewFilter === "draft" ? e.status === "draft" : e.status === "queued").slice(0, 30).map((email) => (
+                    <div key={email.id} className="rounded-lg p-4" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                            {email.contact ? `${email.contact.firstName || ""} ${email.contact.lastName || ""}`.trim() : email.toAddress}
+                          </span>
+                          {email.contact?.title && (
+                            <span className="text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>{email.contact.title}</span>
+                          )}
+                          {email.stepNumber && (
+                            <Badge variant="neutral" size="sm">Step {email.stepNumber}</Badge>
+                          )}
+                        </div>
+                        <span className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>{email.toAddress}</span>
+                      </div>
+                      <p className="text-[13px] font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>{email.subject}</p>
+                      <div className="text-[12px] leading-relaxed line-clamp-3" style={{ color: "var(--color-text-secondary)" }}
+                        dangerouslySetInnerHTML={{ __html: email.bodyHtml.slice(0, 300) }} />
+                    </div>
+                  ))}
                 </div>
               )}
-            </>
+            </div>
+          )}
+
+          {/* ══ STEP 4: LAUNCH ══ */}
+          {step === "launch" && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="h-16 w-16 rounded-full flex items-center justify-center mb-6" style={{ background: "linear-gradient(135deg, var(--color-accent-soft), rgba(44,107,237,0.1))" }}>
+                <Send size={24} style={{ color: "var(--color-accent)" }} />
+              </div>
+              <h3 className="text-[18px] font-semibold" style={{ color: "var(--color-text-primary)" }}>Ready to launch</h3>
+              <p className="text-[13px] mt-2 text-center max-w-sm" style={{ color: "var(--color-text-tertiary)" }}>
+                {emails.filter((e) => e.status === "queued").length} emails approved and ready to send.
+                Emails will be sent over the next few days following the sequence schedule.
+              </p>
+              <Button variant="gradient" size="md" className="mt-6" onClick={launchCampaign}>
+                <Zap size={14} /> Launch campaign
+              </Button>
+            </div>
           )}
         </div>
 
         {/* Footer */}
-        <div
-          className="flex items-center justify-between px-5 py-3"
-          style={{ borderTop: "1px solid var(--color-border-default)" }}
-        >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (canGoBack) setCurrentStep(WIZARD_STEPS[stepIndex - 1].key);
-              else onClose();
-            }}
-            disabled={preparing}
-          >
-            <ArrowLeft size={14} />
-            {canGoBack ? "Back" : "Cancel"}
-          </Button>
-
-          {currentStep !== "confirm" ? (
-            <Button
-              variant="solid"
-              size="sm"
-              onClick={() => canGoNext && setCurrentStep(WIZARD_STEPS[stepIndex + 1].key)}
-              disabled={currentStep === "roles" && selectedRoles.length === 0}
-            >
-              Next
-              <ArrowRight size={14} />
-            </Button>
-          ) : campaignStatus === "idle" && !preparing ? (
-            <Button
-              variant="gradient"
-              size="sm"
-              onClick={handlePrepare}
-              disabled={!matchCount || matchCount === 0}
-            >
-              <Zap size={14} />
-              Prepare Campaign
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewSequenceStep({
-  sequenceSteps,
-  sequenceId,
-}: {
-  sequenceSteps: Step[];
-  sequenceId: string;
-}) {
-  const [generating, setGenerating] = useState(false);
-  const [generatedSteps, setGeneratedSteps] = useState<
-    Array<{ stepNumber: number; subject: string; body: string; delayDays: number; purpose?: string; signalUsed?: string }>
-  >([]);
-  const [genMeta, setGenMeta] = useState<{ methodology?: string; signal?: string; reasoning?: string } | null>(null);
-  const [genError, setGenError] = useState<string | null>(null);
-
-  const stepsToShow = generatedSteps.length > 0 ? generatedSteps : sequenceSteps;
-
-  async function handleAutoGenerate() {
-    setGenerating(true);
-    setGenError(null);
-    try {
-      const res = await fetch("/api/campaigns/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sequenceId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGeneratedSteps(data.steps || []);
-        setGenMeta({
-          methodology: data.methodology?.seniority,
-          signal: data.methodology?.signalTitle,
-          reasoning: data.reasoning,
-        });
-      } else {
-        const data = await res.json();
-        setGenError(data.error || "Generation failed");
-      }
-    } catch {
-      setGenError("Network error");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-[var(--color-text-tertiary)]">
-          {generatedSteps.length > 0
-            ? "AI-generated sequence — review and edit before launching."
-            : "Each contact will receive this sequence, AI-personalized per recipient."}
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleAutoGenerate}
-          loading={generating}
-          disabled={generating}
-        >
-          <Sparkles size={12} />
-          {generating ? "Generating..." : "Auto-generate with AI"}
-        </Button>
-      </div>
-
-      {genMeta && (
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {genMeta.signal && (
-            <Badge variant="info" size="sm">Signal: {genMeta.signal}</Badge>
+        <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderTop: "1px solid var(--color-border-default)" }}>
+          {step === "targets" && (
+            <>
+              <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+              <Button variant="gradient" size="md" onClick={startCampaign} disabled={selectedRoles.length === 0}>
+                Build campaign <ArrowRight size={13} />
+              </Button>
+            </>
           )}
-          {genMeta.methodology && (
-            <Badge variant="neutral" size="sm">Seniority: {genMeta.methodology}</Badge>
+          {step === "generating" && (
+            <>
+              <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>This may take a minute...</span>
+              <span />
+            </>
+          )}
+          {step === "review" && (
+            <>
+              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                {emails.filter((e) => e.status === "queued").length} approved · {emails.filter((e) => e.status === "draft").length} pending
+              </span>
+              <Button variant="gradient" size="md" onClick={() => setStep("launch")} disabled={emails.filter((e) => e.status === "queued").length === 0}>
+                Continue to launch <ArrowRight size={13} />
+              </Button>
+            </>
+          )}
+          {step === "launch" && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setStep("review")}>
+                <ArrowLeft size={13} /> Back to review
+              </Button>
+              <span />
+            </>
           )}
         </div>
-      )}
-
-      {genMeta?.reasoning && (
-        <p className="text-xs text-[var(--color-text-tertiary)] italic mt-1">
-          {genMeta.reasoning}
-        </p>
-      )}
-
-      {genError && <p className="text-xs text-red-400 mt-1">{genError}</p>}
-
-      <div className="space-y-3">
-        {stepsToShow.map((step: any) => (
-          <Card key={step.id || step.stepNumber}>
-            <CardBody>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge variant="info" size="sm">Step {step.stepNumber}</Badge>
-                  {step.purpose && (
-                    <span className="text-[10px] text-[var(--color-accent)]">{step.purpose}</span>
-                  )}
-                </div>
-                <span className="text-[11px] text-[var(--color-text-tertiary)]">
-                  {(step.delayDays || 0) > 0
-                    ? `Wait ${step.delayDays} day${step.delayDays > 1 ? "s" : ""}`
-                    : "Immediate"}
-                </span>
-              </div>
-              {step.signalUsed && (
-                <div className="mt-1">
-                  <Badge variant="warning" size="sm">{step.signalUsed}</Badge>
-                </div>
-              )}
-              <p className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">
-                {step.subjectTemplate || step.subject}
-              </p>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">
-                {step.bodyTemplate || step.body}
-              </p>
-            </CardBody>
-          </Card>
-        ))}
       </div>
-    </>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="flex items-center justify-between py-1.5 px-1 text-sm"
-      style={{ borderBottom: "1px solid var(--color-border-default)" }}
-    >
-      <span className="text-[var(--color-text-tertiary)]">{label}</span>
-      <span className="font-medium text-[var(--color-text-primary)]">{value}</span>
     </div>
   );
 }
