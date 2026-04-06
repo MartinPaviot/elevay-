@@ -378,7 +378,7 @@ export const prepareCampaign = inngest.createFunction(
           const [oauthAccount] = await db
             .select({ idToken: authAccounts.id_token })
             .from(authAccounts)
-            .where(and(eq(authAccounts.userId, userId), sql`${authAccounts.provider} != 'credentials'`))
+            .where(and(eq(authAccounts.userId, userId || ""), sql`${authAccounts.provider} != 'credentials'`))
             .limit(1);
           if (oauthAccount?.idToken) {
             const payload = JSON.parse(Buffer.from(oauthAccount.idToken.split(".")[1], "base64url").toString());
@@ -466,7 +466,7 @@ export const prepareCampaign = inngest.createFunction(
           try {
             const { authAccounts } = await import("@/db/schema");
             const [oa] = await db.select({ idToken: authAccounts.id_token }).from(authAccounts)
-              .where(and(eq(authAccounts.userId, userId), sql`${authAccounts.provider} != 'credentials'`)).limit(1);
+              .where(and(eq(authAccounts.userId, userId || ""), sql`${authAccounts.provider} != 'credentials'`)).limit(1);
             if (oa?.idToken) {
               const payload = JSON.parse(Buffer.from(oa.idToken.split(".")[1], "base64url").toString());
               if (payload.email) senderEmail = payload.email;
