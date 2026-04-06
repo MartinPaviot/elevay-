@@ -8,7 +8,7 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 // From address — use Resend's test domain until custom domain verified
-const FROM_ADDRESS = "LeadSens <notifications@resend.dev>";
+const FROM_ADDRESS = "Elevay <notifications@resend.dev>";
 
 export type NotificationType =
   | "deal_risk"
@@ -147,7 +147,7 @@ function buildEmailHtml(
   entityType?: string,
   entityId?: string
 ): string {
-  const appUrl = process.env.NEXTAUTH_URL || "https://app.leadsens.com";
+  const appUrl = process.env.NEXTAUTH_URL || "https://app.elevay.com";
   let ctaUrl = appUrl;
   if (entityType && entityId) {
     const typeMap: Record<string, string> = {
@@ -173,7 +173,7 @@ function buildEmailHtml(
         <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
           <tr>
             <td style="background:#09090b;padding:20px 24px;">
-              <span style="color:#ffffff;font-size:16px;font-weight:600;">LeadSens</span>
+              <span style="color:#ffffff;font-size:16px;font-weight:600;">Elevay</span>
             </td>
           </tr>
           <tr>
@@ -181,7 +181,7 @@ function buildEmailHtml(
               <h2 style="margin:0 0 12px;font-size:18px;color:#09090b;">${escapeHtml(title)}</h2>
               <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#52525b;">${escapeHtml(body)}</p>
               <a href="${ctaUrl}" style="display:inline-block;background:#6366f1;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">
-                View in LeadSens
+                View in Elevay
               </a>
             </td>
           </tr>

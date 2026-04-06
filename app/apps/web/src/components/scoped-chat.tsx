@@ -130,7 +130,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
                 <div className="mb-1 flex items-center gap-1">
                   <Sparkles size={10} style={{ color: "var(--color-accent)" }} />
                   <span className="text-[10px] font-medium" style={{ color: "var(--color-text-tertiary)" }}>
-                    LeadSens
+                    Elevay
                   </span>
                 </div>
               )}

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Acceptable Use Policy | LeadSens",
-  description: "LeadSens Acceptable Use Policy",
+  title: "Acceptable Use Policy | Elevay",
+  description: "Elevay Acceptable Use Policy",
 };
 
 export default function AcceptableUsePage() {
@@ -23,7 +23,7 @@ export default function AcceptableUsePage() {
           </h2>
           <p className="mt-3">
             This Acceptable Use Policy (&quot;AUP&quot;) defines the rules and guidelines for
-            using LeadSens, operated by Elevay. This policy is incorporated into and
+            using Elevay, operated by Elevay. This policy is incorporated into and
             forms part of our{" "}
             <a href="/terms" className="text-[var(--color-accent)] hover:underline">
               Terms of Service
@@ -42,7 +42,7 @@ export default function AcceptableUsePage() {
             2. Prohibited Content in Outbound Emails
           </h2>
           <p className="mt-3">
-            You may not use LeadSens to send emails that contain or promote:
+            You may not use Elevay to send emails that contain or promote:
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-6">
             <li>Spam, unsolicited bulk messages, or any content sent without proper consent or legal basis</li>
@@ -64,7 +64,7 @@ export default function AcceptableUsePage() {
             3. Anti-Spam Requirements
           </h2>
           <p className="mt-3">
-            All outbound emails sent through LeadSens must comply with the following:
+            All outbound emails sent through Elevay must comply with the following:
           </p>
           <ul className="mt-2 list-disc space-y-2 pl-6">
             <li>
@@ -78,12 +78,12 @@ export default function AcceptableUsePage() {
             </li>
             <li>
               <strong>Working unsubscribe:</strong> Every outbound email must include a
-              functional unsubscribe link. LeadSens automatically includes one, and you
+              functional unsubscribe link. Elevay automatically includes one, and you
               must not remove or obscure it.
             </li>
             <li>
               <strong>Honor opt-outs:</strong> Unsubscribe requests must be processed
-              within 10 business days. LeadSens automatically handles opt-outs, but you
+              within 10 business days. Elevay automatically handles opt-outs, but you
               must not re-add opted-out contacts to sequences.
             </li>
             <li>
@@ -138,7 +138,7 @@ export default function AcceptableUsePage() {
             5. Regulatory Compliance
           </h2>
           <p className="mt-3">
-            You are responsible for ensuring your use of LeadSens complies with all
+            You are responsible for ensuring your use of Elevay complies with all
             applicable laws and regulations, including but not limited to:
           </p>
 
@@ -179,13 +179,13 @@ export default function AcceptableUsePage() {
             6. General Prohibited Activities
           </h2>
           <p className="mt-3">
-            In addition to email-specific rules, you may not use LeadSens to:
+            In addition to email-specific rules, you may not use Elevay to:
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-6">
             <li>Attempt to gain unauthorized access to the Service, other accounts, or related systems</li>
             <li>Reverse-engineer, decompile, or extract the source code of the Service</li>
             <li>Interfere with or disrupt the integrity or performance of the Service</li>
-            <li>Use the Service to compete with LeadSens or build a competing product</li>
+            <li>Use the Service to compete with Elevay or build a competing product</li>
             <li>Share account credentials or allow unauthorized third parties to access your account</li>
             <li>Use automated tools (bots, scrapers) to access the Service beyond the provided APIs</li>
             <li>Store or process data that you do not have the right to use</li>
@@ -235,7 +235,7 @@ export default function AcceptableUsePage() {
             8. Reporting Violations
           </h2>
           <p className="mt-3">
-            If you believe a LeadSens user is violating this AUP, please report it to:
+            If you believe a Elevay user is violating this AUP, please report it to:
           </p>
           <ul className="mt-2 list-none space-y-1 pl-0">
             <li>

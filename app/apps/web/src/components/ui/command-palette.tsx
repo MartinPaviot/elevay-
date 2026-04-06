@@ -66,7 +66,7 @@ const NAV_ITEMS: CommandItem[] = [
   { id: "nav-meetings", label: "Meetings", icon: <Calendar size={16} />, href: "/meetings", section: "Navigate to" },
   { id: "nav-notes", label: "Notes", icon: <FileText size={16} />, href: "/notes", section: "Navigate to" },
   { id: "nav-voc", label: "Voice of Customer", icon: <MessageCircle size={16} />, href: "/voice-of-customer", section: "Navigate to" },
-  { id: "nav-chat", label: "Ask LeadSens", icon: <MessageSquare size={16} />, href: "/chat", section: "Navigate to" },
+  { id: "nav-chat", label: "Ask Elevay", icon: <MessageSquare size={16} />, href: "/chat", section: "Navigate to" },
   { id: "nav-settings", label: "Settings", icon: <Settings size={16} />, href: "/settings", section: "Navigate to" },
 ];
 
@@ -287,8 +287,8 @@ export function CommandPalette() {
     function handleOpen() {
       setOpen(true);
     }
-    window.addEventListener("leadsens:command-palette", handleOpen);
-    return () => window.removeEventListener("leadsens:command-palette", handleOpen);
+    window.addEventListener("elevay:command-palette", handleOpen);
+    return () => window.removeEventListener("elevay:command-palette", handleOpen);
   }, []);
 
   if (!open) return null;

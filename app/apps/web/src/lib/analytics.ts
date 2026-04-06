@@ -44,7 +44,7 @@ export async function captureEvent(
         distinct_id: distinctId,
         properties: {
           ...properties,
-          $lib: "leadsens-server",
+          $lib: "elevay-server",
         },
         timestamp: new Date().toISOString(),
       }),

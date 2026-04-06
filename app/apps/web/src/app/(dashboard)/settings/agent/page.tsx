@@ -36,7 +36,7 @@ export default function AgentSettingsPage() {
     <>
       <h1 className="text-xl font-semibold">Agent</h1>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-        Control how the LeadSens agent behaves in chat.
+        Control how the Elevay agent behaves in chat.
       </p>
 
       <section className="mt-6">

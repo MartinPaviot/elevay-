@@ -103,7 +103,7 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
           {step === "upload" && (
             <div className="space-y-4">
               <p className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
-                Upload a CSV file and LeadSens will automatically detect the entity type and map columns to CRM fields.
+                Upload a CSV file and Elevay will automatically detect the entity type and map columns to CRM fields.
               </p>
 
               {/* File upload area */}

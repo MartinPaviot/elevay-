@@ -793,7 +793,7 @@ function getModel() {
 function getDefaultPrompt(agentId: string): string {
   // Default prompts for agents — used when no versioned prompt exists yet
   const defaults: Record<string, string> = {
-    chat: "You are LeadSens, an autonomous GTM copilot for early-stage founders.",
+    chat: "You are Elevay, an autonomous GTM copilot for early-stage founders.",
     "draft-email": "You write cold outreach emails for B2B SaaS sales.",
     "process-reply": "You classify email replies into: positive, negative, ooo, unsubscribe, unknown.",
     "process-transcript": "You extract structured notes from meeting transcripts.",

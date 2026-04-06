@@ -43,7 +43,7 @@ export const AGENT_REGISTRY: Record<string, AgentDefinition> = {
   // ── Conversational ────────────────────────
   chat: {
     id: "chat",
-    name: "LeadSens Chat Agent",
+    name: "Elevay Chat Agent",
     category: "conversational",
     description: "Main GTM copilot — CRM queries, deal coaching, email drafts, task management",
     expectedTools: ["searchCRM", "queryContacts", "queryAccounts", "queryDeals", "queryActivities", "queryNotes"],

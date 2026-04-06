@@ -7,9 +7,9 @@ import { useRouter } from "next/navigation";
  * Global keyboard shortcuts for the dashboard.
  *
  * Single-key:
- *   n     — dispatch "leadsens:create" custom event
+ *   n     — dispatch "elevay:create" custom event
  *   /     — open command palette (Ctrl+K)
- *   Escape — dispatch "leadsens:escape" custom event
+ *   Escape — dispatch "elevay:escape" custom event
  *
  * Chords (press g, then second key within 1s):
  *   g a — Accounts
@@ -87,7 +87,7 @@ export function useKeyboardShortcuts() {
       // --- Single-key shortcuts ---
       if (e.key === "n") {
         e.preventDefault();
-        window.dispatchEvent(new CustomEvent("leadsens:create"));
+        window.dispatchEvent(new CustomEvent("elevay:create"));
         return;
       }
 
@@ -107,7 +107,7 @@ export function useKeyboardShortcuts() {
 
       if (e.key === "Escape") {
         // Dispatch a generic escape event for modals / dropdowns
-        window.dispatchEvent(new CustomEvent("leadsens:escape"));
+        window.dispatchEvent(new CustomEvent("elevay:escape"));
         return;
       }
     }

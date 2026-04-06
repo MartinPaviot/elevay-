@@ -13,7 +13,7 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 // Fallback from address using Resend test domain
-const FALLBACK_FROM = "LeadSens <outbound@resend.dev>";
+const FALLBACK_FROM = "Elevay <outbound@resend.dev>";
 
 /**
  * Progressive ramp-up schedule for new mailboxes.
@@ -74,10 +74,10 @@ function rewriteLinks(html: string, emailId: string, appUrl: string): string {
 
 // CAN-SPAM compliant footer — physical address + unsubscribe link
 function buildComplianceFooter(unsubUrl: string, companyName?: string): string {
-  const name = companyName || "LeadSens";
+  const name = companyName || "Elevay";
   return `
 <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e4e4e7;font-size:11px;color:#a1a1aa;line-height:1.5;">
-  <p style="margin:0;">Sent by ${name} via LeadSens</p>
+  <p style="margin:0;">Sent by ${name} via Elevay</p>
   <p style="margin:4px 0 0;">
     <a href="${unsubUrl}" style="color:#6366f1;text-decoration:underline;">Unsubscribe</a>
     &nbsp;·&nbsp; You received this because you are a business contact.
@@ -255,7 +255,7 @@ export const processOutboundEmails = inngest.createFunction(
         try {
           // Build unsubscribe URL
           const appUrl =
-            process.env.NEXT_PUBLIC_APP_URL || "https://app.leadsens.com";
+            process.env.NEXT_PUBLIC_APP_URL || "https://app.elevay.com";
           const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
 
           // CAN-SPAM: append compliance footer to HTML body
@@ -270,7 +270,7 @@ export const processOutboundEmails = inngest.createFunction(
           processedHtml = injectTrackingPixel(processedHtml, email.id, appUrl);
 
           const textWithFooter = (email.bodyText || "") +
-            `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
+            `\n\n---\nSent via Elevay\nUnsubscribe: ${unsubUrl}`;
 
           const { data, error } = await resend.emails.send({
             from: fromAddress,
@@ -405,7 +405,7 @@ export const sendSingleEmail = inngest.createFunction(
 
     const result = await step.run("send", async () => {
       const appUrl =
-        process.env.NEXT_PUBLIC_APP_URL || "https://app.leadsens.com";
+        process.env.NEXT_PUBLIC_APP_URL || "https://app.elevay.com";
       const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
 
       // CAN-SPAM: append compliance footer
@@ -420,7 +420,7 @@ export const sendSingleEmail = inngest.createFunction(
       processedHtml = injectTrackingPixel(processedHtml, emailId, appUrl);
 
       const textWithFooter = (email.bodyText || "") +
-        `\n\n---\nSent via LeadSens\nUnsubscribe: ${unsubUrl}`;
+        `\n\n---\nSent via Elevay\nUnsubscribe: ${unsubUrl}`;
 
       const { data, error } = await resend.emails.send({
         from: email.fromAddress === "pending@rotation" ? FALLBACK_FROM : email.fromAddress,

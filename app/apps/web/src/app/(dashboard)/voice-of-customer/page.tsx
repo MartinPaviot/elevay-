@@ -87,7 +87,7 @@ export default function VoiceOfCustomerPage() {
           <EmptyState
             icon={<MessageCircle size={24} />}
             title="No customer insights yet"
-            description="Connect your email and start having customer conversations. LeadSens will automatically extract themes and feedback."
+            description="Connect your email and start having customer conversations. Elevay will automatically extract themes and feedback."
           />
         ) : (
           <div className="mx-auto max-w-4xl">

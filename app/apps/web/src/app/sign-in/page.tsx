@@ -19,7 +19,7 @@ export default function SignInPage() {
       >
         <div className="text-center">
           <h1 className="gradient-text text-2xl font-bold tracking-tight">
-            LeadSens
+            Elevay
           </h1>
           <p className="mt-1.5 text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
             Sign in to your GTM engine

@@ -422,7 +422,7 @@ export default function MailCalendarPage() {
                 style={{ background: "var(--color-bg-hover)" }}>
                 <Shield size={13} className="mt-0.5 shrink-0" style={{ color: "var(--color-text-muted)" }} />
                 <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  LeadSens uses OAuth to connect securely. We never store your password. You can revoke access at any time from your Google or Microsoft account settings.
+                  Elevay uses OAuth to connect securely. We never store your password. You can revoke access at any time from your Google or Microsoft account settings.
                 </p>
               </div>
             </CardBody>
@@ -442,7 +442,7 @@ export default function MailCalendarPage() {
           Sync preferences
         </h2>
         <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-          Control how LeadSens captures and processes your email data.
+          Control how Elevay captures and processes your email data.
         </p>
 
         <div className="mt-4 space-y-6">
@@ -452,7 +452,7 @@ export default function MailCalendarPage() {
               Contact creation
             </label>
             <p className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-              When new email addresses are detected, how should LeadSens handle them?
+              When new email addresses are detected, how should Elevay handle them?
             </p>
             <div className="mt-2 space-y-1.5">
               {CREATION_MODES.map((mode) => {
@@ -496,7 +496,7 @@ export default function MailCalendarPage() {
               Email sync lookback
             </label>
             <p className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-              How far back should LeadSens import your email history when connecting a new account?
+              How far back should Elevay import your email history when connecting a new account?
             </p>
             <div className="relative mt-2">
               <select

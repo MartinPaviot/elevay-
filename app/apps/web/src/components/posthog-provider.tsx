@@ -26,7 +26,7 @@ export function PostHogPageTracker({ userId }: { userId?: string }) {
       properties: {
         $current_url: window.location.href,
         $pathname: pathname,
-        $lib: "leadsens-client",
+        $lib: "elevay-client",
       },
       timestamp: new Date().toISOString(),
     };
@@ -63,7 +63,7 @@ export function trackEvent(
     distinct_id: userId,
     properties: {
       ...properties,
-      $lib: "leadsens-client",
+      $lib: "elevay-client",
     },
     timestamp: new Date().toISOString(),
   };

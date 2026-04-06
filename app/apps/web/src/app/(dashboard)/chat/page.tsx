@@ -315,7 +315,7 @@ export default function ChatPage() {
                     ))}
                 </div>
               ) : (
-                /* AI message — left-aligned, NO background, with "LeadSens" sparkle label */
+                /* AI message — left-aligned, NO background, with "Elevay" sparkle label */
                 <div className="min-w-0 max-w-full">
                   {/* AI label */}
                   <div
@@ -323,7 +323,7 @@ export default function ChatPage() {
                     style={{ color: "var(--color-text-tertiary)" }}
                   >
                     <Sparkles size={13} style={{ color: "var(--color-accent)" }} />
-                    <span style={{ fontWeight: 500 }}>LeadSens</span>
+                    <span style={{ fontWeight: 500 }}>Elevay</span>
                   </div>
 
                   {/* Tool call transparency panels — show both in-progress and completed */}
@@ -518,7 +518,7 @@ export default function ChatPage() {
                 style={{ color: "var(--color-text-tertiary)" }}
               >
                 <Sparkles size={13} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
-                <span style={{ fontWeight: 500 }}>LeadSens is thinking...</span>
+                <span style={{ fontWeight: 500 }}>Elevay is thinking...</span>
               </div>
             </div>
           )}
@@ -546,7 +546,7 @@ export default function ChatPage() {
             ref={inputRef}
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
-            placeholder="Ask LeadSens..."
+            placeholder="Ask Elevay..."
             className="w-full rounded-xl py-2.5 pl-10 pr-12 text-[14px] outline-none transition-all"
             style={{
               background: "var(--color-bg-card)",

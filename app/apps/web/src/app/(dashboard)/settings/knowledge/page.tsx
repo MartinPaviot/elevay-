@@ -94,7 +94,7 @@ export default function KnowledgeSettingsPage() {
     <>
       <h1 className="text-xl font-semibold">Knowledge</h1>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-        Give LeadSens additional context on your business. This context will be
+        Give Elevay additional context on your business. This context will be
         included in AI requests for everyone in your organization.
       </p>
 

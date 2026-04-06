@@ -21,7 +21,7 @@ const tiers: Tier[] = [
     name: "Free Trial",
     price: "$0",
     priceNote: "14 days",
-    description: "Try LeadSens with your real data. No credit card required.",
+    description: "Try Elevay with your real data. No credit card required.",
     cta: "Current Plan",
     priceEnvKey: null,
     highlighted: false,

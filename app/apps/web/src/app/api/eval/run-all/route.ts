@@ -322,7 +322,7 @@ async function runChatCase(evalCase: EvalCase, config: AgentEvalConfig, start: n
 
   const { text, steps } = await generateText({
     model,
-    system: `You are LeadSens, a CRM AI assistant. You have tools to query the CRM database. Always use tools to answer questions — never guess. Include links to records in your response using [Name](/contacts/{id}) format. Respond in the user's language.`,
+    system: `You are Elevay, a CRM AI assistant. You have tools to query the CRM database. Always use tools to answer questions — never guess. Include links to records in your response using [Name](/contacts/{id}) format. Respond in the user's language.`,
     messages: [{ role: "user", content: evalCase.input }],
     tools: buildChatToolStubs(),
     stopWhen: stepCountIs(5),

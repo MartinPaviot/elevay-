@@ -191,7 +191,7 @@ export async function GET(req: Request) {
 
     const exportData = {
       exportedAt: new Date().toISOString(),
-      format: "leadsens-export-v1",
+      format: "elevay-export-v1",
       data: {
         contacts: contactsData,
         companies: companiesData,
@@ -276,7 +276,7 @@ export async function GET(req: Request) {
       return new Response(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="leadsens-full-export-${new Date().toISOString().split("T")[0]}.csv"`,
+          "Content-Disposition": `attachment; filename="elevay-full-export-${new Date().toISOString().split("T")[0]}.csv"`,
         },
       });
     }
@@ -284,7 +284,7 @@ export async function GET(req: Request) {
     return new Response(JSON.stringify(exportData, null, 2), {
       headers: {
         "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="leadsens-full-export-${new Date().toISOString().split("T")[0]}.json"`,
+        "Content-Disposition": `attachment; filename="elevay-full-export-${new Date().toISOString().split("T")[0]}.json"`,
       },
     });
   } catch (error) {

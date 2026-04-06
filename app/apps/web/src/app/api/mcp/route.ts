@@ -916,7 +916,7 @@ export async function POST(req: Request) {
         return jsonRpcSuccess(id, {
           protocolVersion: "2024-11-05",
           serverInfo: {
-            name: "leadsens-crm",
+            name: "elevay-crm",
             version: "1.0.0",
           },
           capabilities: {
@@ -986,11 +986,11 @@ export async function POST(req: Request) {
 
 export async function GET() {
   return Response.json({
-    name: "leadsens-crm",
+    name: "elevay-crm",
     version: "1.0.0",
     protocol: "json-rpc-2.0",
     description:
-      "LeadSens CRM MCP server. Send JSON-RPC 2.0 POST requests with Bearer token auth.",
+      "Elevay CRM MCP server. Send JSON-RPC 2.0 POST requests with Bearer token auth.",
     endpoints: {
       mcp: "POST /api/mcp",
       keys: {

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Terms of Service | LeadSens",
-  description: "LeadSens Terms of Service",
+  title: "Terms of Service | Elevay",
+  description: "Elevay Terms of Service",
 };
 
 export default function TermsPage() {
@@ -23,12 +23,12 @@ export default function TermsPage() {
           </h2>
           <p className="mt-3">
             These Terms of Service (&quot;Terms&quot;) govern your access to and use of
-            LeadSens, a SaaS platform operated by Elevay (&quot;Company&quot;, &quot;we&quot;,
+            Elevay, a SaaS platform operated by Elevay (&quot;Company&quot;, &quot;we&quot;,
             &quot;us&quot;, or &quot;our&quot;), a company registered in France, accessible at
             elevay.dev and related domains.
           </p>
           <p className="mt-2">
-            By creating an account or using LeadSens, you agree to be bound by these
+            By creating an account or using Elevay, you agree to be bound by these
             Terms. If you do not agree, do not use the Service.
           </p>
         </section>
@@ -39,7 +39,7 @@ export default function TermsPage() {
             2. Service Description
           </h2>
           <p className="mt-3">
-            LeadSens is an AI-powered go-to-market (GTM) platform that provides:
+            Elevay is an AI-powered go-to-market (GTM) platform that provides:
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-6">
             <li>Customer relationship management (CRM) for contacts, companies, and deals</li>
@@ -105,7 +105,7 @@ export default function TermsPage() {
             6. Payment Terms
           </h2>
           <p className="mt-3">
-            LeadSens offers subscription-based plans. Payments are processed through
+            Elevay offers subscription-based plans. Payments are processed through
             Stripe. By subscribing, you agree to:
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-6">
@@ -129,7 +129,7 @@ export default function TermsPage() {
           </h2>
           <p className="mt-3">
             <strong>You own your data.</strong> All content, contacts, companies, deals,
-            emails, notes, and other data you upload or create within LeadSens
+            emails, notes, and other data you upload or create within Elevay
             (&quot;Customer Data&quot;) remains your property. We do not claim any ownership
             rights over your Customer Data.
           </p>
@@ -150,7 +150,7 @@ export default function TermsPage() {
             8. AI Usage Disclaimer
           </h2>
           <p className="mt-3">
-            LeadSens uses artificial intelligence and large language models (LLMs) to
+            Elevay uses artificial intelligence and large language models (LLMs) to
             provide features such as lead scoring, email generation, deal coaching,
             data enrichment, and natural language querying.
           </p>

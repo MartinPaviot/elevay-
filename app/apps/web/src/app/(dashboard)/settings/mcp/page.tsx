@@ -375,7 +375,7 @@ export default function McpSettingsPage() {
               >
 {`{
   "mcpServers": {
-    "leadsens": {
+    "elevay": {
       "url": "${mcpUrl}",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
@@ -399,7 +399,7 @@ export default function McpSettingsPage() {
                 Claude Code
               </h3>
               <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-                Run this command to add LeadSens as an MCP server:
+                Run this command to add Elevay as an MCP server:
               </p>
               <pre
                 className="mt-2 rounded p-3 text-[12px] font-mono overflow-x-auto"
@@ -409,7 +409,7 @@ export default function McpSettingsPage() {
                   border: "1px solid var(--color-border-default)",
                 }}
               >
-{`claude mcp add leadsens \\
+{`claude mcp add elevay \\
   --transport http \\
   --url ${mcpUrl} \\
   --header "Authorization: Bearer YOUR_API_KEY"`}

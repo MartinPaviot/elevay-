@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | LeadSens",
-  description: "LeadSens Privacy Policy - GDPR compliant",
+  title: "Privacy Policy | Elevay",
+  description: "Elevay Privacy Policy - GDPR compliant",
 };
 
 export default function PrivacyPage() {
@@ -22,7 +22,7 @@ export default function PrivacyPage() {
             1. Data Controller
           </h2>
           <p className="mt-3">
-            The data controller for personal data processed through LeadSens is:
+            The data controller for personal data processed through Elevay is:
           </p>
           <ul className="mt-2 list-none space-y-1 pl-0">
             <li>
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
           </ul>
           <p className="mt-2">
             This Privacy Policy explains how we collect, use, store, and protect your
-            personal data when you use LeadSens in compliance with the General Data
+            personal data when you use Elevay in compliance with the General Data
             Protection Regulation (GDPR), the French Data Protection Act (Loi
             Informatique et Libert&eacute;s), and other applicable data protection laws.
           </p>
@@ -128,7 +128,7 @@ export default function PrivacyPage() {
             3.2 AI and LLM Processing
           </h3>
           <p className="mt-2">
-            LeadSens uses artificial intelligence to provide features such as:
+            Elevay uses artificial intelligence to provide features such as:
           </p>
           <ul className="mt-2 list-disc space-y-1 pl-6">
             <li>
@@ -380,7 +380,7 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
             9. Cookies and Tracking
           </h2>
-          <p className="mt-3">LeadSens uses the following types of cookies:</p>
+          <p className="mt-3">Elevay uses the following types of cookies:</p>
           <ul className="mt-2 list-disc space-y-2 pl-6">
             <li>
               <strong>Strictly necessary cookies:</strong> Required for authentication
@@ -426,7 +426,7 @@ export default function PrivacyPage() {
             11. Children&apos;s Privacy
           </h2>
           <p className="mt-3">
-            LeadSens is not intended for use by individuals under the age of 18. We
+            Elevay is not intended for use by individuals under the age of 18. We
             do not knowingly collect personal data from children. If we learn that we
             have collected data from a child under 18, we will delete it promptly.
           </p>

@@ -33,7 +33,7 @@ function htmlResponse(title: string, message: string, status = 200) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title} - LeadSens</title>
+  <title>${title} - Elevay</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -77,7 +77,7 @@ function htmlResponse(title: string, message: string, status = 200) {
   <div class="card">
     <h1>${title}</h1>
     <p>${message}</p>
-    <p class="brand">LeadSens</p>
+    <p class="brand">Elevay</p>
   </div>
 </body>
 </html>`;

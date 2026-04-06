@@ -71,7 +71,7 @@ export default function StagesSettingsPage() {
       <h1 className="text-xl font-semibold">Opportunity stages</h1>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
         Each stage represents a milestone in a deal. Describing each stage enables
-        LeadSens to track stages automatically based on activity.
+        Elevay to track stages automatically based on activity.
       </p>
 
       {loading ? (

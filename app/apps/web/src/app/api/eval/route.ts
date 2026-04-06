@@ -240,7 +240,7 @@ export async function POST(req: Request) {
     try {
       const { text, steps } = await generateText({
         model: anthropic("claude-sonnet-4-6"),
-        system: `You are LeadSens, a CRM AI assistant. You have tools to query the CRM database. Always use tools to answer questions — never guess. Include links to records in your response using [Name](/contacts/{id}) format. Respond in the user's language.`,
+        system: `You are Elevay, a CRM AI assistant. You have tools to query the CRM database. Always use tools to answer questions — never guess. Include links to records in your response using [Name](/contacts/{id}) format. Respond in the user's language.`,
         messages: [{ role: "user", content: testCase.query }],
         tools: {
           // Minimal tool stubs that return empty results for eval
