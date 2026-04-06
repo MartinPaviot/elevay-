@@ -10,16 +10,11 @@ import {
   CheckSquare,
   Calendar,
   FileText,
-  FileBarChart,
   MessageSquare,
-  MessageCircle,
-  Network,
-  FlaskConical,
   Settings,
   Plus,
   Clock,
   Zap,
-  Shield,
   ChevronsLeft,
   ChevronsRight,
   LogOut,
@@ -72,31 +67,26 @@ const navSections = [
     ],
   },
   {
-    label: "Records",
+    label: "CRM",
     items: [
       { label: "Accounts", href: "/accounts", icon: Building2 },
-      { label: "Opportunities", href: "/opportunities", icon: CircleDot },
       { label: "Contacts", href: "/contacts", icon: Users },
+      { label: "Opportunities", href: "/opportunities", icon: CircleDot },
     ],
   },
   {
-    label: "Outreach",
+    label: "Engage",
     items: [
       { label: "Inbox", href: "/inbox", icon: Inbox },
       { label: "Sequences", href: "/sequences", icon: Zap },
-      { label: "Deliverability", href: "/deliverability", icon: Shield },
-      { label: "Reports", href: "/reports", icon: FileBarChart },
     ],
   },
   {
-    label: "Resources",
+    label: "Activity",
     items: [
-      { label: "Tasks", href: "/tasks", icon: CheckSquare },
       { label: "Meetings", href: "/meetings", icon: Calendar },
       { label: "Notes", href: "/notes", icon: FileText },
-      { label: "Voice of Customer", href: "/voice-of-customer", icon: MessageCircle },
-      { label: "Context Graph", href: "/graph", icon: Network },
-      { label: "Graph Evals", href: "/settings/evals", icon: FlaskConical },
+      { label: "Tasks", href: "/tasks", icon: CheckSquare },
     ],
   },
 ];
@@ -294,11 +284,11 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
           <>
             {/* Gradient logo text */}
             <span className="gradient-text text-[16px] font-bold tracking-tight">
-              LeadSens
+              Elevay
             </span>
             <div className="flex-1" />
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent("leadsens:command-palette"))}
+              onClick={() => window.dispatchEvent(new CustomEvent("elevay:command-palette"))}
               className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--color-text-tertiary)" }}
               title="Search (⌘K)"
@@ -336,7 +326,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
         {collapsed && (
           <div className="mb-0.5">
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent("leadsens:command-palette"))}
+              onClick={() => window.dispatchEvent(new CustomEvent("elevay:command-palette"))}
               className="group flex h-8 w-8 items-center justify-center rounded-md mx-auto transition-all duration-150"
               style={{ color: "var(--color-text-secondary)" }}
               title="Search (⌘K)"

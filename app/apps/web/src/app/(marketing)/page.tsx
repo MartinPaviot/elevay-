@@ -15,7 +15,6 @@ import {
   Send,
   ListChecks,
   Clock,
-  RefreshCw,
   Check,
 } from "lucide-react";
 
@@ -82,44 +81,44 @@ const showcaseFeatures = [
   {
     num: "01",
     title: "Your CRM updates itself",
-    desc: "Every email, meeting, and note is captured and organized automatically. No more manual data entry.",
+    desc: "Connect Gmail or Outlook once. Every email, meeting, and interaction is captured, organized, and linked to the right contact — automatically.",
     icon: Inbox,
   },
   {
     num: "02",
-    title: "Ask anything about your customers",
-    desc: "Natural language queries with citations to the original email, call, or meeting.",
-    icon: Search,
+    title: "A bot joins your calls",
+    desc: "An AI agent auto-joins your Google Meet, Zoom, and Teams calls. It records, transcribes, and extracts buying signals — budget, timeline, competitors, objections.",
+    icon: Play,
   },
   {
     num: "03",
-    title: "Build your pipeline automatically",
-    desc: "Describe your ideal customer. LeadSens finds, scores, and prioritizes every match.",
-    icon: Users,
-  },
-  {
-    num: "04",
-    title: "Send personalized outreach at scale",
-    desc: "AI writes emails based on what you've actually discussed — not templates.",
-    icon: Send,
-  },
-  {
-    num: "05",
-    title: "Know exactly what to do next",
-    desc: "Prioritized actions based on deal signals, engagement, and pipeline health.",
+    title: "Review before it hits the CRM",
+    desc: "After each call, review the extracted data — action items, deal intel, matched contacts — and confirm with one click. Human-in-the-loop, not blind automation.",
     icon: ListChecks,
   },
   {
+    num: "04",
+    title: "Ask anything about your pipeline",
+    desc: "Natural language queries with citations to the original email, call transcript, or meeting notes. 'What did Sarah say about budget last Thursday?'",
+    icon: Search,
+  },
+  {
+    num: "05",
+    title: "Build your TAM automatically",
+    desc: "Define your ICP. Elevay searches real databases, scores every company, and builds your target account list — ready for outreach.",
+    icon: Users,
+  },
+  {
     num: "06",
-    title: "Prep for every meeting in seconds",
-    desc: "Full context on every contact — history, deals, sentiment — summarized before you walk in.",
-    icon: Clock,
+    title: "Send personalized sequences",
+    desc: "AI writes outreach based on what you've actually discussed with each prospect. Follow-ups drafted from real meeting notes, not templates.",
+    icon: Send,
   },
   {
     num: "07",
-    title: "Revive stalled deals",
-    desc: "Automatic detection of stale deals with AI-generated revival emails ready to send.",
-    icon: RefreshCw,
+    title: "Prep for every meeting in seconds",
+    desc: "24 hours before each call, get a full brief: who you're meeting, deal history, recent interactions, suggested talking points, potential objections.",
+    icon: Clock,
   },
 ];
 
@@ -129,24 +128,24 @@ const showcaseFeatures = [
 
 const faqs = [
   {
-    q: "How is this different from HubSpot?",
-    a: "HubSpot is a database you update manually. LeadSens captures everything automatically from your email and meetings, finds new customers for you, and writes your outreach. It's the CRM that does the work.",
+    q: "How is this different from HubSpot or Salesforce?",
+    a: "They're databases you update manually. Elevay captures every email, joins your calls with a bot, transcribes and extracts deal intel automatically, and writes your follow-ups. You review and confirm — it does the rest.",
+  },
+  {
+    q: "How does the meeting bot work?",
+    a: "When you have a meeting with a Google Meet, Zoom, or Teams link in your calendar, Elevay automatically sends a bot to join and record. After the call, it extracts structured notes, buying signals, action items, and lets you review before updating your CRM.",
   },
   {
     q: "Do I need a sales team?",
-    a: "No. LeadSens is built for founders doing founder-led sales. One person, one tool, full pipeline.",
+    a: "No. Elevay is built for founders doing founder-led sales. One person, one tool, full pipeline — from finding leads to closing deals.",
   },
   {
     q: "How does the AI know about my customers?",
-    a: "It reads your email and meeting transcripts (with your permission) and builds a complete memory of every conversation. When you ask a question, it answers with citations to the original source.",
+    a: "It syncs your email and calendar, transcribes your calls, and builds a complete memory of every conversation. When you ask a question, it answers with citations to the original email, call, or meeting.",
   },
   {
     q: "Is my data secure?",
-    a: "Your data is encrypted at rest and in transit. We never share your data or use it to train models. SOC 2 compliance is in progress.",
-  },
-  {
-    q: "Can I import from my current CRM?",
-    a: "Yes. CSV import works out of the box. HubSpot and Salesforce direct migration coming soon.",
+    a: "Your data is encrypted at rest and in transit. We use OAuth to connect — we never store your email password. You can revoke access anytime from your Google or Microsoft account.",
   },
   {
     q: "What if I want to cancel?",
@@ -251,7 +250,7 @@ export default function LandingPage() {
       {/* NAV */}
       <nav className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md" : "bg-white"}`}>
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4">
-          <Link href="/" className="text-xl font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>LeadSens</Link>
+          <Link href="/" className="text-xl font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Elevay</Link>
           <div className="hidden items-center gap-8 md:flex">
             <Link href="#features" className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900">Features</Link>
             <Link href="#pricing" className="text-sm font-medium text-gray-600 transition-colors hover:text-gray-900">Pricing</Link>
@@ -269,8 +268,8 @@ export default function LandingPage() {
         <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
         <div className="relative mx-auto max-w-[1400px] px-6 text-center">
           <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-500">Get started in minutes</p></Animate>
-          <Animate><h1 className="mx-auto mt-6 max-w-[800px] text-[28px] font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl">Your CRM finds customers, remembers everything, and does the work for you.</h1></Animate>
-          <Animate><p className="mx-auto mt-6 max-w-[600px] text-lg leading-relaxed text-gray-500">Connect your email. Describe your ideal customer. LeadSens builds your pipeline, captures every conversation, and tells you exactly who to call next.</p></Animate>
+          <Animate><h1 className="mx-auto mt-6 max-w-[800px] text-[28px] font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl">Your CRM finds customers, joins your calls, and does the work for you.</h1></Animate>
+          <Animate><p className="mx-auto mt-6 max-w-[600px] text-lg leading-relaxed text-gray-500">Connect your email. An AI bot joins your calls, transcribes everything, and updates your CRM. You just review and close.</p></Animate>
           <Animate>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link href="/sign-up" className="rounded-lg px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Try for free</Link>
@@ -281,12 +280,12 @@ export default function LandingPage() {
             <div className="mx-auto mt-16 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.1)]">
               <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-3">
                 <div className="flex gap-1.5"><div className="h-3 w-3 rounded-full bg-gray-200" /><div className="h-3 w-3 rounded-full bg-gray-200" /><div className="h-3 w-3 rounded-full bg-gray-200" /></div>
-                <div className="mx-auto rounded-md bg-gray-100 px-4 py-1 text-xs text-gray-400">app.leadsens.com</div>
+                <div className="mx-auto rounded-md bg-gray-100 px-4 py-1 text-xs text-gray-400">app.elevay.com</div>
               </div>
               <div className="flex" style={{ height: "480px" }}>
                 <div className="hidden w-[200px] shrink-0 border-r border-gray-200 bg-white p-4 md:block">
-                  <div className="mb-6 text-sm font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>LeadSens</div>
-                  {["Chat", "Pipeline", "Contacts", "Sequences", "Settings"].map((item, i) => (<div key={item} className={`mb-1 rounded-md px-3 py-2 text-xs font-medium ${i === 0 ? "bg-blue-50 text-blue-700" : "text-gray-500"}`}>{item}</div>))}
+                  <div className="mb-6 text-sm font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Elevay</div>
+                  {["Up next", "Accounts", "Contacts", "Inbox", "Meetings"].map((item, i) => (<div key={item} className={`mb-1 rounded-md px-3 py-2 text-xs font-medium ${i === 0 ? "bg-blue-50 text-blue-700" : "text-gray-500"}`}>{item}</div>))}
                 </div>
                 <div className="flex-1 overflow-hidden bg-gray-50 p-6">
                   <div className="mb-4 text-sm font-semibold text-gray-700">Chat</div>
@@ -304,7 +303,7 @@ export default function LandingPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-4 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5"><span className="flex-1 text-xs text-gray-400">Ask LeadSens anything...</span><div className="rounded-md px-3 py-1 text-[10px] font-semibold text-white" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)" }}>Send</div></div>
+                  <div className="mt-4 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5"><span className="flex-1 text-xs text-gray-400">Ask Elevay anything...</span><div className="rounded-md px-3 py-1 text-[10px] font-semibold text-white" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)" }}>Send</div></div>
                 </div>
               </div>
             </div>
@@ -315,13 +314,13 @@ export default function LandingPage() {
       {/* GRADIENT SEPARATOR */}
       <div className="mx-auto max-w-[1400px] px-6"><div className="h-px" style={{ background: "linear-gradient(90deg, transparent, #17C3B2, #2C6BED, #FF7A3D, transparent)" }} /></div>
 
-      {/* WHY LEADSENS */}
+      {/* WHY ELEVAY */}
       <Section className="pt-32">
         <div className="mx-auto max-w-[1400px] px-6">
           <div className="max-w-3xl">
-            <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-400">Why LeadSens</p></Animate>
-            <Animate><h2 className="mt-4 text-3xl font-bold leading-snug tracking-tight text-gray-900">Traditional CRMs make you do the work.<br />LeadSens does it for you.</h2></Animate>
-            <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-500">You shouldn&apos;t spend hours logging notes, updating fields, and guessing who to call next. LeadSens connects to your email, learns your customers, finds new ones, and runs your outbound — so you can focus on closing.</p></Animate>
+            <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-400">Why Elevay</p></Animate>
+            <Animate><h2 className="mt-4 text-3xl font-bold leading-snug tracking-tight text-gray-900">Traditional CRMs make you do the work.<br />Elevay does it for you.</h2></Animate>
+            <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-500">You shouldn&apos;t spend hours logging notes, updating fields, and guessing who to call next. Elevay connects to your email, learns your customers, finds new ones, and runs your outbound — so you can focus on closing.</p></Animate>
           </div>
         </div>
       </Section>
@@ -332,7 +331,7 @@ export default function LandingPage() {
           <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-400">Foundations</p></Animate>
           <Animate><h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">Everything you need to sell, in one place</h2></Animate>
           <div className="mt-12 grid gap-6 md:grid-cols-3">
-            {[{ icon: Mail, title: "Auto-capture everything", body: "Every email, meeting, and note — captured and organized automatically. Your CRM is always up to date without typing a word." }, { icon: BarChart3, title: "Find your next 50 customers", body: "Describe your ideal customer. LeadSens searches real databases, scores every match, and tells you exactly why each company is a fit." }, { icon: MessageSquare, title: "Outreach that sounds like you", body: "AI writes emails based on what you've actually discussed with each prospect. Not templates. Real conversations." }].map((card) => { const Icon = card.icon; return (
+            {[{ icon: Mail, title: "Auto-capture everything", body: "Emails, meetings, call transcripts — captured and linked to the right contact automatically. Your CRM is always up to date without typing a word." }, { icon: BarChart3, title: "An AI bot joins your calls", body: "A recording bot auto-joins your Google Meet, Zoom, and Teams calls. It transcribes, extracts buying signals, and updates your deals — you just review and confirm." }, { icon: MessageSquare, title: "Outreach that sounds like you", body: "AI writes follow-ups from real meeting notes and email threads. Not templates — personalized sequences based on what was actually discussed." }].map((card) => { const Icon = card.icon; return (
               <Animate key={card.title}><div className="rounded-xl border border-gray-200 bg-white p-8 transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]"><div className="mb-4 inline-flex rounded-lg border border-gray-100 bg-gray-50 p-2.5"><Icon size={20} className="text-gray-600" /></div><h3 className="text-base font-semibold text-gray-900">{card.title}</h3><p className="mt-2 text-sm leading-relaxed text-gray-500">{card.body}</p></div></Animate>
             ); })}
           </div>
@@ -343,7 +342,7 @@ export default function LandingPage() {
       <Section id="features" className="pt-32">
         <div className="mx-auto max-w-[1400px] px-6">
           <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-400">Features</p></Animate>
-          <Animate><h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">What you can do with LeadSens</h2></Animate>
+          <Animate><h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">What you can do with Elevay</h2></Animate>
           <div className="mt-12 grid gap-8 lg:grid-cols-[380px_1fr] lg:gap-12">
             <Animate>
               <div className="space-y-1">
@@ -363,12 +362,12 @@ export default function LandingPage() {
                 <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2.5"><div className="flex gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-gray-200" /><div className="h-2.5 w-2.5 rounded-full bg-gray-200" /><div className="h-2.5 w-2.5 rounded-full bg-gray-200" /></div></div>
                 <div className="p-6">
                   {activeFeature === 0 && <MockAutoCapture />}
-                  {activeFeature === 1 && <MockChat />}
-                  {activeFeature === 2 && <MockPipeline />}
-                  {activeFeature === 3 && <MockOutreach />}
-                  {activeFeature === 4 && <MockActions />}
-                  {activeFeature === 5 && <MockMeetingPrep />}
-                  {activeFeature === 6 && <MockStaleDeal />}
+                  {activeFeature === 1 && <MockMeetingBot />}
+                  {activeFeature === 2 && <MockReviewCRM />}
+                  {activeFeature === 3 && <MockChat />}
+                  {activeFeature === 4 && <MockPipeline />}
+                  {activeFeature === 5 && <MockOutreach />}
+                  {activeFeature === 6 && <MockMeetingPrep />}
                 </div>
               </div>
             </Animate>
@@ -543,7 +542,7 @@ export default function LandingPage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              LeadSens
+              Elevay
             </span>
 
             <div className="flex flex-wrap items-center justify-center gap-6">
@@ -601,7 +600,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-8 text-center text-xs text-gray-400">
-            &copy; 2026 LeadSens. Made in San Francisco.
+            &copy; 2026 Elevay. Made in San Francisco.
           </p>
         </div>
       </footer>
@@ -863,73 +862,72 @@ function MockOutreach() {
   );
 }
 
-function MockActions() {
-  const actions = [
-    {
-      priority: "high",
-      action: "Follow up with Sarah Chen (Acme)",
-      reason: "No reply in 5 days, deal at risk",
-      type: "Email",
-    },
-    {
-      priority: "high",
-      action: "Prep for TechFlow discovery call",
-      reason: "Meeting in 2 hours",
-      type: "Meeting",
-    },
-    {
-      priority: "medium",
-      action: "Send intro to Noven AI contact",
-      reason: "Warm referral from David",
-      type: "Email",
-    },
-    {
-      priority: "medium",
-      action: "Review BrightPath proposal feedback",
-      reason: "Received yesterday, unread",
-      type: "Review",
-    },
-    {
-      priority: "low",
-      action: "Update Relay Labs deal stage",
-      reason: "LinkedIn connection accepted",
-      type: "CRM",
-    },
-  ];
-
+function MockMeetingBot() {
   return (
     <div>
       <div className="mb-3 text-xs font-semibold text-gray-500">
-        Prioritized Actions — Today
+        Meeting — TechFlow Discovery Call
       </div>
-      <div className="space-y-2">
-        {actions.map((a) => (
-          <div
-            key={a.action}
-            className="flex items-start gap-3 rounded-lg bg-white p-3"
-          >
-            <div
-              className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-                a.priority === "high"
-                  ? "bg-red-400"
-                  : a.priority === "medium"
-                    ? "bg-amber-400"
-                    : "bg-gray-300"
-              }`}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-gray-900">
-                {a.action}
-              </div>
-              <div className="mt-0.5 text-[11px] text-gray-400">
-                {a.reason}
-              </div>
-            </div>
-            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
-              {a.type}
-            </span>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 rounded-lg bg-white p-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
+            <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-500" />
           </div>
-        ))}
+          <div>
+            <div className="text-xs font-medium text-gray-900">Elevay Bot is recording</div>
+            <div className="text-[11px] text-gray-400">Joined 2 min ago · Google Meet</div>
+          </div>
+          <span className="ml-auto rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-600">Live</span>
+        </div>
+        <div className="rounded-lg bg-white p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Live transcript</div>
+          <div className="mt-2 space-y-2 text-xs text-gray-600">
+            <div><span className="font-medium text-gray-900">James Park:</span> Our main issue is the 2 hours per day each rep spends on data entry...</div>
+            <div><span className="font-medium text-gray-900">You:</span> That's exactly what we solve. Let me show you how auto-capture works...</div>
+            <div><span className="font-medium text-gray-900">James Park:</span> What's the budget look like? We have around 40K allocated for tools this quarter.</div>
+          </div>
+        </div>
+        <div className="rounded-lg bg-blue-50 p-3">
+          <div className="text-[10px] font-semibold text-blue-700">Buying signals detected</div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-blue-600">Budget: $40K/quarter</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-blue-600">Pain: 2h/day data entry</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-blue-600">Team: 8 SDRs → 15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MockReviewCRM() {
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-500">Post-Call Review</span>
+        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">Pending review</span>
+      </div>
+      <div className="space-y-3">
+        <div className="rounded-lg bg-white p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Extracted data</div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="rounded-md bg-gray-50 px-2.5 py-1.5"><div className="text-[9px] font-semibold text-gray-400">Budget</div><div className="text-xs font-medium text-gray-900">$40K/quarter</div></div>
+            <div className="rounded-md bg-gray-50 px-2.5 py-1.5"><div className="text-[9px] font-semibold text-gray-400">Timeline</div><div className="text-xs font-medium text-gray-900">Decision by Q3</div></div>
+            <div className="rounded-md bg-gray-50 px-2.5 py-1.5"><div className="text-[9px] font-semibold text-gray-400">Competitors</div><div className="text-xs font-medium text-gray-900">Pipedrive, HubSpot</div></div>
+            <div className="rounded-md bg-gray-50 px-2.5 py-1.5"><div className="text-[9px] font-semibold text-gray-400">Team size</div><div className="text-xs font-medium text-gray-900">8 → 15 SDRs</div></div>
+          </div>
+        </div>
+        <div className="rounded-lg bg-white p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Action items (3)</div>
+          <div className="mt-1.5 space-y-1 text-xs text-gray-600">
+            <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded border border-gray-300" /><span>Send pricing comparison deck</span><span className="ml-auto text-[10px] text-gray-400">You</span></div>
+            <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded border border-gray-300" /><span>Schedule demo for SDR team lead</span><span className="ml-auto text-[10px] text-gray-400">You</span></div>
+            <div className="flex items-center gap-1.5"><div className="h-3 w-3 rounded border border-gray-300" /><span>Share migration guide from Pipedrive</span><span className="ml-auto text-[10px] text-gray-400">James</span></div>
+          </div>
+        </div>
+        <button className="w-full rounded-lg py-2 text-xs font-semibold text-white" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)" }}>
+          Confirm & update CRM
+        </button>
       </div>
     </div>
   );
@@ -978,55 +976,3 @@ function MockMeetingPrep() {
   );
 }
 
-function MockStaleDeal() {
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500">
-          Stale Deal Detection
-        </span>
-        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600">
-          3 deals at risk
-        </span>
-      </div>
-      <div className="space-y-3">
-        <div className="rounded-lg bg-white p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-900">
-              Acme Corp — Q2 Proposal
-            </span>
-            <span className="text-[10px] font-medium text-red-500">
-              12 days silent
-            </span>
-          </div>
-          <div className="mt-1 text-[11px] text-gray-400">
-            Last contact: Sarah Chen, Mar 28 (email about pricing)
-          </div>
-          <div className="mt-2 rounded-md bg-blue-50 p-2">
-            <div className="text-[10px] font-medium text-blue-700">
-              AI-suggested revival:
-            </div>
-            <div className="mt-1 text-[11px] text-blue-600">
-              &quot;Hi Sarah, I put together that per-seat breakdown you
-              mentioned. Quick 10-min call this week?&quot;
-            </div>
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button
-              className="rounded-md px-3 py-1 text-[10px] font-semibold text-white"
-              style={{
-                background:
-                  "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)",
-              }}
-            >
-              Send email
-            </button>
-            <button className="rounded-md border border-gray-200 px-3 py-1 text-[10px] font-medium text-gray-600">
-              Edit draft
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
