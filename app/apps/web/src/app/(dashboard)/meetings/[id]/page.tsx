@@ -203,9 +203,100 @@ export default function MeetingDetailPage() {
   const { meeting, notes, followUpDraft, tasks: linkedTasks } = data;
   const meetingDate = new Date(meeting.date);
   const isPast = meetingDate < new Date();
+  const isAutoTranscribed = data.transcriptSource === "recall_bot";
+  const needsReview = notes && !linkedTasks.length && !followUpDraft && isAutoTranscribed;
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
+      {/* Review banner for auto-transcribed meetings */}
+      {needsReview && (
+        <div
+          className="rounded-xl p-5"
+          style={{ background: "linear-gradient(135deg, var(--color-accent-soft), var(--color-warning-soft, #fef3c7))", border: "1px solid var(--color-accent)" }}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-5 w-5" style={{ color: "var(--color-accent)" }} />
+                <h2 className="text-[15px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                  Review auto-extracted data
+                </h2>
+              </div>
+              <p className="text-[13px] mb-4" style={{ color: "var(--color-text-secondary)" }}>
+                This meeting was automatically transcribed and analyzed. Review the key findings below, then confirm to update your CRM.
+              </p>
+
+              {/* Quick preview of buying signals */}
+              {notes.buyingSignals && (
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {notes.buyingSignals.budget && (
+                    <div className="rounded-lg px-3 py-2" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+                      <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--color-text-tertiary)" }}>Budget</span>
+                      <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{notes.buyingSignals.budget}</p>
+                    </div>
+                  )}
+                  {notes.buyingSignals.timeline && (
+                    <div className="rounded-lg px-3 py-2" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+                      <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--color-text-tertiary)" }}>Timeline</span>
+                      <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{notes.buyingSignals.timeline}</p>
+                    </div>
+                  )}
+                  {notes.buyingSignals.competitors.length > 0 && (
+                    <div className="rounded-lg px-3 py-2" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+                      <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--color-text-tertiary)" }}>Competitors</span>
+                      <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{notes.buyingSignals.competitors.join(", ")}</p>
+                    </div>
+                  )}
+                  {notes.buyingSignals.painPoints.length > 0 && (
+                    <div className="rounded-lg px-3 py-2" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+                      <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--color-text-tertiary)" }}>Pain Points</span>
+                      <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{notes.buyingSignals.painPoints.join(", ")}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action items preview */}
+              {notes.actionItems.length > 0 && (
+                <div className="mb-4">
+                  <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--color-text-tertiary)" }}>
+                    {notes.actionItems.length} action item{notes.actionItems.length > 1 ? "s" : ""} to create
+                  </span>
+                  <ul className="mt-1 space-y-1">
+                    {notes.actionItems.slice(0, 3).map((item, i) => (
+                      <li key={i} className="text-[12px] flex items-center gap-1.5" style={{ color: "var(--color-text-secondary)" }}>
+                        <CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+                        <span className="font-medium">{item.owner}:</span> {item.task}
+                      </li>
+                    ))}
+                    {notes.actionItems.length > 3 && (
+                      <li className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                        +{notes.actionItems.length - 3} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="solid"
+              size="md"
+              onClick={triggerPostCall}
+              disabled={processingPostCall}
+            >
+              {processingPostCall ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+              Confirm & update CRM
+            </Button>
+            <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+              Creates tasks, updates deal, drafts follow-up email
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <Button variant="ghost" size="sm" onClick={() => router.push("/meetings")} className="mb-2">

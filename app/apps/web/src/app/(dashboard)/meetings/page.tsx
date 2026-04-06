@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Sparkles, Mic, CheckCircle2, AlertCircle, Play } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,12 @@ interface MeetingActivity {
     location?: string;
     meetingLink?: string;
     calendarEventId?: string;
+    recallBotId?: string;
+    recordingStatus?: string;
+    hasTranscript?: boolean;
+    transcriptSource?: string;
+    recordingUrl?: string;
+    structuredNotes?: { summary: string };
   };
 }
 
@@ -111,7 +117,7 @@ export default function MeetingsPage() {
             title="No meetings"
             description="Connect your Google Calendar to sync meetings automatically."
             actionLabel="Go to settings"
-            onAction={() => window.location.href = "/settings/mailboxes"}
+            onAction={() => window.location.href = "/settings/mail-calendar"}
             actionVariant="outline"
           />
         ) : (
@@ -237,6 +243,46 @@ function MeetingCard({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Bot / transcript status badge */}
+          {meeting.metadata?.hasTranscript && meeting.metadata.transcriptSource === "recall_bot" && (
+            <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
+              <CheckCircle2 size={10} /> Auto-transcribed
+            </span>
+          )}
+          {meeting.metadata?.hasTranscript && meeting.metadata.transcriptSource !== "recall_bot" && (
+            <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
+              <FileText size={10} /> Transcript
+            </span>
+          )}
+          {meeting.metadata?.recordingStatus === "recording" && !meeting.metadata?.hasTranscript && (
+            <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: "var(--color-error-soft)", color: "var(--color-error)" }}>
+              <Mic size={10} className="animate-pulse" /> Recording
+            </span>
+          )}
+          {meeting.metadata?.recordingStatus === "scheduled" && !meeting.metadata?.hasTranscript && (
+            <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: "var(--color-bg-muted)", color: "var(--color-text-tertiary)" }}>
+              <Mic size={10} /> Bot scheduled
+            </span>
+          )}
+          {meeting.metadata?.recordingStatus === "error" && (
+            <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: "var(--color-error-soft)", color: "var(--color-error)" }}>
+              <AlertCircle size={10} /> Bot failed
+            </span>
+          )}
+
+          {meeting.metadata?.recordingUrl && (
+            <a href={meeting.metadata.recordingUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+              style={{ color: "var(--color-accent)", background: "var(--color-accent-soft)" }}
+              title="Replay recording">
+              <Play size={11} /> Replay
+            </a>
+          )}
           {meeting.metadata?.meetingLink && (
             <a href={meeting.metadata.meetingLink} target="_blank" rel="noopener noreferrer"
               className="rounded-md p-1.5 transition-colors"

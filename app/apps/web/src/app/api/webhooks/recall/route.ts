@@ -1,0 +1,318 @@
+import { db } from "@/db";
+import { activities, contacts, companies, deals } from "@/db/schema";
+import { eq, and, sql, ilike } from "drizzle-orm";
+import { getBotStatus, getBotTranscript, transcriptToText, mapBotStatus } from "@/lib/recall";
+import { tracedGenerateObject } from "@/lib/traced-ai";
+import { z } from "zod";
+
+/* ------------------------------------------------------------------ */
+/*  Schema (same as process-transcript/route.ts)                       */
+/* ------------------------------------------------------------------ */
+
+const meetingNotesSchema = z.object({
+  summary: z.string().describe("2-3 sentence meeting summary"),
+  keyPoints: z.array(z.string()).describe("Key discussion points"),
+  actionItems: z.array(
+    z.object({
+      owner: z.string().describe("Person responsible"),
+      task: z.string().describe("Action item description"),
+      deadline: z.string().nullable().describe("Deadline if mentioned"),
+    })
+  ),
+  decisions: z.array(z.string()).describe("Decisions made during the meeting"),
+  participants: z.array(
+    z.object({
+      name: z.string(),
+      role: z.string().nullable(),
+    })
+  ),
+  buyingSignals: z.object({
+    budget: z.string().nullable(),
+    timeline: z.string().nullable(),
+    currentStack: z.array(z.string()),
+    painPoints: z.array(z.string()),
+    objections: z.array(z.string()),
+    nextSteps: z.array(z.string()),
+    competitors: z.array(z.string()),
+    teamSize: z.string().nullable(),
+  }),
+  sentiment: z.enum(["positive", "neutral", "negative"]),
+});
+
+/* ------------------------------------------------------------------ */
+/*  Webhook handler                                                    */
+/* ------------------------------------------------------------------ */
+
+export async function POST(req: Request) {
+  const rawBody = await req.text();
+
+  // Parse the event
+  let event: { event: string; data: { data: { code: string; sub_code: string | null; updated_at: string }; bot: { id: string; metadata: Record<string, unknown> } } };
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const botId = event.data?.bot?.id;
+  if (!botId) {
+    return Response.json({ error: "Missing bot ID" }, { status: 400 });
+  }
+
+  console.log(`[Recall webhook] event=${event.event} bot=${botId} code=${event.data?.data?.code}`);
+
+  // Find the meeting activity linked to this bot
+  const [activity] = await db
+    .select()
+    .from(activities)
+    .where(sql`metadata->>'recallBotId' = ${botId}`)
+    .limit(1);
+
+  if (!activity) {
+    console.warn(`[Recall webhook] No activity found for bot ${botId}`);
+    return Response.json({ received: true, warning: "no matching activity" });
+  }
+
+  const meta = (activity.metadata || {}) as Record<string, unknown>;
+  const statusCode = event.data?.data?.code;
+
+  // Handle bot status changes
+  if (event.event === "bot.status_change") {
+    const mappedStatus = mapBotStatus(statusCode);
+
+    await db
+      .update(activities)
+      .set({
+        metadata: { ...meta, recordingStatus: mappedStatus, lastStatusUpdate: event.data.data.updated_at },
+      })
+      .where(eq(activities.id, activity.id));
+
+    // If the call ended, trigger transcript fetch
+    if (statusCode === "call_ended" || statusCode === "done") {
+      // Process transcript asynchronously — don't block the webhook response
+      processTranscriptFromBot(botId, activity.id, activity.tenantId, meta).catch((err) => {
+        console.error(`[Recall webhook] Transcript processing failed for bot ${botId}:`, err);
+      });
+    }
+
+    return Response.json({ received: true, status: mappedStatus });
+  }
+
+  // For any other event, just acknowledge
+  return Response.json({ received: true });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Transcript processing (runs async after webhook response)          */
+/* ------------------------------------------------------------------ */
+
+async function processTranscriptFromBot(
+  botId: string,
+  activityId: string,
+  tenantId: string,
+  existingMeta: Record<string, unknown>
+) {
+  // 1. Fetch transcript + recording URL from Recall.ai
+  let transcriptText: string;
+  let recordingUrl: string | null = null;
+  try {
+    // Get bot details for recording URL
+    const botDetails = await getBotStatus(botId);
+    const recording = botDetails.recordings?.[0];
+    recordingUrl = recording?.media_shortcuts?.video_mixed?.data?.download_url || null;
+
+    const segments = await getBotTranscript(botId);
+    transcriptText = transcriptToText(segments);
+  } catch (err) {
+    console.error(`[Recall] Failed to fetch transcript for bot ${botId}:`, err);
+    await db
+      .update(activities)
+      .set({ metadata: { ...existingMeta, recordingStatus: "error", transcriptError: String(err) } })
+      .where(eq(activities.id, activityId));
+    return;
+  }
+
+  if (transcriptText.trim().length < 50) {
+    console.warn(`[Recall] Transcript too short for bot ${botId}: ${transcriptText.length} chars`);
+    await db
+      .update(activities)
+      .set({
+        metadata: {
+          ...existingMeta,
+          recordingStatus: "done",
+          hasTranscript: false,
+          transcriptError: "Transcript too short (< 50 chars)",
+        },
+      })
+      .where(eq(activities.id, activityId));
+    return;
+  }
+
+  // 2. Extract structured notes via LLM
+  const { anthropic } = await import("@ai-sdk/anthropic");
+  const { openai } = await import("@ai-sdk/openai");
+
+  const model = process.env.ANTHROPIC_API_KEY
+    ? anthropic("claude-sonnet-4-6")
+    : process.env.OPENAI_API_KEY
+      ? openai("gpt-4o-mini")
+      : null;
+
+  if (!model) {
+    console.error("[Recall] No LLM configured for transcript processing");
+    return;
+  }
+
+  const meetingTitle = (existingMeta.summary as string) || "Meeting";
+  const meetingDate = (existingMeta.startTime as string) || new Date().toISOString();
+
+  const { object: rawNotes } = await tracedGenerateObject({
+    model,
+    schema: meetingNotesSchema,
+    prompt: `Analyze this meeting transcript and extract structured notes.
+
+MEETING: ${meetingTitle}
+DATE: ${meetingDate}
+
+TRANSCRIPT:
+${transcriptText.slice(0, 15000)}
+
+RULES:
+- Extract ONLY information explicitly stated in the transcript
+- Do NOT invent or assume any information not in the transcript
+- For buying signals, only include if explicitly mentioned
+- Set fields to null/empty if not discussed
+- Be specific with action items — include who and what`,
+    _trace: { agentId: "recall-transcript-processing", tenantId },
+  });
+  const notes = rawNotes as z.infer<typeof meetingNotesSchema>;
+
+  // 3. Match participants to contacts
+  const attendeeEmails = ((existingMeta.attendees as Array<{ email: string }>) || []).map((a) => a.email).filter(Boolean);
+
+  const matchedContacts: Array<{ name: string; contactId: string | null }> = [];
+  for (const participant of notes.participants) {
+    let contactId: string | null = null;
+
+    // Try email match from calendar attendees
+    for (const email of attendeeEmails) {
+      const [match] = await db
+        .select({ id: contacts.id })
+        .from(contacts)
+        .where(and(eq(contacts.tenantId, tenantId), eq(contacts.email, email)))
+        .limit(1);
+      if (match) { contactId = match.id; break; }
+    }
+
+    // Try name match
+    if (!contactId && participant.name) {
+      const nameParts = participant.name.split(" ");
+      if (nameParts.length >= 2) {
+        const [match] = await db
+          .select({ id: contacts.id })
+          .from(contacts)
+          .where(
+            and(
+              eq(contacts.tenantId, tenantId),
+              ilike(contacts.firstName, nameParts[0]),
+              ilike(contacts.lastName, nameParts[nameParts.length - 1])
+            )
+          )
+          .limit(1);
+        if (match) contactId = match.id;
+      }
+    }
+
+    matchedContacts.push({ name: participant.name, contactId });
+  }
+
+  // 4. Update the activity with processed transcript
+  const [currentActivity] = await db
+    .select()
+    .from(activities)
+    .where(eq(activities.id, activityId))
+    .limit(1);
+  const currentMeta = (currentActivity?.metadata || existingMeta) as Record<string, unknown>;
+
+  await db
+    .update(activities)
+    .set({
+      activityType: "meeting_completed",
+      summary: notes.summary,
+      rawContent: transcriptText.slice(0, 10000),
+      sentiment: notes.sentiment,
+      metadata: {
+        ...currentMeta,
+        structuredNotes: notes,
+        matchedContacts,
+        hasTranscript: true,
+        transcriptSource: "recall_bot",
+        transcriptLength: transcriptText.length,
+        recordingStatus: "done",
+        recordingUrl,
+        processedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(activities.id, activityId));
+
+  // 5. Update deal if linked
+  const dealId = currentMeta.dealId as string | undefined;
+  if (dealId && notes.buyingSignals) {
+    try {
+      const [deal] = await db
+        .select()
+        .from(deals)
+        .where(and(eq(deals.id, dealId), eq(deals.tenantId, tenantId)))
+        .limit(1);
+      if (deal) {
+        const props = (deal.properties || {}) as Record<string, unknown>;
+        const extracted: Record<string, unknown> = {};
+        if (notes.buyingSignals.budget) extracted.budget = notes.buyingSignals.budget;
+        if (notes.buyingSignals.teamSize) extracted.teamSize = notes.buyingSignals.teamSize;
+        if (notes.buyingSignals.currentStack?.length) extracted.currentTools = notes.buyingSignals.currentStack;
+        if (notes.buyingSignals.competitors?.length) extracted.competitors = notes.buyingSignals.competitors;
+        if (notes.buyingSignals.timeline) extracted.timeline = notes.buyingSignals.timeline;
+        if (notes.buyingSignals.painPoints?.length) extracted.painPoints = notes.buyingSignals.painPoints;
+
+        if (Object.keys(extracted).length > 0) {
+          await db.update(deals).set({
+            properties: {
+              ...props,
+              extractedIntel: {
+                ...((props.extractedIntel || {}) as Record<string, unknown>),
+                ...extracted,
+                lastExtracted: new Date().toISOString(),
+              },
+            },
+            updatedAt: new Date(),
+          }).where(eq(deals.id, dealId));
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // 6. Embed for RAG search
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const { embedEntity, activityToText } = await import("@/lib/embeddings");
+      const activityText = activityToText({
+        activityType: "meeting_completed",
+        summary: notes.summary,
+        rawContent: transcriptText.slice(0, 3000),
+        channel: "meeting",
+        direction: "internal",
+        occurredAt: new Date(meetingDate),
+      });
+      await embedEntity(tenantId, "activity", activityId, activityText);
+    } catch { /* non-critical */ }
+  }
+
+  // 7. Ingest to context graph
+  try {
+    const { ingestEpisode } = await import("@/lib/context-graph");
+    const graphContent = `Meeting: ${meetingTitle}\nDate: ${meetingDate}\nParticipants: ${notes.participants.map((p) => p.name).join(", ")}\n\nSummary: ${notes.summary}\n\nKey Points:\n${notes.keyPoints.join("\n")}\n\nDecisions:\n${notes.decisions.join("\n")}\n\nAction Items:\n${notes.actionItems.map((a) => `- ${a.owner}: ${a.task}`).join("\n")}`;
+    await ingestEpisode(tenantId, graphContent, "meeting", activityId);
+  } catch { /* non-critical */ }
+
+  console.log(`[Recall] Transcript processed for bot ${botId}, activity ${activityId}: ${notes.summary.slice(0, 100)}`);
+}

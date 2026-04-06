@@ -5,9 +5,13 @@ import { syncEmails, syncCalendar, onGoogleOAuthConnected, onMicrosoftOAuthConne
 import { aiAutoFill } from "@/inngest/ai-autofill";
 import { executeWorkflow } from "@/inngest/workflow-engine";
 import { cronCalendarSync, autoMeetingPrep, generateMeetingPrep } from "@/inngest/meeting-functions";
+import { scheduleRecallBots } from "@/inngest/recall-functions";
 import { onOnboardingCompleted } from "@/inngest/onboarding-functions";
 import { processOutboundEmails, sendSingleEmail, cronDailyMailboxReset } from "@/inngest/email-send-worker";
+import { cronTriggerSequenceSteps } from "@/inngest/sequence-cron";
 import { cronFailureToEvalCases, cronFlywheelCycle, runAgentFlywheel, asyncOnlineEval } from "@/inngest/eval-functions";
+import { prepareCampaign } from "@/inngest/campaign-functions";
+import { handleReplyIntelligently } from "@/inngest/reply-handler";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -27,10 +31,15 @@ export const { GET, POST, PUT } = serve({
     cronCalendarSync,
     autoMeetingPrep,
     generateMeetingPrep,
+    scheduleRecallBots,
     onOnboardingCompleted,
     processOutboundEmails,
     sendSingleEmail,
     cronDailyMailboxReset,
+    cronTriggerSequenceSteps,
+    // Campaign pipeline
+    prepareCampaign,
+    handleReplyIntelligently,
     // Flywheel: self-improving eval system
     cronFailureToEvalCases,
     cronFlywheelCycle,
