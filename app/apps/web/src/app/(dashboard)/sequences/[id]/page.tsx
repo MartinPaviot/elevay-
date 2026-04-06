@@ -70,6 +70,12 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
           setCampaignStatus(config.status || "idle");
           setCampaignStats(config.stats || {});
         }
+        // Auto-open wizard if campaign is draft and not yet prepared
+        const seq = data.sequence;
+        const hasConfig = config && config.status && config.status !== "idle";
+        if (seq && seq.status === "draft" && !hasConfig && (data.steps || []).length === 0) {
+          setShowCampaignWizard(true);
+        }
       }
     } catch { /* */ }
     setLoading(false);
@@ -139,9 +145,9 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
         <Badge variant={statusVariant[sequence.status] || "neutral"} size="md">
           {sequence.status}
         </Badge>
-        {sequence.status !== "active" && steps.length > 0 && (
+        {sequence.status !== "active" && campaignStatus !== "launched" && (
           <Button variant="gradient" size="sm" onClick={() => setShowCampaignWizard(true)}>
-            <Zap size={14} /> Launch Campaign
+            <Zap size={14} /> {steps.length > 0 ? "Continue Campaign" : "Configure Campaign"}
           </Button>
         )}
         {(sequence.status === "active" || sequence.status === "paused") && (
