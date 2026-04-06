@@ -202,7 +202,7 @@ export default function LandingPage() {
       <nav className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? "bg-white/95 shadow-[0_1px_3px_rgba(0,0,0,0.06)] backdrop-blur-md" : "bg-white"}`}>
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo-elevay.svg" alt="Elevay" className="h-7 w-7" />
+            <img src="/logo-Elevay.svg" alt="Elevay" className="h-7 w-7" />
             <span className="text-xl font-bold" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Elevay</span>
           </Link>
           <div className="hidden items-center gap-8 md:flex">
@@ -379,7 +379,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1400px] px-6 pb-8 pt-12">
           <div className="flex flex-col items-center justify-between gap-8 md:flex-row">
             <div className="flex items-center gap-2">
-              <img src="/logo-elevay.svg" alt="Elevay" className="h-6 w-6" />
+              <img src="/logo-Elevay.svg" alt="Elevay" className="h-6 w-6" />
               <span
                 className="text-base font-bold"
                 style={{
