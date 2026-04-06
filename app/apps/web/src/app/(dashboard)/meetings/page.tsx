@@ -255,7 +255,7 @@ function MeetingCard({
               <div>
                 <span className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Meeting Prep</span>
                 <div className="mt-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                  <ChatMarkdown content={prepDoc} />
+                  <ChatMarkdown>{prepDoc}</ChatMarkdown>
                 </div>
               </div>
             )}
