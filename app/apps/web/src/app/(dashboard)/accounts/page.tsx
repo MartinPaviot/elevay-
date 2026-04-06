@@ -60,11 +60,20 @@ export default function AccountsPage() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch("/api/accounts?pageSize=200");
-      if (res.ok) {
+      // Load all accounts with pagination
+      let allAccounts: Account[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const res = await fetch(`/api/accounts?pageSize=200&page=${page}`);
+        if (!res.ok) break;
         const data = await res.json();
-        setAccounts(data.accounts || []);
+        const batch = data.accounts || [];
+        allAccounts = [...allAccounts, ...batch];
+        hasMore = batch.length === 200 && allAccounts.length < (data.pagination?.total || Infinity);
+        page++;
       }
+      setAccounts(allAccounts);
     } catch { /* */ } finally { setLoading(false); }
   }, []);
 
