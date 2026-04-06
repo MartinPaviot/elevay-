@@ -402,7 +402,11 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
       const tamRes = await fetch("/api/tam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ industries, companySizes: apolloSizeRanges, targetRoles: derivedRoles, geographies, productDescription: productDesc }) });
       if (!tamRes.ok) { const data = await tamRes.json(); throw new Error(data.error || "TAM build failed"); }
       const tamData = await tamRes.json();
-      setTamProgress({ found: tamData.companiesCreated || 0, done: true });
+      // Show total accounts (existing + new) not just newly created
+      const totalRes = await fetch("/api/accounts?pageSize=1");
+      const totalData = totalRes.ok ? await totalRes.json() : null;
+      const totalAccounts = totalData?.pagination?.total || tamData.companiesCreated || 0;
+      setTamProgress({ found: totalAccounts, done: true });
       setBuildStage(4);
 
       // Fetch all companies for scoring + enrichment, and top 5 for preview

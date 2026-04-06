@@ -60,7 +60,7 @@ export default function AccountsPage() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch("/api/accounts");
+      const res = await fetch("/api/accounts?pageSize=200");
       if (res.ok) {
         const data = await res.json();
         setAccounts(data.accounts || []);
