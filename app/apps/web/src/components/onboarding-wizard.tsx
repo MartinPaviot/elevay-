@@ -82,15 +82,38 @@ function TagInput({ options, selected, onToggle, placeholder }: {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const filtered = search.trim()
     ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()) && !selected.includes(o))
     : options.filter((o) => !selected.includes(o));
 
+  const DROPDOWN_HEIGHT = 208; // max-h-52 = 13rem = 208px
+
   const openDropdown = () => {
     if (inputRef.current) {
       const rect = inputRef.current.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+
+      if (spaceBelow >= DROPDOWN_HEIGHT || spaceBelow >= spaceAbove) {
+        // Open below
+        setDropdownStyle({
+          position: "fixed" as const,
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: rect.width,
+          maxHeight: Math.min(DROPDOWN_HEIGHT, spaceBelow - 8),
+        });
+      } else {
+        // Open above
+        setDropdownStyle({
+          position: "fixed" as const,
+          bottom: window.innerHeight - rect.top + 4,
+          left: rect.left,
+          width: rect.width,
+          maxHeight: Math.min(DROPDOWN_HEIGHT, spaceAbove - 8),
+        });
+      }
     }
     setOpen(true);
   };
@@ -117,8 +140,8 @@ function TagInput({ options, selected, onToggle, placeholder }: {
       {open && filtered.length > 0 && (
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => { setOpen(false); setSearch(""); }} />
-          <div className="fixed z-[9999] max-h-52 overflow-y-auto rounded-lg py-1"
-            style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width, background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog)" }}>
+          <div className="z-[9999] overflow-y-auto rounded-lg py-1"
+            style={{ ...dropdownStyle, background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog)" }}>
             {filtered.map((opt) => (
               <button key={opt} type="button" onClick={() => { onToggle(opt); setSearch(""); }}
                 className="w-full text-left px-3 py-1.5 text-[12px] transition-colors"
