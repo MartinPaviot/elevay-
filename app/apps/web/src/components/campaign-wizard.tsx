@@ -11,6 +11,64 @@ import { INDUSTRIES, COMPANY_SIZES, GEOGRAPHIES, DECISION_MAKER_ROLES } from "@/
 
 const pill = "rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all duration-150 cursor-pointer select-none";
 
+function SearchableSelect({ label, placeholder, options, selected, onToggle }: {
+  label: string;
+  placeholder: string;
+  options: string[];
+  selected: string[];
+  onToggle: (val: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const filtered = options.filter((o) =>
+    o.toLowerCase().includes(search.toLowerCase()) && !selected.includes(o)
+  );
+
+  return (
+    <div>
+      <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>{label}</label>
+      {selected.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {selected.map((val) => (
+            <span key={val} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{ background: "var(--color-accent)", color: "white" }}>
+              {val}
+              <button type="button" onClick={() => onToggle(val)} className="hover:opacity-70">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative mt-1">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={selected.length > 0 ? "Add more..." : placeholder}
+          className="w-full rounded-lg px-3 py-2 text-[12px] outline-none"
+          style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
+        />
+        {open && filtered.length > 0 && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
+            <div className="absolute z-20 mt-1 w-full max-h-40 overflow-y-auto rounded-lg py-1"
+              style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog)" }}>
+              {filtered.slice(0, 20).map((opt) => (
+                <button key={opt} type="button" onClick={() => { onToggle(opt); setSearch(""); }}
+                  className="w-full text-left px-3 py-1.5 text-[12px] transition-colors"
+                  style={{ color: "var(--color-text-primary)" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--color-bg-hover)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                >{opt}</button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface CampaignWizardProps {
   onClose: () => void;
   onComplete: (sequenceId: string) => void;
@@ -273,22 +331,16 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
                 />
               </div>
 
-              {/* Industries */}
-              <div>
-                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Target industries</label>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {INDUSTRIES.map((ind) => (
-                    <button key={ind} type="button" onClick={() => toggle(selectedIndustries, ind, setSelectedIndustries)}
-                      className={pill} style={{
-                        background: selectedIndustries.includes(ind) ? "var(--color-accent)" : "var(--color-bg-page)",
-                        color: selectedIndustries.includes(ind) ? "white" : "var(--color-text-secondary)",
-                        border: `1px solid ${selectedIndustries.includes(ind) ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                      }}>{ind}</button>
-                  ))}
-                </div>
-              </div>
+              {/* Industries — searchable */}
+              <SearchableSelect
+                label="Target industries"
+                placeholder="Search industries..."
+                options={INDUSTRIES as unknown as string[]}
+                selected={selectedIndustries}
+                onToggle={(val) => toggle(selectedIndustries, val, setSelectedIndustries)}
+              />
 
-              {/* Company size */}
+              {/* Company size — simple pills (few options) */}
               <div>
                 <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Company size</label>
                 <div className="mt-1.5 flex flex-wrap gap-1">
@@ -303,36 +355,28 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
                 </div>
               </div>
 
-              {/* Target roles */}
-              <div>
-                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Target decision-makers</label>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {DECISION_MAKER_ROLES.slice(0, 20).map((role) => (
-                    <button key={role} type="button" onClick={() => toggle(selectedRoles, role, setSelectedRoles)}
-                      className={pill} style={{
-                        background: selectedRoles.includes(role) ? "var(--color-accent)" : "var(--color-bg-page)",
-                        color: selectedRoles.includes(role) ? "white" : "var(--color-text-secondary)",
-                        border: `1px solid ${selectedRoles.includes(role) ? "var(--color-accent)" : "var(--color-border-default)"}`,
-                      }}>{role}</button>
-                  ))}
-                </div>
-              </div>
+              {/* Target roles — searchable */}
+              <SearchableSelect
+                label="Target decision-makers"
+                placeholder="Search roles (CEO, VP Sales, Head of...)"
+                options={DECISION_MAKER_ROLES as unknown as string[]}
+                selected={selectedRoles}
+                onToggle={(val) => toggle(selectedRoles, val, setSelectedRoles)}
+              />
 
-              {/* Max companies */}
-              <div className="flex items-center gap-4">
-                <div>
-                  <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Max companies</label>
-                  <input type="number" value={maxCompanies} onChange={(e) => setMaxCompanies(Number(e.target.value))} min={1} max={500}
-                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-[13px] outline-none"
-                    style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
-                  />
-                </div>
-                <div>
-                  <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Contacts per company</label>
-                  <input type="number" value={maxContactsPerCompany} onChange={(e) => setMaxContactsPerCompany(Number(e.target.value))} min={1} max={5}
-                    className="mt-1 w-20 rounded-lg px-3 py-1.5 text-[13px] outline-none"
-                    style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
-                  />
+              {/* Contacts per company */}
+              <div>
+                <label className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>Contacts per company</label>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--color-text-tertiary)" }}>How many decision-makers to contact at each company</p>
+                <div className="mt-1.5 flex gap-1">
+                  {[1, 2, 3, 5].map((n) => (
+                    <button key={n} type="button" onClick={() => setMaxContactsPerCompany(n)}
+                      className={pill} style={{
+                        background: maxContactsPerCompany === n ? "var(--color-accent)" : "var(--color-bg-page)",
+                        color: maxContactsPerCompany === n ? "white" : "var(--color-text-secondary)",
+                        border: `1px solid ${maxContactsPerCompany === n ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                      }}>{n}</button>
+                  ))}
                 </div>
               </div>
             </div>
