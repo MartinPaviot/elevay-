@@ -200,18 +200,39 @@ async function detectStaleDealsByTenant(tenantId: string) {
         const { object: email } = await tracedGenerateObject({
           model,
           schema: revivalEmailSchema,
-          prompt: `Draft a short, warm revival email for a stale sales deal.
+          prompt: `Draft a short, warm revival email for a stale sales deal. The goal is to re-engage without pressure.
 
-Deal name: ${staleDeal.dealName}
-Contact name: ${contactFirstName}${contact.lastName ? ` ${contact.lastName}` : ""}
-Company: ${staleDeal.companyName || "their company"}
-Deal stage: ${staleDeal.stage || "unknown"}
-Days since last activity: ${staleDeal.daysSinceLastActivity}
-Last activity type: ${staleDeal.lastActivityType || "unknown"}
+DEAL CONTEXT:
+- Deal: ${staleDeal.dealName}
+- Contact: ${contactFirstName}${contact.lastName ? ` ${contact.lastName}` : ""}
+- Company: ${staleDeal.companyName || "their company"}
+- Stage when it went quiet: ${staleDeal.stage || "unknown"}
+- Days since last activity: ${staleDeal.daysSinceLastActivity}
+- Last activity: ${staleDeal.lastActivityType || "unknown"}
 
-Write a brief, personal check-in email (3-4 sentences max). Be warm and helpful, not pushy. Reference the deal context naturally. End with a soft call to action (e.g., "Would love to reconnect" or "Happy to pick up where we left off").
+<examples>
+<example>
+CONTEXT: Deal "Platform Migration" with Sarah at Meridian Labs, 16 days stale, stage: proposal, last activity: email_sent
+Subject: quick check-in on the migration
+Body (HTML): <p>Sarah,</p><p>I realized we left the platform migration conversation mid-stream a couple of weeks ago. Completely understand if priorities shifted — that happens.</p><p>If the timing is better now, I'm happy to pick up where we left off. If not, no worries at all — just let me know and I'll follow up when it makes more sense.</p>
+Body (text): Sarah,\n\nI realized we left the platform migration conversation mid-stream a couple of weeks ago. Completely understand if priorities shifted — that happens.\n\nIf the timing is better now, I'm happy to pick up where we left off. If not, no worries at all — just let me know and I'll follow up when it makes more sense.
+</example>
+<example>
+CONTEXT: Deal "Security Audit" with Marc at TechFlow, 21 days stale, stage: demo, last activity: meeting_completed
+Subject: after our demo
+Body (HTML): <p>Marc,</p><p>It's been a few weeks since our security audit demo. I wanted to share a quick update — we just shipped the compliance dashboard feature that came up during our conversation.</p><p>Worth a 15-minute look if security tooling is still on the roadmap for Q2?</p>
+Body (text): Marc,\n\nIt's been a few weeks since our security audit demo. I wanted to share a quick update — we just shipped the compliance dashboard feature that came up during our conversation.\n\nWorth a 15-minute look if security tooling is still on the roadmap for Q2?
+</example>
+</examples>
 
-Use the contact's first name. Do not use placeholder brackets. Keep the subject line under 50 characters.`,
+RULES:
+- 3-4 sentences maximum — brevity is respect
+- Use ${contactFirstName}'s first name naturally
+- Reference the deal context (stage, last interaction) without being robotic
+- End with a soft, binary question (easy to reply yes/no) — not "let me know your thoughts"
+- Never use: "just checking in", "touching base", "I hope this finds you well", "circling back"
+- Tone: warm, confident, zero desperation
+- Subject: under 50 characters, lowercase ok, specific to the deal`,
           _trace: { agentId: "deal-analyze", tenantId, inputPreview: `Revival email for stale deal: ${staleDeal.dealName}` },
         });
 

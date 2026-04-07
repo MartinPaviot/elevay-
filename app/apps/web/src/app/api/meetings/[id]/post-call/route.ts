@@ -144,7 +144,7 @@ export async function POST(
 
       const { text } = await tracedGenerateText({
         model,
-        prompt: `Write a professional follow-up email after this sales meeting.
+        prompt: `Write a follow-up email after this sales meeting. The email should feel like it was written by someone who was in the meeting and paid close attention.
 
 MEETING: ${activity.summary}
 DATE: ${meta.startTime || activity.occurredAt}
@@ -152,24 +152,43 @@ ${contactContext}
 
 MEETING SUMMARY: ${notes.summary}
 
-KEY POINTS:
-${notes.keyPoints?.join("\n- ") || "None"}
+KEY POINTS DISCUSSED:
+${notes.keyPoints?.map((p: string) => `- ${p}`).join("\n") || "None recorded"}
 
 ACTION ITEMS:
-${notes.actionItems?.map((a: any) => `- ${a.task} (${a.owner})`).join("\n") || "None"}
+${notes.actionItems?.map((a: any) => `- ${a.task} (owner: ${a.owner})${a.deadline ? ` — by ${a.deadline}` : ""}`).join("\n") || "None"}
 
 NEXT STEPS:
-${notes.buyingSignals?.nextSteps?.join("\n- ") || "None"}
+${notes.buyingSignals?.nextSteps?.join("\n- ") || "None specified"}
+
+<example>
+MEETING: Product demo with Sarah Chen (CTO, Meridian Labs)
+KEY POINTS: Liked the reporting feature, concerned about SSO integration timeline, team of 12 developers
+ACTION ITEMS: Send pricing by Friday (us), Share SOC 2 report (us), Internal review with CFO (them)
+
+FOLLOW-UP EMAIL:
+Hi Sarah,
+
+Thanks for the deep-dive today — great questions from your team, especially around the reporting workflows.
+
+Two things I'm following up on:
+1. Pricing breakdown for 12 seats — I'll have this in your inbox by Friday
+2. Our SOC 2 report — sending separately this afternoon
+
+On your end, you mentioned running this by David before moving forward. Happy to jump on a quick call with him if that would help move things along.
+
+Talk soon,
+</example>
 
 RULES:
-- Keep it concise (3-5 paragraphs)
-- Reference specific discussion points
-- List action items with owners
-- Propose clear next steps
-- Professional but warm tone
-- Do NOT use placeholder brackets like [Name] — use actual names if available
-- Start with "Hi" not "Subject:"
-- Output ONLY the email body, no subject line`,
+- 3-4 short paragraphs, never more
+- Reference 2-3 SPECIFIC discussion points from the meeting (not generic)
+- List your action items with clear timelines
+- Acknowledge their action items without being pushy
+- Tone: professional, warm, like a colleague — not a vendor
+- Start with "Hi [first name]," — use actual names
+- End with a forward-looking close, never "let me know if you have questions"
+- Output ONLY the email body — no subject line, no "Subject:" prefix`,
         _trace: { agentId: "process-transcript", tenantId: authCtx.tenantId, inputPreview: `Follow-up email for meeting: ${activity.summary}` },
       });
 

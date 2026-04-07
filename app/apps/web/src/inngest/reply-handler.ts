@@ -18,6 +18,7 @@ import { tracedGenerateObject } from "@/lib/traced-ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { EMAIL_RULES, ANTI_HALLUCINATION_RULES } from "@/lib/prompts/shared-rules";
 import { buildProspectContext, formatContextForPrompt } from "@/lib/prospect-context";
 import { getAvailableSlots, formatSlotsForEmail } from "@/lib/meeting-booking";
 
@@ -146,14 +147,16 @@ Body: ${lastEmail?.bodyText || "unknown"}
 
 ${meetingSlots ? `AVAILABLE MEETING TIMES:\n${meetingSlots}` : ""}
 
-RULES:
+${EMAIL_RULES}
+${ANTI_HALLUCINATION_RULES}
+
+ADDITIONAL RULES:
 - Be warm but not gushing — match their energy level
 - Answer any specific question they asked
 - ${meetingSlots ? "Propose the available times naturally — don't force it" : "Suggest scheduling a call without specific times"}
 - Keep it under 100 words
 - Subject: "Re: ${lastEmail?.subject || "our conversation"}"
 - Do NOT restate the product pitch — they already know
-- Do NOT use "Thanks for getting back to me"
 - Match the tone: "${ctx.aiTone}"`,
           _trace: { agentId: "follow-up-email", tenantId, inputPreview: `Positive reply from ${ctx.contact.fullName}` },
         });
@@ -224,7 +227,10 @@ OBJECTION HANDLING FRAMEWORK:
 3. Provide ONE specific proof point (case study, metric, or quote)
 4. End with a low-pressure next step
 
-RULES:
+${EMAIL_RULES}
+${ANTI_HALLUCINATION_RULES}
+
+ADDITIONAL RULES:
 - Never argue or get defensive
 - Never trash the competition by name
 - Keep it under 120 words

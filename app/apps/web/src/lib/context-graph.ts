@@ -51,35 +51,80 @@ export async function extractEntitiesAndFacts(
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!anthropicKey && !openaiKey) return { entities: [], facts: [] };
 
-  const prompt = `Extract entities and relationships from this ${sourceType} content. Return JSON.
+  const prompt = `Extract entities and relationships from this ${sourceType} content. Return valid JSON only.
 
-Content:
+<content>
 ${text.slice(0, 4000)}
+</content>
 
-Return:
+<output_schema>
 {
   "entities": [
-    { "name": "Full Name or Title", "entityType": "person|company|deal|topic|event", "summary": "one line" }
+    { "name": "Full Name or Title", "entityType": "person|company|deal|topic|event", "summary": "one-line description" }
   ],
   "facts": [
     {
-      "sourceEntity": "Entity A name",
-      "targetEntity": "Entity B name",
+      "sourceEntity": "Entity A name (must match an entity above)",
+      "targetEntity": "Entity B name (must match an entity above)",
       "relationType": "WORKS_AT|INVOLVED_IN|DISCUSSED|ATTENDED|SENT_EMAIL|MENTIONED|MANAGES|INTERESTED_IN|COMPETES_WITH|PARTNERED_WITH|REQUESTED|OBJECTED_TO",
-      "fact": "Human-readable fact (e.g. 'Sarah works at Acme Corp as VP Sales')",
+      "fact": "Human-readable fact sentence",
       "confidence": 0.0-1.0,
       "temporalInfo": { "validFrom": "ISO date or null", "validTo": "ISO date or null" }
     }
   ]
 }
+</output_schema>
 
-Rules:
-- Extract ALL people, companies, products, topics mentioned
-- Relationships must connect two extracted entities
-- Use specific relation types from the list
-- Confidence: 1.0 for explicit statements, 0.7 for inferred, 0.5 for guesses
-- Include temporal info when dates are mentioned
-- Be precise with names (full names, proper capitalization)`;
+<examples>
+<example>
+INPUT (email): "Hi Sarah, following up on our call yesterday. I spoke with Marc about the Meridian Labs deal — he's concerned about the $50K budget. Let's reconnect Thursday to discuss the revised proposal. Best, Thomas"
+OUTPUT:
+{
+  "entities": [
+    { "name": "Sarah", "entityType": "person", "summary": "Email recipient, involved in deal discussion" },
+    { "name": "Thomas", "entityType": "person", "summary": "Email sender" },
+    { "name": "Marc", "entityType": "person", "summary": "Stakeholder with budget concerns" },
+    { "name": "Meridian Labs", "entityType": "company", "summary": "Company with active deal" },
+    { "name": "Meridian Labs deal", "entityType": "deal", "summary": "Deal with $50K budget under discussion" }
+  ],
+  "facts": [
+    { "sourceEntity": "Thomas", "targetEntity": "Sarah", "relationType": "SENT_EMAIL", "fact": "Thomas sent follow-up email to Sarah about the Meridian Labs deal", "confidence": 1.0, "temporalInfo": { "validFrom": null, "validTo": null } },
+    { "sourceEntity": "Marc", "targetEntity": "Meridian Labs deal", "relationType": "OBJECTED_TO", "fact": "Marc is concerned about the $50K budget for the Meridian Labs deal", "confidence": 0.9, "temporalInfo": { "validFrom": null, "validTo": null } },
+    { "sourceEntity": "Meridian Labs deal", "targetEntity": "Meridian Labs", "relationType": "INVOLVED_IN", "fact": "Active deal with Meridian Labs valued at $50K", "confidence": 1.0, "temporalInfo": { "validFrom": null, "validTo": null } }
+  ]
+}
+</example>
+<example>
+INPUT (meeting): "Meeting with DataSync CEO Marc Dupont and VP Eng Lisa Park. Discussed API integration project. They use Jira and Linear. Budget: $30K. Timeline: Q3. Competitor mentioned: Monday.com."
+OUTPUT:
+{
+  "entities": [
+    { "name": "Marc Dupont", "entityType": "person", "summary": "CEO of DataSync" },
+    { "name": "Lisa Park", "entityType": "person", "summary": "VP Engineering at DataSync" },
+    { "name": "DataSync", "entityType": "company", "summary": "Prospect company evaluating API integration" },
+    { "name": "API Integration", "entityType": "deal", "summary": "Integration project, $30K budget, Q3 timeline" },
+    { "name": "Monday.com", "entityType": "company", "summary": "Competitor being evaluated" }
+  ],
+  "facts": [
+    { "sourceEntity": "Marc Dupont", "targetEntity": "DataSync", "relationType": "WORKS_AT", "fact": "Marc Dupont is CEO of DataSync", "confidence": 1.0, "temporalInfo": { "validFrom": null, "validTo": null } },
+    { "sourceEntity": "Lisa Park", "targetEntity": "DataSync", "relationType": "WORKS_AT", "fact": "Lisa Park is VP Engineering at DataSync", "confidence": 1.0, "temporalInfo": { "validFrom": null, "validTo": null } },
+    { "sourceEntity": "DataSync", "targetEntity": "Monday.com", "relationType": "COMPETES_WITH", "fact": "DataSync is also evaluating Monday.com for the API integration project", "confidence": 0.8, "temporalInfo": { "validFrom": null, "validTo": null } },
+    { "sourceEntity": "Marc Dupont", "targetEntity": "API Integration", "relationType": "INVOLVED_IN", "fact": "Marc attended the meeting to discuss the API integration project", "confidence": 1.0, "temporalInfo": { "validFrom": null, "validTo": null } }
+  ]
+}
+</example>
+</examples>
+
+<rules>
+- Extract ALL people, companies, products, topics, and events mentioned
+- Every entity in a fact must appear in the entities array
+- Use the most specific relation type available
+- Confidence: 1.0 for explicit statements, 0.7-0.9 for strong inferences, 0.5 for weak guesses
+- Include temporal info when dates or timeframes are mentioned
+- Use full names with proper capitalization — never abbreviate
+- If the same person is mentioned by first name only, still extract them
+- Return valid JSON only — no markdown fencing, no commentary
+</rules>`;
 
   try {
     let resultText: string;
