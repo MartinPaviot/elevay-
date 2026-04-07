@@ -51,10 +51,12 @@ export type GeneratedSequence = z.infer<typeof generatedSequenceSchema>;
 
 /**
  * Generate a complete multi-step outreach sequence.
+ * When evaluate=true, runs an evaluator-optimizer loop (max 2 iterations)
+ * to refine quality. Use for preview/single sequences, not bulk campaigns.
  */
 export async function generateSequence(
   ctx: ProspectContext,
-  options?: { stepCount?: number; meetingSlots?: string; tenantId?: string }
+  options?: { stepCount?: number; meetingSlots?: string; tenantId?: string; evaluate?: boolean }
 ): Promise<GeneratedSequence> {
   const model = getLLMModel();
   if (!model) throw new Error("No LLM API key configured");
@@ -64,20 +66,121 @@ export async function generateSequence(
   const stepCount = options?.stepCount || 5;
   const strategies = STEP_STRATEGIES.slice(0, stepCount);
 
-  const prompt = buildGenerationPrompt(ctx, methodology, signalAngle, strategies, options?.meetingSlots);
+  const basePrompt = buildGenerationPrompt(ctx, methodology, signalAngle, strategies, options?.meetingSlots);
 
-  const { object } = await tracedGenerateObject({
-    model,
-    schema: generatedSequenceSchema,
-    prompt,
-    _trace: {
-      agentId: "generate-sequence",
-      tenantId: options?.tenantId,
-      inputPreview: `Sequence for ${ctx.contact.fullName} at ${ctx.company?.name || "unknown"} (${methodology.name})`,
-    },
-  });
+  // Standard generation (bulk campaigns)
+  if (!options?.evaluate) {
+    const { object } = await tracedGenerateObject({
+      model,
+      schema: generatedSequenceSchema,
+      prompt: basePrompt,
+      _trace: {
+        agentId: "generate-sequence",
+        tenantId: options?.tenantId,
+        inputPreview: `Sequence for ${ctx.contact.fullName} at ${ctx.company?.name || "unknown"} (${methodology.name})`,
+      },
+    });
+    return object as GeneratedSequence;
+  }
 
-  return object as GeneratedSequence;
+  // Evaluator-optimizer loop (preview/single sequence)
+  const generateFn = async (feedback?: string) => {
+    const prompt = feedback
+      ? `${basePrompt}\n\nPREVIOUS ATTEMPT FEEDBACK — fix these issues:\n${feedback}`
+      : basePrompt;
+
+    const { object } = await tracedGenerateObject({
+      model,
+      schema: generatedSequenceSchema,
+      prompt,
+      _trace: {
+        agentId: "generate-sequence",
+        tenantId: options?.tenantId,
+        inputPreview: `Sequence for ${ctx.contact.fullName} (eval loop)`,
+      },
+    });
+    return { text: JSON.stringify(object), usage: { promptTokens: 0, completionTokens: 0 } };
+  };
+
+  const evaluateFn = async (output: string) => {
+    return evaluateSequenceQuality(output, ctx, methodology);
+  };
+
+  const { evaluatorOptimizerLoop } = await import("@/lib/evals/flywheel");
+  const result = await evaluatorOptimizerLoop(generateFn, evaluateFn, 2);
+
+  return JSON.parse(result.output) as GeneratedSequence;
+}
+
+/**
+ * Evaluate the quality of a generated sequence against best practices.
+ * Returns pass/fail with specific feedback for improvement.
+ */
+async function evaluateSequenceQuality(
+  output: string,
+  ctx: ProspectContext,
+  methodology: Methodology,
+): Promise<{ pass: boolean; score: number; feedback: string }> {
+  const issues: string[] = [];
+  let score = 1.0;
+
+  try {
+    const seq = JSON.parse(output) as GeneratedSequence;
+
+    // Check each step
+    for (const step of seq.steps) {
+      const wordCount = step.body.split(/\s+/).length;
+      const strategy = STEP_STRATEGIES.find((s) => s.stepNumber === step.stepNumber);
+      const maxWords = strategy?.maxWords || methodology.maxWords;
+
+      // Word count check
+      if (wordCount > maxWords * 1.2) {
+        issues.push(`Step ${step.stepNumber} is ${wordCount} words (max ${maxWords}). Cut it down.`);
+        score -= 0.1;
+      }
+
+      // Anti-pattern check
+      const antiPatterns = [
+        { pattern: /I hope this finds you well/i, msg: "Remove 'I hope this finds you well'" },
+        { pattern: /I noticed that/i, msg: "Remove 'I noticed that'" },
+        { pattern: /Just wanted to/i, msg: "Remove 'Just wanted to'" },
+        { pattern: /I'd love to/i, msg: "Remove 'I'd love to'" },
+        { pattern: /!!!/i, msg: "Remove excessive exclamation marks" },
+      ];
+
+      for (const { pattern, msg } of antiPatterns) {
+        if (pattern.test(step.body)) {
+          issues.push(`Step ${step.stepNumber}: ${msg}`);
+          score -= 0.15;
+        }
+      }
+
+      // Personalization check — must reference prospect facts
+      const hasCompanyName = step.body.includes(ctx.company?.name || "__NONE__");
+      const hasContactName = step.body.includes(ctx.contact.firstName || "__NONE__");
+      if (!hasCompanyName && !hasContactName && step.stepNumber === 1) {
+        issues.push(`Step 1 doesn't mention ${ctx.contact.firstName} or ${ctx.company?.name}. Add specific personalization.`);
+        score -= 0.15;
+      }
+    }
+
+    // Check for variety — no two steps should start the same way
+    const openers = seq.steps.map((s) => s.body.slice(0, 30).toLowerCase());
+    const uniqueOpeners = new Set(openers);
+    if (uniqueOpeners.size < openers.length) {
+      issues.push("Multiple steps start the same way. Each step needs a unique angle.");
+      score -= 0.1;
+    }
+  } catch {
+    return { pass: false, score: 0, feedback: "Invalid JSON output" };
+  }
+
+  score = Math.max(0, score);
+  return {
+    pass: score >= 0.7,
+    score,
+    feedback: issues.length > 0 ? issues.join("\n") : "Quality is acceptable.",
+  };
 }
 
 function buildGenerationPrompt(

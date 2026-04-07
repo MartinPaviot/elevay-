@@ -15,6 +15,12 @@ interface WebsiteAnalysis {
   suggestedTone: string;
   confidence: number;
   reasoning: string;
+  confidenceGaps?: Array<{
+    field: string;
+    question: string;
+    currentGuess: string;
+  }>;
+  pricingModel?: string;
 }
 
 interface OnboardingWizardProps {
@@ -668,6 +674,28 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
             />
 
             {buildError && <div className="mb-2 rounded-lg p-1.5 text-[11px]" style={{ background: "rgba(239,68,68,.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,.2)" }}>{buildError}</div>}
+
+            {/* Confidence gaps — targeted questions when AI needs clarification */}
+            {websiteAnalysis?.confidenceGaps && websiteAnalysis.confidenceGaps.length > 0 && (
+              <div className="mb-3 rounded-lg p-3" style={{ background: "var(--color-accent-soft)", border: "1px solid var(--color-accent)20" }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Sparkles size={13} style={{ color: "var(--color-accent)" }} />
+                  <span className="text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+                    Quick questions to refine your ICP
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {websiteAnalysis.confidenceGaps.map((gap, i) => (
+                    <div key={i} className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+                      <span style={{ fontWeight: 500 }}>{gap.question}</span>
+                      <span className="ml-1" style={{ color: "var(--color-text-tertiary)" }}>
+                        (current guess: {gap.currentGuess})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
               <div>

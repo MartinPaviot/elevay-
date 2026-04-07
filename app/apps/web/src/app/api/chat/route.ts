@@ -17,47 +17,6 @@ type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string
 
 export const maxDuration = 60;
 
-// ── Tool Search: dynamically select tools based on query ──────────────
-const CORE_TOOLS = ["searchCRM", "queryContacts", "queryAccounts", "queryDeals", "queryActivities", "queryNotes"] as const;
-
-const TOOL_TRIGGERS: Record<string, RegExp> = {
-  createContact: /create|add|new\s+contact|ajouter.*contact/i,
-  createAccount: /create|add|new\s+(account|company)|ajouter.*(compte|entreprise)/i,
-  createDeal: /create|add|new\s+(deal|opportunity)|ajouter.*(deal|opportunit)/i,
-  createTask: /remind|task|follow.?up|todo|rappel|tâche/i,
-  updateDealStage: /move|progress|stage|won|lost|advance|déplacer|gagn|perdu/i,
-  draftEmail: /email|draft|write\s+to|reach\s+out|follow\s+up|écrire|envoyer|relancer/i,
-  getDealCoaching: /coach|advice|help.*deal|strategy|conseil|stratégie|comment.*deal/i,
-  getAccountIntelligence: /why.*account|intelligence|analysis|score.*breakdown|pourquoi.*compte/i,
-  completeTask: /complete|done|finish|mark.*done|terminé|fini/i,
-  bulkUpdateDeals: /bulk|all\s+deals|move\s+all|tous\s+les\s+deals/i,
-  bulkUpdateContacts: /bulk|all\s+contacts|update\s+all|tous\s+les\s+contacts/i,
-  generateMeetingPrep: /meeting|prep|briefing|prepare|réunion|préparer/i,
-  rememberContext: /remember|save|note.*later|retenir|souvenir/i,
-  recallMemories: /recall|what.*remember|memories|rappeler|mémoire/i,
-  queryTasks: /task|todo|due|pending|tâche|à\s+faire/i,
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function selectToolsForQuery(query: string, allTools: Record<string, any>): Record<string, any> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const selected: Record<string, any> = {};
-
-  // Always include core tools
-  for (const name of CORE_TOOLS) {
-    if (allTools[name]) selected[name] = allTools[name];
-  }
-
-  // Add triggered tools based on query
-  for (const [toolName, pattern] of Object.entries(TOOL_TRIGGERS)) {
-    if (pattern.test(query) && allTools[toolName]) {
-      selected[toolName] = allTools[toolName];
-    }
-  }
-
-  return selected;
-}
-
 // ── Context Management: compact long conversations ──────────────
 function compactMessages(messages: UIMessage[], maxMessages: number = 30): UIMessage[] {
   if (messages.length <= maxMessages) return messages;

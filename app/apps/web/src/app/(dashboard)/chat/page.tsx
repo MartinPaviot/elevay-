@@ -39,6 +39,7 @@ export default function ChatPage() {
     body: string;
   } | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [firstName, setFirstName] = useState<string>("");
 
   // Action card approval state: keyed by "messageId-toolIdx"
   const [cardStatuses, setCardStatuses] = useState<Record<string, "pending" | "approved" | "dismissed">>({});
@@ -82,6 +83,7 @@ export default function ChatPage() {
         if (!res.ok) return;
         const data = await res.json();
         if (data.suggestions) setSuggestions(data.suggestions);
+        if (data.firstName) setFirstName(data.firstName);
       } catch {
         // Silent fail — static fallback will show if suggestions remain empty
       }
@@ -256,13 +258,17 @@ export default function ChatPage() {
               className="mt-4 text-xl font-semibold"
               style={{ color: "var(--color-text-primary)" }}
             >
-              What can I help you with?
+              {(() => {
+                const hour = new Date().getHours();
+                const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+                return firstName ? `${greeting}, ${firstName}` : greeting;
+              })()}
             </h2>
             <p
               className="mt-1.5 text-[13px]"
               style={{ color: "var(--color-text-tertiary)" }}
             >
-              Ask about your pipeline, accounts, or get help with outreach.
+              Your GTM copilot is ready. Ask about your pipeline, draft outreach, or get deal coaching.
             </p>
             <div className="mt-8 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
               {(suggestions.length > 0
