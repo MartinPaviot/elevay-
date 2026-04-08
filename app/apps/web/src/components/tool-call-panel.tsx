@@ -152,6 +152,8 @@ export function ToolCallPanel({ toolName, args, result, isStreaming }: ToolCallP
         onClick={() => !isStreaming && setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-[12px] transition-colors"
         style={{ color: "var(--color-text-tertiary)", cursor: isStreaming ? "default" : "pointer", background: "none", border: "none", padding: "2px 0" }}
+        aria-label={isStreaming ? `${display.label}` : `${expanded ? "Collapse" : "Expand"} ${display.pastLabel}`}
+        aria-expanded={expanded}
       >
         {isStreaming ? (
           <span

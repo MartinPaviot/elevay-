@@ -122,6 +122,7 @@ export function EntityLink({ type, id, name, domain }: EntityLinkProps) {
           verticalAlign: "baseline",
         }}
         title={`View ${config.label}: ${name}`}
+        aria-label={`View ${config.label}: ${name}`}
       >
         {type === "deal" ? (
           <TrendingUp size={12} style={{ flexShrink: 0 }} />

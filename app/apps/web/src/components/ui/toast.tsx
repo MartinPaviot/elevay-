@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback } from "react";
-import { X, CheckCircle2, AlertCircle, Info } from "lucide-react";
+import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from "lucide-react";
 
-type ToastVariant = "success" | "error" | "info";
+type ToastVariant = "success" | "error" | "warning" | "info";
 
 interface Toast {
   id: string;
@@ -37,6 +37,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const icons: Record<ToastVariant, React.ReactNode> = {
     success: <CheckCircle2 size={16} style={{ color: "var(--color-success)" }} />,
     error: <AlertCircle size={16} style={{ color: "var(--color-error)" }} />,
+    warning: <AlertTriangle size={16} style={{ color: "var(--color-warning, #d97706)" }} />,
     info: <Info size={16} style={{ color: "var(--color-info)" }} />,
   };
 
@@ -63,6 +64,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               onClick={() => removeToast(t.id)}
               className="flex h-5 w-5 items-center justify-center rounded transition-colors"
               style={{ color: "var(--color-text-tertiary)" }}
+              aria-label="Dismiss notification"
             >
               <X size={12} />
             </button>

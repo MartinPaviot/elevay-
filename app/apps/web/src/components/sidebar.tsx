@@ -295,6 +295,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
               className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--color-text-tertiary)" }}
               title="Search (⌘K)"
+              aria-label="Search"
               onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
@@ -305,6 +306,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
               className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
               style={{ color: "var(--color-text-tertiary)" }}
               title="Collapse sidebar"
+              aria-label="Collapse sidebar"
             >
               <ChevronsLeft size={14} />
             </button>
@@ -315,6 +317,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
             className="flex h-7 w-7 items-center justify-center rounded-md transition-colors mx-auto"
             style={{ color: "var(--color-text-tertiary)" }}
             title="Expand sidebar"
+            aria-label="Expand sidebar"
             onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
           >

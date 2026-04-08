@@ -59,7 +59,7 @@ export default function AccountDetailPage() {
   const initial = account.name.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col lg:flex-row">
       {/* Main content */}
       <div className="flex-1 overflow-auto p-6">
         <Breadcrumbs
@@ -128,7 +128,7 @@ export default function AccountDetailPage() {
       </div>
 
       {/* Right panel */}
-      <div className="w-[300px] p-6" style={{ borderLeft: "1px solid var(--color-border-default)" }}>
+      <div className="w-full shrink-0 border-t p-6 lg:w-[300px] lg:border-t-0 lg:border-l" style={{ borderColor: "var(--color-border-default)" }}>
         <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
           Account details
         </h3>
