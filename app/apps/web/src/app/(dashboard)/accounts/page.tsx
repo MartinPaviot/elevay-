@@ -13,6 +13,7 @@ function LinkedInIcon({ size = 13 }: { size?: number }) {
 import { getLifecycleStyle, formatScore } from "@/lib/ui-utils";
 import { SlideOver, PropertyRow } from "@/components/slide-over";
 import { CompanyLogo } from "@/components/ui/company-logo";
+import { IntelligenceBrief } from "@/components/intelligence-brief";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/custom-fields";
 import type { CustomFieldDef } from "@/lib/custom-fields";
@@ -689,6 +690,7 @@ export default function AccountsPage() {
           const lcStyle = getLifecycleStyle(lc);
           return (
             <div>
+              <IntelligenceBrief accountId={a.id} />
               <PropertyRow label="Website" value={
                 a.domain ? (
                   <a href={`https://${a.domain}`} target="_blank" rel="noopener noreferrer"

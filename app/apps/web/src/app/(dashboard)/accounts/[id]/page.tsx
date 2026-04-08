@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ScopedChat } from "@/components/scoped-chat";
+import { IntelligenceBrief } from "@/components/intelligence-brief";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -81,8 +82,13 @@ export default function AccountDetailPage() {
           </div>
         </div>
 
+        {/* AI Intelligence Brief */}
+        <div className="mt-6">
+          <IntelligenceBrief accountId={id as string} />
+        </div>
+
         {account.description && (
-          <div className="mt-6">
+          <div className="mt-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">About</h2>
             <p className="mt-2 text-sm text-[var(--color-text-secondary)] leading-relaxed">{account.description}</p>
           </div>
