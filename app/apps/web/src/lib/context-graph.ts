@@ -483,7 +483,7 @@ export async function searchContextGraph(
       `;
 
       for (const row of nodeResults) {
-        if ((row.similarity as number) > 0.2) {
+        if ((row.similarity as number) > 0.45) {
           topNodeIds.push(row.id as string);
           results.entities.push({
             name: row.name as string,
@@ -510,7 +510,7 @@ export async function searchContextGraph(
       `;
 
       for (const row of edgeResults) {
-        if ((row.similarity as number) > 0.2) {
+        if ((row.similarity as number) > 0.45) {
           results.facts.push({
             fact: row.fact as string,
             relationType: row.relation_type as string,

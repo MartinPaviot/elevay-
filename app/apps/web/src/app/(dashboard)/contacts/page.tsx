@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Users, Search, Plus, Zap, X, Sparkles, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, type LucideIcon } from "lucide-react";
 import { SmartImport } from "@/components/smart-import";
+import { CompanyLogo } from "@/components/ui/company-logo";
 import { formatScore, ENRICHMENT_COLORS } from "@/lib/ui-utils";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/custom-fields";
@@ -221,14 +222,7 @@ export default function ContactsPage() {
                     <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2.5">
                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${enrichStatus[contact.id] === "enriching" ? "animate-pulse" : ""}`} style={{ background: statusColor }} />
-                        <div className="relative h-6 w-6 shrink-0">
-                          {contact.companyDomain && (
-                            <img src={`https://www.google.com/s2/favicons?domain=${contact.companyDomain}&sz=128`} alt="" className="absolute inset-0 h-6 w-6 rounded object-contain" style={{ background: "var(--color-bg-hover)" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                          )}
-                          <div className="flex h-6 w-6 items-center justify-center rounded text-[10px] font-semibold" style={{ background: "var(--color-bg-emphasis)", color: "var(--color-text-tertiary)" }}>
-                            {(contact.firstName?.[0] || contact.email?.[0] || "?").toUpperCase()}
-                          </div>
-                        </div>
+                        <CompanyLogo domain={contact.companyDomain} name={contact.firstName || contact.email || "?"} size={24} />
                         <div className="min-w-0">
                           <button onClick={() => (window.location.href = `/contacts/${contact.id}`)} className="truncate text-left text-[13px] font-medium transition-colors hover:underline" style={{ color: "var(--color-text-primary)" }}>
                             {name}
@@ -284,10 +278,15 @@ export default function ContactsPage() {
                         const scoreInfo = formatScore(contact.score);
                         if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
                         return (
-                          <span className="flex items-center gap-1" title={contact.scoreReasons?.join("; ") || ""}>
-                            <span className="text-[12px] font-bold" style={{ color: scoreInfo.color }}>{scoreInfo.grade}</span>
-                            {scoreInfo.icon && <span className="text-[11px]">{scoreInfo.icon}</span>}
-                            <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{scoreInfo.heat}</span>
+                          <span className="flex items-center gap-1.5" title={contact.scoreReasons?.join("; ") || ""}>
+                            <span
+                              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[10px] font-bold text-white shrink-0"
+                              style={{ background: scoreInfo.color }}
+                            >
+                              {scoreInfo.grade}
+                            </span>
+                            {scoreInfo.icon && <span className="text-[12px]">{scoreInfo.icon}</span>}
+                            <span className="text-[11px] font-medium" style={{ color: scoreInfo.color }}>{scoreInfo.heat}</span>
                           </span>
                         );
                       })()}

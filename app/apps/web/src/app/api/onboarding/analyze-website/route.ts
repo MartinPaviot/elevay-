@@ -179,7 +179,11 @@ export async function POST(req: Request) {
     const { object: intelligence } = await tracedGenerateObject({
       model: anthropic("claude-sonnet-4-6"),
       schema: websiteIntelligenceSchema,
+      temperature: 0.2,
       prompt: intelligencePrompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "icp-analysis", tenantId: authCtx.tenantId, inputPreview: `Step 1: Extract intelligence from ${cleanDomain}` },
     });
 
@@ -210,6 +214,7 @@ Think step by step about what the evidence tells you, then produce your inferenc
     const { object: icpResult } = await tracedGenerateObject({
       model: anthropic("claude-sonnet-4-6"),
       schema: icpInferenceSchema,
+      temperature: 0.2,
       prompt: icpPrompt,
       providerOptions: {
         anthropic: {

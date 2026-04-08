@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { companies, activities } from "@/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getTenantSettings, parseSizeRange } from "@/lib/tenant-settings";
-import { calculateFitScore } from "@/lib/scoring";
+import { calculateFitScore, getGrade } from "@/lib/scoring";
 
 async function calculateEngagementScore(
   tenantId: string,
@@ -171,13 +171,8 @@ export async function POST(req: Request) {
         const totalScore = Math.round(fit.score * 0.5 + engagement.score * 0.5);
         const allReasons = [...fit.reasons, ...engagement.reasons];
 
-        // Determine grade
-        let grade: string;
-        if (totalScore >= 80) grade = "A";
-        else if (totalScore >= 60) grade = "B";
-        else if (totalScore >= 40) grade = "C";
-        else if (totalScore >= 20) grade = "D";
-        else grade = "F";
+        // Determine grade using shared thresholds
+        const { grade } = getGrade(totalScore);
 
         await db
           .update(companies)

@@ -296,7 +296,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-tertiary);
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--color-border-default);
   border-right: 1px solid color-mix(in srgb, var(--color-border-default) 40%, transparent);
   text-align: left;
@@ -328,7 +328,7 @@
 .ls-table td {
   font-size: 13px;
   color: var(--color-text-primary);
-  padding: 10px 12px;
+  padding: 7px 10px;
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;

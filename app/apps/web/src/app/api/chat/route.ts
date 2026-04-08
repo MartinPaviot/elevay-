@@ -324,14 +324,14 @@ export async function POST(req: Request) {
       if (!lastUserText) return "";
       try {
         // Try context graph first (hybrid: vector + graph traversal)
-        const graphResult = await searchContextGraph(lastUserText, authCtx.tenantId, 15);
+        const graphResult = await searchContextGraph(lastUserText, authCtx.tenantId, 8);
         if (graphResult.formattedContext) return graphResult.formattedContext;
 
         // Fallback to flat vector search if graph is empty
         if (process.env.OPENAI_API_KEY) {
           const results = await searchSimilar(lastUserText, 8, authCtx.tenantId);
           if (results.length > 0) {
-            const relevant = results.filter((r) => r.similarity > 0.25);
+            const relevant = results.filter((r) => r.similarity > 0.5);
             if (relevant.length > 0) {
               return formatCitedSources(relevant);
             }
@@ -345,10 +345,10 @@ export async function POST(req: Request) {
     getCRMSnapshot(authCtx.tenantId, tenantSettings),
     getEntityContext(contextType, contextId, authCtx.tenantId),
     (async () => {
-      const knowledge = tenantSettings.knowledge || [];
+      const knowledge = (tenantSettings.knowledge || []).slice(0, 5);
       if (knowledge.length === 0) return "";
       return "\n\n## Business Knowledge (world model)\n" +
-        knowledge.map((k) => `### ${k.topic}\n${k.content}`).join("\n\n");
+        knowledge.map((k) => `### ${k.topic}\n${k.content.slice(0, 300)}`).join("\n\n");
     })(),
     (async () => {
       return tenantSettings.agentApprovalMode || "auto";
@@ -363,7 +363,7 @@ export async function POST(req: Request) {
             eq(chatMemories.userId, authCtx.appUserId),
           ))
           .orderBy(desc(chatMemories.updatedAt))
-          .limit(20);
+          .limit(10);
         if (memories.length === 0) return "";
         return "\n\n## Agent Memory (learned from previous conversations)\n" +
           memories.map((m) => `- [${m.category}] ${m.key}: ${m.content}`).join("\n");
@@ -451,7 +451,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
       execute: async (input) => {
         if (!process.env.OPENAI_API_KEY) return { results: [] as any[], error: "Search unavailable" };
         const results = await searchSimilar(input.query, input.limit ?? 10, tenantId);
-        return { results: results.filter((r) => r.similarity > 0.2) };
+        return { results: results.filter((r) => r.similarity > 0.5) };
       },
     }),
     queryContacts: makeTool({
@@ -1176,6 +1176,8 @@ Examples: "What did we discuss with Acme last call?" "What were the action items
       system: systemPrompt,
       messages: convertedMessages,
       tools: selectedTools,
+      maxTokens: 2000,
+      temperature: 0.4,
       stopWhen: stepCountIs(10),
       providerOptions: {
         anthropic: {

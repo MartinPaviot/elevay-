@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, Calendar, CheckSquare, Zap, MessageSquare, TrendingUp, Users, Sparkles } from "lucide-react";
+import { Clock, Calendar, CheckSquare, Zap, MessageSquare, TrendingUp, Users, Sparkles, Building2, DollarSign, AlertTriangle, ArrowRight } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { EmailComposer } from "@/components/email-composer";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
+import { CompanyLogo } from "@/components/ui/company-logo";
 
 interface Action {
   action: string;
@@ -38,6 +39,23 @@ interface DashboardSummary {
     responsesReceived: number;
     meetingsBooked: number;
     opportunitiesClosed: number;
+  };
+  founderMetrics?: {
+    pipelineValue: number;
+    activeDeals: number;
+    wonValue: number;
+    winRate: number | null;
+    totalContacts: number;
+    totalAccounts: number;
+    emailsSent7d: number;
+    openRate: number | null;
+    dealsAtRisk: Array<{
+      id: string;
+      name: string;
+      stage: string;
+      value: number | null;
+      daysSilent: number;
+    }>;
   };
   todayTasks: Array<{
     id: string;
@@ -86,8 +104,17 @@ export default function DashboardPage() {
   } | null>(null);
   const [priorities, setPriorities] = useState<{ contactId: string; name: string; title: string | null; company: string | null; companyDomain: string | null; emailCount: number; topReason: string }[]>([]);
   const [recommendations, setRecommendations] = useState<{ title: string; description: string; urgency: number; entityType: string; entityId: string; suggestedAction: string }[]>([]);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
+    // Detect first-time visit after onboarding
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("firstTime") === "true" && !localStorage.getItem("leadsens_welcomed")) {
+      setShowWelcome(true);
+      // Clean up URL without reload
+      window.history.replaceState({}, "", "/");
+    }
+
     fetch("/api/onboarding/status")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -160,26 +187,120 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Weekly Summary */}
-        {summary && (
-          <Card className="mt-4">
+        {/* Welcome Banner (first time after onboarding) */}
+        {showWelcome && summary?.founderMetrics && (
+          <Card className="mt-4" style={{ border: "1px solid var(--color-accent)", background: "var(--color-accent-soft)" }}>
             <CardBody>
-              <div className="flex items-center gap-8">
-                {[
-                  { value: ws!.sequencesLaunched, label: "sequences", icon: <Zap size={14} /> },
-                  { value: ws!.responsesReceived, label: "responses", icon: <MessageSquare size={14} /> },
-                  { value: ws!.meetingsBooked, label: "meetings", icon: <Calendar size={14} /> },
-                  { value: ws!.opportunitiesClosed, label: "closed", icon: <TrendingUp size={14} /> },
-                ].map((stat) => (
-                  <div key={stat.label} className="flex items-center gap-2">
-                    <span style={{ color: "var(--color-text-tertiary)" }}>{stat.icon}</span>
-                    <span className="text-[18px] font-bold" style={{ color: "var(--color-text-primary)" }}>{stat.value}</span>
-                    <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>{stat.label}</span>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-[14px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                    Your GTM engine is ready
+                  </p>
+                  <p className="mt-1 text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
+                    We found {summary.founderMetrics.totalAccounts} prospects and {summary.founderMetrics.totalContacts} contacts matching your ICP.
+                  </p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      onClick={() => { localStorage.setItem("leadsens_welcomed", "1"); setShowWelcome(false); window.location.href = "/accounts?sort=score&dir=desc"; }}
+                      className="rounded-md px-3 py-1.5 text-[12px] font-medium text-white gradient-brand"
+                    >
+                      Review top accounts
+                    </button>
+                    <button
+                      onClick={() => { localStorage.setItem("leadsens_welcomed", "1"); setShowWelcome(false); window.location.href = "/sequences"; }}
+                      className="rounded-md px-3 py-1.5 text-[12px] font-medium"
+                      style={{ color: "var(--color-accent)", background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+                    >
+                      Launch a campaign
+                    </button>
+                    <button
+                      onClick={() => { localStorage.setItem("leadsens_welcomed", "1"); setShowWelcome(false); window.location.href = "/chat?q=Summarize my top prospects"; }}
+                      className="rounded-md px-3 py-1.5 text-[12px] font-medium"
+                      style={{ color: "var(--color-accent)", background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+                    >
+                      Ask the AI
+                    </button>
                   </div>
-                ))}
+                </div>
+                <button
+                  onClick={() => { localStorage.setItem("leadsens_welcomed", "1"); setShowWelcome(false); }}
+                  className="text-[11px]"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Dismiss
+                </button>
               </div>
             </CardBody>
           </Card>
+        )}
+
+        {/* Weekly Summary — show outbound stats if active, founder stats otherwise */}
+        {summary && (() => {
+          const outboundTotal = (ws?.sequencesLaunched || 0) + (ws?.responsesReceived || 0) + (ws?.meetingsBooked || 0) + (ws?.opportunitiesClosed || 0);
+          const fm = summary.founderMetrics;
+          const hasFounderData = fm && (fm.totalAccounts > 0 || fm.totalContacts > 0 || fm.pipelineValue > 0);
+
+          const stats = outboundTotal > 0
+            ? [
+                { value: ws!.sequencesLaunched, label: "sequences", icon: <Zap size={14} /> },
+                { value: ws!.responsesReceived, label: "responses", icon: <MessageSquare size={14} /> },
+                { value: ws!.meetingsBooked, label: "meetings", icon: <Calendar size={14} /> },
+                { value: ws!.opportunitiesClosed, label: "closed", icon: <TrendingUp size={14} /> },
+              ]
+            : hasFounderData
+              ? [
+                  { value: fm!.totalAccounts, label: "accounts", icon: <Building2 size={14} /> },
+                  { value: fm!.totalContacts, label: "contacts", icon: <Users size={14} /> },
+                  { value: `$${(fm!.pipelineValue / 1000).toFixed(0)}K`, label: "pipeline", icon: <DollarSign size={14} /> },
+                  { value: fm!.activeDeals, label: "deals", icon: <TrendingUp size={14} /> },
+                ]
+              : null;
+
+          if (!stats) return null;
+
+          return (
+            <Card className="mt-4">
+              <CardBody>
+                <div className="flex items-center gap-8">
+                  {stats.map((stat) => (
+                    <div key={stat.label} className="flex items-center gap-2">
+                      <span style={{ color: "var(--color-text-tertiary)" }}>{stat.icon}</span>
+                      <span className="text-[18px] font-bold" style={{ color: "var(--color-text-primary)" }}>{stat.value}</span>
+                      <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>{stat.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          );
+        })()}
+
+        {/* Deals at Risk */}
+        {summary?.founderMetrics?.dealsAtRisk && summary.founderMetrics.dealsAtRisk.length > 0 && (
+          <div className="mt-3">
+            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+              <AlertTriangle size={12} className="mr-1 inline" /> Deals at risk
+            </h2>
+            <div className="space-y-1.5">
+              {summary.founderMetrics.dealsAtRisk.slice(0, 3).map((deal) => (
+                <Card key={deal.id} interactive onClick={() => { window.location.href = `/opportunities`; }}>
+                  <CardBody className="!py-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{deal.name}</span>
+                      <div className="flex items-center gap-2">
+                        {deal.value != null && deal.value > 0 && (
+                          <span className="text-[11px] font-medium" style={{ color: "var(--color-success)" }}>
+                            ${deal.value.toLocaleString()}
+                          </span>
+                        )}
+                        <Badge variant="error" size="sm">Silent {deal.daysSilent}d</Badge>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Two Column Layout */}
@@ -258,9 +379,66 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>
-                No actions right now. Your pipeline is clear.
-              </p>
+              <div className="mt-3 space-y-2">
+                {(() => {
+                  const fm = summary?.founderMetrics;
+                  if (fm && fm.totalAccounts > 0 && fm.totalContacts === 0) {
+                    return (
+                      <Card interactive onClick={() => { window.location.href = "/accounts"; }}>
+                        <CardBody className="!py-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                                Enrich your {fm.totalAccounts} accounts to discover contacts
+                              </p>
+                              <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                                Find decision-makers at your TAM companies
+                              </p>
+                            </div>
+                            <ArrowRight size={14} style={{ color: "var(--color-accent)" }} />
+                          </div>
+                        </CardBody>
+                      </Card>
+                    );
+                  }
+                  if (fm && fm.totalContacts > 0 && fm.emailsSent7d === 0) {
+                    return (
+                      <Card interactive onClick={() => { window.location.href = "/sequences"; }}>
+                        <CardBody className="!py-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                                {fm.totalContacts} contacts ready for outreach
+                              </p>
+                              <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                                Launch your first campaign to start conversations
+                              </p>
+                            </div>
+                            <ArrowRight size={14} style={{ color: "var(--color-accent)" }} />
+                          </div>
+                        </CardBody>
+                      </Card>
+                    );
+                  }
+                  return (
+                    <Card interactive onClick={() => { window.location.href = "/chat?q=What should I focus on today?"; }}>
+                      <CardBody className="!py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                              Ask the AI for suggestions
+                            </p>
+                            <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                              Get personalized next steps based on your pipeline
+                            </p>
+                          </div>
+                          <ArrowRight size={14} style={{ color: "var(--color-accent)" }} />
+                        </div>
+                      </CardBody>
+                    </Card>
+                  );
+                })()}
+              </div>
             )}
 
             {/* Insights */}
@@ -346,10 +524,7 @@ export default function DashboardPage() {
                     <Card key={p.contactId} interactive onClick={() => { window.location.href = `/contacts/${p.contactId}`; }}>
                       <CardBody className="!py-2.5">
                         <div className="flex items-center gap-2">
-                          {p.companyDomain && (
-                            <img src={`https://www.google.com/s2/favicons?domain=${p.companyDomain}&sz=128`} alt="" className="w-5 h-5 rounded shrink-0"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                          )}
+                          <CompanyLogo domain={p.companyDomain} name={p.name} size={20} />
                           <div className="min-w-0 flex-1">
                             <p className="text-[13px] font-medium truncate" style={{ color: "var(--color-text-primary)" }}>{p.name}</p>
                             <p className="text-[11px] truncate" style={{ color: "var(--color-text-tertiary)" }}>
@@ -449,7 +624,7 @@ export default function DashboardPage() {
           userName={onboardingName}
           onComplete={() => {
             setShowOnboarding(false);
-            window.location.reload();
+            window.location.href = "/?firstTime=true";
           }}
         />
       )}

@@ -74,6 +74,7 @@ export async function generateSequence(
       model,
       schema: generatedSequenceSchema,
       prompt: basePrompt,
+      temperature: 0.5,
       _trace: {
         agentId: "generate-sequence",
         tenantId: options?.tenantId,
@@ -93,6 +94,7 @@ export async function generateSequence(
       model,
       schema: generatedSequenceSchema,
       prompt,
+      temperature: 0.5,
       _trace: {
         agentId: "generate-sequence",
         tenantId: options?.tenantId,
@@ -333,6 +335,8 @@ export async function personalizeStepEmail(
       subject: z.string(),
       body: z.string(),
     }),
+    temperature: 0.5,
+    maxTokens: 500,
     prompt: `Personalize this email template using the full prospect dossier below. Transform it from a template into an email that feels personally written for this specific person.
 
 ${contextBlock}

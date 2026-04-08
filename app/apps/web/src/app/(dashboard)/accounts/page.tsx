@@ -12,6 +12,7 @@ function LinkedInIcon({ size = 13 }: { size?: number }) {
 }
 import { getLifecycleStyle, formatScore } from "@/lib/ui-utils";
 import { SlideOver, PropertyRow } from "@/components/slide-over";
+import { CompanyLogo } from "@/components/ui/company-logo";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/custom-fields";
 import type { CustomFieldDef } from "@/lib/custom-fields";
@@ -446,23 +447,7 @@ export default function AccountsPage() {
                         )}
 
                         {/* Logo */}
-                        <div className="relative h-6 w-6 shrink-0">
-                          {account.domain && (
-                            <img
-                              src={`https://www.google.com/s2/favicons?domain=${account.domain}&sz=128`}
-                              alt=""
-                              className="absolute inset-0 h-6 w-6 rounded object-contain"
-                              style={{ background: "var(--color-bg-hover)" }}
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                            />
-                          )}
-                          <div
-                            className="flex h-6 w-6 items-center justify-center rounded text-[10px] font-semibold"
-                            style={{ background: "var(--color-bg-emphasis)", color: "var(--color-text-tertiary)" }}
-                          >
-                            {account.name.charAt(0)}
-                          </div>
-                        </div>
+                        <CompanyLogo domain={account.domain} name={account.name} size={24} />
 
                         {/* Name + description */}
                         <div className="min-w-0">
@@ -556,10 +541,15 @@ export default function AccountsPage() {
                         const scoreInfo = formatScore(account.score);
                         if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
                         return (
-                          <span className="flex items-center gap-1" title={account.scoreReasons?.join("; ") || ""}>
-                            <span className="text-[12px] font-bold" style={{ color: scoreInfo.color }}>{scoreInfo.grade}</span>
-                            {scoreInfo.icon && <span className="text-[11px]">{scoreInfo.icon}</span>}
-                            <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{scoreInfo.heat}</span>
+                          <span className="flex items-center gap-1.5" title={account.scoreReasons?.join("; ") || ""}>
+                            <span
+                              className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[10px] font-bold text-white shrink-0"
+                              style={{ background: scoreInfo.color }}
+                            >
+                              {scoreInfo.grade}
+                            </span>
+                            {scoreInfo.icon && <span className="text-[12px]">{scoreInfo.icon}</span>}
+                            <span className="text-[11px] font-medium" style={{ color: scoreInfo.color }}>{scoreInfo.heat}</span>
                           </span>
                         );
                       })()}

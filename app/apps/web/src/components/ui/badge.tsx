@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { getGrade } from "@/lib/scoring";
 
 type BadgeVariant = "success" | "warning" | "error" | "info" | "neutral";
 type BadgeSize = "sm" | "md";
@@ -41,12 +42,10 @@ interface ScoreBadgeProps {
 export function ScoreBadge({ score, className = "" }: ScoreBadgeProps) {
   if (score == null) return <span style={{ color: "var(--color-text-tertiary)" }}>--</span>;
 
-  let grade: string;
-  let variant: BadgeVariant;
-  if (score >= 80) { grade = "A"; variant = "success"; }
-  else if (score >= 60) { grade = "B"; variant = "warning"; }
-  else if (score >= 40) { grade = "C"; variant = "info"; }
-  else { grade = "D"; variant = "neutral"; }
+  const g = getGrade(score);
+  const grade = g.grade;
+  const variantMap: Record<string, BadgeVariant> = { Burning: "success", Warm: "warning", Cool: "info", Cold: "neutral" };
+  const variant: BadgeVariant = variantMap[g.heat] || "neutral";
 
   return (
     <Badge variant={variant} size="sm" className={className}>

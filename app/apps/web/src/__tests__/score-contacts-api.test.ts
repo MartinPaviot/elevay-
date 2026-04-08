@@ -51,6 +51,14 @@ vi.mock("@/lib/tenant-settings", () => ({
 
 vi.mock("@/lib/scoring", () => ({
   calculateContactFitScore: vi.fn(() => ({ score: 40, grade: "C", reasons: ["Default score"] })),
+  getGrade: vi.fn((score: number) => {
+    if (score >= 90) return { grade: "A+", heat: "Burning", icon: "🔥", min: 90 };
+    if (score >= 80) return { grade: "A", heat: "Burning", icon: "🔥", min: 80 };
+    if (score >= 60) return { grade: "B", heat: "Warm", icon: "☀️", min: 60 };
+    if (score >= 40) return { grade: "C", heat: "Cool", icon: "", min: 40 };
+    if (score >= 20) return { grade: "D", heat: "Cold", icon: "", min: 20 };
+    return { grade: "F", heat: "Cold", icon: "", min: 0 };
+  }),
 }));
 
 process.env.ANTHROPIC_API_KEY = "test-key";

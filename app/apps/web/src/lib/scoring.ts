@@ -3,6 +3,36 @@
  * Extracted from score/route.ts and score-contacts/route.ts.
  */
 
+// ── Single source of truth for grade thresholds ──────────────────
+// Used by both backend (score/route.ts) and frontend (ui-utils.ts).
+// Ordered descending by min — first match wins.
+export const GRADE_THRESHOLDS = [
+  { min: 90, grade: "A+", heat: "Burning" as const, icon: "🔥" },
+  { min: 80, grade: "A",  heat: "Burning" as const, icon: "🔥" },
+  { min: 60, grade: "B",  heat: "Warm" as const,    icon: "☀️" },
+  { min: 40, grade: "C",  heat: "Cool" as const,    icon: "" },
+  { min: 20, grade: "D",  heat: "Cold" as const,    icon: "" },
+  { min: 0,  grade: "F",  heat: "Cold" as const,    icon: "" },
+] as const;
+
+export type HeatLevel = "Burning" | "Warm" | "Cool" | "Cold";
+
+export interface GradeInfo {
+  grade: string;
+  heat: HeatLevel;
+  icon: string;
+  min: number;
+}
+
+/** Get grade info from a numeric score. Single source of truth. */
+export function getGrade(score: number): GradeInfo {
+  const s = Math.round(score);
+  for (const t of GRADE_THRESHOLDS) {
+    if (s >= t.min) return { grade: t.grade, heat: t.heat, icon: t.icon, min: t.min };
+  }
+  return { grade: "F", heat: "Cold", icon: "", min: 0 };
+}
+
 export interface FitIcp {
   industries?: string[];
   sizeRange?: [number, number];
@@ -214,12 +244,7 @@ export function calculateContactFitScore(
 
   score = Math.min(100, score);
 
-  let grade: string;
-  if (score >= 80) grade = "A";
-  else if (score >= 60) grade = "B";
-  else if (score >= 40) grade = "C";
-  else if (score >= 20) grade = "D";
-  else grade = "F";
+  const { grade } = getGrade(score);
 
   return { score, reasons, grade };
 }

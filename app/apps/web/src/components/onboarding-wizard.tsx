@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { signIn } from "next-auth/react";
 import { ArrowRight, ArrowLeft, Loader2, Check, Mail, Sparkles, Target, Zap, MessageSquare, Users, Building2, Globe, ChevronDown, Calendar, Shield, Eye, EyeOff, Clock } from "lucide-react";
 import { INDUSTRIES, COMPANY_SIZES, SALES_MOTIONS, GEOGRAPHIES, JOB_SENIORITIES, JOB_DEPARTMENTS, sizesToApolloRanges } from "@/lib/icp-constants";
+import { CompanyLogo } from "@/components/ui/company-logo";
 
 interface WebsiteAnalysis {
   companyDescription: string;
@@ -771,9 +772,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                     <div className="space-y-1">
                       {topCompanies.map((c) => (
                         <div key={c.domain || c.name} className="flex items-center gap-2">
-                          <div className="w-4 h-4 rounded bg-gray-100 flex items-center justify-center overflow-hidden shrink-0">
-                            {c.domain && <img src={`https://www.google.com/s2/favicons?domain=${c.domain}&sz=128`} alt="" className="w-4 h-4" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
-                          </div>
+                          <CompanyLogo domain={c.domain} name={c.name} size={16} />
                           <span className="text-[11px] font-medium truncate" style={{ color: "var(--color-text-primary)" }}>{c.name}</span>
                           {c.industry && <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--color-text-tertiary)" }}>{c.industry}</span>}
                         </div>
@@ -829,9 +828,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                   <div className="space-y-1.5">
                     {topCompanies.map((c) => (
                       <div key={c.domain || c.name} className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center overflow-hidden shrink-0">
-                          {c.domain && <img src={`https://www.google.com/s2/favicons?domain=${c.domain}&sz=128`} alt="" className="w-5 h-5" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
-                        </div>
+                        <CompanyLogo domain={c.domain} name={c.name} size={20} />
                         <span className="text-[12px] font-medium truncate" style={{ color: "var(--color-text-primary)" }}>{c.name}</span>
                         {c.industry && <span className="text-[10px] ml-auto shrink-0" style={{ color: "var(--color-text-tertiary)" }}>{c.industry}</span>}
                       </div>

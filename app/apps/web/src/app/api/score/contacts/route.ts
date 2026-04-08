@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { contacts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { scoreContact } from "@/lib/contact-scoring";
+import { getGrade } from "@/lib/scoring";
 import { getTenantSettings } from "@/lib/tenant-settings";
 
 export async function POST(req: Request) {
@@ -34,13 +35,8 @@ export async function POST(req: Request) {
       try {
         const result = await scoreContact(contactId, authCtx.tenantId, icpSettings);
 
-        // Determine grade from total score
-        let grade: string;
-        if (result.score >= 80) grade = "A";
-        else if (result.score >= 60) grade = "B";
-        else if (result.score >= 40) grade = "C";
-        else if (result.score >= 20) grade = "D";
-        else grade = "F";
+        // Determine grade from total score using shared thresholds
+        const { grade } = getGrade(result.score);
 
         // Fetch current properties to merge
         const [current] = await db

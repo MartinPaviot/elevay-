@@ -95,6 +95,7 @@ export async function POST(req: Request) {
         const { object } = await tracedGenerateObject({
           model,
           schema: signalInterpretationSchema,
+          temperature: 0.2,
           prompt: `Analyze these VERIFIED FACTS about ${company.name} (${company.domain || "no domain"}) and identify buying signals relevant to B2B sales outreach.
 
 VERIFIED FACTS (from Apollo.io enrichment):
@@ -125,6 +126,7 @@ Return only signals you can directly support with the facts provided.`,
           providerOptions: {
             anthropic: {
               thinking: { type: "enabled", budgetTokens: 3000 },
+              cacheControl: { type: "ephemeral" },
             },
           },
           _trace: { agentId: "detect-signals", tenantId: authCtx.tenantId, inputPreview: `Signals for ${company.name}` },

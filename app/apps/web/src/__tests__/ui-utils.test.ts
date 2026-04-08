@@ -114,23 +114,24 @@ describe("letterGrade", () => {
     expect(letterGrade(89)).toBe("A");
   });
 
-  it("returns B for 70-79", () => {
-    expect(letterGrade(70)).toBe("B");
+  it("returns B for 60-79", () => {
+    expect(letterGrade(60)).toBe("B");
     expect(letterGrade(79)).toBe("B");
+    expect(letterGrade(65)).toBe("B");
   });
 
-  it("returns C for 60-69", () => {
-    expect(letterGrade(60)).toBe("C");
-    expect(letterGrade(69)).toBe("C");
+  it("returns C for 40-59", () => {
+    expect(letterGrade(40)).toBe("C");
+    expect(letterGrade(59)).toBe("C");
   });
 
-  it("returns D for 50-59", () => {
-    expect(letterGrade(50)).toBe("D");
-    expect(letterGrade(59)).toBe("D");
+  it("returns D for 20-39", () => {
+    expect(letterGrade(20)).toBe("D");
+    expect(letterGrade(39)).toBe("D");
   });
 
-  it("returns F for below 50", () => {
-    expect(letterGrade(49)).toBe("F");
+  it("returns F for below 20", () => {
+    expect(letterGrade(19)).toBe("F");
     expect(letterGrade(0)).toBe("F");
   });
 });
@@ -158,7 +159,7 @@ describe("heatLabel", () => {
   });
 
   it("returns Cold for below 40", () => {
-    const result = heatLabel(39);
+    const result = heatLabel(20);
     expect(result.label).toBe("Cold");
     expect(result.color).toBe("var(--color-text-tertiary)");
     expect(result.icon).toBe("");

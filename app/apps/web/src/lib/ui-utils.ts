@@ -3,6 +3,8 @@
  * All colors reference CSS custom properties defined in globals.css.
  */
 
+import { getGrade, type HeatLevel } from "@/lib/scoring";
+
 /** Hash a string to an index 0-9 for badge color assignment */
 export function badgeColorIndex(str: string): number {
   if (!str) return 0;
@@ -60,22 +62,23 @@ export const STAGE_COLORS: Record<string, string> = {
   lost: "var(--color-badge-5)",       // red
 };
 
-/** Map numeric score to letter grade */
+/** Map heat level to CSS variable color */
+const HEAT_COLORS: Record<HeatLevel, string> = {
+  Burning: "var(--color-success)",
+  Warm: "var(--color-warning)",
+  Cool: "var(--color-info)",
+  Cold: "var(--color-text-tertiary)",
+};
+
+/** Map numeric score to letter grade — delegates to shared getGrade() */
 export function letterGrade(score: number): string {
-  if (score >= 90) return "A+";
-  if (score >= 80) return "A";
-  if (score >= 70) return "B";
-  if (score >= 60) return "C";
-  if (score >= 50) return "D";
-  return "F";
+  return getGrade(score).grade;
 }
 
 /** Map numeric score to heat label with CSS var color and emoji */
 export function heatLabel(score: number): { label: string; color: string; icon: string } {
-  if (score >= 80) return { label: "Burning", color: "var(--color-success)", icon: "🔥" };
-  if (score >= 60) return { label: "Warm", color: "var(--color-warning)", icon: "☀️" };
-  if (score >= 40) return { label: "Cool", color: "var(--color-info)", icon: "" };
-  return { label: "Cold", color: "var(--color-text-tertiary)", icon: "" };
+  const g = getGrade(score);
+  return { label: g.heat, color: HEAT_COLORS[g.heat], icon: g.icon };
 }
 
 /** Combined score display — returns null for null/undefined scores */
@@ -86,14 +89,19 @@ export function formatScore(score: number | null | undefined): {
   icon: string;
 } | null {
   if (score == null) return null;
-  const s = Math.round(score);
-  const heat = heatLabel(s);
+  const g = getGrade(score);
   return {
-    grade: letterGrade(s),
-    heat: heat.label,
-    color: heat.color,
-    icon: heat.icon,
+    grade: g.grade,
+    heat: g.heat,
+    color: HEAT_COLORS[g.heat],
+    icon: g.icon,
   };
+}
+
+/** Score circle background color for the grade badge */
+export function scoreCircleBg(score: number): string {
+  const g = getGrade(score);
+  return HEAT_COLORS[g.heat];
 }
 
 /** Risk level styling using CSS custom properties */
