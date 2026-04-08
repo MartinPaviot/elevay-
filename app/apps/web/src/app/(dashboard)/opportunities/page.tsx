@@ -17,6 +17,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/input";
+import { CompanyLogo } from "@/components/ui/company-logo";
 
 /* ── Types ── */
 
@@ -41,6 +42,7 @@ interface Deal {
   stage: string;
   value: number | null;
   companyId: string | null;
+  companyDomain: string | null;
   contactId: string | null;
   ownerId: string | null;
   summary: string | null;
@@ -743,7 +745,11 @@ export default function OpportunitiesPage() {
                         {/* Account */}
                         {displayProps.has("companyName") && (
                           <div className="flex items-center gap-1.5 mb-1.5">
-                            <Building2 size={12} style={{ color: "var(--color-accent)" }} />
+                            {deal.companyDomain ? (
+                              <CompanyLogo domain={deal.companyDomain} name={deal.companyName || "?"} size={16} />
+                            ) : (
+                              <Building2 size={12} style={{ color: "var(--color-accent)" }} />
+                            )}
                             <span className="text-[12px] font-medium" style={{ color: deal.companyName ? "var(--color-text-primary)" : "var(--color-text-muted)" }}>
                               {deal.companyName || "No account"}
                             </span>

@@ -347,5 +347,27 @@ export function parseToolResultForCard(
       isProposal: false,
     };
   }
+  if (toolName === "proposeCampaign") {
+    const cr = result as Record<string, unknown> | null;
+    if (cr?.type === "campaign_proposal" && cr?.status === "proposed") {
+      return {
+        actionType: "create",
+        entityType: "deal" as EntityType,
+        entityName: (cr.sequenceName as string) || "New Campaign",
+        fields: {
+          targets: `${cr.targetCount} accounts`,
+          steps: `${cr.stepCount} email steps`,
+          goal: (cr.goal as string) || null,
+          sequenceId: (cr.sequenceId as string) || null,
+        },
+        isProposal: true,
+        proposalAction: "campaign",
+      };
+    }
+    // No matches case
+    if (cr?.status === "no_matches") {
+      return null;
+    }
+  }
   return null;
 }

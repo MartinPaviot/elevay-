@@ -6,6 +6,7 @@ vi.mock("@/auth", () => ({
 
 vi.mock("@/lib/auth-utils", () => ({
   getAuthContext: vi.fn(),
+  requireAdmin: vi.fn(() => null),
 }));
 
 vi.mock("@/db", () => ({

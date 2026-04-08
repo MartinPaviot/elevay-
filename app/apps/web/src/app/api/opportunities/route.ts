@@ -30,6 +30,7 @@ export async function GET() {
         createdAt: deals.createdAt,
         updatedAt: deals.updatedAt,
         companyName: companies.name,
+        companyDomain: companies.domain,
         ownerFirstName: users.firstName,
         ownerLastName: users.lastName,
       })

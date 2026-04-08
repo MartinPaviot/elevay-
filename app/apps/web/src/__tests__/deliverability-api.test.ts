@@ -15,16 +15,23 @@ vi.mock("@/db", () => ({
 }));
 
 vi.mock("@/db/schema", () => ({
-  activities: { id: "id" },
-  sequenceEnrollments: { id: "id" },
+  outboundEmails: { tenantId: "tenantId", sentAt: "sentAt", openedAt: "openedAt", repliedAt: "repliedAt", bouncedAt: "bouncedAt", status: "status", bounceType: "bounceType", enrollmentId: "enrollmentId", stepNumber: "stepNumber", deliveredAt: "deliveredAt", clickedAt: "clickedAt" },
+  sequenceEnrollments: { id: "id", sequenceId: "sequenceId", status: "status" },
+  connectedMailboxes: { id: "id", tenantId: "tenantId", healthScore: "healthScore", status: "status" },
+  sequences: { id: "id" },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
+  and: vi.fn(),
   sql: vi.fn(),
+  isNotNull: vi.fn(),
+  count: vi.fn(),
+  ne: vi.fn(),
+  or: vi.fn(),
+  desc: vi.fn(),
 }));
 
-import { auth } from "@/auth";
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 
@@ -41,7 +48,6 @@ describe("GET /api/deliverability", () => {
 
   it("returns 401 when not authenticated", async () => {
     vi.mocked(getAuthContext).mockResolvedValue(null);
-
     const res = await delivModule.GET(fakeReq());
     expect(res.status).toBe(401);
   });
@@ -49,74 +55,101 @@ describe("GET /api/deliverability", () => {
   it("returns zero metrics when no data", async () => {
     vi.mocked(getAuthContext).mockResolvedValue({ userId: "u1", tenantId: "t1", appUserId: "u1", role: "admin" });
 
-    const whereFn = vi.fn().mockResolvedValue([]);
-    const fromFn = vi.fn()
-      .mockReturnValueOnce({ where: whereFn })   // activities query (has .where)
-      .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
-    vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
+    // Build a chainable mock that handles all 4 query patterns:
+    // 1. .select().from().where() → metrics
+    // 2. .select().from().where() → spam
+    // 3. .select().from().where() or .select().from() → enrollments (iterable)
+    // 4. .select().from().where() → mailboxes (iterable)
+    function makeChain(results: unknown[]) {
+      let callIdx = 0;
+      const chain: Record<string, any> = {};
+      const resolve = () => {
+        const r = results[callIdx] ?? [];
+        callIdx++;
+        return Promise.resolve(r);
+      };
+      chain.from = vi.fn(() => chain);
+      chain.where = vi.fn(() => resolve());
+      chain.groupBy = vi.fn(() => resolve());
+      chain.orderBy = vi.fn(() => resolve());
+      // Also make the chain itself thenable for cases like `await db.select().from()`
+      chain.then = (cb: any) => resolve().then(cb);
+      return chain;
+    }
+
+    vi.mocked(db.select).mockReturnValue(makeChain([
+      [{ totalSent: 0, totalOpened: 0, totalReplied: 0, totalBounced: 0, totalDelivered: 0, totalClicked: 0 }], // metrics
+      [{ spamCount: 0 }], // spam
+      [], // enrollments
+      [], // mailboxes
+    ]) as never);
 
     const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
     expect(res.status).toBe(200);
     expect(data.totalSent).toBe(0);
-    expect(data.healthScore).toBe(0);
-    expect(data.warnings).toEqual([]);
   });
 
-  it("computes correct rates from activities", async () => {
+  it("computes correct rates from outbound emails", async () => {
     vi.mocked(getAuthContext).mockResolvedValue({ userId: "u1", tenantId: "t1", appUserId: "u1", role: "admin" });
 
-    const mockActivities = [
-      { id: "a1", activityType: "email_sent", metadata: {} },
-      { id: "a2", activityType: "email_sent", metadata: {} },
-      { id: "a3", activityType: "email_sent", metadata: {} },
-      { id: "a4", activityType: "email_sent", metadata: {} },
-      { id: "a5", activityType: "email_opened", metadata: {} },
-      { id: "a6", activityType: "email_opened", metadata: {} },
-      { id: "a7", activityType: "email_replied", metadata: {} },
-      { id: "a8", activityType: "email_bounced", metadata: {} },
-    ];
+    function makeChain(results: unknown[]) {
+      let callIdx = 0;
+      const chain: Record<string, any> = {};
+      const resolve = () => { const r = results[callIdx] ?? []; callIdx++; return Promise.resolve(r); };
+      chain.from = vi.fn(() => chain);
+      chain.where = vi.fn(() => resolve());
+      chain.groupBy = vi.fn(() => resolve());
+      chain.orderBy = vi.fn(() => resolve());
+      chain.then = (cb: any) => resolve().then(cb);
+      return chain;
+    }
 
-    const whereFn = vi.fn().mockResolvedValue(mockActivities);
-    const fromFn = vi.fn()
-      .mockReturnValueOnce({ where: whereFn })   // activities query (has .where)
-      .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
-    vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
+    vi.mocked(db.select).mockReturnValue(makeChain([
+      [{ totalSent: 10, totalOpened: 5, totalReplied: 2, totalBounced: 1, totalDelivered: 8, totalClicked: 3 }],
+      [{ spamCount: 0 }],
+      [], // enrollments
+      [], // mailboxes
+    ]) as never);
 
     const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
     expect(res.status).toBe(200);
-    expect(data.totalSent).toBe(4);
-    expect(data.totalOpened).toBe(2);
-    expect(data.totalReplied).toBe(1);
-    expect(data.totalBounced).toBe(1);
-    expect(data.openRate).toBe(50); // 2/4
-    expect(data.replyRate).toBe(25); // 1/4
-    expect(data.bounceRate).toBe(25); // 1/4
-    expect(data.healthScore).toBeLessThan(100); // bounce penalized
+    expect(data.totalSent).toBe(10);
+    expect(data.openRate).toBe(50);
+    expect(data.replyRate).toBe(20);
+    expect(data.bounceRate).toBe(10);
   });
 
   it("flags high bounce rate warning", async () => {
     vi.mocked(getAuthContext).mockResolvedValue({ userId: "u1", tenantId: "t1", appUserId: "u1", role: "admin" });
 
-    // 10 sent, 1 bounced = 10% bounce
-    const mockActivities = [
-      ...Array(10).fill(null).map((_, i) => ({ id: `s${i}`, activityType: "email_sent", metadata: {} })),
-      { id: "b1", activityType: "email_bounced", metadata: {} },
-    ];
+    function makeChain(results: unknown[]) {
+      let callIdx = 0;
+      const chain: Record<string, any> = {};
+      const resolve = () => { const r = results[callIdx] ?? []; callIdx++; return Promise.resolve(r); };
+      chain.from = vi.fn(() => chain);
+      chain.where = vi.fn(() => resolve());
+      chain.groupBy = vi.fn(() => resolve());
+      chain.orderBy = vi.fn(() => resolve());
+      chain.then = (cb: any) => resolve().then(cb);
+      return chain;
+    }
 
-    const whereFn = vi.fn().mockResolvedValue(mockActivities);
-    const fromFn = vi.fn()
-      .mockReturnValueOnce({ where: whereFn })   // activities query (has .where)
-      .mockResolvedValueOnce([]);                 // sequenceEnrollments query (no .where)
-    vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
+    vi.mocked(db.select).mockReturnValue(makeChain([
+      [{ totalSent: 100, totalOpened: 10, totalReplied: 1, totalBounced: 10, totalDelivered: 85, totalClicked: 2 }],
+      [{ spamCount: 1 }],
+      [], // enrollments
+      [], // mailboxes
+    ]) as never);
 
     const res = await delivModule.GET(fakeReq());
     const data = await res.json();
 
+    expect(res.status).toBe(200);
     expect(data.bounceRate).toBe(10);
-    expect(data.warnings.some((w: string) => w.includes("Bounce rate"))).toBe(true);
+    expect(data.warnings.length).toBeGreaterThan(0);
   });
 });

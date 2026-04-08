@@ -373,6 +373,17 @@ export default function ChatPage() {
                           const approveCard = async (cardKey: string, proposalAction: string | undefined, editedFields: Record<string, string | number | null>, entityName?: string) => {
                             setCardExecuting((prev) => ({ ...prev, [cardKey]: true }));
                             try {
+                              // Campaign approval: redirect to sequence page
+                              if (proposalAction === "campaign") {
+                                setCardStatuses((prev) => ({ ...prev, [cardKey]: "approved" }));
+                                // The sequenceId is stored in fields by the proposal tool
+                                const seqId = (editedFields as any).sequenceId;
+                                if (seqId) {
+                                  window.location.href = `/sequences/${seqId}`;
+                                }
+                                return;
+                              }
+
                               const endpoint = proposalAction === "createContact" ? "/api/contacts"
                                 : proposalAction === "createAccount" ? "/api/accounts"
                                 : proposalAction === "createDeal" ? "/api/deals"

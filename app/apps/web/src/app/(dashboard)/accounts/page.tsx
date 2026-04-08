@@ -625,7 +625,7 @@ export default function AccountsPage() {
                               )}
                             </span>
                           ) : (
-                            <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>—</span>
+                            <span className="text-[10px]" style={{ color: "var(--color-text-muted)", opacity: 0.5 }}>No</span>
                           )}
                         </td>
                       );
