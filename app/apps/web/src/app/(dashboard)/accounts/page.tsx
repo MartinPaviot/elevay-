@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Building2, Search, Plus, Zap, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, type LucideIcon } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Building2, Search, Plus, Zap, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, type LucideIcon } from "lucide-react";
 
 function LinkedInIcon({ size = 13 }: { size?: number }) {
   return (
@@ -60,6 +60,9 @@ export default function AccountsPage() {
   const [signalPopoverTab, setSignalPopoverTab] = useState<"reasoning" | "sources">("reasoning");
   const [slideOverAccount, setSlideOverAccount] = useState<Account | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
+  const [expandedContacts, setExpandedContacts] = useState<Array<{ id: string; firstName: string | null; lastName: string | null; title: string | null; email: string | null; status?: string }>>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
   const { fields: customFields } = useCustomFields("company");
 
   const fetchAccounts = useCallback(async () => {
@@ -450,7 +453,8 @@ export default function AccountsPage() {
                 const signals = getSignals(account);
 
                 return (
-                  <tr key={account.id} data-selected={selectedRows.has(account.id) ? "true" : undefined}>
+                  <React.Fragment key={account.id}>
+                  <tr data-selected={selectedRows.has(account.id) ? "true" : undefined}>
                     {/* Row checkbox */}
                     <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
@@ -467,6 +471,28 @@ export default function AccountsPage() {
                     {/* Account name with logo + status */}
                     <td>
                       <div className="flex items-center gap-2.5">
+                        {/* Expand contacts chevron */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (expandedAccountId === account.id) {
+                              setExpandedAccountId(null);
+                              setExpandedContacts([]);
+                            } else {
+                              setExpandedAccountId(account.id);
+                              setLoadingContacts(true);
+                              fetch(`/api/accounts/${account.id}/contacts`)
+                                .then(r => r.ok ? r.json() : { contacts: [] })
+                                .then(d => setExpandedContacts(d.contacts || []))
+                                .catch(() => setExpandedContacts([]))
+                                .finally(() => setLoadingContacts(false));
+                            }
+                          }}
+                          className="shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
+                          style={{ color: "var(--color-text-muted)" }}
+                        >
+                          {expandedAccountId === account.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        </button>
                         {/* Status dot */}
                         {enrichStatus[account.id] === "enriching" ? (
                           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: "var(--color-warning)" }} />
@@ -744,6 +770,43 @@ export default function AccountsPage() {
                       )}
                     </td>
                   </tr>
+                  {/* Expanded contacts row */}
+                  {expandedAccountId === account.id && (
+                    <tr>
+                      <td colSpan={99} style={{ background: "var(--color-bg-page)", padding: 0 }}>
+                        <div className="px-6 py-3" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+                          {loadingContacts ? (
+                            <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                              <Loader2 size={12} className="animate-spin" /> Loading contacts...
+                            </div>
+                          ) : expandedContacts.length > 0 ? (
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-text-muted)" }}>Contacts at {account.name}</p>
+                              {expandedContacts.map((c) => (
+                                <div key={c.id} className="flex items-center gap-3 rounded px-2 py-1.5 transition-colors hover:bg-[var(--color-bg-hover)]" onClick={() => window.location.href = `/contacts/${c.id}`} style={{ cursor: "pointer" }}>
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold text-white shrink-0"
+                                    style={{ background: `hsl(${(c.firstName?.charCodeAt(0) || 0) * 37 % 360}, 55%, 50%)` }}>
+                                    {(c.firstName?.[0] || "?").toUpperCase()}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                                      {[c.firstName, c.lastName].filter(Boolean).join(" ") || "Unknown"}
+                                    </span>
+                                    {c.title && <span className="ml-1.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>— {c.title}</span>}
+                                  </div>
+                                  {c.email && <span className="text-[11px] shrink-0" style={{ color: "var(--color-text-muted)" }}>{c.email}</span>}
+                                  <Badge variant="success" size="sm">Suggested</Badge>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>No contacts found at this account.</p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

@@ -36,7 +36,10 @@ export async function GET(req: Request) {
       contactId: contacts.id,
       firstName: contacts.firstName,
       lastName: contacts.lastName,
+      email: contacts.email,
+      title: contacts.title,
       companyName: companies.name,
+      companyDomain: companies.domain,
       lastActivity: sql<Date>`max(${activities.occurredAt})`,
     })
     .from(contacts)
@@ -49,23 +52,40 @@ export async function GET(req: Request) {
       eq(contacts.tenantId, authCtx.tenantId),
       eq(activities.sentiment, "positive"),
     ))
-    .groupBy(contacts.id, contacts.firstName, contacts.lastName, companies.name)
+    .groupBy(contacts.id, contacts.firstName, contacts.lastName, contacts.email, contacts.title, companies.name, companies.domain)
     .having(sql`max(${activities.occurredAt}) < ${fiveDaysAgo.toISOString()}::timestamp`)
     .orderBy(desc(sql`max(${activities.occurredAt})`))
     .limit(3);
 
+  // Batch fetch last email for all follow-up contacts (1 query instead of N)
+  const followUpContactIds = followUps.map((fu) => fu.contactId);
+  const lastEmails: Record<string, { summary: string | null; rawContent: unknown }> = {};
+  if (followUpContactIds.length > 0) {
+    const emailResults = await db
+      .select({
+        entityId: activities.entityId,
+        summary: activities.summary,
+        rawContent: activities.rawContent,
+        rn: sql<number>`row_number() over (partition by ${activities.entityId} order by ${activities.occurredAt} desc)`,
+      })
+      .from(activities)
+      .where(and(
+        eq(activities.tenantId, authCtx.tenantId),
+        eq(activities.entityType, "contact"),
+        sql`${activities.entityId} IN (${sql.join(followUpContactIds.map(id => sql`${id}`), sql`, `)})`,
+        sql`${activities.activityType} IN ('email_sent', 'email_received')`,
+      ));
+    for (const e of emailResults) {
+      if ((e as any).rn === 1 || !lastEmails[e.entityId!]) {
+        lastEmails[e.entityId!] = { summary: e.summary, rawContent: e.rawContent };
+      }
+    }
+  }
+
   for (const fu of followUps) {
     const name = [fu.firstName, fu.lastName].filter(Boolean).join(" ");
     const daysSince = Math.floor((Date.now() - new Date(fu.lastActivity).getTime()) / (1000 * 60 * 60 * 24));
-
-    // Fetch contact email + last email activity for inline preview
-    const [contactDetail] = await db.select({ email: contacts.email, title: contacts.title, companyDomain: companies.domain })
-      .from(contacts).leftJoin(companies, eq(contacts.companyId, companies.id))
-      .where(eq(contacts.id, fu.contactId)).limit(1);
-    const [lastEmail] = await db.select({ summary: activities.summary, rawContent: activities.rawContent })
-      .from(activities)
-      .where(and(eq(activities.entityId, fu.contactId), eq(activities.entityType, "contact"), sql`${activities.activityType} IN ('email_sent', 'email_received')`))
-      .orderBy(desc(activities.occurredAt)).limit(1);
+    const lastEmail = lastEmails[fu.contactId];
 
     actions.push({
       action: `Follow up with ${name}${fu.companyName ? ` at ${fu.companyName}` : ""}`,
@@ -74,10 +94,10 @@ export async function GET(req: Request) {
       category: "follow_up",
       entityType: "contact",
       entityId: fu.contactId,
-      contactEmail: contactDetail?.email || undefined,
-      contactTitle: contactDetail?.title || undefined,
+      contactEmail: fu.email || undefined,
+      contactTitle: fu.title || undefined,
       companyName: fu.companyName || undefined,
-      companyDomain: contactDetail?.companyDomain || undefined,
+      companyDomain: fu.companyDomain || undefined,
       daysSilent: daysSince,
       lastEmailSubject: lastEmail?.summary || undefined,
       lastEmailSnippet: lastEmail?.rawContent ? String(lastEmail.rawContent).slice(0, 200) : undefined,

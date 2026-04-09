@@ -254,15 +254,36 @@ export function EmailComposer({ to, subject, body, onClose, onSend }: EmailCompo
           />
         </div>
 
-        {/* Body */}
+        {/* Formatting toolbar */}
+        <div className="flex items-center gap-0.5 px-4 py-1.5" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+          {([
+            { cmd: "bold", label: "B", style: { fontWeight: 700 } },
+            { cmd: "italic", label: "I", style: { fontStyle: "italic" } },
+            { cmd: "insertUnorderedList", label: "•", style: {} },
+            { cmd: "insertOrderedList", label: "1.", style: {} },
+          ] as const).map((btn) => (
+            <button
+              key={btn.cmd}
+              onMouseDown={(e) => { e.preventDefault(); document.execCommand(btn.cmd, false); }}
+              className="rounded px-2 py-0.5 text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
+              style={{ color: "var(--color-text-secondary)", ...btn.style }}
+              title={btn.cmd.replace(/([A-Z])/g, " $1")}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body — contentEditable for rich text */}
         <div className="flex-1 overflow-auto p-4">
-          <textarea
-            ref={bodyRef}
-            value={editBody}
-            onChange={(e) => setEditBody(e.target.value)}
+          <div
+            ref={bodyRef as any}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={(e) => setEditBody((e.target as HTMLDivElement).innerHTML)}
             className="h-full w-full resize-none bg-transparent text-[13px] leading-relaxed outline-none"
-            style={{ color: "var(--color-text-primary)", fontWeight: 400 }}
-            placeholder="Write your email..."
+            style={{ color: "var(--color-text-primary)", fontWeight: 400, minHeight: "100%", whiteSpace: "pre-wrap" }}
+            dangerouslySetInnerHTML={{ __html: body }}
           />
         </div>
 

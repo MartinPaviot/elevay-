@@ -12,6 +12,8 @@ import { z } from "zod";
 import type { CustomFieldDef, PipelineStageDef } from "@/lib/custom-fields";
 import { getTenantSettings, type TenantSettings } from "@/lib/tenant-settings";
 import { buildChatSystemPrompt } from "@/lib/prompts/chat-system-prompt";
+import { buildProspectContext } from "@/lib/prospect-context";
+import { generateSequence } from "@/lib/sequence-generator";
 // JSONValue type for tool generics
 type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
@@ -1240,8 +1242,7 @@ Examples: "What did we discuss with Acme last call?" "What were the action items
 
           if (bestContact) {
             try {
-              const { buildProspectContext } = await import("@/lib/prospect-context");
-              const { generateSequence } = await import("@/lib/sequence-generator");
+              // buildProspectContext and generateSequence imported at top of file
               const ctx = await buildProspectContext(bestContact.id, tenantId);
               if (ctx) {
                 const generated = await generateSequence(ctx, { stepCount: steps, tenantId });
