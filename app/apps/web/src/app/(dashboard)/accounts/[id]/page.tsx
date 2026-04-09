@@ -98,7 +98,7 @@ export default function AccountDetailPage() {
             <div className="mt-4 rounded-lg p-3" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-text-tertiary)" }}>Meeting Intelligence</p>
               <div className="grid grid-cols-2 gap-2">
-                {intel.teamSize && (
+                {intel.teamSize != null && (
                   <div className="flex items-center gap-2">
                     <span className="text-[14px]">👥</span>
                     <div>
@@ -107,7 +107,7 @@ export default function AccountDetailPage() {
                     </div>
                   </div>
                 )}
-                {intel.budget && (
+                {intel.budget != null && (
                   <div className="flex items-center gap-2">
                     <span className="text-[14px]">💰</span>
                     <div>
@@ -116,7 +116,7 @@ export default function AccountDetailPage() {
                     </div>
                   </div>
                 )}
-                {intel.currentTools && (
+                {intel.currentTools != null && (
                   <div className="flex items-center gap-2">
                     <span className="text-[14px]">📋</span>
                     <div>
@@ -125,7 +125,7 @@ export default function AccountDetailPage() {
                     </div>
                   </div>
                 )}
-                {intel.competitors && (
+                {intel.competitors != null && (
                   <div className="flex items-center gap-2">
                     <span className="text-[14px]">🔧</span>
                     <div>
@@ -135,7 +135,7 @@ export default function AccountDetailPage() {
                   </div>
                 )}
               </div>
-              {intel.lastExtracted && (
+              {intel.lastExtracted != null && (
                 <p className="mt-2 text-[10px]" style={{ color: "var(--color-text-muted)" }}>
                   Extracted {new Date(intel.lastExtracted as string).toLocaleDateString()}
                 </p>
