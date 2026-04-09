@@ -140,7 +140,7 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
     <div className="flex h-full flex-col">
       <PageHeader
         title={sequence.name}
-        subtitle={sequence.description || undefined}
+        subtitle={enrollments.length > 0 ? `To ${enrollments[0].contactName}${enrollments[0].contactEmail ? ` (${enrollments[0].contactEmail})` : ""}${enrollments.length > 1 ? ` and ${enrollments.length - 1} more` : ""}` : sequence.description || undefined}
       >
         <Badge variant={statusVariant[sequence.status] || "neutral"} size="md">
           {sequence.status}
@@ -205,7 +205,7 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
                         <div className="flex items-center gap-2 py-2 pl-6">
                           <Clock size={11} style={{ color: "var(--color-text-muted)" }} />
                           <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                            Wait {step.delayDays} day{step.delayDays !== 1 ? "s" : ""}
+                            Wait {step.delayDays} business day{step.delayDays !== 1 ? "s" : ""}
                           </span>
                         </div>
                       )}

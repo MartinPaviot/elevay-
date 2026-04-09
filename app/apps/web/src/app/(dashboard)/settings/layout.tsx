@@ -18,6 +18,7 @@ import {
   Box,
   Plug,
   Target,
+  Video,
 } from "lucide-react";
 
 const settingsNav = [
@@ -40,6 +41,7 @@ const settingsNav = [
       { label: "Members", href: "/settings/members", icon: Users },
       { label: "Notifications", href: "/settings/notifications", icon: Bell },
       { label: "Opportunity Stages", href: "/settings/stages", icon: GitBranch },
+      { label: "Recording", href: "/settings/recording", icon: Video },
       { label: "Workflows", href: "/settings/workflows", icon: Workflow },
     ],
   },

@@ -59,6 +59,7 @@ export default function AccountsPage() {
   const [activeSignalPopover, setActiveSignalPopover] = useState<string | null>(null);
   const [signalPopoverTab, setSignalPopoverTab] = useState<"reasoning" | "sources">("reasoning");
   const [slideOverAccount, setSlideOverAccount] = useState<Account | null>(null);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const { fields: customFields } = useCustomFields("company");
 
   const fetchAccounts = useCallback(async () => {
@@ -401,6 +402,21 @@ export default function AccountsPage() {
           <table className="ls-table">
             <thead>
               <tr>
+                {/* Select-all checkbox */}
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedRows.size > 0 && selectedRows.size === filteredAccounts.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRows(new Set(filteredAccounts.map((a: any) => a.id)));
+                      } else {
+                        setSelectedRows(new Set());
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                </th>
                 {([
                   { label: "Account", icon: Building2 },
                   { label: "Website", icon: Globe },
@@ -434,7 +450,20 @@ export default function AccountsPage() {
                 const signals = getSignals(account);
 
                 return (
-                  <tr key={account.id}>
+                  <tr key={account.id} data-selected={selectedRows.has(account.id) ? "true" : undefined}>
+                    {/* Row checkbox */}
+                    <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRows.has(account.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedRows);
+                          if (e.target.checked) next.add(account.id); else next.delete(account.id);
+                          setSelectedRows(next);
+                        }}
+                        className="h-3.5 w-3.5 rounded"
+                      />
+                    </td>
                     {/* Account name with logo + status */}
                     <td>
                       <div className="flex items-center gap-2.5">
