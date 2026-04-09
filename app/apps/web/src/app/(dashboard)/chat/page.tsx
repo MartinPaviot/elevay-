@@ -13,7 +13,7 @@ import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { CopyButton } from "@/components/chat/copy-button";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Send, Mail, Check } from "lucide-react";
+import { Sparkles, Send, Mail, Check, Paperclip, Mic, MicOff } from "lucide-react";
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
@@ -30,6 +30,9 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const [localInput, setLocalInput] = useState("");
   const [autoSent, setAutoSent] = useState(false);
   const [lastSavedCount, setLastSavedCount] = useState(0);
@@ -178,11 +181,53 @@ export default function ChatPage() {
 
   function handleLocalSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const text = localInput.trim() || inputRef.current?.value?.trim() || "";
-    if (!text) return;
+    let text = localInput.trim() || inputRef.current?.value?.trim() || "";
+    if (!text && !attachedFile) return;
+    // Prepend file content as context if attached
+    if (attachedFile) {
+      text = `[Attached file: ${attachedFile.name}]\n\n${attachedFile.content.slice(0, 5000)}\n\n---\n\n${text || "Analyze this file."}`;
+      setAttachedFile(null);
+    }
     chat.sendMessage({ text });
     setLocalInput("");
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function handleFileAttach(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert("File too large (max 2MB)"); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedFile({ name: file.name, content: reader.result as string });
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // Reset so same file can be re-selected
+  }
+
+  function toggleVoiceInput() {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      alert("Voice input not supported in this browser.");
+      return;
+    }
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setLocalInput((prev) => prev + (prev ? " " : "") + transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+    setIsListening(true);
   }
 
   function useSuggestion(text: string) {
@@ -600,18 +645,33 @@ export default function ChatPage() {
             background: "linear-gradient(to bottom, transparent, var(--color-bg-base))",
           }}
         />
+        {/* Attached file indicator */}
+        {attachedFile && (
+          <div className="mx-auto mb-2 flex max-w-[740px] items-center gap-2 rounded-lg px-3 py-1.5 text-[12px]" style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}>
+            <Paperclip size={12} style={{ color: "var(--color-accent)" }} />
+            <span className="flex-1 truncate" style={{ color: "var(--color-text-primary)" }}>{attachedFile.name}</span>
+            <button onClick={() => setAttachedFile(null)} className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>Remove</button>
+          </div>
+        )}
         <form onSubmit={handleLocalSubmit} className="relative mx-auto max-w-[740px]">
-          <Sparkles
-            size={15}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2"
+          {/* Hidden file input */}
+          <input ref={fileInputRef} type="file" accept=".csv,.txt,.md,.json,.pdf" onChange={handleFileAttach} className="hidden" />
+          {/* Upload button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute left-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: "var(--color-text-tertiary)" }}
-          />
+            title="Attach file"
+          >
+            <Paperclip size={14} />
+          </button>
           <input
             ref={inputRef}
             value={localInput}
             onChange={(e) => setLocalInput(e.target.value)}
             placeholder="Ask Elevay..."
-            className="w-full rounded-xl py-2.5 pl-10 pr-12 text-[14px] outline-none transition-all"
+            className="w-full rounded-xl py-2.5 pl-10 pr-20 text-[14px] outline-none transition-all"
             style={{
               background: "var(--color-bg-card)",
               color: "var(--color-text-primary)",
@@ -626,6 +686,16 @@ export default function ChatPage() {
             }}
             disabled={chat.status === "streaming"}
           />
+          {/* Mic button */}
+          <button
+            type="button"
+            onClick={toggleVoiceInput}
+            className="absolute top-1/2 -translate-y-1/2 rounded p-1 transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ right: localInput.trim() ? 42 : 12, color: isListening ? "var(--color-error)" : "var(--color-text-tertiary)" }}
+            title={isListening ? "Stop listening" : "Voice input"}
+          >
+            {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+          </button>
           {localInput.trim() && (
             <Button
               type="submit"
