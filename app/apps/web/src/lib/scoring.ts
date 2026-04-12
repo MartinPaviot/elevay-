@@ -72,7 +72,12 @@ export function calculateFitScore(
   }
 
   // Size in range (0-20)
-  const employeeCount = props.employee_count as number | null;
+  // Try props.employee_count first, then parse company.size string (e.g. "51-100")
+  let employeeCount = props.employee_count as number | null;
+  if (!employeeCount && company.size) {
+    const nums = String(company.size).replace(/,/g, "").split("-").map(Number).filter((n) => !isNaN(n) && n > 0);
+    if (nums.length > 0) employeeCount = Math.round((Math.min(...nums) + Math.max(...nums)) / 2);
+  }
   if (employeeCount) {
     if (icp?.sizeRange) {
       const [minSize, maxSize] = icp.sizeRange;

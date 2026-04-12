@@ -88,7 +88,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { industries, companySizes, targetRoles, geographies, productDescription, enrich = false } = body;
+    const { industries, companySizes, targetRoles, geographies, productDescription } = body;
 
     if (!industries?.length && !companySizes?.length && !productDescription) {
       return Response.json(
@@ -201,12 +201,9 @@ Generate strategies that maximize COVERAGE while maintaining RELEVANCE. Each str
             if (existingDomains.has(domain)) { skipped++; continue; }
 
             try {
-              // Optionally enrich for full profile (costs 1 credit/company)
-              const enriched = enrich
-                ? await enrichOrganization(domain).catch(() => null)
-                : null;
+              // Always enrich for full profile — scoring needs real data
+              const enriched = await enrichOrganization(domain).catch(() => null);
 
-              // Infer size range from the search filter when not enriching
               const sizeLabel = enriched
                 ? employeeCountToRange(enriched.estimated_num_employees)
                 : inferSizeFromRanges(strategy.filters.organization_num_employees_ranges);
@@ -227,6 +224,9 @@ Generate strategies that maximize COVERAGE while maintaining RELEVANCE. Each str
                   linkedin_url: enriched?.linkedin_url || org.linkedin_url,
                   logo_url: org.logo_url,
                   technologies: enriched?.technology_names || [],
+                  employee_count: enriched?.estimated_num_employees || null,
+                  annual_revenue: enriched?.annual_revenue || null,
+                  annual_revenue_printed: enriched?.annual_revenue_printed || null,
                   total_funding: enriched?.total_funding,
                   total_funding_printed: enriched?.total_funding_printed,
                   latest_funding_stage: enriched?.latest_funding_stage,

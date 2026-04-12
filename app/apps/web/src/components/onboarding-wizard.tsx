@@ -416,7 +416,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
       setTamProgress({ found: totalAccounts, done: true });
       setBuildStage(4);
 
-      // Fetch all companies for scoring + enrichment, and top 5 for preview
+      // Fetch all companies for scoring and top 5 for preview
       const accountsRes = await fetch("/api/accounts?pageSize=200");
       if (accountsRes.ok) {
         const ad = await accountsRes.json();
@@ -424,15 +424,14 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         setTopCompanies(accounts.slice(0, 5).map((a: { name: string; domain?: string; industry?: string }) => ({
           name: a.name, domain: a.domain || "", industry: a.industry,
         })));
-        // Score ALL companies in background
+        // Score ALL companies — await so scores are ready before "Ready" screen
         const ids = accounts.map((a: { id: string }) => a.id);
         if (ids.length > 0) {
-          fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) }).catch(() => {});
-          // Trigger batch enrichment via Inngest
-          fetch("/api/enrich-batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) }).catch(() => {});
+          await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) }).catch(() => {});
         }
       }
 
+      // Embed in background (non-critical for UX)
       fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "companies" }) }).catch(() => {});
       // Email intelligence — fire and forget, don't block onboarding
       if (emailConnected) {
