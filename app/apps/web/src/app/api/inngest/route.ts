@@ -1,6 +1,6 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
-import { enrichCompany, enrichContact, enrichBatch, sendSequenceStep, processReply } from "@/inngest/functions";
+import { enrichCompany, enrichBatch, sendSequenceStep, processReply } from "@/inngest/functions";
 import { syncEmails, syncCalendar, onGoogleOAuthConnected, onMicrosoftOAuthConnected, cronSyncEmails } from "@/inngest/sync-functions";
 import { aiAutoFill } from "@/inngest/ai-autofill";
 import { executeWorkflow } from "@/inngest/workflow-engine";
@@ -19,7 +19,6 @@ export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
     enrichCompany,
-    enrichContact,
     enrichBatch,
     sendSequenceStep,
     processReply,

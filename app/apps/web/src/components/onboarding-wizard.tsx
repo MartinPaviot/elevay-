@@ -311,6 +311,8 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
   const [syncProgress, setSyncProgress] = useState<{ contacts: number; emails: number } | null>(null);
   const [buildStage, setBuildStage] = useState(0);
   const [topCompanies, setTopCompanies] = useState<{ name: string; domain: string; industry?: string }[]>([]);
+  const [topContacts, setTopContacts] = useState<{ name: string; email: string; title: string | null; score: number | null }[]>([]);
+  const [contactsFound, setContactsFound] = useState(0);
 
   const stepIndex = STEPS.findIndex((s) => s.key === step) + 1;
   const togglePill = useCallback((list: string[], val: string, setter: (v: string[]) => void) => {
@@ -342,10 +344,26 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
     setStep("connect");
     if (domain) {
       setAnalyzingWebsite(true);
+      // Launch website analysis + Apollo ICP enrichment in parallel
       fetch("/api/onboarding/analyze-website", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }) })
         .then((res) => res.ok ? res.json() : null)
         .then((data) => { if (data && !data.error) { setWebsiteAnalysis(data); if (data.productDescription && !productDesc && !/unknown|n\/a|<|>/i.test(data.productDescription)) setProductDesc(data.productDescription); } })
         .catch(() => {}).finally(() => setAnalyzingWebsite(false));
+      // Apollo ICP enrichment — enriches the analysis with real company data
+      fetch("/api/onboarding/enrich-icp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }) })
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (data?.icp) {
+            // Merge Apollo ICP data into website analysis if it has higher confidence
+            setWebsiteAnalysis((prev) => prev ? {
+              ...prev,
+              targetIndustries: prev.targetIndustries.length === 0 ? data.icp.industries : prev.targetIndustries,
+              targetCompanySizes: prev.targetCompanySizes.length === 0 ? data.icp.companySizes : prev.targetCompanySizes,
+              targetGeographies: prev.targetGeographies.length === 0 ? data.icp.geographies : prev.targetGeographies,
+            } : null);
+          }
+        })
+        .catch(() => {});
     }
   };
 
@@ -431,8 +449,17 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         }
       }
 
+      // Find decision-makers at top companies (await — shows contacts on ready screen)
+      const contactsRes = await fetch("/api/onboarding/find-contacts", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
+      if (contactsRes && contactsRes.ok) {
+        const cData = await contactsRes.json();
+        setContactsFound(cData.contactsCreated || 0);
+        setTopContacts((cData.contacts || []).slice(0, 5));
+      }
+
       // Embed in background (non-critical for UX)
       fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "companies" }) }).catch(() => {});
+      fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "contacts" }) }).catch(() => {});
       // Email intelligence — fire and forget, don't block onboarding
       if (emailConnected) {
         fetch("/api/onboarding/email-intelligence")
@@ -796,10 +823,14 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
 
             <div className="flex-1 space-y-3">
               {/* Stats */}
-              <div className="grid grid-cols-2 gap-2 w-full">
+              <div className="grid grid-cols-3 gap-2 w-full">
                 <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
                   <span className="block text-[18px] font-bold" style={{ color: "var(--color-text-primary)" }}>{tamProgress.found}</span>
-                  <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>ICP prospects found</span>
+                  <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>companies found</span>
+                </div>
+                <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
+                  <span className="block text-[18px] font-bold" style={{ color: "var(--color-text-primary)" }}>{contactsFound}</span>
+                  <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>contacts identified</span>
                 </div>
                 <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
                   {emailConnected ? (
@@ -808,22 +839,38 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                         {emailIntelligence ? emailIntelligence.icpMatches : <Loader2 size={16} className="inline animate-spin" style={{ color: "var(--color-accent)" }} />}
                       </span>
                       <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
-                        {emailIntelligence ? "already in your inbox" : "analyzing your inbox..."}
+                        {emailIntelligence ? "in your inbox" : "analyzing inbox..."}
                       </span>
                     </>
                   ) : (
                     <>
                       <span className="block text-[18px] font-bold" style={{ color: "var(--color-text-tertiary)" }}>-</span>
-                      <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>connect email to find warm leads</span>
+                      <span className="block text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>connect email</span>
                     </>
                   )}
                 </div>
               </div>
 
-              {/* Top companies preview */}
-              {topCompanies.length > 0 && (
+              {/* Top contacts preview */}
+              {topContacts.length > 0 && (
                 <div className="rounded-lg p-3" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
-                  <span className="text-[10px] font-medium uppercase tracking-wide block mb-2" style={{ color: "var(--color-text-tertiary)" }}>Top prospects</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide block mb-2" style={{ color: "var(--color-text-tertiary)" }}>Top decision-makers found</span>
+                  <div className="space-y-1.5">
+                    {topContacts.map((c) => (
+                      <div key={c.email} className="flex items-center gap-2">
+                        <Users size={14} style={{ color: "var(--color-text-tertiary)" }} />
+                        <span className="text-[12px] font-medium truncate" style={{ color: "var(--color-text-primary)" }}>{c.name}</span>
+                        {c.title && <span className="text-[10px] ml-auto shrink-0 truncate max-w-[120px]" style={{ color: "var(--color-text-tertiary)" }}>{c.title}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Top companies preview */}
+              {topCompanies.length > 0 && topContacts.length === 0 && (
+                <div className="rounded-lg p-3" style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}>
+                  <span className="text-[10px] font-medium uppercase tracking-wide block mb-2" style={{ color: "var(--color-text-tertiary)" }}>Top companies</span>
                   <div className="space-y-1.5">
                     {topCompanies.map((c) => (
                       <div key={c.domain || c.name} className="flex items-center gap-2">
