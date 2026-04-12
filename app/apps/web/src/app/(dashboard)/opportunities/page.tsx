@@ -6,7 +6,7 @@ import {
   CircleDot, Plus, BarChart3, ChevronDown, ChevronUp,
   Search, X, Building2, User, Calendar, DollarSign, Clock,
   LayoutGrid, List, SlidersHorizontal, Filter, ArrowUpDown, ArrowUp, ArrowDown,
-  Sparkles, ClipboardCheck, MonitorPlay, FlaskConical, FileText, Handshake, Trophy, XCircle,
+  ClipboardCheck, MonitorPlay, FlaskConical, FileText, Handshake, Trophy, XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
@@ -87,7 +87,7 @@ const STAGE_LABELS: Record<string, string> = {
 const STAGE_DOT_COLORS = STAGE_DOT_COLORS_IMPORTED;
 
 const STAGE_ICONS: Record<string, LucideIcon> = {
-  lead: Sparkles,
+  lead: CircleDot,
   qualification: ClipboardCheck,
   demo: MonitorPlay,
   trial: FlaskConical,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Network, Sparkles, Filter, Eye, EyeOff, RefreshCw, Info, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Network, Loader2, Filter, Eye, EyeOff, RefreshCw, Info, ThumbsUp, ThumbsDown } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -196,7 +196,7 @@ export default function GraphExplorerPage() {
       <div className="flex h-full flex-col">
         <PageHeader icon={<Network size={15} />} title="Context Graph" subtitle="Loading..." />
         <div className="flex flex-1 items-center justify-center">
-          <Sparkles size={20} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-accent)" }} />
         </div>
       </div>
     );

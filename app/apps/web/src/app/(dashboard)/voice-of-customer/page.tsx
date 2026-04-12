@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageCircle, ChevronDown, ChevronRight, Sparkles, Lightbulb, AlertTriangle, Heart, Shield, Crosshair } from "lucide-react";
+import { MessageCircle, ChevronDown, ChevronRight, BarChart3, Loader2, Lightbulb, AlertTriangle, Heart, Shield, Crosshair } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -65,7 +65,7 @@ export default function VoiceOfCustomerPage() {
       <div className="flex h-full flex-col">
         <PageHeader icon={<MessageCircle size={15} />} title="Voice of Customer" subtitle="Analyzing..." />
         <div className="flex flex-1 flex-col items-center justify-center gap-2">
-          <Sparkles size={20} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-accent)" }} />
           <span className="text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>
             Analyzing customer interactions...
           </span>

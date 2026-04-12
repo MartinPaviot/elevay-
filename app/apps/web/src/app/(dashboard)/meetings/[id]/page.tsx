@@ -4,11 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Calendar, Clock, MapPin, Users, ExternalLink,
-  FileText, Upload, CheckCircle2, AlertTriangle, Sparkles,
+  FileText, Upload, CheckCircle2, AlertTriangle,
   ChevronDown, ChevronRight, Send, Plus, Loader2, MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
+import { LiveExtraction } from "@/components/live-extraction";
 
 interface MeetingNotes {
   summary: string;
@@ -219,7 +220,7 @@ export default function MeetingDetailPage() {
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="h-5 w-5" style={{ color: "var(--color-accent)" }} />
+                <FileText className="h-5 w-5" style={{ color: "var(--color-accent)" }} />
                 <h2 className="text-[15px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
                   Review auto-extracted data
                 </h2>
@@ -337,6 +338,17 @@ export default function MeetingDetailPage() {
         </div>
       </div>
 
+      {/* Live extraction during active recording */}
+      {(() => {
+        const meetingMeta = (meeting as any).metadata || (meeting as any);
+        const recStatus = meetingMeta.recordingStatus;
+        const isRecording = recStatus === "recording" || recStatus === "in_call";
+        if (isRecording || (recStatus === "done" && meetingMeta.partialTranscript)) {
+          return <LiveExtraction meetingId={(meeting as any).activityId || id} isRecording={isRecording} />;
+        }
+        return null;
+      })()}
+
       {/* Attendees */}
       {meeting.attendees.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -365,7 +377,7 @@ export default function MeetingDetailPage() {
 
           {/* Key Points */}
           {notes.keyPoints.length > 0 && (
-            <CollapsibleSection title={`Key Points (${notes.keyPoints.length})`} icon={Sparkles}>
+            <CollapsibleSection title={`Key Points (${notes.keyPoints.length})`} icon={FileText}>
               <ul className="space-y-1.5">
                 {notes.keyPoints.map((point, i) => (
                   <li key={i} className="text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2">
@@ -506,7 +518,7 @@ export default function MeetingDetailPage() {
               disabled={pasteText.trim().length < 50 || uploading}
               onClick={handlePasteSubmit}
             >
-              {uploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+              {uploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileText className="h-3 w-3 mr-1" />}
               Process Transcript
             </Button>
           </div>
@@ -522,7 +534,7 @@ export default function MeetingDetailPage() {
         /* Upcoming meeting — show prep or generate button */
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
-            <Sparkles className="h-4 w-4" /> Upcoming Meeting
+            <FileText className="h-4 w-4" /> Upcoming Meeting
           </div>
           {meetingPrep ? (
             <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-blue-700 dark:text-blue-400 whitespace-pre-wrap">
@@ -555,7 +567,7 @@ export default function MeetingDetailPage() {
                 disabled={generatingPrep}
                 className="flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] font-medium text-white gradient-brand"
               >
-                {generatingPrep ? <><Loader2 className="h-3 w-3 animate-spin" /> Generating...</> : <><Sparkles className="h-3 w-3" /> Generate Prep Now</>}
+                {generatingPrep ? <><Loader2 className="h-3 w-3 animate-spin" /> Preparing...</> : <><FileText className="h-3 w-3" /> Generate Prep Now</>}
               </button>
             </div>
           )}

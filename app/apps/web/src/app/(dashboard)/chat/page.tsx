@@ -13,7 +13,7 @@ import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { CopyButton } from "@/components/chat/copy-button";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Send, Mail, Check, Paperclip, Mic, MicOff } from "lucide-react";
+import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2 } from "lucide-react";
 
 export default function ChatPage() {
   const searchParams = useSearchParams();
@@ -250,7 +250,7 @@ export default function ChatPage() {
   if (!threadLoaded) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Sparkles size={20} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+        <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-accent)" }} />
       </div>
     );
   }
@@ -263,7 +263,7 @@ export default function ChatPage() {
           className="flex shrink-0 items-center gap-2 px-4 py-2 sm:px-6"
           style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
-          <Sparkles size={14} style={{ color: "var(--color-accent)" }} />
+          <Compass size={14} style={{ color: "var(--color-accent)" }} />
           <span
             className="flex-1 truncate text-[13px] font-medium"
             style={{ color: "var(--color-text-primary)" }}
@@ -297,7 +297,7 @@ export default function ChatPage() {
               className="flex h-10 w-10 items-center justify-center rounded-xl"
               style={{ background: "var(--color-accent-soft)" }}
             >
-              <Sparkles size={20} style={{ color: "var(--color-accent)" }} />
+              <Compass size={20} style={{ color: "var(--color-accent)" }} />
             </div>
             <h2
               className="mt-4 text-xl font-semibold"
@@ -376,7 +376,7 @@ export default function ChatPage() {
                     className="mb-2 flex items-center gap-1.5 text-[12px]"
                     style={{ color: "var(--color-text-tertiary)" }}
                   >
-                    <Sparkles size={13} style={{ color: "var(--color-accent)" }} />
+                    <Compass size={13} style={{ color: "var(--color-accent)" }} />
                     <span style={{ fontWeight: 500 }}>Elevay</span>
                   </div>
 

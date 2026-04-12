@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, Calendar, CheckSquare, Zap, MessageSquare, TrendingUp, Users, Sparkles, Building2, DollarSign, AlertTriangle, ArrowRight, X, Mail, Send } from "lucide-react";
+import { Clock, Calendar, CheckSquare, Zap, MessageSquare, TrendingUp, Users, Building2, DollarSign, AlertTriangle, ArrowRight, X, Mail, Send } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -548,7 +548,7 @@ export default function DashboardPage() {
             {recommendations.length > 0 && (
               <div className="mt-6">
                 <h2 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-                  <Sparkles size={12} className="inline mr-1" /> This week
+                  <TrendingUp size={12} className="inline mr-1" /> This week
                 </h2>
                 <div className="mt-3 space-y-1.5">
                   {recommendations.slice(0, 3).map((r, i) => (
@@ -657,7 +657,7 @@ export default function DashboardPage() {
               {selectedAction.entityType === "contact" && selectedAction.contactEmail && (
                 <div className="rounded-lg p-3" style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Sparkles size={12} style={{ color: "var(--color-accent)" }} />
+                    <TrendingUp size={12} style={{ color: "var(--color-accent)" }} />
                     <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--color-accent)" }}>Suggested follow-up</span>
                   </div>
                   <p className="text-[13px] font-medium mb-1" style={{ color: "var(--color-text-primary)" }}>

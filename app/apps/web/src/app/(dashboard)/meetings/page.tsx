@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Sparkles, Mic, CheckCircle2, AlertCircle, Play, Upload } from "lucide-react";
+import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Loader2, Mic, CheckCircle2, AlertCircle, Play, Upload } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -79,7 +79,7 @@ export default function MeetingsPage() {
       <div className="flex h-full flex-col">
         <PageHeader icon={<Calendar size={15} />} title="Meetings" subtitle="Loading..." />
         <div className="flex flex-1 items-center justify-center">
-          <Sparkles size={20} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-accent)" }} />
         </div>
       </div>
     );
@@ -216,7 +216,7 @@ function MeetingCard({
               )}
               {!m.isPast && (
                 <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onPrep(); }} loading={prepLoading}>
-                  <Sparkles size={11} /> Prep
+                  <FileText size={11} /> Prep
                 </Button>
               )}
             </div>

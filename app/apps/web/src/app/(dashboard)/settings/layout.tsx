@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
   User,
-  Bot,
+  Activity,
   Building,
   Users,
   BookOpen,
@@ -25,7 +25,7 @@ const settingsNav = [
   {
     label: "Account",
     items: [
-      { label: "Agent", href: "/settings/agent", icon: Bot },
+      { label: "Agent", href: "/settings/agent", icon: Activity },
       { label: "Settings", href: "/settings", icon: User },
     ],
   },

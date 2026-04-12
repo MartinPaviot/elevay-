@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 interface FollowUpPillsProps {
   suggestions: string[];
@@ -26,7 +26,7 @@ export function FollowUpPills({ suggestions, onSelect, disabled }: FollowUpPills
             animationDelay: `${i * 100}ms`,
           }}
         >
-          <Sparkles size={10} style={{ color: "var(--color-accent)", opacity: 0.6 }} />
+          <ArrowRight size={10} style={{ color: "var(--color-accent)", opacity: 0.6 }} />
           {suggestion}
         </button>
       ))}

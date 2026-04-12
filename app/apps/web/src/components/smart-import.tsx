@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, Sparkles, Check, AlertCircle, X, FileText } from "lucide-react";
+import { Upload, FileUp, Check, AlertCircle, X, FileText, Loader2 } from "lucide-react";
 import { Button } from "./ui/button";
 
 interface ImportResult {
@@ -84,14 +84,14 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
           style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
           <div className="flex items-center gap-2">
-            <Sparkles size={16} style={{ color: "var(--color-accent)" }} />
+            <FileUp size={16} style={{ color: "var(--color-accent)" }} />
             <h2 className="text-[16px] font-semibold"
               style={{ color: "var(--color-text-primary)" }}>
               Smart Import
             </h2>
             <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
               style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
-              AI-powered
+              Auto-mapped
             </span>
           </div>
           <button onClick={onClose} style={{ color: "var(--color-text-tertiary)" }}>
@@ -236,7 +236,7 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
                   size="sm"
                   onClick={handleImport}
                   disabled={!csvText.trim()}
-                  icon={<Sparkles size={13} />}
+                  icon={<FileUp size={13} />}
                 >
                   Import with AI
                 </Button>
@@ -246,7 +246,7 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
 
           {step === "processing" && (
             <div className="flex flex-col items-center justify-center py-12">
-              <Sparkles size={24} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+              <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-accent)" }} />
               <span className="mt-3 text-[14px] font-medium"
                 style={{ color: "var(--color-text-primary)" }}>
                 AI is mapping your columns...

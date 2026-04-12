@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { CampaignWizard } from "@/components/campaign-wizard";
 import {
   Zap, ArrowLeft, Mail, Clock, Users, Play, Pause,
-  ChevronDown, ChevronRight, Sparkles, Loader2, FileText, Send,
+  ChevronDown, ChevronRight, Loader2, FileText, Send,
 } from "lucide-react";
 
 interface Step {

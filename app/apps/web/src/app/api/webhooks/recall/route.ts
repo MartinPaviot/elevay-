@@ -98,6 +98,27 @@ export async function POST(req: Request) {
     return Response.json({ received: true, status: mappedStatus });
   }
 
+  // Handle live transcription updates during active call
+  if (event.event === "bot.transcription" || event.event === "bot.transcript") {
+    const words = event.data?.data?.words || event.data?.data?.transcript || "";
+    const partialTranscript = (meta.partialTranscript as string || "") + " " + (typeof words === "string" ? words : JSON.stringify(words));
+
+    // Store partial transcript
+    await db
+      .update(activities)
+      .set({
+        metadata: {
+          ...meta,
+          partialTranscript: partialTranscript.slice(-10000), // Keep last 10K chars
+          lastTranscriptUpdate: new Date().toISOString(),
+          recordingStatus: "recording",
+        },
+      })
+      .where(eq(activities.id, activity.id));
+
+    return Response.json({ received: true, event: "transcription_update" });
+  }
+
   // For any other event, just acknowledge
   return Response.json({ received: true });
 }

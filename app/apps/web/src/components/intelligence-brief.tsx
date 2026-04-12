@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sparkles } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface IntelligenceBriefProps {
@@ -35,7 +35,7 @@ export function IntelligenceBrief({ accountId }: IntelligenceBriefProps) {
         style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
       >
         <div className="flex items-center gap-1.5 mb-2">
-          <Sparkles size={12} style={{ color: "var(--color-accent)" }} />
+          <TrendingUp size={12} style={{ color: "var(--color-accent)" }} />
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-accent)" }}>
             AI Intelligence
           </span>
@@ -54,7 +54,7 @@ export function IntelligenceBrief({ accountId }: IntelligenceBriefProps) {
         style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}
       >
         <div className="flex items-center gap-1.5 mb-1">
-          <Sparkles size={12} style={{ color: "var(--color-text-tertiary)" }} />
+          <TrendingUp size={12} style={{ color: "var(--color-text-tertiary)" }} />
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
             AI Intelligence
           </span>
@@ -72,7 +72,7 @@ export function IntelligenceBrief({ accountId }: IntelligenceBriefProps) {
       style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
     >
       <div className="flex items-center gap-1.5 mb-2">
-        <Sparkles size={12} style={{ color: "var(--color-accent)" }} />
+        <TrendingUp size={12} style={{ color: "var(--color-accent)" }} />
         <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-accent)" }}>
           AI Intelligence
         </span>

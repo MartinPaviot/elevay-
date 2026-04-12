@@ -5,7 +5,7 @@ import { TextStreamChatTransport } from "ai";
 import { useRef, useEffect, useState } from "react";
 import { ChatMarkdown } from "./chat-markdown";
 import { ToolCallGroup } from "./tool-call-panel";
-import { Sparkles, Send, Building2, Users, TrendingUp, X, Maximize2, Minimize2 } from "lucide-react";
+import { Compass, Send, Building2, Users, TrendingUp, X, Maximize2, Minimize2, Loader2 } from "lucide-react";
 
 interface ScopedChatProps {
   contextType: "account" | "contact" | "deal";
@@ -98,7 +98,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
       >
         {chat.messages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-6 text-center">
-            <Sparkles size={16} style={{ color: "var(--color-text-tertiary)" }} />
+            <Compass size={16} style={{ color: "var(--color-text-tertiary)" }} />
             <span className="mt-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
               Ask anything about {contextLabel}
             </span>
@@ -128,7 +128,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
             >
               {msg.role === "assistant" && (
                 <div className="mb-1 flex items-center gap-1">
-                  <Sparkles size={10} style={{ color: "var(--color-accent)" }} />
+                  <Compass size={10} style={{ color: "var(--color-accent)" }} />
                   <span className="text-[10px] font-medium" style={{ color: "var(--color-text-tertiary)" }}>
                     Elevay
                   </span>
@@ -147,8 +147,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
 
         {chat.status === "streaming" && (
           <div className="flex items-center gap-1 text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
-            <Sparkles size={10} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
-            Thinking...
+            <Loader2 size={12} className="animate-spin" style={{ color: "var(--color-accent)" }} />
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -167,7 +166,7 @@ export function ScopedChat({ contextType, contextId, contextLabel }: ScopedChatP
         onSubmit={handleSubmit}
         className="flex items-center gap-2 px-3 py-2"
       >
-        <Sparkles size={12} style={{ color: "var(--color-text-tertiary)" }} />
+        <Compass size={12} style={{ color: "var(--color-text-tertiary)" }} />
         <input
           value={localInput}
           onChange={(e) => setLocalInput(e.target.value)}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Users, Search, Plus, Zap, X, Sparkles, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, type LucideIcon } from "lucide-react";
+import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, type LucideIcon } from "lucide-react";
 import { SmartImport } from "@/components/smart-import";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { formatScore, ENRICHMENT_COLORS } from "@/lib/ui-utils";
@@ -146,7 +146,7 @@ export default function ContactsPage() {
             {enrichAllRunning ? "Enriching..." : `Enrich All (${unenrichedCount})`}
           </Button>
         )}
-        <Button variant="outline" size="sm" icon={<Sparkles size={12} />} onClick={() => setShowSmartImport(true)} style={{ color: "var(--color-accent)" }}>
+        <Button variant="outline" size="sm" icon={<Upload size={12} />} onClick={() => setShowSmartImport(true)} style={{ color: "var(--color-accent)" }}>
           Smart Import
         </Button>
         <label className="cursor-pointer">

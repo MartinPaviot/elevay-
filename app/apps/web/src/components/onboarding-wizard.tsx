@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { signIn } from "next-auth/react";
-import { ArrowRight, ArrowLeft, Loader2, Check, Mail, Sparkles, Target, Zap, MessageSquare, Users, Building2, Globe, ChevronDown, Calendar, Shield, Eye, EyeOff, Clock } from "lucide-react";
+import { ArrowRight, ArrowLeft, Loader2, Check, Mail, Target, Zap, MessageSquare, Users, Building2, Globe, ChevronDown, Calendar, Shield, Eye, EyeOff, Clock } from "lucide-react";
 import { INDUSTRIES, COMPANY_SIZES, SALES_MOTIONS, GEOGRAPHIES, JOB_SENIORITIES, JOB_DEPARTMENTS, sizesToApolloRanges } from "@/lib/icp-constants";
 import { CompanyLogo } from "@/components/ui/company-logo";
 
@@ -622,7 +622,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         {/* ════ STEP 1 : WELCOME / PROFILE ════ */}
         {step === "welcome" && (
           <div className="flex flex-col h-full">
-            <StepHeader icon={<Sparkles size={15} />} title="Let's set up your GTM engine" subtitle="Tell us about you and your company." />
+            <StepHeader icon={<Globe size={15} />} title="Let's set up your GTM engine" subtitle="Tell us about you and your company." />
 
             <div className="flex-1 space-y-3">
               <div>
@@ -667,7 +667,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         {/* ════ STEP 4 : PRODUCT ════ */}
         {step === "product" && (
           <div className="flex flex-col h-full">
-            <StepHeader icon={<Target size={15} />} title="Tell us about what you sell" subtitle={`Helps our AI write relevant emails and coach you.${analyzingWebsite ? " Analyzing your site..." : ""}`} />
+            <StepHeader icon={<Target size={15} />} title="Tell us about what you sell" subtitle={`Helps write relevant, personalized emails and coach you.${analyzingWebsite ? " Analyzing your site..." : ""}`} />
 
             <div className="flex-1 space-y-3">
               <div>
@@ -706,7 +706,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
             {websiteAnalysis?.confidenceGaps && websiteAnalysis.confidenceGaps.length > 0 && (
               <div className="mb-3 rounded-lg p-3" style={{ background: "var(--color-accent-soft)", border: "1px solid var(--color-accent)20" }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <Sparkles size={13} style={{ color: "var(--color-accent)" }} />
+                  <Target size={13} style={{ color: "var(--color-accent)" }} />
                   <span className="text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
                     Quick questions to refine your ICP
                   </span>
@@ -759,7 +759,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
             { label: "Enriching company profiles...", icon: <Building2 size={13} /> },
             { label: emailConnected ? "Cross-referencing your inbox..." : "Scoring against your ICP...", icon: emailConnected ? <Mail size={13} /> : <Zap size={13} /> },
             { label: `Found ${tamProgress.found} companies`, icon: <Check size={13} /> },
-            { label: "Finalizing your pipeline...", icon: <Sparkles size={13} /> },
+            { label: "Building your pipeline...", icon: <Check size={13} /> },
           ];
           return (
             <div className="flex flex-col h-full">

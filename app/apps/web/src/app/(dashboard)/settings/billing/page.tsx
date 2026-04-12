@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CreditCard, ExternalLink, Zap, Mail, Users, Brain } from "lucide-react";
+import { CreditCard, ExternalLink, Zap, Mail, Users, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 
@@ -216,7 +216,7 @@ export default function BillingSettingsPage() {
                 limit={limits.emails}
               />
               <UsageMeter
-                icon={<Brain size={15} />}
+                icon={<BarChart3 size={15} />}
                 label="AI queries"
                 current={usage?.usage.ai_query ?? 0}
                 limit={limits.ai}

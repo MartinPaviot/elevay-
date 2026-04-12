@@ -139,7 +139,7 @@ export default function DealDetailPage() {
               <CardBody>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm font-semibold">
-                    {riskLevel === "high" ? "⚠️ High Risk" : isStalled ? "⏸️ Stalled" : "⚡ Needs Attention"}
+                    {riskLevel === "high" ? "High Risk" : isStalled ? "Stalled" : "Needs Attention"}
                   </span>
                   {daysSinceActivity !== null && (
                     <Badge variant={daysSinceActivity >= 14 ? "error" : "warning"} size="sm">
@@ -269,12 +269,12 @@ function ExtractedIntel({ dealId, properties }: { dealId: string; properties: Re
   const [data, setData] = useState(intel);
 
   const fields = [
-    { key: "budget", label: "Budget", icon: "💰" },
-    { key: "teamSize", label: "Team Size", icon: "👥" },
-    { key: "currentCRM", label: "Current CRM", icon: "📋" },
-    { key: "competitorTools", label: "Point Solutions", icon: "🔧" },
-    { key: "decisionTimeline", label: "Timeline", icon: "📅" },
-    { key: "painPoints", label: "Pain Points", icon: "🎯" },
+    { key: "budget", label: "Budget", icon: "" },
+    { key: "teamSize", label: "Team Size", icon: "" },
+    { key: "currentCRM", label: "Current CRM", icon: "" },
+    { key: "competitorTools", label: "Point Solutions", icon: "" },
+    { key: "decisionTimeline", label: "Timeline", icon: "" },
+    { key: "painPoints", label: "Pain Points", icon: "" },
   ];
 
   async function extractIntel() {

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight, ArrowLeft, Loader2, Check, Target, Users, Mail,
-  Zap, X, Sparkles, Send,
+  Zap, X, Send,
 } from "lucide-react";
 import { INDUSTRIES, COMPANY_SIZES, GEOGRAPHIES, DECISION_MAKER_ROLES } from "@/lib/icp-constants";
 
@@ -284,11 +284,11 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
   // ── Stage labels ──
   const stageLabels: Record<string, string> = {
     creating: "Creating campaign...",
-    generating_steps: "AI is writing your email sequence...",
+    generating_steps: "Drafting your sequence...",
     preparing: "Starting campaign preparation...",
     enriching: "Enriching companies from your TAM...",
     discovering: "Discovering decision-makers...",
-    drafting: "Writing personalized emails...",
+    drafting: "Personalizing emails...",
     ready: "Campaign ready for review!",
     error: error || "Something went wrong",
   };

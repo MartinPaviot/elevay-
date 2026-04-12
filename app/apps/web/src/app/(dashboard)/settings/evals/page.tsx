@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { FlaskConical, Plus, Play, ChevronRight, ChevronDown, Check, X, AlertTriangle, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
+import { FlaskConical, Plus, Play, ChevronRight, ChevronDown, Check, X, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Dataset { id: string; name: string; description: string | null; caseCount: number; createdAt: string }
@@ -135,7 +135,7 @@ export default function EvalsPage() {
             </span>
             <div className="flex gap-1">
               <Button variant="ghost" size="sm" onClick={seedFromChat} disabled={seeding}
-                icon={<Sparkles size={11} />} style={{ color: "var(--color-accent)" }}>
+                icon={<FlaskConical size={11} />} style={{ color: "var(--color-accent)" }}>
                 {seeding ? "Seeding..." : "Seed"}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setShowNewDataset(true)}

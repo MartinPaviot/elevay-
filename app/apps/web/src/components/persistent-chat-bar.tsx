@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Sparkles, Send } from "lucide-react";
+import { Compass, Send } from "lucide-react";
 
 export function PersistentChatBar({ forceShow }: { forceShow?: boolean } = {}) {
   const pathname = usePathname();
@@ -32,7 +32,7 @@ export function PersistentChatBar({ forceShow }: { forceShow?: boolean } = {}) {
         }}
       />
       <form onSubmit={handleSubmit} className="relative mx-auto max-w-2xl">
-        <Sparkles
+        <Compass
           size={15}
           className="absolute left-3.5 top-1/2 -translate-y-1/2"
           style={{ color: "var(--color-text-tertiary)" }}

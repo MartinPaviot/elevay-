@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export function StreamingSkeleton() {
   return (
@@ -9,7 +9,7 @@ export function StreamingSkeleton() {
         className="mb-2 flex items-center gap-1.5 text-[12px]"
         style={{ color: "var(--color-text-tertiary)" }}
       >
-        <Sparkles size={13} className="animate-pulse" style={{ color: "var(--color-accent)" }} />
+        <Loader2 size={13} className="animate-spin" style={{ color: "var(--color-accent)" }} />
         <span style={{ fontWeight: 500 }}>Elevay</span>
       </div>
       <div className="space-y-2.5">
