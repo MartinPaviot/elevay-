@@ -1,40 +1,29 @@
 {
-  "current_phase": 1,
+  "current_phase": "FINAL",
   "started_at": "2026-04-12T10:00:00Z",
-  "last_updated": "2026-04-12T10:30:00Z",
-  "phases_completed": [0],
+  "last_updated": "2026-04-12T12:30:00Z",
+  "phases_completed": [0, 1, 2],
   "current_skill": null,
   "skills_queue": [
-    {"slug": "tam-builder", "category": "enrichment", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "apollo-lead-finder", "category": "enrichment", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "company-contact-finder", "category": "enrichment", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "cold-email-outreach", "category": "outreach", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "email-drafting", "category": "outreach", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "inbound-lead-enrichment", "category": "enrichment", "effort": "Wrapper", "priority": "P0"},
-    {"slug": "lead-qualification", "category": "scoring", "effort": "Adapt", "priority": "P0"},
-    {"slug": "icp-identification", "category": "scoring", "effort": "Adapt", "priority": "P0"},
-    {"slug": "signal-scanner", "category": "signals", "effort": "Adapt", "priority": "P0"},
-    {"slug": "inbound-lead-qualification", "category": "scoring", "effort": "Adapt", "priority": "P0"},
-    {"slug": "contact-cache", "category": "signals", "effort": "Nouveau", "priority": "P0"},
-    {"slug": "meeting-brief", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "sales-call-prep", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "pipeline-review", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "sequence-performance", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "sales-coaching", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "churn-risk-detector", "category": "intelligence", "effort": "Adapt", "priority": "P1"},
-    {"slug": "battlecard-generator", "category": "intelligence", "effort": "Nouveau", "priority": "P1"},
-    {"slug": "competitor-intel", "category": "intelligence", "effort": "Nouveau", "priority": "P1"},
     {"slug": "champion-tracker", "category": "signals", "effort": "Nouveau", "priority": "P1"},
     {"slug": "job-posting-intent", "category": "signals", "effort": "Nouveau", "priority": "P1"},
     {"slug": "funding-signal-monitor", "category": "signals", "effort": "Nouveau", "priority": "P1"},
     {"slug": "leadership-change-outreach", "category": "outreach", "effort": "Adapt", "priority": "P1"},
     {"slug": "expansion-signal-spotter", "category": "signals", "effort": "Nouveau", "priority": "P1"}
   ],
-  "skills_completed": [],
+  "skills_completed": [
+    "tam-builder", "apollo-lead-finder", "company-contact-finder",
+    "cold-email-outreach", "email-drafting", "inbound-lead-enrichment",
+    "lead-qualification", "icp-identification", "signal-scanner",
+    "inbound-lead-qualification", "contact-cache",
+    "meeting-brief", "sales-call-prep", "pipeline-review",
+    "sequence-performance", "sales-coaching",
+    "battlecard-generator", "competitor-intel", "churn-risk-detector"
+  ],
   "skills_failed": [],
   "audit_complete": true,
-  "infra_complete": false,
-  "total_skills_implemented": 0,
+  "infra_complete": true,
+  "total_skills_implemented": 19,
   "decisions_log": [
     {
       "timestamp": "2026-04-12T10:15:00Z",
@@ -53,6 +42,36 @@
       "phase": 0,
       "decision": "24 skills in queue ordered by effort (Wrapper first) then priority (P0 first)",
       "reason": "Quick wins with Wrappers validate infra; P0 covers core GTM flow"
+    },
+    {
+      "timestamp": "2026-04-12T10:40:00Z",
+      "phase": 1,
+      "decision": "tracedGenerateObject uses _trace field, not separate agentId/tenantId params",
+      "reason": "Read traced-ai.ts source — it destructures { _trace, ...aiParams } from params"
+    },
+    {
+      "timestamp": "2026-04-12T11:00:00Z",
+      "phase": 2,
+      "decision": "Wrappers call real Apollo/scoring/sequence-generator functions directly",
+      "reason": "Zero abstraction layer needed — existing code is already well-structured"
+    },
+    {
+      "timestamp": "2026-04-12T11:30:00Z",
+      "phase": 2,
+      "decision": "Signal scanner uses diff-based activity comparison (recent vs older half) for engagement spikes",
+      "reason": "Matches goose-skills pattern of diff-based detection without external APIs"
+    },
+    {
+      "timestamp": "2026-04-12T12:00:00Z",
+      "phase": 2,
+      "decision": "Created unified /api/skills/[slug] route for all skills",
+      "reason": "Single entry point with dryRun default=true for safety; GET /api/skills/list for discovery"
+    },
+    {
+      "timestamp": "2026-04-12T12:15:00Z",
+      "phase": 2,
+      "decision": "All LLM-using skills fallback from Anthropic to OpenAI if ANTHROPIC_API_KEY not set",
+      "reason": "Matches existing pattern in sequence-generator.ts"
     }
   ]
 }
