@@ -1,6 +1,62 @@
 import { db } from "@/db";
 import { outboundEmails, connectedMailboxes, sequenceEnrollments, emailOptouts } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { createHmac, timingSafeEqual } from "crypto";
+
+/**
+ * Verify a Resend (Svix) webhook signature.
+ *
+ * Resend uses Svix under the hood; the canonical message is
+ *   `${svix-id}.${svix-timestamp}.${rawBody}`
+ * and the header `svix-signature` carries one or more `v1,<base64>` parts.
+ *
+ * We accept the request if any provided signature matches.
+ *
+ * In dev (no `RESEND_WEBHOOK_SECRET` set), we accept everything to ease
+ * local testing. In prod, the secret MUST be configured.
+ */
+function verifyResendSignature(req: Request, rawBody: string): boolean {
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret) return process.env.NODE_ENV !== "production";
+
+  const id = req.headers.get("svix-id");
+  const timestamp = req.headers.get("svix-timestamp");
+  const signatureHeader = req.headers.get("svix-signature");
+  if (!id || !timestamp || !signatureHeader) return false;
+
+  // Reject very old timestamps (>5 min skew) to limit replay window
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+    return false;
+  }
+
+  // Svix secrets are stored as `whsec_<base64>`; the signing key is the
+  // base64-decoded portion after the prefix.
+  const secretBytes = secret.startsWith("whsec_")
+    ? Buffer.from(secret.slice("whsec_".length), "base64")
+    : Buffer.from(secret, "utf8");
+
+  const toSign = `${id}.${timestamp}.${rawBody}`;
+  const expected = createHmac("sha256", secretBytes).update(toSign).digest("base64");
+  const expectedBuf = Buffer.from(expected, "utf8");
+
+  // Header looks like "v1,sig1 v1,sig2"; accept any matching v1 entry
+  const candidates = signatureHeader
+    .split(" ")
+    .filter((p) => p.startsWith("v1,"))
+    .map((p) => p.slice("v1,".length));
+
+  for (const candidate of candidates) {
+    const candidateBuf = Buffer.from(candidate, "utf8");
+    if (
+      candidateBuf.length === expectedBuf.length &&
+      timingSafeEqual(candidateBuf, expectedBuf)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Resend webhook handler — processes email delivery events.
@@ -15,7 +71,13 @@ import { eq, and, sql } from "drizzle-orm";
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    if (!verifyResendSignature(req, rawBody)) {
+      console.warn("Rejected Resend webhook: invalid signature");
+      return Response.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    const body = JSON.parse(rawBody);
     const { type, data } = body;
 
     if (!type || !data) {

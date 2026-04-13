@@ -1,29 +1,41 @@
 import { db } from "@/db";
-import { emailOptouts, tenants } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { createHmac, timingSafeEqual } from "crypto";
+import { emailOptouts, tenants, contacts, sequenceEnrollments, activities } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { verifyUnsubscribeToken as verifyToken } from "@/lib/unsubscribe-token";
 
-function generateToken(tenantId: string, email: string): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET is not configured");
-  return createHmac("sha256", secret)
-    .update(`${tenantId}:${email}`)
-    .digest("hex");
-}
+async function pauseActiveEnrollmentsForEmail(tenantId: string, emailLower: string) {
+  // Find every contact in this tenant with this email, then pause any of
+  // their active enrollments. Cheap because emails are unique-ish per tenant.
+  const matching = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(and(eq(contacts.tenantId, tenantId), eq(contacts.email, emailLower)));
 
-function verifyToken(
-  tenantId: string,
-  email: string,
-  token: string
-): boolean {
-  try {
-    const expected = generateToken(tenantId, email);
-    const expectedBuf = Buffer.from(expected, "hex");
-    const tokenBuf = Buffer.from(token, "hex");
-    if (expectedBuf.length !== tokenBuf.length) return false;
-    return timingSafeEqual(expectedBuf, tokenBuf);
-  } catch {
-    return false;
+  if (matching.length === 0) return;
+  const contactIds = matching.map((c) => c.id);
+
+  await db
+    .update(sequenceEnrollments)
+    .set({ status: "paused" })
+    .where(
+      and(
+        inArray(sequenceEnrollments.contactId, contactIds),
+        eq(sequenceEnrollments.status, "active"),
+      ),
+    );
+
+  // One activity entry per affected contact for the audit trail
+  for (const id of contactIds) {
+    await db.insert(activities).values({
+      tenantId,
+      actorType: "contact",
+      actorId: id,
+      entityType: "contact",
+      entityId: id,
+      activityType: "system_event",
+      summary: "Unsubscribed — active sequence enrollments paused",
+      metadata: { reason: "unsubscribe" },
+    });
   }
 }
 
@@ -122,16 +134,19 @@ async function processUnsubscribe(
     );
   }
 
-  // Insert opt-out (ignore conflict if already unsubscribed)
+  const emailLower = email.toLowerCase();
+
+  // Insert opt-out (ignore conflict if already unsubscribed) + pause enrollments
   try {
     await db
       .insert(emailOptouts)
       .values({
         tenantId,
-        emailAddress: email.toLowerCase(),
+        emailAddress: emailLower,
         reason: "unsubscribe",
       })
       .onConflictDoNothing();
+    await pauseActiveEnrollmentsForEmail(tenantId, emailLower);
   } catch (error) {
     console.error("Failed to process unsubscribe:", error);
     return htmlResponse(
@@ -223,16 +238,19 @@ export async function POST(req: Request) {
     return jsonResponse({ error: "Tenant not found" }, 404);
   }
 
-  // Insert opt-out (ignore conflict if already unsubscribed)
+  const emailLower = email.toLowerCase();
+
+  // Insert opt-out (ignore conflict if already unsubscribed) + pause enrollments
   try {
     await db
       .insert(emailOptouts)
       .values({
         tenantId,
-        emailAddress: email.toLowerCase(),
+        emailAddress: emailLower,
         reason: "unsubscribe",
       })
       .onConflictDoNothing();
+    await pauseActiveEnrollmentsForEmail(tenantId, emailLower);
   } catch (error) {
     console.error("Failed to process unsubscribe:", error);
     return jsonResponse(

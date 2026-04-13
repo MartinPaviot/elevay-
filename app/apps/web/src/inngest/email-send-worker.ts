@@ -4,9 +4,11 @@ import {
   outboundEmails,
   connectedMailboxes,
   activities,
+  emailOptouts,
 } from "@/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { Resend } from "resend";
+import { buildUnsubscribeUrl } from "@/lib/unsubscribe-token";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -115,9 +117,57 @@ export const processOutboundEmails = inngest.createFunction(
       return { processed: 0, sent: 0, failed: 0 };
     }
 
-    // Step 2: Mark as "sending" to prevent duplicate processing
+    // Step 1b: Skip recipients on the opt-out list. Done BEFORE marking
+    // anything as "sending" so we can mark them as failed in one go.
+    // Inngest's step.run serializes its return value, so we return an array
+    // of "tenantId:email" keys and rebuild the Set here.
+    const blockedKeys = await step.run("filter-optouts", async () => {
+      const byTenant = new Map<string, Set<string>>();
+      for (const e of queuedEmails) {
+        if (!byTenant.has(e.tenantId)) byTenant.set(e.tenantId, new Set());
+        byTenant.get(e.tenantId)!.add(e.toAddress.toLowerCase());
+      }
+      const blocked: string[] = [];
+      for (const [tid, emails] of byTenant) {
+        const rows = await db
+          .select({ emailAddress: emailOptouts.emailAddress })
+          .from(emailOptouts)
+          .where(and(
+            eq(emailOptouts.tenantId, tid),
+            inArray(emailOptouts.emailAddress, [...emails]),
+          ));
+        for (const r of rows) blocked.push(`${tid}:${r.emailAddress.toLowerCase()}`);
+      }
+      const blockedSet = new Set(blocked);
+      const blockedIds = queuedEmails
+        .filter((e) => blockedSet.has(`${e.tenantId}:${e.toAddress.toLowerCase()}`))
+        .map((e) => e.id);
+      if (blockedIds.length > 0) {
+        await db
+          .update(outboundEmails)
+          .set({
+            status: "failed",
+            failedAt: new Date(),
+            errorMessage: "Recipient is on the opt-out list",
+            updatedAt: new Date(),
+          })
+          .where(inArray(outboundEmails.id, blockedIds));
+      }
+      return blocked;
+    });
+
+    const optOutSet = new Set<string>(blockedKeys as string[]);
+    const sendableEmails = queuedEmails.filter(
+      (e) => !optOutSet.has(`${e.tenantId}:${e.toAddress.toLowerCase()}`),
+    );
+
+    if (sendableEmails.length === 0) {
+      return { processed: queuedEmails.length, sent: 0, failed: queuedEmails.length };
+    }
+
+    // Step 2: Mark remaining as "sending" to prevent duplicate processing
     await step.run("mark-sending", async () => {
-      const ids = queuedEmails.map((e) => e.id);
+      const ids = sendableEmails.map((e) => e.id);
       await db
         .update(outboundEmails)
         .set({ status: "sending", updatedAt: new Date() })
@@ -126,7 +176,7 @@ export const processOutboundEmails = inngest.createFunction(
 
     // Step 3: Load mailbox info for sender resolution
     const mailboxMap = await step.run("load-mailboxes", async () => {
-      const tenantIds = [...new Set(queuedEmails.map((e) => e.tenantId))];
+      const tenantIds = [...new Set(sendableEmails.map((e) => e.tenantId))];
       const map: Record<
         string,
         { id: string; emailAddress: string; displayName: string | null; dailyLimit: number; sentToday: number; status: string | null; sendWindowStart: string; sendWindowEnd: string; sendDays: string[] }
@@ -190,9 +240,11 @@ export const processOutboundEmails = inngest.createFunction(
 
     // Step 4: Send each email
     let sent = 0;
-    let failed = 0;
+    let failed = optOutSet.size > 0
+      ? queuedEmails.length - sendableEmails.length
+      : 0;
 
-    for (const email of queuedEmails) {
+    for (const email of sendableEmails) {
       await step.run(`send-${email.id}`, async () => {
         // Resolve sender address
         let fromAddress = FALLBACK_FROM;
@@ -253,10 +305,11 @@ export const processOutboundEmails = inngest.createFunction(
         }
 
         try {
-          // Build unsubscribe URL
+          // Build unsubscribe URL with HMAC token (the unsubscribe route
+          // requires a valid token, so unsigned URLs would 403)
           const appUrl =
             process.env.NEXT_PUBLIC_APP_URL || "https://app.elevay.com";
-          const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
+          const unsubUrl = buildUnsubscribeUrl(appUrl, email.tenantId, email.toAddress);
 
           // CAN-SPAM: append compliance footer to HTML body
           const footer = buildComplianceFooter(unsubUrl);
@@ -399,6 +452,28 @@ export const sendSingleEmail = inngest.createFunction(
       return { emailId, sent: false, reason: "Not in sendable state" };
     }
 
+    // Honor opt-outs even on event-driven sends
+    const [optout] = await db
+      .select({ id: emailOptouts.id })
+      .from(emailOptouts)
+      .where(and(
+        eq(emailOptouts.tenantId, email.tenantId),
+        eq(emailOptouts.emailAddress, email.toAddress.toLowerCase()),
+      ))
+      .limit(1);
+    if (optout) {
+      await db
+        .update(outboundEmails)
+        .set({
+          status: "failed",
+          failedAt: new Date(),
+          errorMessage: "Recipient is on the opt-out list",
+          updatedAt: new Date(),
+        })
+        .where(eq(outboundEmails.id, emailId));
+      return { emailId, sent: false, reason: "Recipient opted out" };
+    }
+
     if (!resend) {
       return { emailId, sent: false, reason: "RESEND_API_KEY not configured" };
     }
@@ -406,7 +481,7 @@ export const sendSingleEmail = inngest.createFunction(
     const result = await step.run("send", async () => {
       const appUrl =
         process.env.NEXT_PUBLIC_APP_URL || "https://app.elevay.com";
-      const unsubUrl = `${appUrl}/api/unsubscribe?email=${encodeURIComponent(email.toAddress)}&tenant=${encodeURIComponent(email.tenantId)}`;
+      const unsubUrl = buildUnsubscribeUrl(appUrl, email.tenantId, email.toAddress);
 
       // CAN-SPAM: append compliance footer
       const footer = buildComplianceFooter(unsubUrl);
