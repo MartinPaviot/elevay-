@@ -64,6 +64,13 @@
       "when": 1776110614923,
       "tag": "0008_silky_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776123647592,
+      "tag": "0009_broad_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

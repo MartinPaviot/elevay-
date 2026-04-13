@@ -122,9 +122,18 @@ export default function SignInPage() {
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-[13px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
-              Password
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="block text-[13px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Password
+              </label>
+              <a
+                href="/forgot-password"
+                className="text-[11px] hover:underline"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Forgot password?
+              </a>
+            </div>
             <PasswordInput id="password" name="password" required placeholder="Enter password" />
           </div>
           {/* Gradient CTA button */}

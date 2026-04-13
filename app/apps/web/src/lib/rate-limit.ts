@@ -67,6 +67,32 @@ export function rateLimitAuth(ip: string): { success: boolean; remaining: number
 }
 
 /**
+ * Rate limit a password-reset request per email: 3 per hour. The limit is
+ * intentionally low to make bulk-email harvesting costly for an attacker
+ * while still allowing a genuine user a handful of retries in the hour.
+ */
+export function rateLimitPasswordResetEmail(normalizedEmail: string): {
+  success: boolean;
+  remaining: number;
+  resetAt: number;
+} {
+  return rateLimit(`pwd-reset:email:${normalizedEmail}`, 3, 60 * 60 * 1000);
+}
+
+/**
+ * Rate limit a password-reset request per IP: 10 per hour. A loose cap
+ * so a shared NAT egress for a whole org doesn't lock everyone out, but
+ * tight enough to blunt credential-stuffing probes.
+ */
+export function rateLimitPasswordResetIp(ip: string): {
+  success: boolean;
+  remaining: number;
+  resetAt: number;
+} {
+  return rateLimit(`pwd-reset:ip:${ip}`, 10, 60 * 60 * 1000);
+}
+
+/**
  * Apply rate limiting and return 429 if exceeded.
  * Returns null if allowed, or a Response to return immediately.
  */

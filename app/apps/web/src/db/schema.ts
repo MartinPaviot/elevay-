@@ -72,6 +72,34 @@ export const authVerificationTokens = pgTable(
   ]
 );
 
+// Password reset tokens for the Credentials provider (T0.8). The raw token
+// is never stored — only a SHA-256 hex digest — so a DB leak can't be used
+// to hijack pending resets.
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    requestedIp: text("requested_ip"),
+    requestedUserAgent: text("requested_user_agent"),
+  },
+  (table) => [
+    index("password_reset_tokens_token_hash_idx").on(table.tokenHash),
+    index("password_reset_tokens_user_id_idx").on(table.userId),
+    index("password_reset_tokens_expires_at_idx").on(table.expiresAt),
+  ]
+);
+
 // Enums
 export const activityTypeEnum = pgEnum("activity_type", [
   "email_sent",
