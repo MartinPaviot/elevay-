@@ -562,7 +562,9 @@ export default function MeetingDetailPage() {
                       const data = await res.json();
                       setMeetingPrep(data.prep || data.briefing || "Prep generated. Check the meeting details.");
                     }
-                  } catch { /* */ } finally { setGeneratingPrep(false); }
+                  } catch (e) {
+                    console.warn("meeting-detail: prep generation failed", e);
+                  } finally { setGeneratingPrep(false); }
                 }}
                 disabled={generatingPrep}
                 className="flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] font-medium text-white gradient-brand"

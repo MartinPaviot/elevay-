@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select } from "@/components/ui/input";
 import { CompanyLogo } from "@/components/ui/company-logo";
+import { useToast } from "@/components/ui/toast";
 
 /* ── Types ── */
 
@@ -121,6 +122,7 @@ function formatCloseDate(s: string | null): string | null {
 
 export default function OpportunitiesPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const { stages: pipelineStages } = usePipelineStages();
@@ -166,22 +168,26 @@ export default function OpportunitiesPage() {
   /* ── Data fetching ── */
 
   const fetchAnalytics = useCallback(async () => {
-    try { const r = await fetch("/api/pipeline/analytics"); if (r.ok) setAnalytics(await r.json()); } catch {}
+    try { const r = await fetch("/api/pipeline/analytics"); if (r.ok) setAnalytics(await r.json()); }
+    catch (e) { console.warn("opportunities: analytics fetch failed", e); }
   }, []);
 
   const fetchDeals = useCallback(async () => {
     try {
       const r = await fetch("/api/opportunities");
       if (r.ok) { const d = await r.json(); setDeals(d.deals || []); }
-    } catch { console.error("Failed to fetch deals"); } finally { setLoading(false); }
+    } catch (e) { console.warn("opportunities: deals fetch failed", e); }
+    finally { setLoading(false); }
   }, []);
 
   const fetchAccounts = useCallback(async () => {
-    try { const r = await fetch("/api/accounts?pageSize=200"); if (r.ok) { const d = await r.json(); setAccounts(d.accounts || []); } } catch {}
+    try { const r = await fetch("/api/accounts?pageSize=200"); if (r.ok) { const d = await r.json(); setAccounts(d.accounts || []); } }
+    catch (e) { console.warn("opportunities: accounts fetch failed", e); }
   }, []);
 
   const fetchContacts = useCallback(async () => {
-    try { const r = await fetch("/api/contacts?pageSize=200"); if (r.ok) { const d = await r.json(); setContacts(d.contacts || []); } } catch {}
+    try { const r = await fetch("/api/contacts?pageSize=200"); if (r.ok) { const d = await r.json(); setContacts(d.contacts || []); } }
+    catch (e) { console.warn("opportunities: contacts fetch failed", e); }
   }, []);
 
   useEffect(() => { fetchDeals(); fetchAnalytics(); }, [fetchDeals, fetchAnalytics]);
@@ -221,8 +227,15 @@ export default function OpportunitiesPage() {
           expectedCloseDate: newCloseDate || undefined,
         }),
       });
-      if (r.ok) { setShowCreate(false); fetchDeals(); fetchAnalytics(); }
-    } catch {} finally { setCreating(false); }
+      if (r.ok) {
+        setShowCreate(false); fetchDeals(); fetchAnalytics();
+      } else {
+        toast("Failed to create opportunity", "error");
+      }
+    } catch (e) {
+      toast("Failed to create opportunity", "error");
+      console.warn("opportunities: create failed", e);
+    } finally { setCreating(false); }
   }
 
   async function analyzeDeals() {
@@ -233,8 +246,16 @@ export default function OpportunitiesPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dealIds: deals.map((d) => d.id) }),
       });
-      if (r.ok) { await fetchDeals(); await fetchAnalytics(); }
-    } catch {} finally { setAnalyzing(false); }
+      if (r.ok) {
+        await fetchDeals(); await fetchAnalytics();
+        toast("Deal analysis complete", "success");
+      } else {
+        toast("Failed to analyze deals", "error");
+      }
+    } catch (e) {
+      toast("Failed to analyze deals", "error");
+      console.warn("opportunities: analyze failed", e);
+    } finally { setAnalyzing(false); }
   }
 
   /* ── Drag & drop ── */

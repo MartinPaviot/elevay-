@@ -136,34 +136,34 @@ export default function DashboardPage() {
           setOnboardingName(data.name);
         }
       })
-      .catch(() => {});
+      .catch((e) => console.warn("home: dashboard fetch failed", e));
 
     fetch("/api/dashboard/summary")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setSummary(data))
-      .catch(() => {})
+      .catch((e) => console.warn("home: dashboard fetch failed", e))
       .finally(() => setLoadingSummary(false));
 
     fetch("/api/actions")
       .then((res) => (res.ok ? res.json() : { actions: [] }))
       .then((data) => setActions(data.actions || []))
-      .catch(() => {})
+      .catch((e) => console.warn("home: dashboard fetch failed", e))
       .finally(() => setLoadingActions(false));
 
     fetch("/api/insights")
       .then((res) => (res.ok ? res.json() : { insights: [] }))
       .then((data) => setInsights(data.insights || []))
-      .catch(() => {});
+      .catch((e) => console.warn("home: dashboard fetch failed", e));
 
     fetch("/api/priorities")
       .then((res) => (res.ok ? res.json() : { priorities: [] }))
       .then((data) => setPriorities(data.priorities || []))
-      .catch(() => {});
+      .catch((e) => console.warn("home: dashboard fetch failed", e));
 
     fetch("/api/recommendations")
       .then((res) => (res.ok ? res.json() : { recommendations: [] }))
       .then((data) => setRecommendations(data.recommendations || []))
-      .catch(() => {});
+      .catch((e) => console.warn("home: dashboard fetch failed", e));
   }, []);
 
   const today = new Date().toLocaleDateString("en-US", {

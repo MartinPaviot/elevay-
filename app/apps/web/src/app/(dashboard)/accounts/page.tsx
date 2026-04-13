@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
 
 interface Account {
   id: string;
@@ -42,6 +43,7 @@ interface Account {
 type EnrichStatus = "idle" | "enriching" | "done" | "failed";
 
 export default function AccountsPage() {
+  const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -81,7 +83,9 @@ export default function AccountsPage() {
         page++;
       }
       setAccounts(allAccounts);
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (e) {
+      console.warn("accounts: list fetch failed", e);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
@@ -109,8 +113,15 @@ export default function AccountsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim(), domain: newDomain.trim() || undefined }),
       });
-      if (res.ok) { setNewName(""); setNewDomain(""); setShowCreate(false); fetchAccounts(); }
-    } catch { /* */ } finally { setCreating(false); }
+      if (res.ok) {
+        setNewName(""); setNewDomain(""); setShowCreate(false); fetchAccounts();
+      } else {
+        toast("Failed to create account", "error");
+      }
+    } catch (e) {
+      toast("Failed to create account", "error");
+      console.warn("accounts: create failed", e);
+    } finally { setCreating(false); }
   }
 
   async function enrichSingle(id: string) {
@@ -142,8 +153,16 @@ export default function AccountsPage() {
     setScoreAllRunning(true);
     try {
       const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) });
-      if (res.ok) await fetchAccounts();
-    } catch { /* */ } finally { setScoreAllRunning(false); }
+      if (res.ok) {
+        await fetchAccounts();
+        toast(`Scored ${ids.length} accounts`, "success");
+      } else {
+        toast("Failed to score accounts", "error");
+      }
+    } catch (e) {
+      toast("Failed to score accounts", "error");
+      console.warn("accounts: score-all failed", e);
+    } finally { setScoreAllRunning(false); }
   }
 
   async function detectSignals() {
@@ -152,8 +171,16 @@ export default function AccountsPage() {
     setDetectingSignals(true);
     try {
       const res = await fetch("/api/signals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) });
-      if (res.ok) await fetchAccounts();
-    } catch { /* */ } finally { setDetectingSignals(false); }
+      if (res.ok) {
+        await fetchAccounts();
+        toast(`Detected signals for ${ids.length} accounts`, "success");
+      } else {
+        toast("Failed to detect signals", "error");
+      }
+    } catch (e) {
+      toast("Failed to detect signals", "error");
+      console.warn("accounts: detect-signals failed", e);
+    } finally { setDetectingSignals(false); }
   }
 
   async function handleSemanticSearch() {
@@ -162,7 +189,11 @@ export default function AccountsPage() {
     try {
       const res = await fetch("/api/search/tam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: searchQuery.trim(), entityType: "company", limit: 20 }) });
       if (res.ok) { const data = await res.json(); setSearchResults(data.results.map((r: { entityId: string }) => r.entityId)); }
-    } catch { /* */ } finally { setSearching(false); }
+      else toast("Search failed", "error");
+    } catch (e) {
+      toast("Search failed", "error");
+      console.warn("accounts: semantic search failed", e);
+    } finally { setSearching(false); }
   }
 
   function getLinkedInUrl(account: Account): string | null {

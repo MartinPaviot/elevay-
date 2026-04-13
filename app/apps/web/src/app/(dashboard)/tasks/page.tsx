@@ -33,8 +33,9 @@ export default function TasksPage() {
         const data = await res.json();
         setTasks(data.tasks || []);
       }
-    } catch { /* */ }
-    finally { setLoading(false); }
+    } catch (e) {
+      console.warn("tasks: list fetch failed", e);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
@@ -49,8 +50,9 @@ export default function TasksPage() {
         body: JSON.stringify({ title: newTask.trim(), priority: "medium" }),
       });
       if (res.ok) { setNewTask(""); fetchTasks(); }
-    } catch { /* */ }
-    finally { setSaving(false); }
+    } catch (e) {
+      console.warn("tasks: add failed", e);
+    } finally { setSaving(false); }
   }
 
   async function toggleTask(id: string, currentStatus: string) {
@@ -62,7 +64,9 @@ export default function TasksPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       fetchTasks();
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("tasks: toggle failed", e);
+    }
   }
 
   const pending = tasks.filter((t) => t.status !== "completed");

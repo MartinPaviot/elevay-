@@ -80,8 +80,9 @@ export default function PricingPage() {
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch { /* */ }
-    finally { setLoadingTier(null); }
+    } catch (e) {
+      console.warn("pricing: checkout failed", e);
+    } finally { setLoadingTier(null); }
   }
 
   return (

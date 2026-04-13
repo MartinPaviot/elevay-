@@ -142,7 +142,9 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
         const data = await res.json();
         setMatchCount(data.matchingCompanies);
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("campaign-wizard: preview fetch failed", e);
+    }
     setLoadingPreview(false);
   }, [selectedIndustries, selectedSizes, selectedGeographies, minScore, sequenceId, existingSequenceId]);
 
@@ -239,7 +241,9 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
           setError(data.error);
           setGenStatus("error");
         }
-      } catch { /* */ }
+      } catch (e) {
+        console.warn("campaign-wizard: status poll failed", e);
+      }
     }, 3000);
 
     // Safety timeout: stop polling after 5 minutes
@@ -253,7 +257,9 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
         const data = await res.json();
         setEmails(data.emails || []);
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("campaign-wizard: review emails fetch failed", e);
+    }
   }
 
   useEffect(() => {
@@ -278,7 +284,9 @@ export function CampaignWizard({ onClose, onComplete, sequenceId: existingSequen
       if (res.ok) {
         onComplete(sequenceId);
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("campaign-wizard: launch failed", e);
+    }
   }
 
   // ── Stage labels ──

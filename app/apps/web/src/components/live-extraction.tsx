@@ -34,7 +34,9 @@ export function LiveExtraction({ meetingId, isRecording }: LiveExtractionProps) 
           if (json.extraction) setData(json.extraction);
           if (json.message) setMessage(json.message);
         }
-      } catch { /* */ }
+      } catch (e) {
+        console.warn("live-extraction: poll failed", e);
+      }
     }
 
     poll(); // Initial fetch

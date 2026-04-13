@@ -45,7 +45,9 @@ export default function MeetingsPage() {
           setMeetings(data.meetings || []);
           setCalendarConnected(data.calendarConnected !== false);
         }
-      } catch {}
+      } catch (e) {
+        console.warn("meetings: list fetch failed", e);
+      }
       setLoading(false);
     })();
   }, []);
@@ -67,7 +69,9 @@ export default function MeetingsPage() {
         setPrepDocs((prev) => ({ ...prev, [meetingId]: data.prep }));
         setExpandedMeeting(meetingId);
       }
-    } catch {}
+    } catch (e) {
+      console.warn("meetings: prep generation failed", e);
+    }
     setPrepLoading((prev) => ({ ...prev, [meetingId]: false }));
   }, [prepDocs, expandedMeeting]);
 

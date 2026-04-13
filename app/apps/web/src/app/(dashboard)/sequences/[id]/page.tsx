@@ -77,7 +77,9 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
           setShowCampaignWizard(true);
         }
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("sequence-detail: fetch failed", e);
+    }
     setLoading(false);
   }, [id]);
 
@@ -113,7 +115,9 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
         body: JSON.stringify({ status: newStatus }),
       });
       fetchSequence();
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("sequence-detail: status toggle failed", e);
+    }
     setUpdatingStatus(false);
   }
 
@@ -124,7 +128,9 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
         setCampaignStatus("launched");
         fetchSequence();
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("sequence-detail: launch failed", e);
+    }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>;

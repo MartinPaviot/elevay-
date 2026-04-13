@@ -140,7 +140,9 @@ export function EmailComposer({ to, subject, body, onClose, onSend }: EmailCompo
       }
       setSent(true);
       setTimeout(onClose, 1500);
-    } catch { /* */ } finally {
+    } catch (e) {
+      console.warn("email-composer: send failed", e);
+    } finally {
       setSending(false);
     }
   }

@@ -30,8 +30,9 @@ export default function NotesPage() {
         const data = await res.json();
         setNotes(data.notes || []);
       }
-    } catch { /* */ }
-    finally { setLoading(false); }
+    } catch (e) {
+      console.warn("notes: list fetch failed", e);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchNotes(); }, [fetchNotes]);
@@ -46,8 +47,9 @@ export default function NotesPage() {
         body: JSON.stringify({ content: newNote.trim() }),
       });
       if (res.ok) { setNewNote(""); fetchNotes(); }
-    } catch { /* */ }
-    finally { setSaving(false); }
+    } catch (e) {
+      console.warn("notes: add failed", e);
+    } finally { setSaving(false); }
   }
 
   return (

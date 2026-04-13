@@ -74,12 +74,17 @@ export default function ContactsPage() {
         const data = await res.json();
         setContacts(data.contacts || []);
       }
-    } catch { /* */ } finally { setLoading(false); }
+    } catch (e) {
+      console.warn("contacts: list fetch failed", e);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
     fetchContacts();
-    fetch("/api/import/history").then(r => r.ok ? r.json() : { imports: [] }).then(d => setImportHistory(d.imports || [])).catch(() => {});
+    fetch("/api/import/history")
+      .then(r => r.ok ? r.json() : { imports: [] })
+      .then(d => setImportHistory(d.imports || []))
+      .catch((e) => console.warn("contacts: import history fetch failed", e));
   }, [fetchContacts]);
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {

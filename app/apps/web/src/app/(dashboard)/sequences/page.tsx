@@ -34,7 +34,9 @@ export default function CampaignsPage() {
         const data = await res.json();
         setSequences(data.sequences || []);
       }
-    } catch { /* */ }
+    } catch (e) {
+      console.warn("sequences: list fetch failed", e);
+    }
     setLoading(false);
   }, []);
 
