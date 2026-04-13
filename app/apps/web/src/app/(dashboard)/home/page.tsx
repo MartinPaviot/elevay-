@@ -191,7 +191,7 @@ export default function DashboardPage() {
             {summary ? `${summary.greeting}, ${summary.firstName}` : "Welcome back"}
           </h1>
           <p className="mt-0.5 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>
-            {summary?.challenge === "Finding the right leads"
+            {summary?.challenge === "Finding leads"
               ? "Your top prospects by fit score."
               : summary?.challenge === "Getting responses"
                 ? "Reply rates and follow-up gaps."
