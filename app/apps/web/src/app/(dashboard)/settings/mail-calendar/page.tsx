@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
+import { useSafeFetch } from "@/lib/use-safe-fetch";
 import {
   Mail,
   Plus,
@@ -89,22 +90,31 @@ export default function MailCalendarPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
 
+  const sfetch = useSafeFetch();
+
   /* ---- Data loading ---- */
 
   async function loadData() {
-    try {
-      const res = await fetch("/api/settings/mail-calendar");
-      const data = await res.json();
-
+    type Resp = {
+      accounts?: ConnectedAccount[];
+      syncPreferences?: {
+        contactCreationMode?: string;
+        backsyncRange?: string;
+        doNotTrackDomains?: string[];
+      };
+    };
+    const { data, error: err } = await sfetch<Resp>("/api/settings/mail-calendar", {
+      errorMessage: "Failed to load settings",
+    });
+    if (data) {
       setAccounts(data.accounts || []);
       setContactCreationMode(data.syncPreferences?.contactCreationMode || "selective");
       setBacksyncRange(data.syncPreferences?.backsyncRange || "3m");
       setDoNotTrackDomains(data.syncPreferences?.doNotTrackDomains || []);
-    } catch {
-      setError("Failed to load settings");
-    } finally {
-      setLoading(false);
+    } else if (err) {
+      setError(err);
     }
+    setLoading(false);
   }
 
   useEffect(() => { loadData(); }, []);
@@ -121,27 +131,28 @@ export default function MailCalendarPage() {
 
   async function deleteAccount(id: string) {
     if (!confirm("Remove this account? Email sync and sending will stop for this account.")) return;
-    try {
-      await fetch(`/api/settings/mailboxes?id=${id}`, { method: "DELETE" });
-      loadData();
-    } catch { /* */ }
+    const { error: err } = await sfetch(`/api/settings/mailboxes?id=${id}`, {
+      method: "DELETE",
+      errorMessage: "Failed to remove account",
+    });
+    if (!err) loadData();
   }
 
   async function skipWarmup(id: string) {
-    try {
-      await fetch(`/api/settings/mailboxes?id=${id}&action=skip-warmup`, { method: "PATCH" });
-      loadData();
-    } catch { /* */ }
+    const { error: err } = await sfetch(`/api/settings/mailboxes?id=${id}&action=skip-warmup`, {
+      method: "PATCH",
+      errorMessage: "Failed to skip warm-up",
+    });
+    if (!err) loadData();
   }
 
   async function forceSync() {
     setSyncing(true);
-    try {
-      await fetch("/api/email/sync", { method: "POST" });
-      setTimeout(() => { setSyncing(false); loadData(); }, 2000);
-    } catch {
-      setSyncing(false);
-    }
+    await sfetch("/api/email/sync", {
+      method: "POST",
+      errorMessage: "Failed to start sync",
+    });
+    setTimeout(() => { setSyncing(false); loadData(); }, 2000);
   }
 
   async function handleSavePreferences() {

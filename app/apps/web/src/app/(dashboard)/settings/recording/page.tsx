@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Video } from "lucide-react";
+import { useSafeFetch } from "@/lib/use-safe-fetch";
 
 export default function RecordingSettingsPage() {
   const [enabled, setEnabled] = useState(false);
@@ -12,34 +13,36 @@ export default function RecordingSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const sfetch = useSafeFetch();
+
   useEffect(() => {
-    fetch("/api/settings/workspace")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data?.settings) {
-          setEnabled(data.settings.recordingEnabled || false);
-          setBotName(data.settings.recordingBotName || "Elevay Notetaker");
-        }
-      })
-      .catch(() => {});
-  }, []);
+    sfetch<{ settings?: { recordingEnabled?: boolean; recordingBotName?: string } }>(
+      "/api/settings/workspace",
+      { errorMessage: "Failed to load recording settings" },
+    ).then(({ data }) => {
+      if (data?.settings) {
+        setEnabled(data.settings.recordingEnabled || false);
+        setBotName(data.settings.recordingBotName || "Elevay Notetaker");
+      }
+    });
+  }, [sfetch]);
 
   async function handleSave() {
     setSaving(true);
-    try {
-      await fetch("/api/settings/workspace", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recordingEnabled: enabled,
-          recordingBotName: botName.trim(),
-        }),
-      });
+    const { error } = await sfetch("/api/settings/workspace", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recordingEnabled: enabled,
+        recordingBotName: botName.trim(),
+      }),
+      errorMessage: "Failed to save recording settings",
+    });
+    if (!error) {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch { /* */ } finally {
-      setSaving(false);
     }
+    setSaving(false);
   }
 
   return (

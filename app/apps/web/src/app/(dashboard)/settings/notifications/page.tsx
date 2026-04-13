@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Toggle } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useSafeFetch } from "@/lib/use-safe-fetch";
 
 interface NotificationPref {
   key: string;
@@ -35,25 +36,30 @@ export default function NotificationsSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const sfetch = useSafeFetch();
+
   // Load preferences from API
   useEffect(() => {
-    fetch("/api/notifications/preferences")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data?.preferences) {
-          const saved = data.preferences as Record<string, { email?: boolean; inApp?: boolean; slack?: boolean }>;
-          setPrefs(DEFAULT_PREFS.map((p) => ({
-            ...p,
-            email: saved[p.key]?.email ?? p.email,
-            inApp: saved[p.key]?.inApp ?? p.inApp,
-            slack: saved[p.key]?.slack ?? p.slack,
-          })));
-        }
-        if (data?.slackWebhook) setSlackWebhook(data.slackWebhook);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    type Resp = {
+      preferences?: Record<string, { email?: boolean; inApp?: boolean; slack?: boolean }>;
+      slackWebhook?: string;
+    };
+    sfetch<Resp>("/api/notifications/preferences", {
+      errorMessage: "Failed to load notification preferences",
+    }).then(({ data }) => {
+      if (data?.preferences) {
+        const saved = data.preferences;
+        setPrefs(DEFAULT_PREFS.map((p) => ({
+          ...p,
+          email: saved[p.key]?.email ?? p.email,
+          inApp: saved[p.key]?.inApp ?? p.inApp,
+          slack: saved[p.key]?.slack ?? p.slack,
+        })));
+      }
+      if (data?.slackWebhook) setSlackWebhook(data.slackWebhook);
+      setLoading(false);
+    });
+  }, [sfetch]);
 
   // Save preferences to API
   const save = useCallback(async (updatedPrefs: NotificationPref[]) => {
@@ -62,15 +68,14 @@ export default function NotificationsSettingsPage() {
     for (const p of updatedPrefs) {
       preferences[p.key] = { email: p.email, inApp: p.inApp, slack: p.slack };
     }
-    try {
-      await fetch("/api/notifications/preferences", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preferences, slackWebhook }),
-      });
-    } catch { /* */ }
+    await sfetch("/api/notifications/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferences, slackWebhook }),
+      errorMessage: "Failed to save notification preferences",
+    });
     setSaving(false);
-  }, [slackWebhook]);
+  }, [slackWebhook, sfetch]);
 
   function toggle(key: string, channel: "email" | "inApp" | "slack") {
     const updated = prefs.map((p) =>
