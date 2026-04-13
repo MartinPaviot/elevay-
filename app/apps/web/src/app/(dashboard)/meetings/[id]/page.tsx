@@ -344,7 +344,7 @@ export default function MeetingDetailPage() {
         const recStatus = meetingMeta.recordingStatus;
         const isRecording = recStatus === "recording" || recStatus === "in_call";
         if (isRecording || (recStatus === "done" && meetingMeta.partialTranscript)) {
-          return <LiveExtraction meetingId={(meeting as any).activityId || id} isRecording={isRecording} />;
+          return <LiveExtraction meetingId={(meeting as any).activityId || meetingId} isRecording={isRecording} />;
         }
         return null;
       })()}

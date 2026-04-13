@@ -28,7 +28,15 @@ export interface SkillDefinition<TInput = unknown, TOutput = unknown> {
   costEstimate: string;
   inputSchema: z.ZodSchema<TInput>;
   outputSchema: z.ZodSchema<TOutput>;
-  handler: (input: TInput, options: SkillRunOptions) => Promise<TOutput>;
+  /**
+   * Method form (not arrow) so TS treats the parameter position as
+   * bivariant. Each skill's handler is typed against its own concrete
+   * input shape (parsed from `inputSchema`); the runner always calls it
+   * AFTER `inputSchema.parse(rawInput)`, so the narrow handler type is
+   * sound at runtime even though the registry stores skills with
+   * `TInput = unknown`.
+   */
+  handler(input: TInput, options: SkillRunOptions): Promise<TOutput>;
 }
 
 // ─── Skill Result ───────────────────────────────────────────

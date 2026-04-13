@@ -30,16 +30,19 @@ export async function pipelineReviewHandler(
   const companyMap = new Map(companyRows.map((c) => [c.id, c.name]));
   const contactMap = new Map(contactRows.map((c) => [c.id, [c.firstName, c.lastName].filter(Boolean).join(" ")]));
 
-  // Build deal summaries
+  // Build deal summaries. `deal.stage` is nullable in the schema but the
+  // output contract expects a non-null `string`, so we coerce missing
+  // stages to "unknown" — preserves the row instead of dropping it.
   const dealSummaries = allDeals.map((deal) => {
     const updatedAt = deal.updatedAt ? new Date(deal.updatedAt) : new Date(deal.createdAt!);
     const daysInStage = Math.round((Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
-    const isStuck = daysInStage >= input.stuckThresholdDays && !["won", "lost"].includes(deal.stage);
+    const stage = deal.stage ?? "unknown";
+    const isStuck = daysInStage >= input.stuckThresholdDays && !["won", "lost"].includes(stage);
 
     return {
       dealId: deal.id,
       name: deal.name,
-      stage: deal.stage,
+      stage,
       value: deal.value ? Number(deal.value) : null,
       companyName: deal.companyId ? companyMap.get(deal.companyId) ?? null : null,
       contactName: deal.contactId ? contactMap.get(deal.contactId) ?? null : null,

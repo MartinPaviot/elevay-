@@ -18,9 +18,10 @@ export async function runSkill<TInput, TOutput>(
     input = skill.inputSchema.parse(rawInput);
   } catch (err) {
     if (err instanceof ZodError) {
+      // Zod v4 renamed `.errors` to `.issues`
       return {
         success: false,
-        error: `Validation error: ${err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ")}`,
+        error: `Validation error: ${err.issues.map((e: { path: PropertyKey[]; message: string }) => `${e.path.join(".")}: ${e.message}`).join(", ")}`,
         dryRun: options.dryRun,
         durationMs: Date.now() - start,
       };

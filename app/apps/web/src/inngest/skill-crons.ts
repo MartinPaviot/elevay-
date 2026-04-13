@@ -5,7 +5,7 @@
 
 import { inngest } from "./client";
 import { db } from "@/db";
-import { tenants, companies, contacts, notifications } from "@/db/schema";
+import { tenants, companies, contacts, notifications, users } from "@/db/schema";
 import { eq, sql, desc, and, isNotNull } from "drizzle-orm";
 import { runSkill } from "@/skills/runner";
 import { signalScannerSkill } from "@/skills/signals/signal-scanner";
@@ -28,12 +28,20 @@ async function createNotification(
   title: string,
   body: string,
 ) {
-  await db.insert(notifications).values({
-    tenantId,
-    type,
-    title,
-    body,
-  }).catch(() => {}); // Non-critical
+  // Fan out to every user in the tenant. `notifications.userId` is NOT NULL,
+  // so cron-generated, tenant-wide notifications need one row per recipient.
+  try {
+    const recipients = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.tenantId, tenantId));
+    if (recipients.length === 0) return;
+    await db.insert(notifications).values(
+      recipients.map((u) => ({ tenantId, userId: u.id, type, title, body })),
+    );
+  } catch {
+    /* non-critical: notification dispatch never blocks the cron */
+  }
 }
 
 // ── Weekly Signal Scanner ──────────────────────────────────────

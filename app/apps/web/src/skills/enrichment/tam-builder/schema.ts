@@ -9,6 +9,9 @@ export const tamBuilderInputSchema = z.object({
     organization_not_locations: z.array(z.string()).optional(),
     currently_using_any_of_technology_uids: z.array(z.string()).optional(),
   }),
+  // Zod v4 requires `.default()` to receive a value that satisfies the
+  // schema strictly, so we pass full defaults via a thunk to keep the
+  // optional-with-defaults behaviour.
   scoring: z.object({
     targetIndustries: z.array(z.string()).default([]),
     targetEmployeeRanges: z.array(z.tuple([z.number(), z.number()])).default([]),
@@ -16,14 +19,27 @@ export const tamBuilderInputSchema = z.object({
     targetGeos: z.array(z.string()).default([]),
     tier1MinScore: z.number().min(0).max(100).default(75),
     tier2MinScore: z.number().min(0).max(100).default(50),
-  }).default({}),
+  }).default(() => ({
+    targetIndustries: [],
+    targetEmployeeRanges: [] as [number, number][],
+    targetFundingStages: [],
+    targetGeos: [],
+    tier1MinScore: 75,
+    tier2MinScore: 50,
+  })),
   watchlist: z.object({
     enabled: z.boolean().default(true),
     personTitles: z.array(z.string()).default([]),
     personSeniorities: z.array(z.string()).default(["vp", "director", "c_suite"]),
     personasPerCompany: z.number().default(3),
     tiersToWatch: z.array(z.number()).default([1, 2]),
-  }).default({}),
+  }).default(() => ({
+    enabled: true,
+    personTitles: [],
+    personSeniorities: ["vp", "director", "c_suite"],
+    personasPerCompany: 3,
+    tiersToWatch: [1, 2],
+  })),
   maxPages: z.number().min(1).max(100).default(10),
 });
 

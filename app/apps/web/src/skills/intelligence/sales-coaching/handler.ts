@@ -102,7 +102,7 @@ Be specific to THIS deal, not generic sales advice.`,
   return {
     dealId: input.dealId,
     dealName: deal.name,
-    stage: deal.stage,
+    stage: deal.stage ?? "unknown",
     value: deal.value ? Number(deal.value) : null,
     companyName,
     coaching: {

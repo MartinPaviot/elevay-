@@ -49,22 +49,22 @@ export async function sequencePerformanceHandler(
       .from(sequenceSteps)
       .where(eq(sequenceSteps.sequenceId, seq.id));
 
-    // Per-step metrics
+    // Per-step metrics. `stepNumber` lives directly on outboundEmails (not
+    // in `metadata`); `e.status` is nullable in the schema so we coerce
+    // it before doing string comparisons.
     const stepMetrics = steps.map((step) => {
-      const stepEmails = emails.filter((e) => {
-        const meta = e.metadata as Record<string, unknown> | null;
-        return meta?.stepNumber === step.stepNumber;
-      });
+      const stepEmails = emails.filter((e) => e.stepNumber === step.stepNumber);
 
-      const sent = stepEmails.filter((e) => ["sent", "delivered", "opened", "clicked", "replied"].includes(e.status)).length;
-      const delivered = stepEmails.filter((e) => ["delivered", "opened", "clicked", "replied"].includes(e.status)).length;
+      const status = (e: { status: string | null }) => e.status ?? "";
+      const sent = stepEmails.filter((e) => ["sent", "delivered", "opened", "clicked", "replied"].includes(status(e))).length;
+      const delivered = stepEmails.filter((e) => ["delivered", "opened", "clicked", "replied"].includes(status(e))).length;
       const opened = stepEmails.filter((e) => e.openedAt !== null).length;
       const clicked = stepEmails.filter((e) => e.clickedAt !== null).length;
       const replied = stepEmails.filter((e) => e.repliedAt !== null).length;
       const bounced = stepEmails.filter((e) => e.status === "bounced").length;
 
       return {
-        stepNumber: step.stepNumber,
+        stepNumber: step.stepNumber ?? 0,
         sent,
         delivered,
         opened,
@@ -95,7 +95,7 @@ export async function sequencePerformanceHandler(
     results.push({
       sequenceId: seq.id,
       name: seq.name,
-      status: seq.status,
+      status: seq.status ?? "draft",
       totalEnrolled,
       totalCompleted,
       totalReplied,

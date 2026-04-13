@@ -5,7 +5,7 @@
 
 import { inngest } from "./client";
 import { db } from "@/db";
-import { contacts, notifications } from "@/db/schema";
+import { contacts, notifications, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { runSkill } from "@/skills/runner";
 import { inboundLeadEnrichmentSkill } from "@/skills/enrichment/inbound-lead-enrichment";
@@ -67,12 +67,25 @@ export const onContactCreatedEnrichAndQualify = inngest.createFunction(
 
       if (data.priority === "hot") {
         await step.run("notify-hot-lead", async () => {
-          await db.insert(notifications).values({
-            tenantId,
-            type: "new_contact",
-            title: `Hot inbound lead: ${data.contactName || "Unknown"}`,
-            body: `${data.companyName ? `${data.companyName} — ` : ""}Score: ${data.score}. ${data.recommendedAction}`,
-          }).catch(() => {});
+          // Fan out to every user in the tenant — notifications.userId is required.
+          const recipients = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.tenantId, tenantId));
+          if (recipients.length === 0) return;
+          try {
+            await db.insert(notifications).values(
+              recipients.map((u) => ({
+                tenantId,
+                userId: u.id,
+                type: "new_contact" as const,
+                title: `Hot inbound lead: ${data.contactName || "Unknown"}`,
+                body: `${data.companyName ? `${data.companyName} — ` : ""}Score: ${data.score}. ${data.recommendedAction}`,
+              })),
+            );
+          } catch {
+            /* non-critical — never block enrichment on notification failure */
+          }
         });
       }
     }

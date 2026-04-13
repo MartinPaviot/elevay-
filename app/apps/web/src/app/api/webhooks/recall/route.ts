@@ -100,7 +100,11 @@ export async function POST(req: Request) {
 
   // Handle live transcription updates during active call
   if (event.event === "bot.transcription" || event.event === "bot.transcript") {
-    const words = event.data?.data?.words || event.data?.data?.transcript || "";
+    // Recall.ai sends `words` or `transcript` payloads on transcription
+    // events; the typed envelope only exposes status fields, so we cast
+    // through `unknown` to read the dynamic transcript shape.
+    const transcriptData = (event.data as { data?: { words?: unknown; transcript?: unknown } } | undefined)?.data;
+    const words = transcriptData?.words ?? transcriptData?.transcript ?? "";
     const partialTranscript = (meta.partialTranscript as string || "") + " " + (typeof words === "string" ? words : JSON.stringify(words));
 
     // Store partial transcript
