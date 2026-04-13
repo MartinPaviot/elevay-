@@ -51,7 +51,7 @@ export default function DataModelPage() {
     fetch("/api/settings/data-model")
       .then((r) => r.ok ? r.json() : { fields: [] })
       .then((data) => setFields(data.fields || []))
-      .catch(() => {})
+      .catch((e) => console.warn("data-model: fetch failed", e))
       .finally(() => setLoading(false));
   }, []);
 

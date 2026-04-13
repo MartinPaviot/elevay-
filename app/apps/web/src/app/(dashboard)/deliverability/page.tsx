@@ -29,7 +29,7 @@ export default function DeliverabilityPage() {
     fetch("/api/deliverability")
       .then((res) => (res.ok ? res.json() : null))
       .then((d) => setData(d))
-      .catch(() => {})
+      .catch((e) => console.warn("deliverability: fetch failed", e))
       .finally(() => setLoading(false));
   }, []);
 

@@ -254,7 +254,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
     fetch("/api/custom-objects")
       .then((r) => (r.ok ? r.json() : { objectTypes: [] }))
       .then((data) => setCustomObjectTypes(data.objectTypes || []))
-      .catch(() => {});
+      .catch((e) => console.warn("sidebar: custom-objects fetch failed", e));
   }, []);
 
   function isActive(href: string) {

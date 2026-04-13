@@ -348,7 +348,8 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
       fetch("/api/onboarding/analyze-website", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }) })
         .then((res) => res.ok ? res.json() : null)
         .then((data) => { if (data && !data.error) { setWebsiteAnalysis(data); if (data.productDescription && !productDesc && !/unknown|n\/a|<|>/i.test(data.productDescription)) setProductDesc(data.productDescription); } })
-        .catch(() => {}).finally(() => setAnalyzingWebsite(false));
+        .catch((e) => console.warn("onboarding: analyze-website failed", e))
+        .finally(() => setAnalyzingWebsite(false));
       // Apollo ICP enrichment — enriches the analysis with real company data
       fetch("/api/onboarding/enrich-icp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain }) })
         .then((res) => res.ok ? res.json() : null)
@@ -363,7 +364,7 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
             } : null);
           }
         })
-        .catch(() => {});
+        .catch((e) => console.warn("onboarding: enrich-icp failed", e));
     }
   };
 
@@ -401,7 +402,8 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
       setAnalyzingWebsite(true);
       fetch("/api/onboarding/analyze-website", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain, productDescription: productDesc }) })
         .then((res) => res.ok ? res.json() : null).then((data) => { if (data && !data.error) setWebsiteAnalysis(data); })
-        .catch(() => {}).finally(() => setAnalyzingWebsite(false));
+        .catch((e) => console.warn("onboarding: re-analyze-website failed", e))
+        .finally(() => setAnalyzingWebsite(false));
     }
   };
 
@@ -445,7 +447,8 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         // Score ALL companies — await so scores are ready before "Ready" screen
         const ids = accounts.map((a: { id: string }) => a.id);
         if (ids.length > 0) {
-          await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) }).catch(() => {});
+          await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) })
+            .catch((e) => console.warn("onboarding: scoring failed", e));
         }
       }
 
@@ -457,15 +460,17 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
         setTopContacts((cData.contacts || []).slice(0, 5));
       }
 
-      // Embed in background (non-critical for UX)
-      fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "companies" }) }).catch(() => {});
-      fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "contacts" }) }).catch(() => {});
+      // Embed in background (non-critical for UX) — fire-and-forget telemetry-style.
+      fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "companies" }) })
+        .catch((e) => console.warn("onboarding: embed companies failed", e));
+      fetch("/api/embed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "contacts" }) })
+        .catch((e) => console.warn("onboarding: embed contacts failed", e));
       // Email intelligence — fire and forget, don't block onboarding
       if (emailConnected) {
         fetch("/api/onboarding/email-intelligence")
           .then((er) => er.ok ? er.json() : null)
           .then((data) => { if (data) setEmailIntelligence(data); })
-          .catch(() => {});
+          .catch((e) => console.warn("onboarding: email-intelligence failed", e));
       }
       await saveOnboardingData({ step: "complete", onboardingCompleted: true });
 

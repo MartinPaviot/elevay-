@@ -40,7 +40,7 @@ export function PostHogPageTracker({ userId }: { userId?: string }) {
         method: "POST",
         body: JSON.stringify(payload),
         keepalive: true,
-      }).catch(() => {});
+      }).catch(() => { /* fire-and-forget telemetry, intentional */ });
     }
   }, [pathname, userId]);
 
@@ -76,6 +76,6 @@ export function trackEvent(
       method: "POST",
       body: JSON.stringify(payload),
       keepalive: true,
-    }).catch(() => {});
+    }).catch(() => { /* fire-and-forget telemetry, intentional */ });
   }
 }

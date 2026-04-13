@@ -98,7 +98,7 @@ export default function CustomObjectsSettingsPage() {
     fetch("/api/custom-objects")
       .then((r) => (r.ok ? r.json() : { objectTypes: [] }))
       .then((data) => setObjectTypes(data.objectTypes || []))
-      .catch(() => {})
+      .catch((e) => console.warn("custom-objects: fetch failed", e))
       .finally(() => setLoading(false));
   }, []);
 
