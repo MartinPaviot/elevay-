@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateText, stepCountIs } from "ai";
 
@@ -213,6 +213,8 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   const body = await req.json().catch(() => ({}));
   const caseIds = body.cases as string[] | undefined;

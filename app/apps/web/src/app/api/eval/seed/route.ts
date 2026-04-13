@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { evalDatasets, evalCases, chatThreads, chatMessages } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
@@ -10,6 +10,8 @@ import { eq, desc } from "drizzle-orm";
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   const { datasetId, limit } = await req.json();
 

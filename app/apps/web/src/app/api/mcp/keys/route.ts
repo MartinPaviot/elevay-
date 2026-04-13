@@ -23,6 +23,8 @@ export async function GET() {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   try {
     const settings = await getTenantSettings(authCtx.tenantId);

@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { evalDatasets, evalCases } from "@/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
@@ -6,6 +6,8 @@ import { eq, desc, sql } from "drizzle-orm";
 export async function GET() {
   const authCtx = await getAuthContext();
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   const datasets = await db.select({
     id: evalDatasets.id,
@@ -23,6 +25,8 @@ export async function GET() {
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   const { name, description } = await req.json();
   if (!name) return Response.json({ error: "name is required" }, { status: 400 });

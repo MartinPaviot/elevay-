@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { getAgentHealth, getAgentTraces, AGENT_REGISTRY, type AgentHealth } from "@/lib/observability";
 
 export const maxDuration = 30;
@@ -20,6 +20,8 @@ export async function GET(req: Request) {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since") || "7d";

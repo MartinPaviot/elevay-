@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { evalRuns, evalResults, evalCases } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const authCtx = await getAuthContext();
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
   const { id } = await params;
 
   const [run] = await db.select().from(evalRuns).where(eq(evalRuns.id, id)).limit(1);
