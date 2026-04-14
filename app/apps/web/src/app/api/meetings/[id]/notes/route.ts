@@ -44,6 +44,21 @@ export async function GET(
       );
   }
 
+  // Normalize the follow-up draft so the UI always sees either null
+  // or {subject, body}. The old post-call pipeline stored a plain
+  // string in `followUpEmailDraft`; the new PATCH endpoint stores an
+  // object with {subject, body}. Keep supporting both.
+  let followUpDraft: { subject: string; body: string } | null = null;
+  const rawDraft = meta.followUpEmailDraft;
+  if (rawDraft && typeof rawDraft === "object") {
+    followUpDraft = {
+      subject: typeof rawDraft.subject === "string" ? rawDraft.subject : "",
+      body: typeof rawDraft.body === "string" ? rawDraft.body : "",
+    };
+  } else if (typeof rawDraft === "string" && rawDraft.trim()) {
+    followUpDraft = { subject: "", body: rawDraft };
+  }
+
   return Response.json({
     meeting: {
       id: activity.id,
@@ -62,7 +77,8 @@ export async function GET(
     hasTranscript: !!meta.hasTranscript || !!meta.structuredNotes,
     transcriptSource: meta.transcriptSource,
     notes: meta.structuredNotes || null,
-    followUpDraft: meta.followUpEmailDraft || null,
+    followUpDraft,
+    followUpSentAt: meta.followUpSentAt || null,
     tasks: linkedTasks,
     matchedContacts: meta.matchedContacts || [],
   });
