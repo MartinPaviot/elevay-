@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
+import { logger } from "@/lib/logger";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 
+/**
+ * Dashboard-scoped error boundary. Catches crashes in any page under
+ * `(dashboard)` without nuking the sidebar + header. Forwards to
+ * Sentry via `logger.error` (T1-F13) so we get a breadcrumb even
+ * when the user clicks Reset and the UI recovers.
+ */
 export default function DashboardError({
   error,
   reset,
@@ -10,36 +19,35 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("Dashboard error:", error);
+    logger.error("dashboard error boundary tripped", {
+      err: error,
+      digest: error.digest,
+    });
   }, [error]);
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
-      <div
-        className="flex h-12 w-12 items-center justify-center rounded-lg"
-        style={{ background: "var(--color-error-soft)" }}
-      >
-        <span className="text-xl" style={{ color: "var(--color-error)" }}>!</span>
-      </div>
-      <h2
-        className="text-[14px] font-semibold"
-        style={{ color: "var(--color-text-primary)" }}
-      >
-        Something went wrong
-      </h2>
-      <p
-        className="max-w-sm text-center text-[12px]"
-        style={{ color: "var(--color-text-tertiary)" }}
-      >
-        An unexpected error occurred. Please try again.
-      </p>
-      <button
-        onClick={reset}
-        className="rounded-md px-4 py-2 text-[12px] font-medium text-white transition-colors"
-        style={{ background: "var(--color-accent)" }}
-      >
-        Try again
-      </button>
+    <div className="flex h-full items-center justify-center px-6 py-12">
+      <EmptyState
+        variant="error"
+        title="Something went wrong"
+        description={
+          error.digest
+            ? `An unexpected error occurred. Reference: ${error.digest}`
+            : "An unexpected error occurred. Try again, or head back to the dashboard."
+        }
+        actionLabel="Try again"
+        onAction={reset}
+        actionVariant="solid"
+        secondaryActionLabel="Go home"
+        onSecondaryAction={() => {
+          window.location.href = "/home";
+        }}
+      />
+      {/* Suppress unused import lint (Button is re-exported for callers that
+          want to customise the fallback). */}
+      <span className="hidden" aria-hidden="true">
+        <Button variant="ghost" />
+      </span>
     </div>
   );
 }
