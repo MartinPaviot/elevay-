@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, type LucideIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, GitMerge, type LucideIcon } from "lucide-react";
 import { SmartImport } from "@/components/smart-import";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { formatScore, ENRICHMENT_COLORS } from "@/lib/ui-utils";
@@ -13,6 +14,8 @@ import { Badge, PropertyBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
+import { useToast } from "@/components/ui/toast";
 
 function LinkedInIcon({ size = 13 }: { size?: number }) {
   return (
@@ -54,6 +57,8 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function ContactsPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -65,6 +70,7 @@ export default function ContactsPage() {
   const [showSmartImport, setShowSmartImport] = useState(false);
   const [importHistory, setImportHistory] = useState<Array<{ id: string; fileName: string; recordType: string; totalRows: number; createdCount: number; skippedCount: number; companiesCreated: number; status: string; createdAt: string }>>([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const { fields: customFields } = useCustomFields("contact");
 
   const fetchContacts = useCallback(async () => {
@@ -133,6 +139,42 @@ export default function ContactsPage() {
     finally { setEnrichAllRunning(false); }
   }
 
+  // K2 — bulk actions that operate on the current selection. Enrich
+  // reuses the single-shot endpoint; merge navigates to a dedicated
+  // picker page with the selected ids pre-filled.
+  async function bulkEnrichSelected() {
+    const ids = Array.from(selectedRows);
+    if (ids.length === 0) return;
+    for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "enriching" }));
+    try {
+      const res = await fetch("/api/enrich-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds: ids }),
+      });
+      for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
+      if (res.ok) {
+        await fetchContacts();
+        toast(`Enriched ${ids.length} contact${ids.length === 1 ? "" : "s"}.`, "success");
+      } else {
+        toast("Bulk enrichment failed.", "error");
+      }
+    } catch (e) {
+      for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "failed" }));
+      toast("Bulk enrichment failed.", "error");
+      console.warn("contacts: bulk enrich selected failed", e);
+    }
+  }
+
+  function bulkMergeSelected() {
+    const ids = Array.from(selectedRows);
+    if (ids.length < 2) {
+      toast("Select at least 2 contacts to merge.", "info");
+      return;
+    }
+    router.push(`/contacts/merge?ids=${ids.join(",")}`);
+  }
+
   const unenrichedCount = contacts.filter((c) => !isEnriched(c)).length;
 
   const filteredContacts = searchQuery.trim()
@@ -145,12 +187,28 @@ export default function ContactsPage() {
 
   return (
     <div className="flex h-full flex-col">
+      <BulkActionsBar
+        count={selectedRows.size}
+        onClear={() => setSelectedRows(new Set())}
+        actions={[
+          { label: "Enrich", icon: <Zap size={13} />, onClick: bulkEnrichSelected },
+          {
+            label: "Merge",
+            icon: <GitMerge size={13} />,
+            onClick: bulkMergeSelected,
+            disabled: selectedRows.size < 2,
+          },
+        ]}
+      />
       <PageHeader icon={<Users size={16} />} title="Contacts" subtitle={`${contacts.length}`}>
         {unenrichedCount > 0 && (
           <Button variant="outline" size="sm" icon={<Zap size={12} />} onClick={enrichAll} disabled={enrichAllRunning} loading={enrichAllRunning}>
             {enrichAllRunning ? "Enriching..." : `Enrich All (${unenrichedCount})`}
           </Button>
         )}
+        <Button variant="outline" size="sm" icon={<GitMerge size={12} />} onClick={() => router.push("/contacts/merge")}>
+          Find duplicates
+        </Button>
         <Button variant="outline" size="sm" icon={<Upload size={12} />} onClick={() => setShowSmartImport(true)} style={{ color: "var(--color-accent)" }}>
           Smart Import
         </Button>
@@ -185,7 +243,7 @@ export default function ContactsPage() {
 
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <TableSkeleton rows={5} cols={9 + customFields.length} />
+          <TableSkeleton rows={5} cols={10 + customFields.length} />
         ) : filteredContacts.length === 0 ? (
           <EmptyState
             icon={<Users size={28} />}
@@ -196,6 +254,21 @@ export default function ContactsPage() {
           <table className="ls-table">
             <thead>
               <tr>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all contacts"
+                    checked={selectedRows.size > 0 && selectedRows.size === filteredContacts.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRows(new Set(filteredContacts.map((c) => c.id)));
+                      } else {
+                        setSelectedRows(new Set());
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                </th>
                 {([
                   { label: "Contact", icon: Users },
                   { label: "Company", icon: Briefcase },
@@ -227,7 +300,27 @@ export default function ContactsPage() {
                   : "var(--color-text-muted)";
 
                 return (
-                  <tr key={contact.id} className="cursor-pointer" onClick={() => (window.location.href = `/contacts/${contact.id}`)}>
+                  <tr
+                    key={contact.id}
+                    data-selected={selectedRows.has(contact.id) ? "true" : undefined}
+                    className="cursor-pointer"
+                    onClick={() => (window.location.href = `/contacts/${contact.id}`)}
+                  >
+                    {/* Selection checkbox */}
+                    <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${[contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email || contact.id}`}
+                        checked={selectedRows.has(contact.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedRows);
+                          if (e.target.checked) next.add(contact.id);
+                          else next.delete(contact.id);
+                          setSelectedRows(next);
+                        }}
+                        className="h-3.5 w-3.5 rounded"
+                      />
+                    </td>
                     {/* Contact name with avatar + status */}
                     <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2.5">
