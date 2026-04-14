@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SkipLink } from "@/components/a11y/skip-link";
 
 export const metadata: Metadata = {
   title: {
@@ -40,7 +41,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        {children}
+        <SkipLink />
+        <div id="main-content">{children}</div>
       </body>
     </html>
   );
