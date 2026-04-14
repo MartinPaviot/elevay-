@@ -140,34 +140,48 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title }),
         });
-        if (res.ok) {
-          const data = await res.json();
-          const newThreadId = data.thread.id;
-          setThreadId(newThreadId);
-
-          // Save all messages to the new thread
-          await fetch(`/api/chat/threads/${newThreadId}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: messagesToSave, title }),
-          });
-
-          // Update URL without navigation
-          window.history.replaceState(null, "", `/chat?thread=${newThreadId}`);
+        if (!res.ok) {
+          toast("Couldn't save this chat. It'll stay in this tab until reload.", "warning");
+          console.warn("chat: create thread failed", { status: res.status });
+          return;
         }
-      } catch {
-        // Silent fail — messages stay in memory
+        const data = await res.json();
+        const newThreadId = data.thread.id;
+        setThreadId(newThreadId);
+
+        // Save all messages to the new thread
+        const appendRes = await fetch(`/api/chat/threads/${newThreadId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: messagesToSave, title }),
+        });
+        if (!appendRes.ok) {
+          toast("Chat was started but messages didn't save. Reload may drop history.", "warning");
+          console.warn("chat: append-to-new-thread failed", { status: appendRes.status });
+          return;
+        }
+
+        // Update URL without navigation
+        window.history.replaceState(null, "", `/chat?thread=${newThreadId}`);
+      } catch (err) {
+        toast("Couldn't save this chat. It'll stay in this tab until reload.", "warning");
+        console.warn("chat: create thread threw", err);
       }
     } else {
       // Append to existing thread
       try {
-        await fetch(`/api/chat/threads/${threadId}`, {
+        const res = await fetch(`/api/chat/threads/${threadId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messages: messagesToSave }),
         });
-      } catch {
-        // Silent fail
+        if (!res.ok) {
+          toast("New messages failed to save to this chat. Reload may drop them.", "warning");
+          console.warn("chat: append-to-existing-thread failed", { status: res.status });
+        }
+      } catch (err) {
+        toast("New messages failed to save to this chat. Reload may drop them.", "warning");
+        console.warn("chat: append-to-existing-thread threw", err);
       }
     }
 
@@ -420,13 +434,16 @@ export default function ChatPage() {
                           const approveCard = async (cardKey: string, proposalAction: string | undefined, editedFields: Record<string, string | number | null>, entityName?: string) => {
                             setCardExecuting((prev) => ({ ...prev, [cardKey]: true }));
                             try {
-                              // Campaign approval: redirect to sequence page
+                              // Campaign approval: navigate to the sequence detail.
+                              // SPA push instead of a full `window.location.href`
+                              // so the user keeps their chat history in memory —
+                              // they're likely to come back and continue the
+                              // conversation after reviewing the sequence.
                               if (proposalAction === "campaign") {
                                 setCardStatuses((prev) => ({ ...prev, [cardKey]: "approved" }));
-                                // The sequenceId is stored in fields by the proposal tool
-                                const seqId = (editedFields as any).sequenceId;
-                                if (seqId) {
-                                  window.location.href = `/sequences/${seqId}`;
+                                const seqId = (editedFields as Record<string, unknown>).sequenceId;
+                                if (typeof seqId === "string" && seqId) {
+                                  router.push(`/sequences/${seqId}`);
                                 }
                                 return;
                               }
