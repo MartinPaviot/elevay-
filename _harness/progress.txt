@@ -13,4 +13,15 @@
 2026-04-13T00:00:00Z | T1-F8 | MERGED main (ff) at 59c1501
 2026-04-13T00:00:00Z | T1-F1 | MERGED main (ff) at 43b0d57
 2026-04-13T00:00:00Z | T1-F10 | MERGED main (ff) at 02b03ec
-2026-04-13T00:00:00Z | SESSION | PAUSED | 4/13 foundations done; partial report at _reports/t1-phase1-progress.md
+2026-04-13T00:00:00Z | T1-Prep | MERGED main (ff) at 7301ed1
+2026-04-13T00:00:00Z | T1-Toast | MERGED main (ff) at 5773c86
+2026-04-13T00:00:00Z | T1-F11 | MERGED main (ff) at 8230d04
+2026-04-13T00:00:00Z | T1-F6 | MERGED main (ff) at c388f9e
+2026-04-13T00:00:00Z | T1-F12 | MERGED main (ff) at 9318cd2
+2026-04-13T00:00:00Z | T1-F9 | MERGED main (ff) at bc0d602
+2026-04-13T00:00:00Z | T1-F3 | MERGED main (ff) at 80b548a
+2026-04-13T00:00:00Z | T1-F5 | MERGED main (ff) at d8b737b
+2026-04-13T00:00:00Z | T1-F4 | MERGED main (ff) at 3ec6658
+2026-04-13T00:00:00Z | T1-F2 | MERGED main (ff) at 7271887
+2026-04-13T00:00:00Z | T1-F13 | MERGED main (ff) at 8931830
+2026-04-13T00:00:00Z | T1-PHASE-1 | COMPLETE | 13/13 foundations merged; report at _reports/t1-phase1-completion.md
