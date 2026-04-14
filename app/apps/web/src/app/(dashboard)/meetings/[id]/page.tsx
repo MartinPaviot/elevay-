@@ -5,11 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Calendar, Clock, MapPin, Users, ExternalLink,
   FileText, Upload, CheckCircle2, AlertTriangle,
-  ChevronDown, ChevronRight, Send, Plus, Loader2, MessageSquare
+  ChevronDown, ChevronRight, Send, Plus, Loader2, MessageSquare,
+  Edit2, Check, X, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/ui/page-header";
 import { LiveExtraction } from "@/components/live-extraction";
+import { useToast } from "@/components/ui/toast";
 
 interface MeetingNotes {
   summary: string;
@@ -44,7 +45,8 @@ interface MeetingData {
   hasTranscript: boolean;
   transcriptSource: string | null;
   notes: MeetingNotes | null;
-  followUpDraft: string | null;
+  followUpDraft: { subject: string; body: string } | null;
+  followUpSentAt: string | null;
   tasks: Array<{ id: string; title: string; status: string }>;
   matchedContacts: Array<{ name: string; contactId: string | null }>;
 }
@@ -98,6 +100,7 @@ function BuyingSignalCard({ label, value }: { label: string; value: string | str
 export default function MeetingDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast();
   const meetingId = params.id as string;
 
   const [data, setData] = useState<MeetingData | null>(null);
@@ -108,6 +111,23 @@ export default function MeetingDetailPage() {
   const [dragOver, setDragOver] = useState(false);
   const [meetingPrep, setMeetingPrep] = useState<string | null>(null);
   const [generatingPrep, setGeneratingPrep] = useState(false);
+
+  // M1 — inline edit state for summary + key points.
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [savingSummary, setSavingSummary] = useState(false);
+  const [editingKeyPoints, setEditingKeyPoints] = useState(false);
+  const [keyPointsDraft, setKeyPointsDraft] = useState<string[]>([]);
+  const [savingKeyPoints, setSavingKeyPoints] = useState(false);
+
+  // M1 — follow-up draft edit state.
+  const [editingDraft, setEditingDraft] = useState(false);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  // M2 — send follow-up.
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
 
   const fetchMeeting = useCallback(async () => {
     try {
@@ -176,6 +196,113 @@ export default function MeetingDetailPage() {
     } catch { /* silent */ }
     setProcessingPostCall(false);
   };
+
+  async function patchNotes(partial: Partial<MeetingNotes>): Promise<boolean> {
+    if (!data?.notes) return false;
+    const next = { ...data.notes, ...partial };
+    const res = await fetch(`/api/meetings/${meetingId}/notes`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ structuredNotes: next }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast((body as { error?: string }).error || "Failed to save notes.", "error");
+      return false;
+    }
+    return true;
+  }
+
+  async function saveSummary() {
+    if (!data?.notes) return;
+    const trimmed = summaryDraft.trim();
+    if (trimmed === data.notes.summary) {
+      setEditingSummary(false);
+      return;
+    }
+    setSavingSummary(true);
+    const ok = await patchNotes({ summary: trimmed });
+    setSavingSummary(false);
+    if (ok) {
+      toast("Summary updated.", "success");
+      setEditingSummary(false);
+      await fetchMeeting();
+    }
+  }
+
+  async function saveKeyPoints() {
+    if (!data?.notes) return;
+    const cleaned = keyPointsDraft.map((p) => p.trim()).filter(Boolean);
+    if (JSON.stringify(cleaned) === JSON.stringify(data.notes.keyPoints)) {
+      setEditingKeyPoints(false);
+      return;
+    }
+    setSavingKeyPoints(true);
+    const ok = await patchNotes({ keyPoints: cleaned });
+    setSavingKeyPoints(false);
+    if (ok) {
+      toast("Key points updated.", "success");
+      setEditingKeyPoints(false);
+      await fetchMeeting();
+    }
+  }
+
+  async function saveFollowUpDraft() {
+    const subject = draftSubject.trim();
+    const body = draftBody.trim();
+    if (!subject || !body) {
+      toast("Subject and body are both required.", "info");
+      return;
+    }
+    setSavingDraft(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/notes`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followUpEmailDraft: { subject, body } }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        toast((errBody as { error?: string }).error || "Failed to save draft.", "error");
+        return;
+      }
+      toast("Follow-up draft saved.", "success");
+      setEditingDraft(false);
+      await fetchMeeting();
+    } catch (e) {
+      console.warn("meeting-detail: saveFollowUpDraft failed", e);
+      toast("Failed to save draft — network error.", "error");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  async function sendFollowUp() {
+    if (!data) return;
+    if (data.followUpSentAt) {
+      toast("Follow-up has already been sent.", "info");
+      return;
+    }
+    setSendingFollowUp(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/notes/send-follow-up`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        toast((errBody as { error?: string }).error || "Failed to send follow-up.", "error");
+        return;
+      }
+      const result = (await res.json()) as { recipients: string[] };
+      toast(`Follow-up sent to ${result.recipients.length} recipient${result.recipients.length === 1 ? "" : "s"}.`, "success");
+      await fetchMeeting();
+    } catch (e) {
+      console.warn("meeting-detail: sendFollowUp failed", e);
+      toast("Failed to send follow-up — network error.", "error");
+    } finally {
+      setSendingFollowUp(false);
+    }
+  }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -370,23 +497,107 @@ export default function MeetingDetailPage() {
       {/* Notes or Upload */}
       {notes ? (
         <div className="space-y-4">
-          {/* Summary */}
+          {/* Summary — inline editable (M1) */}
           <CollapsibleSection title="Summary" icon={FileText}>
-            <p className="text-sm text-gray-700 dark:text-gray-300">{notes.summary}</p>
+            {editingSummary ? (
+              <div className="space-y-2">
+                <textarea
+                  value={summaryDraft}
+                  onChange={(e) => setSummaryDraft(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 text-sm text-gray-900 dark:text-gray-100 resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={saveSummary} disabled={savingSummary}>
+                    {savingSummary ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+                    Save
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditingSummary(false)} disabled={savingSummary}>
+                    <X className="h-3 w-3 mr-1" /> Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{notes.summary || <span className="italic text-gray-400">No summary yet.</span>}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSummaryDraft(notes.summary || "");
+                    setEditingSummary(true);
+                  }}
+                >
+                  <Edit2 className="h-3 w-3 mr-1" /> Edit
+                </Button>
+              </div>
+            )}
           </CollapsibleSection>
 
-          {/* Key Points */}
-          {notes.keyPoints.length > 0 && (
-            <CollapsibleSection title={`Key Points (${notes.keyPoints.length})`} icon={FileText}>
-              <ul className="space-y-1.5">
-                {notes.keyPoints.map((point, i) => (
-                  <li key={i} className="text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2">
-                    <span className="text-gray-400 mt-0.5">-</span> {point}
-                  </li>
+          {/* Key Points — inline editable (M1) */}
+          <CollapsibleSection title={`Key Points (${notes.keyPoints.length})`} icon={FileText}>
+            {editingKeyPoints ? (
+              <div className="space-y-2">
+                {keyPointsDraft.map((point, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={point}
+                      onChange={(e) => {
+                        const next = [...keyPointsDraft];
+                        next[i] = e.target.value;
+                        setKeyPointsDraft(next);
+                      }}
+                      className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-1.5 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={() => setKeyPointsDraft(keyPointsDraft.filter((_, j) => j !== i))}
+                      aria-label="Remove key point"
+                      className="rounded-md p-1 text-gray-400 hover:text-red-500"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
                 ))}
-              </ul>
-            </CollapsibleSection>
-          )}
+                <Button variant="ghost" size="sm" onClick={() => setKeyPointsDraft([...keyPointsDraft, ""])}>
+                  <Plus className="h-3 w-3 mr-1" /> Add key point
+                </Button>
+                <div className="flex items-center gap-2 pt-1">
+                  <Button size="sm" onClick={saveKeyPoints} disabled={savingKeyPoints}>
+                    {savingKeyPoints ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+                    Save
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditingKeyPoints(false)} disabled={savingKeyPoints}>
+                    <X className="h-3 w-3 mr-1" /> Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {notes.keyPoints.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {notes.keyPoints.map((point, i) => (
+                      <li key={i} className="text-sm text-gray-700 dark:text-gray-300 flex items-start gap-2">
+                        <span className="text-gray-400 mt-0.5">-</span> {point}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm italic text-gray-400">No key points yet.</p>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setKeyPointsDraft(notes.keyPoints.length > 0 ? [...notes.keyPoints] : [""]);
+                    setEditingKeyPoints(true);
+                  }}
+                >
+                  <Edit2 className="h-3 w-3 mr-1" /> Edit key points
+                </Button>
+              </div>
+            )}
+          </CollapsibleSection>
 
           {/* Action Items */}
           {notes.actionItems.length > 0 && (
@@ -452,20 +663,88 @@ export default function MeetingDetailPage() {
             </CollapsibleSection>
           )}
 
-          {/* Follow-Up Email Draft */}
-          {followUpDraft && (
+          {/* Follow-Up Email Draft — M1 edit + M2 send */}
+          {(followUpDraft || data.followUpSentAt) && (
             <CollapsibleSection title="Follow-Up Email Draft" icon={Send}>
-              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                {followUpDraft}
-              </div>
-              <div className="flex gap-2 mt-3">
-                <Button size="sm">
-                  <Send className="h-3 w-3 mr-1" /> Edit & Send
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(followUpDraft)}>
-                  Copy
-                </Button>
-              </div>
+              {data.followUpSentAt ? (
+                <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+                  <div className="mb-2 flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Follow-up sent on {new Date(data.followUpSentAt).toLocaleString()}
+                  </div>
+                  {followUpDraft?.subject && (
+                    <p className="text-[12px]"><span className="font-semibold">Subject:</span> {followUpDraft.subject}</p>
+                  )}
+                  {followUpDraft?.body && (
+                    <pre className="mt-1 whitespace-pre-wrap font-sans text-[12px]">{followUpDraft.body}</pre>
+                  )}
+                </div>
+              ) : editingDraft ? (
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium uppercase tracking-wider text-gray-500">Subject</label>
+                  <input
+                    type="text"
+                    value={draftSubject}
+                    onChange={(e) => setDraftSubject(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
+                  />
+                  <label className="block pt-1 text-[11px] font-medium uppercase tracking-wider text-gray-500">Body</label>
+                  <textarea
+                    value={draftBody}
+                    onChange={(e) => setDraftBody(e.target.value)}
+                    rows={10}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 resize-y"
+                  />
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button size="sm" onClick={saveFollowUpDraft} disabled={savingDraft}>
+                      {savingDraft ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+                      Save draft
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setEditingDraft(false)} disabled={savingDraft}>
+                      <X className="h-3 w-3 mr-1" /> Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300">
+                    {followUpDraft?.subject && (
+                      <p className="mb-2 font-medium"><span className="text-gray-500">Subject:</span> {followUpDraft.subject}</p>
+                    )}
+                    {followUpDraft?.body ? (
+                      <pre className="whitespace-pre-wrap font-sans">{followUpDraft.body}</pre>
+                    ) : (
+                      <p className="italic text-gray-400">No draft body yet.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      onClick={sendFollowUp}
+                      disabled={sendingFollowUp || !followUpDraft?.subject || !followUpDraft?.body}
+                      loading={sendingFollowUp}
+                    >
+                      <Send className="h-3 w-3 mr-1" /> Send follow-up
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDraftSubject(followUpDraft?.subject || "");
+                        setDraftBody(followUpDraft?.body || "");
+                        setEditingDraft(true);
+                      }}
+                    >
+                      <Edit2 className="h-3 w-3 mr-1" /> Edit draft
+                    </Button>
+                    {followUpDraft?.body && (
+                      <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(followUpDraft.body)}>
+                        Copy
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
             </CollapsibleSection>
           )}
         </div>
