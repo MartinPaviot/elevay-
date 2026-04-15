@@ -13,6 +13,10 @@ import { z } from "zod";
 import { searchSimilar } from "@/lib/embeddings";
 import { makeTool, type ToolContext } from "./context";
 
+function toSnake(camel: string): string {
+  return camel.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+}
+
 export function buildQueryTools(ctx: ToolContext) {
   const { tenantId, authCtx } = ctx;
 
@@ -438,6 +442,133 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
               entityId: a.entityId,
             };
           }),
+        };
+      },
+    }),
+
+    runBasicReport: makeTool({
+      description:
+        "Run an aggregate report over a standard entity (contacts, companies, deals, activities, tasks). Computes count (+ optional sum/avg on a numeric field), optionally grouped by a field. Use for quick pipeline analytics like 'count deals by stage', 'sum deal value by company', 'count activities by type last 30 days'. Simpler than analyzePipeline — returns raw rows.",
+      inputSchema: z.object({
+        objectType: z.enum(["contact", "company", "deal", "activity", "task"]),
+        groupBy: z
+          .string()
+          .optional()
+          .describe(
+            "Field name to group by (e.g. 'stage' for deals, 'activityType' for activities, 'status' for tasks)"
+          ),
+        aggregate: z
+          .enum(["count", "sum", "avg"])
+          .optional()
+          .describe("Aggregation function (default 'count')"),
+        aggregateField: z
+          .string()
+          .optional()
+          .describe("Numeric field for sum/avg (e.g. 'value' on deals, 'score' on contacts)"),
+        startDate: z
+          .string()
+          .optional()
+          .describe("ISO date — filter by createdAt/occurredAt >= this"),
+        endDate: z.string().optional().describe("ISO date — filter by createdAt/occurredAt <= this"),
+      }),
+      execute: async (input) => {
+        const aggregate = input.aggregate ?? "count";
+
+        // Map object types to tables + their date field
+        const mapping: Record<
+          string,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { table: any; dateField: any; allowedGroupBy: string[]; allowedAggField: string[] }
+        > = {
+          contact: {
+            table: contacts,
+            dateField: contacts.createdAt,
+            allowedGroupBy: ["companyId", "title"],
+            allowedAggField: ["score"],
+          },
+          company: {
+            table: companies,
+            dateField: companies.createdAt,
+            allowedGroupBy: ["industry", "size", "revenue"],
+            allowedAggField: ["score"],
+          },
+          deal: {
+            table: deals,
+            dateField: deals.createdAt,
+            allowedGroupBy: ["stage", "companyId", "contactId"],
+            allowedAggField: ["value"],
+          },
+          activity: {
+            table: activities,
+            dateField: activities.occurredAt,
+            allowedGroupBy: ["activityType", "channel", "direction", "entityType"],
+            allowedAggField: [],
+          },
+          task: {
+            table: tasks,
+            dateField: tasks.dueDate,
+            allowedGroupBy: ["status", "priority", "entityType"],
+            allowedAggField: [],
+          },
+        };
+        const cfg = mapping[input.objectType];
+        if (!cfg) return { error: `Unknown objectType: ${input.objectType}` };
+
+        // Validate groupBy / aggregateField against allow-lists (SQL injection guard)
+        if (input.groupBy && !cfg.allowedGroupBy.includes(input.groupBy)) {
+          return {
+            error: `groupBy '${input.groupBy}' not allowed on ${input.objectType}. Allowed: ${cfg.allowedGroupBy.join(", ")}`,
+          };
+        }
+        if (
+          (aggregate === "sum" || aggregate === "avg") &&
+          (!input.aggregateField || !cfg.allowedAggField.includes(input.aggregateField))
+        ) {
+          return {
+            error: `aggregateField required for ${aggregate} on ${input.objectType}. Allowed: ${cfg.allowedAggField.join(", ") || "(none)"}`,
+          };
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const conditions: any[] = [eq(cfg.table.tenantId, tenantId)];
+        if (input.startDate) conditions.push(gte(cfg.dateField, new Date(input.startDate)));
+        if (input.endDate) conditions.push(lte(cfg.dateField, new Date(input.endDate)));
+
+        // Build the aggregate expression
+        let aggExpr;
+        if (aggregate === "count") {
+          aggExpr = sql<number>`count(*)`;
+        } else if (aggregate === "sum") {
+          aggExpr = sql<number>`coalesce(sum(${sql.identifier(toSnake(input.aggregateField!))}), 0)`;
+        } else {
+          aggExpr = sql<number>`coalesce(avg(${sql.identifier(toSnake(input.aggregateField!))}), 0)`;
+        }
+
+        if (input.groupBy) {
+          const groupCol = sql.identifier(toSnake(input.groupBy));
+          const rows = await db
+            .select({ bucket: sql<string>`${groupCol}`, value: aggExpr })
+            .from(cfg.table)
+            .where(and(...conditions))
+            .groupBy(sql`${groupCol}`)
+            .orderBy(desc(aggExpr))
+            .limit(50);
+          return {
+            objectType: input.objectType,
+            aggregate,
+            groupBy: input.groupBy,
+            rows: rows.map((r) => ({ bucket: r.bucket, value: Number(r.value) })),
+          };
+        }
+
+        const [row] = await db
+          .select({ value: aggExpr })
+          .from(cfg.table)
+          .where(and(...conditions));
+        return {
+          objectType: input.objectType,
+          aggregate,
+          value: Number(row?.value || 0),
         };
       },
     }),
