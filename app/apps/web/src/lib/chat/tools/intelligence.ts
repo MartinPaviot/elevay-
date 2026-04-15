@@ -1,0 +1,369 @@
+import { db } from "@/db";
+import { activities, companies, contacts, deals } from "@/db/schema";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import { z } from "zod";
+import { makeTool, type ToolContext } from "./context";
+
+export function buildIntelligenceTools(ctx: ToolContext) {
+  const { tenantId } = ctx;
+
+  return {
+    getDealCoaching: makeTool({
+      description:
+        "Get comprehensive deal context for coaching. Use when user asks for advice on a deal, 'what should I do about X deal', 'help with X opportunity', coaching, or deal strategy.",
+      inputSchema: z.object({
+        dealId: z.string().describe("The deal/opportunity ID"),
+      }),
+      execute: async (input) => {
+        const [deal] = await db
+          .select()
+          .from(deals)
+          .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId)))
+          .limit(1);
+        if (!deal) return { error: "Deal not found" };
+
+        const [relatedContact, relatedCompany, dealActivities] = await Promise.all([
+          deal.contactId
+            ? db
+                .select()
+                .from(contacts)
+                .where(eq(contacts.id, deal.contactId))
+                .limit(1)
+                .then((r) => r[0] || null)
+            : null,
+          deal.companyId
+            ? db
+                .select()
+                .from(companies)
+                .where(eq(companies.id, deal.companyId))
+                .limit(1)
+                .then((r) => r[0] || null)
+            : null,
+          db
+            .select()
+            .from(activities)
+            .where(
+              and(
+                eq(activities.tenantId, tenantId),
+                or(
+                  and(eq(activities.entityType, "deal"), eq(activities.entityId, input.dealId)),
+                  ...(deal.contactId
+                    ? [
+                        and(
+                          eq(activities.entityType, "contact"),
+                          eq(activities.entityId, deal.contactId)
+                        ),
+                      ]
+                    : [])
+                )
+              )
+            )
+            .orderBy(desc(activities.occurredAt))
+            .limit(30),
+        ]);
+
+        const lastActivity = dealActivities[0];
+        const daysSinceLastActivity = lastActivity?.occurredAt
+          ? Math.floor((Date.now() - new Date(lastActivity.occurredAt).getTime()) / 86400000)
+          : null;
+
+        return {
+          deal: {
+            id: deal.id,
+            name: deal.name,
+            stage: deal.stage,
+            value: deal.value,
+            summary: deal.summary,
+            expectedCloseDate: deal.expectedCloseDate,
+          },
+          contact: relatedContact
+            ? {
+                id: relatedContact.id,
+                name: [relatedContact.firstName, relatedContact.lastName].filter(Boolean).join(" "),
+                email: relatedContact.email,
+                title: relatedContact.title,
+              }
+            : null,
+          company: relatedCompany
+            ? {
+                id: relatedCompany.id,
+                name: relatedCompany.name,
+                industry: relatedCompany.industry,
+                score: relatedCompany.score,
+                properties: relatedCompany.properties,
+              }
+            : null,
+          recentActivities: dealActivities.map((a) => ({
+            type: a.activityType,
+            summary: a.summary,
+            date: a.occurredAt,
+            direction: a.direction,
+          })),
+          daysSinceLastActivity,
+          riskLevel:
+            daysSinceLastActivity && daysSinceLastActivity > 14
+              ? "high"
+              : daysSinceLastActivity && daysSinceLastActivity > 7
+                ? "medium"
+                : "low",
+        };
+      },
+    }),
+
+    getAccountIntelligence: makeTool({
+      description:
+        "Get detailed account intelligence including score breakdown, signals, contacts, and activity summary. Use for 'why this account', account analysis, or account strategy questions.",
+      inputSchema: z.object({
+        accountId: z.string().describe("The account/company ID"),
+      }),
+      execute: async (input) => {
+        const [company] = await db
+          .select()
+          .from(companies)
+          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
+          .limit(1);
+        if (!company) return { error: "Account not found" };
+
+        const props = (company.properties || {}) as Record<string, unknown>;
+        const [companyContacts, companyDeals, recentActivity] = await Promise.all([
+          db
+            .select()
+            .from(contacts)
+            .where(
+              and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId))
+            ),
+          db
+            .select()
+            .from(deals)
+            .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId))),
+          db
+            .select()
+            .from(activities)
+            .where(
+              and(
+                eq(activities.tenantId, tenantId),
+                eq(activities.entityType, "company"),
+                eq(activities.entityId, input.accountId)
+              )
+            )
+            .orderBy(desc(activities.occurredAt))
+            .limit(10),
+        ]);
+
+        return {
+          account: {
+            id: company.id,
+            name: company.name,
+            domain: company.domain,
+            industry: company.industry,
+            score: company.score,
+            size: company.size,
+            revenue: company.revenue,
+            description: company.description,
+          },
+          scoreBreakdown: {
+            grade: props.score_grade,
+            fit: props.score_fit,
+            engagement: props.score_engagement,
+            fitReasons: props.score_fit_reasons,
+            engagementReasons: props.score_engagement_reasons,
+          },
+          signals: {
+            technologies: props.technologies,
+            funding: props.total_funding_printed,
+            fundingStage: props.latest_funding_stage,
+            foundedYear: props.founded_year,
+            location: [props.city, props.state, props.country].filter(Boolean).join(", "),
+          },
+          contacts: companyContacts.map((c) => ({
+            id: c.id,
+            name: [c.firstName, c.lastName].filter(Boolean).join(" "),
+            title: c.title,
+            email: c.email,
+          })),
+          deals: companyDeals.map((d) => ({
+            id: d.id,
+            name: d.name,
+            stage: d.stage,
+            value: d.value,
+          })),
+          recentActivity: recentActivity.map((a) => ({
+            type: a.activityType,
+            summary: a.summary,
+            date: a.occurredAt,
+          })),
+        };
+      },
+    }),
+
+    generateMeetingPrep: makeTool({
+      description:
+        "Generate a meeting preparation briefing for an account or contact. Use when user asks to 'prepare for meeting with X', 'briefing for X', or 'meeting prep'.",
+      inputSchema: z.object({
+        accountId: z.string().optional().describe("Account ID to prepare for"),
+        contactId: z.string().optional().describe("Contact ID to prepare for"),
+      }),
+      execute: async (input) => {
+        const data: Record<string, unknown> = {};
+
+        if (input.accountId) {
+          const [company] = await db
+            .select()
+            .from(companies)
+            .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
+            .limit(1);
+          if (company) {
+            data.account = {
+              name: company.name,
+              industry: company.industry,
+              size: company.size,
+              revenue: company.revenue,
+              description: company.description,
+              score: company.score,
+            };
+            const props = (company.properties || {}) as Record<string, unknown>;
+            data.signals = {
+              technologies: props.technologies,
+              funding: props.total_funding_printed,
+              foundedYear: props.founded_year,
+            };
+
+            const companyContacts = await db
+              .select()
+              .from(contacts)
+              .where(
+                and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId))
+              );
+            data.contacts = companyContacts.map((c) => ({
+              name: [c.firstName, c.lastName].filter(Boolean).join(" "),
+              title: c.title,
+              email: c.email,
+            }));
+
+            const companyDeals = await db
+              .select()
+              .from(deals)
+              .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId)));
+            data.deals = companyDeals.map((d) => ({
+              name: d.name,
+              stage: d.stage,
+              value: d.value,
+            }));
+
+            const recentActivity = await db
+              .select()
+              .from(activities)
+              .where(
+                and(
+                  eq(activities.tenantId, tenantId),
+                  eq(activities.entityType, "company"),
+                  eq(activities.entityId, input.accountId)
+                )
+              )
+              .orderBy(desc(activities.occurredAt))
+              .limit(15);
+            data.recentActivity = recentActivity.map((a) => ({
+              type: a.activityType,
+              summary: a.summary,
+              date: a.occurredAt,
+              direction: a.direction,
+            }));
+          }
+        }
+
+        if (input.contactId) {
+          const [contact] = await db
+            .select()
+            .from(contacts)
+            .where(and(eq(contacts.id, input.contactId), eq(contacts.tenantId, tenantId)))
+            .limit(1);
+          if (contact) {
+            data.contact = {
+              name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+              title: contact.title,
+              email: contact.email,
+            };
+            const contactActivity = await db
+              .select()
+              .from(activities)
+              .where(
+                and(
+                  eq(activities.tenantId, tenantId),
+                  eq(activities.entityType, "contact"),
+                  eq(activities.entityId, input.contactId)
+                )
+              )
+              .orderBy(desc(activities.occurredAt))
+              .limit(15);
+            data.interactionHistory = contactActivity.map((a) => ({
+              type: a.activityType,
+              summary: a.summary,
+              date: a.occurredAt,
+            }));
+          }
+        }
+
+        return {
+          meetingPrepData: data,
+          instruction:
+            "Generate a comprehensive meeting prep briefing from this data. Include: key talking points, potential objections, relationship history, and suggested agenda items.",
+        };
+      },
+    }),
+
+    getMeetingNotes: makeTool({
+      description: `Get structured meeting notes (summary, key points, action items, buying signals, decisions) for a specific company or contact. Use when the user asks about a past meeting, what was discussed, action items from a call, or meeting outcomes.
+Examples: "What did we discuss with Acme last call?" "What were the action items from the meeting with Sarah?" "What objections did they raise?"`,
+      inputSchema: z.object({
+        companyName: z.string().optional().describe("Company name to search meetings for"),
+        contactName: z.string().optional().describe("Contact name to search meetings for"),
+        limit: z.number().optional().describe("Max meetings to return (default 5)"),
+      }),
+      execute: async (input) => {
+        let meetingActivities = await db
+          .select()
+          .from(activities)
+          .where(
+            and(
+              eq(activities.tenantId, tenantId),
+              eq(activities.channel, "meeting"),
+              sql`metadata->>'structuredNotes' IS NOT NULL`
+            )
+          )
+          .orderBy(desc(activities.occurredAt))
+          .limit(input.limit ?? 5);
+
+        if (input.companyName || input.contactName) {
+          const searchTerm = (input.companyName || input.contactName || "").toLowerCase();
+          meetingActivities = meetingActivities.filter((a) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const meta = (a.metadata || {}) as any;
+            const attendees = meta.attendees || [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const matchesAttendee = attendees.some((att: any) =>
+              (att.displayName || att.email || "").toLowerCase().includes(searchTerm)
+            );
+            const matchesSummary = (a.summary || "").toLowerCase().includes(searchTerm);
+            return matchesAttendee || matchesSummary;
+          });
+        }
+
+        return {
+          meetings: meetingActivities.map((a) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const meta = (a.metadata || {}) as any;
+            return {
+              id: a.id,
+              title: a.summary,
+              date: meta.startTime || a.occurredAt,
+              notes: meta.structuredNotes,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              attendees: (meta.attendees || []).map((att: any) => att.displayName || att.email),
+              followUpDraft: meta.followUpEmailDraft || null,
+            };
+          }),
+        };
+      },
+    }),
+  };
+}
