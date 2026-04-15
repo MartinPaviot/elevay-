@@ -721,6 +721,52 @@ export const chatMemories = pgTable(
   ]
 );
 
+// CHAT-04: Tool-call audit + undo support.
+// Every tool executed by the chat records an event here. Reversible
+// tools (create/update with snapshot) can be rolled back via
+// undoLastAction. Destructive tools (merge/delete) are gated on this
+// log's presence + reversal support.
+export const toolCallEvents = pgTable(
+  "tool_call_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    userId: text("user_id").references(() => users.id).notNull(),
+    // Which chat thread fired the tool (nullable for non-chat origins)
+    threadId: text("thread_id"),
+    messageId: text("message_id"),
+    // Tool identity
+    toolName: text("tool_name").notNull(),
+    // Tool invocation inputs (validated zod input)
+    args: jsonb("args").default({}),
+    // Tool return value (serialized)
+    result: jsonb("result").default({}),
+    // Lifecycle: proposed | executed | failed | reverted
+    status: text("status").notNull().default("executed"),
+    // Pre-mutation snapshot for reversal. Shape varies by tool:
+    // - createX: { createdId } → reverse = soft/hard delete by id
+    // - updateX: { id, before: <row> } → reverse = restore before
+    // - deleteX: { before: <row> } → reverse = re-insert
+    // - mergeContacts: { survivor: <row>, merged: [<rows>] } → reverse = un-merge
+    snapshot: jsonb("snapshot"),
+    // If this event was reverted, the id of the undo event that did it
+    reverseOpId: text("reverse_op_id"),
+    // When the reversal happened
+    revertedAt: timestamp("reverted_at", { withTimezone: true }),
+    // Error message if status=failed
+    errorMessage: text("error_message"),
+    // Surface context from CHAT-02 (stored for forensics/eval)
+    surfaceType: text("surface_type"),
+    executedAt: timestamp("executed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("tool_call_events_tenant_user_idx").on(table.tenantId, table.userId),
+    index("tool_call_events_tool_name_idx").on(table.toolName),
+    index("tool_call_events_thread_idx").on(table.threadId),
+    index("tool_call_events_executed_at_idx").on(table.executedAt),
+  ]
+);
+
 // ============================================================
 // CONTEXT GRAPH — Bi-temporal knowledge graph for agent memory
 // ============================================================

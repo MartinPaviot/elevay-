@@ -19,6 +19,7 @@ import {
   updateTenantSettings,
   type CustomObjectTypeDef,
 } from "@/lib/tenant-settings";
+import { logToolCall } from "@/lib/chat/tool-call-log";
 import { makeTool, type ToolContext } from "./context";
 
 export function buildCreateTools(ctx: ToolContext) {
@@ -69,6 +70,14 @@ export function buildCreateTools(ctx: ToolContext) {
           .insert(contacts)
           .values({ tenantId, ...input })
           .returning();
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "createContact",
+          args: input as Record<string, unknown>,
+          result: { id: created.id },
+          snapshot: { type: "create", entity: "contact", id: created.id },
+        });
         return {
           created: {
             id: created.id,
@@ -99,6 +108,14 @@ export function buildCreateTools(ctx: ToolContext) {
           .insert(companies)
           .values({ tenantId, ...input })
           .returning();
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "createAccount",
+          args: input as Record<string, unknown>,
+          result: { id: created.id },
+          snapshot: { type: "create", entity: "company", id: created.id },
+        });
         return { created: { id: created.id, name: created.name, domain: created.domain } };
       },
     }),
@@ -130,6 +147,14 @@ export function buildCreateTools(ctx: ToolContext) {
             contactId: input.contactId,
           })
           .returning();
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "createDeal",
+          args: input as Record<string, unknown>,
+          result: { id: created.id },
+          snapshot: { type: "create", entity: "deal", id: created.id },
+        });
         return {
           created: { id: created.id, name: created.name, stage: created.stage, value: created.value },
         };
@@ -172,6 +197,15 @@ export function buildCreateTools(ctx: ToolContext) {
             console.warn("createNote: ingestEpisode failed (non-blocking)", e)
           );
         }
+
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "createNote",
+          args: input as Record<string, unknown>,
+          result: { id: note.id },
+          snapshot: { type: "create", entity: "note", id: note.id },
+        });
 
         return {
           created: {
@@ -358,6 +392,14 @@ export function buildCreateTools(ctx: ToolContext) {
             status: "pending",
           })
           .returning();
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "createTask",
+          args: input as Record<string, unknown>,
+          result: { id: created.id },
+          snapshot: { type: "create", entity: "task", id: created.id },
+        });
         return {
           created: {
             id: created.id,
