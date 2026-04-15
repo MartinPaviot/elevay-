@@ -11,6 +11,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
 import { stageProbability, ageInStage, AGE_BUCKET_COLORS } from "@/lib/deal-helpers";
+import { CloseReasonDialog, type CloseReasonPayload } from "@/components/close-reason-dialog";
 import { usePipelineStages } from "@/hooks/use-custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -277,6 +278,16 @@ export default function OpportunitiesPage() {
   function handleDragOver(e: React.DragEvent, stage: string) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverStage(stage); }
   function handleDragLeave(e: React.DragEvent, el: HTMLDivElement) { if (!el.contains(e.relatedTarget as Node)) setDragOverStage(null); }
 
+  // Y6 — when the drop target is won/lost we pause before firing the
+  // PUT and collect a close reason from the user. Everything else
+  // (drag optimistic update, rollback on failure) still runs through
+  // commitStageChange — the dialog just adds a hop on the happy path.
+  const [pendingClose, setPendingClose] = useState<{
+    dealId: string;
+    outcome: "won" | "lost";
+    prev: Deal[];
+  } | null>(null);
+
   async function handleDrop(e: React.DragEvent, newStage: string) {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/plain");
@@ -284,12 +295,52 @@ export default function OpportunitiesPage() {
     if (!id) return;
     const deal = deals.find((d) => d.id === id);
     if (!deal || deal.stage === newStage) return;
+
     const prev = [...deals];
     setDeals((p) => p.map((d) => (d.id === id ? { ...d, stage: newStage } : d)));
+
+    const lower = newStage.toLowerCase();
+    if (lower === "won" || lower === "lost") {
+      // Hold the close-reason dialog; commit happens on confirm.
+      setPendingClose({ dealId: id, outcome: lower as "won" | "lost", prev });
+      return;
+    }
+    void commitStageChange(id, newStage, prev);
+  }
+
+  async function commitStageChange(
+    id: string,
+    newStage: string,
+    prev: Deal[],
+    closeReason?: CloseReasonPayload
+  ) {
     try {
-      const r = await fetch(`/api/deals/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: newStage }) });
-      if (!r.ok) setDeals(prev); else fetchAnalytics();
-    } catch { setDeals(prev); }
+      const body: Record<string, unknown> = { stage: newStage };
+      if (closeReason) body.closeReason = closeReason;
+      const r = await fetch(`/api/deals/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) setDeals(prev);
+      else fetchAnalytics();
+    } catch {
+      setDeals(prev);
+    }
+  }
+
+  async function handleCloseReasonConfirm(payload: CloseReasonPayload) {
+    if (!pendingClose) return;
+    const { dealId, outcome, prev } = pendingClose;
+    setPendingClose(null);
+    await commitStageChange(dealId, outcome, prev, payload);
+  }
+
+  function handleCloseReasonCancel() {
+    if (!pendingClose) return;
+    // User backed out — roll back the optimistic stage move.
+    setDeals(pendingClose.prev);
+    setPendingClose(null);
   }
 
   function handleCardClick(id: string) { if (!isDraggingRef.current) router.push(`/opportunities/${id}`); }
@@ -911,6 +962,18 @@ export default function OpportunitiesPage() {
           </div>
         )}
       </div>
+
+      <CloseReasonDialog
+        open={pendingClose !== null}
+        outcome={pendingClose?.outcome ?? null}
+        dealName={
+          pendingClose
+            ? (deals.find((d) => d.id === pendingClose.dealId)?.name ?? "this deal")
+            : ""
+        }
+        onConfirm={handleCloseReasonConfirm}
+        onCancel={handleCloseReasonCancel}
+      />
     </div>
   );
 }
