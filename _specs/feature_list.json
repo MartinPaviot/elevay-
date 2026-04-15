@@ -33,12 +33,12 @@
       "status": "completed",
       "estimate_days": 14,
       "tools_added_target": 50,
-      "tools_shipped": 63,
-      "registry_total": 107,
+      "tools_shipped": 69,
+      "registry_total": 113,
       "completed_on": "2026-04-14",
-      "deferred": ["task 1.7 sendEmail (endpoint scope unclear)", "tasks 1.56-1.59 comments CRUD (needs migration to land with Martin)", "task 1.74 researchAgent (folds into CHAT-06)"],
+      "deferred": ["task 1.7 sendEmail (endpoint scope unclear)", "task 1.74 researchAgent (folds into CHAT-06)"],
       "acceptance": "≥95 total chat tools, 100% Gap-A non-destructive shipped, all 264 tests pass + ~100 new tests, phase-6 eval action-completeness ≥0.8",
-      "acceptance_met": "107 tools (14% above target), 464 tests pass, Gap-A + Gap-B non-destructive 100% shipped",
+      "acceptance_met": "113 tools (20% above target), 521 tests pass, Gap-A + Gap-B non-destructive 100% shipped, comments CRUD delivered in migration 0015",
       "checkpoint": true
     },
     {
@@ -61,8 +61,9 @@
       "description": "Ship per-record chat side panel on contacts/accounts/opportunities/meetings detail pages; per-list chat on list views with saved-view context injected; highlight-transcript → Ask from meeting pages; unified ⌘K routing Ask vs search with Tab switch.",
       "dependencies": ["CHAT-02"],
       "milestone": "M2-intelligence",
-      "status": "pending",
+      "status": "in_progress",
       "estimate_days": 10,
+      "progress": "4/5 detail surfaces live (contact/account/deal/meeting ScopedChat integrated). 5/5 surface variants supported in ScopedChat component (global/contact/account/deal/meeting/list). List-page page-level integration + highlight-transcript popover + ⌘K routing deferred.",
       "acceptance": "5/5 detail pages have side-panel chat; Playwright test: from each surface, 'update the stage to negotiation' produces correctly-prefilled ActionCard.",
       "checkpoint": false
     },
@@ -74,7 +75,7 @@
       "milestone": "M2-intelligence",
       "status": "in_progress",
       "estimate_days": 7,
-      "progress": "schema + migration 0012 landed; tool-call-log.ts helper + undoLastAction tool shipped; create* tools instrumented with snapshots. update* instrumentation + /settings/audit UI + destructive ungating deferred to follow-up.",
+      "progress": "schema + migration 0012 landed; tool-call-log.ts helper + undoLastAction + listRecentToolCalls tools shipped; 9 tools instrumented with snapshots (createContact/Account/Deal/Note/Task + updateContact/Account/Deal/Task). /settings/audit UI page + destructive ungating (after E2E undo test) deferred.",
       "acceptance": "E2E test: create contact → undo → contact soft-deleted → re-do → contact visible. All 10+ destructive tools flagged in CHAT-01 can now be ungated.",
       "checkpoint": true
     },
@@ -86,7 +87,7 @@
       "milestone": "M3-collaboration",
       "status": "in_progress",
       "estimate_days": 7,
-      "progress": "schema landed (parent_message_id + branch_id on chat_messages, new shared_prompts table, migration 0014). createSharedPrompt/listSharedPrompts/deleteSharedPrompt tools shipped. UI for Edit→fork, branch breadcrumb, compare mode deferred. Chat route.ts still inserts linear (branch_id='main') — DAG insertion logic deferred.",
+      "progress": "schema landed (migration 0014). createSharedPrompt/listSharedPrompts/deleteSharedPrompt tools shipped. DAG insertion + branch-filter GET + branches summary shipped in chat/threads/[id]/route.ts — POST accepts forkFromMessageId to branch on Edit. UI for Edit→fork button, breadcrumb, compare mode still deferred to frontend work.",
       "acceptance": "Editing a prior user message forks without overwriting; shared workspace prompt visible to all tenant users via palette.",
       "checkpoint": false
     },
