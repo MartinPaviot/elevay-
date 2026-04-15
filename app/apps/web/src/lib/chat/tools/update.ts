@@ -19,6 +19,7 @@ import {
   updateTenantSettings,
   type CustomObjectTypeDef,
 } from "@/lib/tenant-settings";
+import { logToolCall } from "@/lib/chat/tool-call-log";
 import { makeTool, type ToolContext } from "./context";
 
 export function buildUpdateTools(ctx: ToolContext) {
@@ -67,6 +68,20 @@ export function buildUpdateTools(ctx: ToolContext) {
           .where(and(eq(contacts.id, input.contactId), eq(contacts.tenantId, tenantId)))
           .returning();
 
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "updateContact",
+          args: input as unknown as Record<string, unknown>,
+          result: { id: updated.id },
+          snapshot: {
+            type: "update",
+            entity: "contact",
+            id: existing.id,
+            before: existing as unknown as Record<string, unknown>,
+          },
+        });
+
         return {
           updated: {
             id: updated.id,
@@ -94,7 +109,7 @@ export function buildUpdateTools(ctx: ToolContext) {
       }),
       execute: async (input) => {
         const [existing] = await db
-          .select({ id: companies.id })
+          .select()
           .from(companies)
           .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
           .limit(1);
@@ -119,6 +134,20 @@ export function buildUpdateTools(ctx: ToolContext) {
           .set(updates as any)
           .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
           .returning();
+
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "updateAccount",
+          args: input as unknown as Record<string, unknown>,
+          result: { id: updated.id },
+          snapshot: {
+            type: "update",
+            entity: "company",
+            id: existing.id,
+            before: existing as unknown as Record<string, unknown>,
+          },
+        });
 
         return {
           updated: {
@@ -180,6 +209,20 @@ export function buildUpdateTools(ctx: ToolContext) {
           .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId)))
           .returning();
 
+        await logToolCall({
+          tenantId,
+          userId,
+          toolName: "updateDeal",
+          args: input as unknown as Record<string, unknown>,
+          result: { id: updated.id },
+          snapshot: {
+            type: "update",
+            entity: "deal",
+            id: existing.id,
+            before: existing as unknown as Record<string, unknown>,
+          },
+        });
+
         if (input.stage !== undefined && input.stage !== oldStage) {
           await db.insert(activities).values({
             tenantId,
@@ -240,6 +283,13 @@ export function buildUpdateTools(ctx: ToolContext) {
           return { error: "No fields to update" };
         }
 
+        // Snapshot before update for reversal
+        const [before] = await db
+          .select()
+          .from(tasks)
+          .where(and(eq(tasks.id, input.taskId), eq(tasks.tenantId, tenantId)))
+          .limit(1);
+
         const [updated] = await db
           .update(tasks)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -247,6 +297,22 @@ export function buildUpdateTools(ctx: ToolContext) {
           .where(and(eq(tasks.id, input.taskId), eq(tasks.tenantId, tenantId)))
           .returning();
         if (!updated) return { error: "Task not found" };
+
+        if (before) {
+          await logToolCall({
+            tenantId,
+            userId,
+            toolName: "updateTask",
+            args: input as unknown as Record<string, unknown>,
+            result: { id: updated.id },
+            snapshot: {
+              type: "update",
+              entity: "task",
+              id: before.id,
+              before: before as unknown as Record<string, unknown>,
+            },
+          });
+        }
 
         return {
           updated: {
