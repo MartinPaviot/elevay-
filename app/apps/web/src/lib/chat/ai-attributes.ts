@@ -15,6 +15,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { getTenantSettings, type CustomFieldDef } from "@/lib/tenant-settings";
+import { inngest } from "@/inngest/client";
 
 export interface RunAiAttributeResult {
   ok: boolean;
@@ -102,14 +103,31 @@ export async function runAiAttribute(
 
   const kind = field.aiConfig.kind;
 
-  // Long-running "research" defers to Inngest (not yet implemented).
+  // Long-running "research" enqueues to the Inngest research-agent
+  // worker. Returns a jobId immediately; the UI / tool caller polls or
+  // subscribes to research-agent/completed events for the final text.
   if (kind === "research") {
-    return {
-      ok: false,
-      error:
-        "research AI attributes are queued to Inngest — worker not yet implemented. Use prompt/summarize/classify for now.",
-      jobId: `research-${crypto.randomUUID()}`,
-    };
+    const jobId = `research-${crypto.randomUUID()}`;
+    const prompt = field.aiConfig.prompt || `Research this ${recordEntityType} in depth.`;
+    try {
+      await inngest.send({
+        name: "research-agent/run",
+        data: {
+          tenantId,
+          entityType: recordEntityType,
+          recordId,
+          fieldId,
+          prompt,
+          jobId,
+        },
+      });
+      return { ok: true, jobId, value: undefined };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Failed to enqueue research job: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
   }
 
   const model = pickModel();

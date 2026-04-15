@@ -14,6 +14,7 @@ import { prepareCampaign } from "@/inngest/campaign-functions";
 import { handleReplyIntelligently } from "@/inngest/reply-handler";
 import { weeklySignalScan, weeklyChurnRiskScan, weeklyExpansionScan, weeklyFundingMonitor, monthlyChampionTracker } from "@/inngest/skill-crons";
 import { onContactCreatedEnrichAndQualify } from "@/inngest/skill-events";
+import { researchAgent } from "@/inngest/research-agent";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -54,5 +55,7 @@ export const { GET, POST, PUT } = serve({
     monthlyChampionTracker,
     // Skills: event-driven
     onContactCreatedEnrichAndQualify,
+    // CHAT-06: Research agent (AI attribute long-running compute)
+    researchAgent,
   ],
 });
