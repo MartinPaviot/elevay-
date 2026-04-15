@@ -8,6 +8,7 @@ import {
   sequences,
   sequenceSteps,
   tasks,
+  tenants,
 } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -15,7 +16,8 @@ import { ingestEpisode } from "@/lib/context-graph";
 import { makeTool, type ToolContext } from "./context";
 
 export function buildCreateTools(ctx: ToolContext) {
-  const { tenantId, userId, agentApprovalMode } = ctx;
+  const { tenantId, userId, agentApprovalMode, authCtx } = ctx;
+  const isAdmin = authCtx.role === "admin";
 
   const createContactSchema = z.object({
     firstName: z.string().optional(),
@@ -358,6 +360,48 @@ export function buildCreateTools(ctx: ToolContext) {
             status: created.status,
           },
         };
+      },
+    }),
+
+    createKnowledgeEntry: makeTool({
+      description:
+        "Add a knowledge base entry to the workspace's 'world model'. These entries are injected into the chat system prompt as business context. Admin-only. Use when the user says 'remember that our value prop is X', 'add this to our knowledge base', 'teach the assistant about Y'.",
+      inputSchema: z.object({
+        topic: z.string().describe("Short topic title (e.g. 'Pricing tiers', 'Value prop')"),
+        content: z.string().describe("The knowledge content itself — can be multiple paragraphs"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+        if (!input.topic.trim() || !input.content.trim()) {
+          return { error: "Topic and content required" };
+        }
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+        const knowledge = (settings.knowledge as Array<{ id: string; topic: string; content: string }>) || [];
+
+        const newEntry = {
+          id: crypto.randomUUID(),
+          topic: input.topic.trim(),
+          content: input.content.trim(),
+        };
+        knowledge.push(newEntry);
+
+        await db
+          .update(tenants)
+          .set({
+            settings: { ...settings, knowledge },
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId));
+
+        return { created: newEntry };
       },
     }),
   };

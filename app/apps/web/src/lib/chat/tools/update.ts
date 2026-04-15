@@ -936,5 +936,239 @@ export function buildUpdateTools(ctx: ToolContext) {
         return { updated: { tenantId, fieldsChanged: changed } };
       },
     }),
+
+    updateKnowledgeEntry: makeTool({
+      description:
+        "Edit an existing knowledge base entry (topic and/or content). Admin-only. Use when the user asks to 'update our pricing knowledge', 'fix the value-prop entry'.",
+      inputSchema: z.object({
+        id: z.string().describe("Knowledge entry ID (from createKnowledgeEntry)"),
+        topic: z.string().optional(),
+        content: z.string().optional(),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+        const knowledge = (settings.knowledge as Array<{ id: string; topic: string; content: string }>) || [];
+        const idx = knowledge.findIndex((k) => k.id === input.id);
+        if (idx === -1) return { error: "Knowledge entry not found" };
+
+        if (input.topic !== undefined) knowledge[idx].topic = input.topic.trim();
+        if (input.content !== undefined) knowledge[idx].content = input.content.trim();
+
+        await db
+          .update(tenants)
+          .set({
+            settings: { ...settings, knowledge },
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: knowledge[idx] };
+      },
+    }),
+
+    updatePipelineStages: makeTool({
+      description:
+        "Replace the workspace's pipeline stages wholesale. Pass the full array — partial updates not supported. Each stage needs { id, name, description, category: 'in_progress' | 'done' }. Admin-only.",
+      inputSchema: z.object({
+        stages: z
+          .array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              description: z.string(),
+              category: z.enum(["in_progress", "done"]),
+            })
+          )
+          .describe("Full ordered list of pipeline stages"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+
+        await db
+          .update(tenants)
+          .set({
+            settings: { ...settings, pipelineStages: input.stages },
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: { stageCount: input.stages.length } };
+      },
+    }),
+
+    updateCustomFieldSchema: makeTool({
+      description:
+        "Replace the workspace's custom field definitions wholesale. Each field needs { entityType: 'contact'|'company'|'deal', name, type, aiFillMode, options? }. Admin-only. Pass the full array — partial updates not supported.",
+      inputSchema: z.object({
+        fields: z.array(
+          z.object({
+            entityType: z.enum(["contact", "company", "deal"]),
+            name: z.string(),
+            type: z.string().describe("text | number | select | multiselect | date | boolean"),
+            aiFillMode: z.string().describe("auto | manual | off"),
+            options: z.array(z.string()).optional(),
+          })
+        ),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+        await db
+          .update(tenants)
+          .set({ settings: { ...settings, customFields: input.fields } })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: { fieldCount: input.fields.length } };
+      },
+    }),
+
+    updateCustomSignalDefinitions: makeTool({
+      description:
+        "Replace the workspace's custom buying-signal definitions. Each is { name, enabled }. Admin-only. Used to extend the default signal taxonomy with workspace-specific signals.",
+      inputSchema: z.object({
+        customSignals: z.array(
+          z.object({
+            name: z.string(),
+            enabled: z.boolean(),
+          })
+        ),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+        await db
+          .update(tenants)
+          .set({
+            settings: { ...settings, customSignals: input.customSignals },
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: { signalCount: input.customSignals.length } };
+      },
+    }),
+
+    updateWorkflows: makeTool({
+      description:
+        "Replace the workspace's automation workflow definitions. Each workflow has { id, name, trigger: { type }, actions: [{ type, params }] }. Admin-only. Allowed triggers: deal_stage_changed, contact_created, email_received, task_due, schedule, deal_won, deal_lost, score_changed, enrichment_completed, sequence_reply_received, meeting_completed, account_created. Allowed actions: send_notification, create_task, send_email, call_webhook, update_field, ai_action, enroll_sequence, assign_owner, add_tag. Max 100 workflows, 20 actions per workflow.",
+      inputSchema: z.object({
+        workflows: z
+          .array(z.record(z.string(), z.unknown()))
+          .describe("Array of WorkflowDef objects"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const allowedTriggers = new Set([
+          "deal_stage_changed",
+          "contact_created",
+          "email_received",
+          "task_due",
+          "schedule",
+          "deal_won",
+          "deal_lost",
+          "score_changed",
+          "enrichment_completed",
+          "sequence_reply_received",
+          "meeting_completed",
+          "account_created",
+        ]);
+        const allowedActions = new Set([
+          "send_notification",
+          "create_task",
+          "send_email",
+          "call_webhook",
+          "update_field",
+          "ai_action",
+          "enroll_sequence",
+          "assign_owner",
+          "add_tag",
+        ]);
+
+        if (input.workflows.length > 100) {
+          return { error: "Maximum 100 workflows per workspace" };
+        }
+
+        for (const wf of input.workflows) {
+          if (typeof wf.id !== "string" || !wf.id.trim()) {
+            return { error: "Each workflow needs an id" };
+          }
+          if (typeof wf.name !== "string" || !wf.name.trim()) {
+            return { error: `Workflow ${wf.id}: name required` };
+          }
+          const trigger = wf.trigger as { type?: string } | undefined;
+          if (!trigger || !allowedTriggers.has(trigger.type || "")) {
+            return { error: `Workflow ${wf.id}: invalid trigger.type` };
+          }
+          const actions = wf.actions as Array<{ type?: string; params?: unknown }> | undefined;
+          if (!Array.isArray(actions) || actions.length < 1) {
+            return { error: `Workflow ${wf.id}: at least 1 action required` };
+          }
+          if (actions.length > 20) {
+            return { error: `Workflow ${wf.id}: maximum 20 actions` };
+          }
+          for (const a of actions) {
+            if (!allowedActions.has(a.type || "")) {
+              return { error: `Workflow ${wf.id}: invalid action.type "${a.type}"` };
+            }
+            if (!a.params || typeof a.params !== "object") {
+              return { error: `Workflow ${wf.id}: action.params must be an object` };
+            }
+          }
+        }
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const settings = (tenant.settings || {}) as Record<string, unknown>;
+        await db
+          .update(tenants)
+          .set({
+            settings: { ...settings, workflows: input.workflows },
+            updatedAt: new Date(),
+          })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: { workflowCount: input.workflows.length } };
+      },
+    }),
   };
 }
