@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
+import { stageProbability, ageInStage, AGE_BUCKET_COLORS } from "@/lib/deal-helpers";
 import { usePipelineStages } from "@/hooks/use-custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,9 @@ interface Deal {
   ownerFirstName: string | null;
   ownerLastName: string | null;
   createdAt: string | null;
+  // Y8 / Y12 — surfaced from /api/opportunities so the table view can
+  // render the probability + age-in-stage columns without a second fetch.
+  updatedAt: string | null;
 }
 
 interface Account { id: string; name: string; domain: string | null }
@@ -70,6 +74,11 @@ const DISPLAY_PROPS_ALL = [
   { key: "summary", label: "Summary" },
   { key: "risk", label: "Risk level" },
   { key: "createdAt", label: "Created at" },
+  // Y8 / Y12 — opt-in by default-off so the table stays slim until the
+  // user explicitly turns these on. Both are pure derivations from
+  // existing data — no schema or API change behind them.
+  { key: "probability", label: "Probability" },
+  { key: "ageInStage", label: "Age in stage" },
 ] as const;
 type DisplayPropKey = (typeof DISPLAY_PROPS_ALL)[number]["key"];
 
@@ -666,6 +675,8 @@ export default function OpportunitiesPage() {
                     { key: "name" as SortField, label: "Owner", always: false, prop: "owner" as DisplayPropKey, noSort: true },
                     { key: "expectedCloseDate" as SortField, label: "Close date", always: false, prop: "expectedCloseDate" as DisplayPropKey },
                     { key: "name" as SortField, label: "Risk", always: false, prop: "risk" as DisplayPropKey, noSort: true },
+                    { key: "name" as SortField, label: "Probability", always: false, prop: "probability" as DisplayPropKey, noSort: true, right: true },
+                    { key: "name" as SortField, label: "Age in stage", always: false, prop: "ageInStage" as DisplayPropKey, noSort: true },
                   ].filter((col) => col.always || (col.prop && displayProps.has(col.prop))).map((col) => (
                     <th key={col.label} className={`px-3 py-2 text-[11px] font-semibold uppercase tracking-wider ${col.right ? "text-right" : ""}`} style={{ color: "var(--color-text-secondary)" }}>
                       {col.noSort ? col.label : (
@@ -700,6 +711,42 @@ export default function OpportunitiesPage() {
                     )}
                     {displayProps.has("expectedCloseDate") && <td className="px-3 py-2.5 text-[12px]" style={{ color: formatCloseDate(deal.expectedCloseDate)?.includes("overdue") ? "var(--color-error)" : "var(--color-text-secondary)" }}>{formatCloseDate(deal.expectedCloseDate) || "—"}</td>}
                     {displayProps.has("risk") && <td className="px-3 py-2.5">{getRiskBadge(deal) || <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>—</span>}</td>}
+                    {/* Y8 — probability column. Pure derive from stage so
+                        a future per-deal override (Y8 follow-up) just
+                        needs to swap the helper call for a property
+                        lookup. */}
+                    {displayProps.has("probability") && (() => {
+                      const p = stageProbability(deal.stage);
+                      return (
+                        <td className="px-3 py-2.5 text-right text-[12px] font-medium tabular-nums" style={{ color: p === null ? "var(--color-text-tertiary)" : "var(--color-text-secondary)" }}>
+                          {p === null ? "—" : `${p}%`}
+                        </td>
+                      );
+                    })()}
+                    {/* Y12 — age-in-stage badge. Uses updatedAt as the
+                        best-available "last activity on this deal"
+                        timestamp. Won/Lost rows render "—" because
+                        ageInStage returns null for closed stages. */}
+                    {displayProps.has("ageInStage") && (() => {
+                      const age = ageInStage(deal.updatedAt, deal.stage);
+                      if (!age) {
+                        return (
+                          <td className="px-3 py-2.5 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>—</td>
+                        );
+                      }
+                      const c = AGE_BUCKET_COLORS[age.bucket];
+                      return (
+                        <td className="px-3 py-2.5">
+                          <span
+                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+                            style={{ background: c.bg, color: c.text }}
+                            title={`${age.long} in this stage`}
+                          >
+                            {age.short}
+                          </span>
+                        </td>
+                      );
+                    })()}
                   </tr>
                 ))}
                 {sortedDeals.length === 0 && <tr><td colSpan={10} className="px-3 py-8 text-center text-sm" style={{ color: "var(--color-text-tertiary)" }}>No deals match your filters</td></tr>}
