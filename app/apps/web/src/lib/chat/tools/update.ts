@@ -4,16 +4,20 @@ import {
   companies,
   contacts,
   deals,
+  notificationPreferences,
   sequences,
   sequenceSteps,
   tasks,
+  tenants,
+  users,
 } from "@/db/schema";
 import { and, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { makeTool, type ToolContext } from "./context";
 
 export function buildUpdateTools(ctx: ToolContext) {
-  const { tenantId, userId } = ctx;
+  const { tenantId, userId, authCtx } = ctx;
+  const isAdmin = authCtx.role === "admin";
 
   return {
     updateContact: makeTool({
@@ -646,6 +650,290 @@ export function buildUpdateTools(ctx: ToolContext) {
             })),
           },
         };
+      },
+    }),
+
+    updateICP: makeTool({
+      description:
+        "Update the workspace's Ideal Customer Profile settings (productDescription, salesMotion, primaryChallenge, aiTone, targetIndustries[], targetCompanySizes[], targetRoles, targetGeographies[]). Admin-only. Used to tune the AI's understanding of who to target and how.",
+      inputSchema: z.object({
+        productDescription: z.string().optional(),
+        salesMotion: z.string().optional(),
+        primaryChallenge: z.string().optional(),
+        aiTone: z.string().optional(),
+        targetIndustries: z.array(z.string()).optional(),
+        targetCompanySizes: z.array(z.string()).optional(),
+        targetRoles: z.string().optional(),
+        targetGeographies: z.array(z.string()).optional(),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const current = (tenant.settings || {}) as Record<string, unknown>;
+        const next: Record<string, unknown> = { ...current };
+        const fields: Array<keyof typeof input> = [
+          "productDescription",
+          "salesMotion",
+          "primaryChallenge",
+          "aiTone",
+          "targetIndustries",
+          "targetCompanySizes",
+          "targetRoles",
+          "targetGeographies",
+        ];
+        let changedCount = 0;
+        for (const f of fields) {
+          if (input[f] !== undefined) {
+            next[f] = input[f];
+            changedCount++;
+          }
+        }
+        if (changedCount === 0) return { error: "No fields to update" };
+
+        await db
+          .update(tenants)
+          .set({ settings: next, updatedAt: new Date() })
+          .where(eq(tenants.id, tenantId));
+
+        return {
+          updated: { tenantId, fieldsChanged: changedCount },
+        };
+      },
+    }),
+
+    updateWorkspace: makeTool({
+      description:
+        "Update the workspace name, primary domain, additional domains, or agentApprovalMode (auto|ask|off). Admin-only. agentApprovalMode controls whether the chat asks for confirmation before create/update mutations.",
+      inputSchema: z.object({
+        name: z.string().optional(),
+        companyDomain: z.string().optional(),
+        companyDomains: z.array(z.string()).optional(),
+        agentApprovalMode: z.enum(["auto", "ask", "off"]).optional(),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        if (input.name !== undefined) {
+          await db
+            .update(tenants)
+            .set({ name: input.name.trim() })
+            .where(eq(tenants.id, tenantId));
+        }
+
+        const currentSettings = (tenant.settings || {}) as Record<string, unknown>;
+        const updates: Record<string, unknown> = { ...currentSettings };
+        if (input.companyDomain !== undefined) updates.companyDomain = input.companyDomain;
+        if (input.companyDomains !== undefined) {
+          const primary = (input.companyDomain ??
+            updates.companyDomain ??
+            "") as string;
+          updates.companyDomains = primary
+            ? input.companyDomains.filter((d) => d !== primary)
+            : input.companyDomains;
+        }
+        if (input.agentApprovalMode !== undefined) {
+          updates.agentApprovalMode = input.agentApprovalMode;
+        }
+
+        await db
+          .update(tenants)
+          .set({ settings: updates, updatedAt: new Date() })
+          .where(eq(tenants.id, tenantId));
+
+        return {
+          updated: {
+            tenantId,
+            name: input.name,
+            agentApprovalMode: input.agentApprovalMode,
+          },
+        };
+      },
+    }),
+
+    updateUserProfile: makeTool({
+      description:
+        "Update the current user's profile (firstName, lastName) and locale preferences (language, timezone). Use when the user asks to 'change my name', 'update my timezone', 'switch to French'.",
+      inputSchema: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        language: z.string().optional().describe("Language code (en, fr, es, etc.)"),
+        timezone: z
+          .string()
+          .optional()
+          .describe("IANA timezone identifier (e.g. Europe/Paris)"),
+      }),
+      execute: async (input) => {
+        const userUpdates: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.firstName !== undefined) userUpdates.firstName = input.firstName.trim();
+        if (input.lastName !== undefined) userUpdates.lastName = input.lastName.trim();
+
+        if (Object.keys(userUpdates).length > 1) {
+          await db.update(users).set(userUpdates).where(eq(users.id, userId));
+        }
+
+        if (input.language !== undefined || input.timezone !== undefined) {
+          const [tenant] = await db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+          const currentSettings = (tenant?.settings || {}) as Record<string, unknown>;
+          const next = { ...currentSettings };
+          if (input.language !== undefined) next.language = input.language;
+          if (input.timezone !== undefined) next.timezone = input.timezone;
+          await db
+            .update(tenants)
+            .set({ settings: next })
+            .where(eq(tenants.id, tenantId));
+        }
+
+        return {
+          updated: {
+            userId,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            language: input.language,
+            timezone: input.timezone,
+          },
+        };
+      },
+    }),
+
+    updateNotificationPreferences: makeTool({
+      description:
+        "Update the current user's notification preferences (emailEnabled, inAppEnabled, per-type preferences). Optionally set a Slack webhook at the workspace level. Use when the user says 'turn off email notifications for deal risks', 'silence task alerts', 'route to Slack'.",
+      inputSchema: z.object({
+        emailEnabled: z.boolean().optional(),
+        inAppEnabled: z.boolean().optional(),
+        preferences: z
+          .record(
+            z.string(),
+            z.object({
+              email: z.boolean().optional(),
+              inApp: z.boolean().optional(),
+            })
+          )
+          .optional()
+          .describe(
+            "Per-type prefs. Keys: deal_risk, deal_won, deal_lost, enrichment_done, sequence_reply, task_due, task_assigned, meeting_upcoming, new_contact, system"
+          ),
+        slackWebhook: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Slack incoming webhook URL for this workspace, or null to clear"),
+      }),
+      execute: async (input) => {
+        if (input.slackWebhook !== undefined) {
+          const [tenant] = await db
+            .select()
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+          if (tenant) {
+            const settings = (tenant.settings || {}) as Record<string, unknown>;
+            await db
+              .update(tenants)
+              .set({
+                settings: { ...settings, slackWebhookUrl: input.slackWebhook || null },
+                updatedAt: new Date(),
+              })
+              .where(eq(tenants.id, tenantId));
+          }
+        }
+
+        const [existing] = await db
+          .select()
+          .from(notificationPreferences)
+          .where(eq(notificationPreferences.userId, userId))
+          .limit(1);
+
+        if (existing) {
+          await db
+            .update(notificationPreferences)
+            .set({
+              emailEnabled: input.emailEnabled ?? existing.emailEnabled,
+              inAppEnabled: input.inAppEnabled ?? existing.inAppEnabled,
+              preferences: input.preferences ?? existing.preferences,
+              updatedAt: new Date(),
+            })
+            .where(eq(notificationPreferences.id, existing.id));
+        } else {
+          await db.insert(notificationPreferences).values({
+            userId,
+            tenantId,
+            emailEnabled: input.emailEnabled ?? true,
+            inAppEnabled: input.inAppEnabled ?? true,
+            preferences: input.preferences ?? {},
+          });
+        }
+
+        return {
+          updated: {
+            userId,
+            emailEnabled: input.emailEnabled,
+            inAppEnabled: input.inAppEnabled,
+            slackWebhookConfigured: input.slackWebhook !== undefined,
+          },
+        };
+      },
+    }),
+
+    updatePrivacySettings: makeTool({
+      description:
+        "Update workspace privacy settings: contactCreationMode (selective|all|none), backsyncRange (how far back to ingest mailbox history, e.g. '3m'), doNotTrackDomains[] (domains to exclude from tracking). Admin-only.",
+      inputSchema: z.object({
+        contactCreationMode: z.enum(["selective", "all", "none"]).optional(),
+        backsyncRange: z.string().optional().describe("e.g. 1m, 3m, 6m, 1y"),
+        doNotTrackDomains: z.array(z.string()).optional(),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const current = (tenant.settings || {}) as Record<string, unknown>;
+        const updates: Record<string, unknown> = { ...current };
+        let changed = 0;
+        if (input.contactCreationMode !== undefined) {
+          updates.contactCreationMode = input.contactCreationMode;
+          changed++;
+        }
+        if (input.backsyncRange !== undefined) {
+          updates.backsyncRange = input.backsyncRange;
+          changed++;
+        }
+        if (input.doNotTrackDomains !== undefined) {
+          updates.doNotTrackDomains = input.doNotTrackDomains;
+          changed++;
+        }
+        if (changed === 0) return { error: "No fields to update" };
+
+        await db
+          .update(tenants)
+          .set({ settings: updates, updatedAt: new Date() })
+          .where(eq(tenants.id, tenantId));
+
+        return { updated: { tenantId, fieldsChanged: changed } };
       },
     }),
   };
