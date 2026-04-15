@@ -2,6 +2,7 @@ import { db } from "@/db";
 import {
   activities,
   companies,
+  connectedMailboxes,
   contacts,
   deals,
   notificationPreferences,
@@ -13,6 +14,7 @@ import {
 } from "@/db/schema";
 import { and, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
+import { updateTenantSettings } from "@/lib/tenant-settings";
 import { makeTool, type ToolContext } from "./context";
 
 export function buildUpdateTools(ctx: ToolContext) {
@@ -1168,6 +1170,127 @@ export function buildUpdateTools(ctx: ToolContext) {
           .where(eq(tenants.id, tenantId));
 
         return { updated: { workflowCount: input.workflows.length } };
+      },
+    }),
+
+    updateMemberRole: makeTool({
+      description:
+        "Change a workspace member's role (admin|member). Admin-only. Rejects self-demotion. Use when the user says 'promote X to admin', 'demote Y to member'.",
+      inputSchema: z.object({
+        memberId: z.string().describe("User ID of the member"),
+        role: z.enum(["admin", "member"]).describe("New role"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+        if (input.memberId === userId && input.role !== "admin") {
+          return { error: "Cannot demote yourself" };
+        }
+
+        await db
+          .update(users)
+          .set({ role: input.role, updatedAt: new Date() })
+          .where(and(eq(users.id, input.memberId), eq(users.tenantId, tenantId)));
+
+        return { updated: { memberId: input.memberId, role: input.role } };
+      },
+    }),
+
+    updateMailboxSettings: makeTool({
+      description:
+        "Update a connected mailbox's sendable settings: status, displayName, dailyLimit, sendWindowStart/End, sendDays, or 'skipWarmup' (marks mailbox as active immediately with default dailyLimit 50).",
+      inputSchema: z.object({
+        mailboxId: z.string().describe("Mailbox ID"),
+        displayName: z.string().optional(),
+        status: z.string().optional().describe("active | paused | warming_up | disconnected"),
+        dailyLimit: z.number().optional(),
+        sendWindowStart: z.string().optional().describe("HH:MM"),
+        sendWindowEnd: z.string().optional().describe("HH:MM"),
+        sendDays: z.array(z.string()).optional().describe("Days of week sent on"),
+        skipWarmup: z
+          .boolean()
+          .optional()
+          .describe("true to force-transition to active with default dailyLimit"),
+      }),
+      execute: async (input) => {
+        const condition = and(
+          eq(connectedMailboxes.id, input.mailboxId),
+          eq(connectedMailboxes.tenantId, tenantId)
+        );
+
+        if (input.skipWarmup) {
+          await db
+            .update(connectedMailboxes)
+            .set({
+              status: "active",
+              warmupCompletedAt: new Date(),
+              dailyLimit: 50,
+              updatedAt: new Date(),
+            })
+            .where(condition);
+          return { updated: { mailboxId: input.mailboxId, status: "active", skippedWarmup: true } };
+        }
+
+        const updates: Record<string, unknown> = {};
+        if (input.displayName !== undefined) updates.displayName = input.displayName;
+        if (input.status !== undefined) updates.status = input.status;
+        if (input.dailyLimit !== undefined) updates.dailyLimit = input.dailyLimit;
+        if (input.sendWindowStart !== undefined) updates.sendWindowStart = input.sendWindowStart;
+        if (input.sendWindowEnd !== undefined) updates.sendWindowEnd = input.sendWindowEnd;
+        if (input.sendDays !== undefined) updates.sendDays = input.sendDays;
+
+        if (Object.keys(updates).length === 0) {
+          return { error: "No fields to update" };
+        }
+        updates.updatedAt = new Date();
+
+        const [updated] = await db
+          .update(connectedMailboxes)
+          .set(updates)
+          .where(condition)
+          .returning();
+        if (!updated) return { error: "Mailbox not found" };
+
+        return {
+          updated: {
+            mailboxId: updated.id,
+            status: updated.status,
+            dailyLimit: updated.dailyLimit,
+          },
+        };
+      },
+    }),
+
+    updateMailCalendarIntegration: makeTool({
+      description:
+        "Update workspace-level mail & calendar sync preferences: contactCreationMode (disabled|selective|always), backsyncRange (1m|3m|6m|12m), doNotTrackDomains[]. Available to any authenticated workspace member (these affect the whole workspace).",
+      inputSchema: z.object({
+        contactCreationMode: z.enum(["disabled", "selective", "always"]),
+        backsyncRange: z.enum(["1m", "3m", "6m", "12m"]),
+        doNotTrackDomains: z
+          .array(z.string())
+          .optional()
+          .describe("Max 200 domains. Lowercased + deduped."),
+      }),
+      execute: async (input) => {
+        const sanitized = (input.doNotTrackDomains || [])
+          .filter((d): d is string => typeof d === "string")
+          .map((d) => d.trim().toLowerCase())
+          .filter((d, i, arr) => d && arr.indexOf(d) === i)
+          .slice(0, 200);
+
+        await updateTenantSettings(tenantId, {
+          contactCreationMode: input.contactCreationMode,
+          backsyncRange: input.backsyncRange,
+          doNotTrackDomains: sanitized,
+        });
+
+        return {
+          updated: {
+            contactCreationMode: input.contactCreationMode,
+            backsyncRange: input.backsyncRange,
+            doNotTrackDomains: sanitized,
+          },
+        };
       },
     }),
   };

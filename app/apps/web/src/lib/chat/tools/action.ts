@@ -2,21 +2,27 @@ import { db } from "@/db";
 import {
   activities,
   companies,
+  connectedMailboxes,
   contacts,
   emailOptouts,
   outboundEmails,
+  pendingInvites,
   sequenceEnrollments,
   sequenceSteps,
   sequences,
+  tenants,
+  users,
 } from "@/db/schema";
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import { buildProspectContext } from "@/lib/prospect-context";
 import { generateSequence } from "@/lib/sequence-generator";
 import { pauseEnrollmentsForContacts } from "@/lib/enrollment";
+import { sendInviteEmail } from "@/lib/email-invite";
 import { makeTool, type ToolContext } from "./context";
 
 function pickModel() {
@@ -28,7 +34,10 @@ function pickModel() {
 }
 
 export function buildActionTools(ctx: ToolContext) {
-  const { tenantId } = ctx;
+  const { tenantId, userId, authCtx } = ctx;
+  const isAdmin = authCtx.role === "admin";
+  const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const MAX_INVITE_RESENDS = 3;
 
   return {
     draftEmail: makeTool({
@@ -897,6 +906,280 @@ RULES:
           message: `Campaign proposed: ${matched.length} accounts, ${steps} email steps. The user can review and launch from the Campaigns page at /sequences/${seq.id}.`,
           isProposal: true,
           proposalAction: "campaign",
+        };
+      },
+    }),
+
+    inviteMember: makeTool({
+      description:
+        "Invite a teammate to the workspace by email. Admin-only. Creates (or refreshes) a pending invite with a 7-day token, then emails it. Re-inviting the same address refreshes the token + counters. Use when the user says 'invite jane@acme.com as admin', 'add X to the workspace'.",
+      inputSchema: z.object({
+        email: z.string().email().describe("Email address to invite"),
+        role: z
+          .enum(["admin", "member"])
+          .optional()
+          .describe("Role (default 'member')"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const rawEmail = input.email.trim().toLowerCase();
+        const role: "admin" | "member" = input.role || "member";
+
+        const [existingUser] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.tenantId, tenantId), eq(users.email, rawEmail)))
+          .limit(1);
+        if (existingUser) {
+          return { error: "User is already a member of this workspace" };
+        }
+
+        const [tenant] = await db
+          .select({ id: tenants.id, name: tenants.name })
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (!tenant) return { error: "Workspace not found" };
+
+        const [inviter] = await db
+          .select({
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const inviterName =
+          [inviter?.firstName, inviter?.lastName].filter(Boolean).join(" ") ||
+          inviter?.email ||
+          "A teammate";
+
+        const [existing] = await db
+          .select()
+          .from(pendingInvites)
+          .where(
+            and(
+              eq(pendingInvites.tenantId, tenantId),
+              eq(pendingInvites.email, rawEmail),
+              eq(pendingInvites.status, "pending")
+            )
+          )
+          .limit(1);
+
+        const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+        const token = randomBytes(24).toString("base64url");
+
+        let inviteId: string;
+        if (existing) {
+          await db
+            .update(pendingInvites)
+            .set({
+              role,
+              token,
+              expiresAt,
+              lastSentAt: new Date(),
+              invitedByUserId: userId,
+              updatedAt: new Date(),
+            })
+            .where(eq(pendingInvites.id, existing.id));
+          inviteId = existing.id;
+        } else {
+          const [created] = await db
+            .insert(pendingInvites)
+            .values({
+              tenantId,
+              email: rawEmail,
+              role,
+              token,
+              expiresAt,
+              invitedByUserId: userId,
+            })
+            .returning({ id: pendingInvites.id });
+          inviteId = created.id;
+        }
+
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+        const acceptUrl = `${appUrl}/accept-invite?token=${token}`;
+
+        const sendResult = await sendInviteEmail({
+          to: rawEmail,
+          workspaceName: tenant.name || "your team",
+          inviterName,
+          inviterEmail: inviter?.email,
+          role,
+          acceptUrl,
+          expiresAt,
+        });
+
+        return {
+          invited: {
+            id: inviteId,
+            email: rawEmail,
+            role,
+            expiresAt: expiresAt.toISOString(),
+            emailSent: sendResult.sent,
+            emailError: sendResult.sent ? undefined : sendResult.reason,
+          },
+        };
+      },
+    }),
+
+    resendInvite: makeTool({
+      description:
+        "Resend a pending workspace invitation email (keeps the same token). Admin-only. Caps at 3 resends per invite. Use when the user says 'resend Jane's invite'.",
+      inputSchema: z.object({
+        inviteId: z.string().describe("Invite ID"),
+      }),
+      execute: async (input) => {
+        if (!isAdmin) return { error: "Admin access required" };
+
+        const [invite] = await db
+          .select()
+          .from(pendingInvites)
+          .where(
+            and(eq(pendingInvites.id, input.inviteId), eq(pendingInvites.tenantId, tenantId))
+          )
+          .limit(1);
+        if (!invite) return { error: "Invite not found" };
+        if (invite.status !== "pending") {
+          return { error: `Cannot resend ${invite.status} invite` };
+        }
+        if (invite.resendCount >= MAX_INVITE_RESENDS) {
+          return { error: `Resend limit reached (${MAX_INVITE_RESENDS})` };
+        }
+
+        const [tenant] = await db
+          .select({ id: tenants.id, name: tenants.name })
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        const [inviter] = await db
+          .select({
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const inviterName =
+          [inviter?.firstName, inviter?.lastName].filter(Boolean).join(" ") ||
+          inviter?.email ||
+          "A teammate";
+
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+        const acceptUrl = `${appUrl}/accept-invite?token=${invite.token}`;
+
+        const sendResult = await sendInviteEmail({
+          to: invite.email,
+          workspaceName: tenant?.name || "your team",
+          inviterName,
+          inviterEmail: inviter?.email,
+          role: invite.role as "admin" | "member",
+          acceptUrl,
+          expiresAt: invite.expiresAt,
+        });
+
+        await db
+          .update(pendingInvites)
+          .set({
+            lastSentAt: new Date(),
+            resendCount: invite.resendCount + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(pendingInvites.id, input.inviteId));
+
+        return {
+          resent: {
+            inviteId: input.inviteId,
+            emailSent: sendResult.sent,
+            emailError: sendResult.sent ? undefined : sendResult.reason,
+            resendCount: invite.resendCount + 1,
+          },
+        };
+      },
+    }),
+
+    addMailbox: makeTool({
+      description:
+        "Add a sendable mailbox to the workspace (SMTP/IMAP path). Registers with EmailEngine and inserts a connectedMailboxes row. For OAuth (Gmail/Outlook), direct the user to /settings/mailboxes since OAuth requires browser redirect. The new mailbox enters 'warming_up' status until the warmup period completes.",
+      inputSchema: z.object({
+        email: z.string().email(),
+        displayName: z.string().optional(),
+        provider: z
+          .string()
+          .describe("gmail | outlook | custom. For OAuth use UI instead."),
+        imapHost: z.string().optional(),
+        imapPort: z.number().optional(),
+        smtpHost: z.string().optional(),
+        smtpPort: z.number().optional(),
+        password: z
+          .string()
+          .optional()
+          .describe("App-specific password for SMTP/IMAP (required if no OAuth token)"),
+      }),
+      execute: async (input) => {
+        if (!input.password) {
+          return {
+            error:
+              "Password required for SMTP/IMAP path. For OAuth, connect via /settings/mailboxes.",
+          };
+        }
+
+        const domain = input.email.split("@")[1];
+        const eeAccountId = `${tenantId}_${input.email.replace(/[^a-zA-Z0-9]/g, "-")}`;
+
+        const eeBase = process.env.EMAILENGINE_URL || "http://localhost:3100";
+        let eeRegistered = false;
+        try {
+          const eeRes = await fetch(`${eeBase}/v1/account`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account: eeAccountId,
+              name: input.displayName || input.email,
+              imap: {
+                host: input.imapHost || "imap.gmail.com",
+                port: input.imapPort || 993,
+                secure: true,
+                auth: { user: input.email, pass: input.password },
+              },
+              smtp: {
+                host: input.smtpHost || "smtp.gmail.com",
+                port: input.smtpPort || 465,
+                secure: true,
+                auth: { user: input.email, pass: input.password },
+              },
+            }),
+          });
+          eeRegistered = eeRes.ok;
+        } catch {
+          // Continue — save locally even if EmailEngine unreachable
+        }
+
+        const [mailbox] = await db
+          .insert(connectedMailboxes)
+          .values({
+            tenantId,
+            emailAddress: input.email,
+            displayName: input.displayName || input.email.split("@")[0],
+            provider: input.provider,
+            eeAccountId,
+            domain,
+            status: "warming_up",
+            warmupStartedAt: new Date(),
+          })
+          .returning();
+
+        return {
+          added: {
+            mailboxId: mailbox.id,
+            email: mailbox.emailAddress,
+            status: mailbox.status,
+            engineRegistered: eeRegistered,
+          },
         };
       },
     }),
