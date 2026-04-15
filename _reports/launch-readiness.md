@@ -11,7 +11,7 @@ green. **Database migrations 0008–0011 applied + journal seeded.**
 |---|---|---|
 | Production build | `cd app/apps/web && npx next build` | ✅ Compiled successfully (71s warm rebuild) |
 | Typecheck | `npx tsc --noEmit -p .` | ✅ 0 errors |
-| Unit / hook tests | `npx vitest run` | ✅ 564 / 564 (+163 added this session) |
+| Unit / hook tests | `npx vitest run` | ✅ 615 / 615 (+214 since session baseline — includes parallel chat-tool session additions) |
 | E2E (in-process) | `npx playwright test` | ✅ 6 passed, 6 skipped, 0 failed |
 | Dev server (`next dev --turbopack`) | curl /api/health | ✅ 200 in 5.3s |
 | Dev server (`next dev --turbopack`) | curl /sign-in | ✅ 200 (compiled in 17.8s) |
@@ -184,6 +184,10 @@ Smoke tests once deployed: section 6 of `_specs/PROD_SETUP.md`.
   subscription)` — 15 vitest cases closing the customer-facing
   half of the Stripe flow. Combined with the Stripe webhook
   coverage (132534a), the whole money path is now tested.
+- `test(api): cover /api/billing/usage + fix unrelated tsc` — 7
+  cases including the missing-table fallbacks (subscriptions +
+  usage_events) so a half-migrated DB still returns 200 with zero
+  counts rather than 500.
 - DB: applied 0008-0011 + seeded `__drizzle_migrations` directly
   via the postgres client; no separate commit (DB-only change).
 
