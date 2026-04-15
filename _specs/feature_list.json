@@ -33,12 +33,12 @@
       "status": "completed",
       "estimate_days": 14,
       "tools_added_target": 50,
-      "tools_shipped": 69,
-      "registry_total": 113,
+      "tools_shipped": 72,
+      "registry_total": 116,
       "completed_on": "2026-04-14",
-      "deferred": ["task 1.7 sendEmail (endpoint scope unclear)", "task 1.74 researchAgent (folds into CHAT-06)"],
+      "deferred": ["task 1.7 sendEmail (endpoint scope unclear)", "task 1.74 researchAgent folded into CHAT-06 Inngest worker"],
       "acceptance": "≥95 total chat tools, 100% Gap-A non-destructive shipped, all 264 tests pass + ~100 new tests, phase-6 eval action-completeness ≥0.8",
-      "acceptance_met": "113 tools (20% above target), 521 tests pass, Gap-A + Gap-B non-destructive 100% shipped, comments CRUD delivered in migration 0015",
+      "acceptance_met": "116 tools (22% above target), 615 tests pass, Gap-A + Gap-B non-destructive 100% shipped, 2 destructive tools (mergeContacts + deleteSequenceStep) shipped with full undo, comments CRUD delivered in migration 0015, findDuplicateContacts complements mergeContacts",
       "checkpoint": true
     },
     {
@@ -75,7 +75,7 @@
       "milestone": "M2-intelligence",
       "status": "in_progress",
       "estimate_days": 7,
-      "progress": "schema + migration 0012 landed; tool-call-log.ts helper + undoLastAction + listRecentToolCalls tools shipped; 11 tools instrumented with snapshots (5 create + 4 update + 2 bulk_update). Bulk reversal handles per-row partial-success reporting. /settings/audit UI page + destructive ungating (after E2E undo test) deferred.",
+      "progress": "schema + migration 0012 landed; tool-call-log.ts helper + undoLastAction + listRecentToolCalls tools shipped; 19 tools now instrumented with snapshots (10 create: contact/account/deal/note/task/activity/sequence/sequence_step/comment/shared_prompt; 4 update: contact/account/deal/task; 2 bulk_update: deals/contacts; 2 destructive with full undo: mergeContacts + deleteSequenceStep). Bulk reversal handles per-row partial-success. /settings/audit UI page + ungating (resolver toggle) deferred.",
       "acceptance": "E2E test: create contact → undo → contact soft-deleted → re-do → contact visible. All 10+ destructive tools flagged in CHAT-01 can now be ungated.",
       "checkpoint": true
     },
