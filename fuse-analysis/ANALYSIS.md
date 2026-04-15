@@ -607,6 +607,49 @@ Nouveaux éléments à ajouter aux reco du §12 :
 | **R15** : **Ne PAS promettre un "Customer Knowledge Graph"** si l'implémentation est juste du scraping d'URLs — leur gap marketing↔produit est énorme | Leur "Knowledge Profile" = juste URLs + Competitors | **Anti-reco** — rester honnête sur ce qu'on offre |
 | **R16** : Async background research avec notification (au lieu de streaming) | "Thought for 31s… check back shortly" pattern | **P1** — libère l'user pour faire autre chose |
 
+### 13bis.11bis Tests approfondis Prospect Search + enrichissement (2ᵉ wave, Free tier)
+
+**Test Smart Search (NL → filters)** — query : `"Heads of Sales at SaaS startups in Paris France with 20 to 100 employees"`
+
+- **4 filtres auto-générés** par le LLM :
+  1. People Location : `Paris, Île-de-France, France` ✅
+  2. Job Title Keywords : `*head of sales*`, `head of sales`, **`SaaS`** ← mistranslation : "SaaS" injecté comme job keyword au lieu de Company Industry
+  3. Department : `Sales` ✅
+  4. Actual Employee Range : `1 applied` (probablement 20-100) ✅
+- **349 records retournés**, 18 pages. Temps de réponse ~8 s.
+- **Parsing NL gratuit** : 2k/2k crédits avant la recherche, 2k/2k après. Smart Search n'est pas facturé.
+
+**Qualité des 20 premiers résultats** (p.1/18) :
+- ✅ Noms réels de personnes (Milan Sordet, Guillaume Laurent, Géraldine Prot, Hubert Bigeard, Karim Berdaoui, Eric Didier, Virgile Mercier, Malcolm Rebourg…)
+- ✅ Companies reconnues de la scène Paris : **Memo Bank, Prelude, Surfe, Livestorm, Furious Squad, Keewe, Episto, Jimini AI, Diffly, Wing**
+- ❌ **Industry tagging faux** :
+  - **Livestorm** tagué `Computer Hardware` (pure SaaS webinar)
+  - **Jimini AI** tagué `Computer Hardware` (legal AI, SaaS)
+  - **Furious Squad** tagué `Renewables & Environment` (project mgmt SaaS)
+  - **Heschung** tagué `Luxury Goods & Jewelry` (fabricant de chaussures) → apparait dans résultats SaaS = filter trop lâche
+  - **Native Union** tagué `Health, Wellness` (accessoires tech)
+  - **Sporty & Rich** `Apparel & Fashion`
+- **Précision sur critère "SaaS"** : ~7/20 réellement SaaS (35 %). Le reste = companies non-SaaS qui matchent juste sur "Head Of Sales" et "Paris"
+- **Root cause** : le Smart Search a placé "SaaS" dans Job Title Keywords (un contact avec "SaaS" dans son titre) au lieu de Company Industry — donc le filtre SaaS n'est pas actif sur les companies. Confirme la faiblesse du NL→filter mapping.
+
+**Test enrichment waterfall** — click sur bouton "Enrich" pour email de Milan Sordet (Episto) :
+
+| Métrique | Valeur |
+|---|---|
+| Email retourné | `milan.sordet@episto.fr` ✅ format corporate FR cohérent |
+| Latence | ~6 s (synchrone côté UX) |
+| Crédits consommés | **50** (2000 → 1950 affichés "2k / 2k" → "1.9k / 2k") |
+| Cohérence avec pricing page publique | ✅ Waterfall email = 50 cr annoncés publiquement |
+| Phone nécessite enrich séparé | ✅ Bouton Email et Phone distincts — chacun consomme ses credits (50 cr vs 200 cr) |
+
+→ **Pour un SDR Free tier : 2 000 crédits = max 40 emails waterfall** (ou 10 phones). C'est vraiment juste un "trial". Un SDR actif doit passer Launch immédiatement.
+
+**Autres observations**
+- Résultats toolbar dévoile un bouton **"Run Automation"** non documenté ailleurs — lance probablement une séquence sur les 349 records direct depuis la Search (skip la Prospect List intermediate). À creuser.
+- Row **pas cliquable** pour detail panel Fuse → seul le click nom ou icône LinkedIn ouvre un tab externe vers LinkedIn. **Gap UX** vs Apollo/Clay qui ont un right-panel détail.
+- Colonnes Search Results : Name / Job Title / Company / Email / Phone Number / Location / Person Industry. Pas de seniority, pas de start date, pas de department visible ici (contrairement à la Prospect List view du §13bis).
+- "SaaS" dans Smart Search injecté comme keyword → un contact ayant `Head Of Sales SaaS EMEA` dans son titre serait privilégié. Ça explique pourquoi on voit des titres bizarres comme "Head Of Sales (global)".
+
 ### 13bis.12 Découvertes critiques à souligner
 
 1. **La "Customer Knowledge Graph" de Fuse = URLs scraping** — très loin du marketing
@@ -617,6 +660,9 @@ Nouveaux éléments à ajouter aux reco du §12 :
 6. **Pas d'OAuth signup** reste une friction premier contact
 7. **Stack construit sur AWS Cognito + Plivo + Knock** → backend ops simple, peu de custom infra ; ils livrent vite mais n'ont pas de moat technique
 8. **Pivot KompassAI → FuseAI** suggère un repositioning récent ; la vélocité de leur content SEO (18 vs-* posts) et l'usage libéral d'expressions LLM-générées dans ces articles suggère une team qui pousse fort sur SEO growth
+9. **Smart Search NL→filter mistranslation observée live** : "SaaS" injecté comme Job Title Keyword au lieu de Company Industry → 35 % précision sur le critère SaaS dans les 20 premiers résultats. Leur translator LLM n'est pas schema-aware du côté Company taxonomy.
+10. **Industry tagging DB faible** : Livestorm tagué "Computer Hardware", Jimini AI tagué "Computer Hardware", Furious Squad tagué "Renewables & Environment". Suggère que leur DB achète des industries d'un provider externe sans correction, ou que leur taxonomy est rigide et force un mapping discrète quand le vrai label manque.
+11. **Free tier = 40 waterfall emails max** (2 000 cr / 50 cr). Impraticable pour un SDR sérieux. Upgrade Launch obligatoire dès qu'on commence.
 
 ---
 
