@@ -1,19 +1,34 @@
 # Launch readiness — 2026-04-14
 
 **TL;DR:** prod build green, typecheck green, all in-process tests
-green. **One launch blocker fixed in this session.** Reference
-`_specs/PROD_SETUP.md` for the deploy checklist.
+green. **Database migrations 0008–0011 applied + journal seeded.**
+**One launch blocker fixed in this session.** Reference
+`_specs/PROD_SETUP.md` for the rest of the deploy checklist.
 
 ## Verification matrix
 
 | Check | Command | Result |
 |---|---|---|
-| Production build | `cd app/apps/web && npx next build` | ✅ Compiled successfully (~5min cold + types) |
+| Production build | `cd app/apps/web && npx next build` | ✅ Compiled successfully (71s warm rebuild) |
 | Typecheck | `npx tsc --noEmit -p .` | ✅ 0 errors |
-| Unit / hook tests | `npx vitest run` | ✅ 401 / 401 |
+| Unit / hook tests | `npx vitest run` | ✅ 426 / 426 (+25 added this session) |
 | E2E (in-process) | `npx playwright test` | ✅ 6 passed, 6 skipped, 0 failed |
 | Dev server (`next dev --turbopack`) | curl /api/health | ✅ 200 in 5.3s |
 | Dev server (`next dev --turbopack`) | curl /sign-in | ✅ 200 (compiled in 17.8s) |
+| Drizzle migrations 0008–0011 | direct SQL apply | ✅ 17 statements ok |
+| `__drizzle_migrations` journal | seeded with 12 entries | ✅ `drizzle-kit migrate` → no-op confirmed |
+| Manual SQL (challenge label fix) | apply | ✅ 0 legacy rows to update |
+
+## Database state (post-migration, 2026-04-14 18:11 CET)
+
+35 public tables, including the 4 new ones:
+- `pending_invites` (15 cols, 4 indexes, 3 FKs)
+- `password_reset_tokens` (8 cols, 4 indexes, 1 FK)
+- `user_preferences` (6 cols, 2 indexes, 1 FK)
+- `saved_views` (10 cols, 2 indexes, 1 FK)
+
+`drizzle.__drizzle_migrations` has all 12 entries, so future
+`drizzle-kit migrate` runs are correctly tracked.
 
 The Playwright suite proves these endpoints respond correctly via a
 real browser context against the dev server:
@@ -72,19 +87,10 @@ the example is tracked.
 
 ## Pre-deploy checklist (from `_specs/PROD_SETUP.md`)
 
-1. **Migrations.** Apply Drizzle migrations 0008–0011:
-   ```bash
-   cd app/apps/web
-   pnpm drizzle-kit push
-   ```
-   - 0008 `pending_invites` (BUGFIX-02)
-   - 0009 `password_reset_tokens` (T0.8)
-   - 0010 `user_preferences` (T1-F5)
-   - 0011 `saved_views` (T1-F4)
-2. **Manual SQL.** One-off challenge-label normalization:
-   ```bash
-   psql "$DATABASE_URL" -f app/apps/web/drizzle/manual/0001_fix_challenge_label.sql
-   ```
+1. ~~**Migrations.**~~ ✅ Done in this session — 0008–0011 applied,
+   journal seeded so `drizzle-kit migrate` is a no-op going forward.
+2. ~~**Manual SQL.**~~ ✅ No-op (no legacy `Finding the right leads`
+   tenants to fix).
 3. **Resend webhook.** Add endpoint
    `https://app.elevay.com/api/webhooks/resend` for `email.delivered`,
    `email.opened`, `email.clicked`, `email.bounced`, `email.complained`.
@@ -138,6 +144,12 @@ Smoke tests once deployed: section 6 of `_specs/PROD_SETUP.md`.
   detail, opportunities detail (4 commits + merges + completion
   report)
 - `feat(e2e): Playwright scaffolding + 6 passing specs, 6 gated`
+- `test(api): cover invite + saved-views routes wired to new tables`
+  — 25 new vitest cases on the routes that read/write the migrated
+  tables (saved_views, pending_invites). First-call wiring is now
+  proved before users hit it.
+- DB: applied 0008-0011 + seeded `__drizzle_migrations` directly
+  via the postgres client; no separate commit (DB-only change).
 
 If the build, typecheck, vitest, and the in-process E2E suite are
 green (they are), nothing in the codebase is currently blocking the
