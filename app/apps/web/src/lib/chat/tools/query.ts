@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   activities,
+  comments,
   companies,
   contacts,
   deals,
@@ -938,6 +939,73 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
           default:
             return { error: "Unknown objectType" };
         }
+      },
+    }),
+
+    listComments: makeTool({
+      description:
+        "List top-level comments on a given entity (no replies nested — use listCommentReplies for those). Scoped to the current tenant.",
+      inputSchema: z.object({
+        entityType: z.string().describe("e.g. 'contact', 'deal', 'meeting'"),
+        entityId: z.string(),
+        limit: z.number().optional().describe("Max results (default 50)"),
+      }),
+      execute: async (input) => {
+        const rows = await db
+          .select()
+          .from(comments)
+          .where(
+            and(
+              eq(comments.tenantId, tenantId),
+              eq(comments.entityType, input.entityType),
+              eq(comments.entityId, input.entityId),
+              sql`${comments.parentCommentId} IS NULL`
+            )
+          )
+          .orderBy(desc(comments.createdAt))
+          .limit(input.limit ?? 50);
+
+        return {
+          comments: rows.map((c) => ({
+            id: c.id,
+            authorId: c.authorId,
+            body: c.body,
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt,
+          })),
+        };
+      },
+    }),
+
+    listCommentReplies: makeTool({
+      description:
+        "List replies to a specific comment (ordered oldest-first for thread readability).",
+      inputSchema: z.object({
+        parentCommentId: z.string(),
+        limit: z.number().optional().describe("Max replies (default 100)"),
+      }),
+      execute: async (input) => {
+        const rows = await db
+          .select()
+          .from(comments)
+          .where(
+            and(
+              eq(comments.tenantId, tenantId),
+              eq(comments.parentCommentId, input.parentCommentId)
+            )
+          )
+          .orderBy(comments.createdAt)
+          .limit(input.limit ?? 100);
+
+        return {
+          parentCommentId: input.parentCommentId,
+          replies: rows.map((c) => ({
+            id: c.id,
+            authorId: c.authorId,
+            body: c.body,
+            createdAt: c.createdAt,
+          })),
+        };
       },
     }),
 

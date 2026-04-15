@@ -759,6 +759,34 @@ export const chatMemories = pgTable(
   ]
 );
 
+// CHAT-01 Wave 3: Comments — threadable notes on any entity.
+// Polymorphic on entityType/entityId so contacts, companies, deals,
+// meetings, sequences, etc. can all be commented on. parentCommentId
+// supports threaded replies (listCommentReplies).
+export const comments = pgTable(
+  "comments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    authorId: text("author_id").references(() => users.id).notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    parentCommentId: text("parent_comment_id"),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index("comments_tenant_entity_idx").on(
+      table.tenantId,
+      table.entityType,
+      table.entityId
+    ),
+    index("comments_parent_idx").on(table.parentCommentId),
+    index("comments_author_idx").on(table.authorId),
+  ]
+);
+
 // CHAT-04: Tool-call audit + undo support.
 // Every tool executed by the chat records an event here. Reversible
 // tools (create/update with snapshot) can be rolled back via

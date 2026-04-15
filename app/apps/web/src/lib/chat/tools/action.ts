@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   activities,
+  comments,
   companies,
   connectedMailboxes,
   contacts,
@@ -1208,6 +1209,38 @@ RULES:
             fieldId: input.fieldId,
             recordId: input.recordId,
             value: result.value,
+          },
+        };
+      },
+    }),
+
+    deleteComment: makeTool({
+      description:
+        "Delete a comment by id. Only the comment's author or an admin can delete it. Destructive — filtered by the capability resolver unless allowDestructive is on (CHAT-04 undo track).",
+      inputSchema: z.object({
+        commentId: z.string(),
+      }),
+      execute: async (input) => {
+        const [comment] = await db
+          .select()
+          .from(comments)
+          .where(and(eq(comments.id, input.commentId), eq(comments.tenantId, tenantId)))
+          .limit(1);
+        if (!comment) return { error: "Comment not found" };
+
+        if (comment.authorId !== userId && !isAdmin) {
+          return { error: "Only the comment's author or an admin can delete it" };
+        }
+
+        await db
+          .delete(comments)
+          .where(and(eq(comments.id, input.commentId), eq(comments.tenantId, tenantId)));
+
+        return {
+          deleted: {
+            id: input.commentId,
+            entityType: comment.entityType,
+            entityId: comment.entityId,
           },
         };
       },

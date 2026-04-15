@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   activities,
+  comments,
   companies,
   contacts,
   deals,
@@ -793,6 +794,42 @@ export function buildCreateTools(ctx: ToolContext) {
             resource: inserted.resource,
             name: inserted.name,
             isDefault: inserted.isDefault,
+          },
+        };
+      },
+    }),
+
+    createComment: makeTool({
+      description:
+        "Create a comment on a CRM entity (contact, company, deal, meeting, sequence, or any polymorphic target). Supports threaded replies via parentCommentId. Use when the user says 'comment on this', 'leave a note for the team about X'. Distinct from createNote: comments are lightweight conversational threads; notes are long-form observations.",
+      inputSchema: z.object({
+        entityType: z.string().describe("What is being commented on (e.g. 'contact', 'deal', 'meeting')"),
+        entityId: z.string().describe("Id of the entity"),
+        body: z.string().min(1).describe("Comment body"),
+        parentCommentId: z.string().optional().describe("Reply to an existing comment"),
+      }),
+      execute: async (input) => {
+        if (!input.body.trim()) return { error: "Body is required" };
+
+        const [created] = await db
+          .insert(comments)
+          .values({
+            tenantId,
+            authorId: userId,
+            entityType: input.entityType,
+            entityId: input.entityId,
+            parentCommentId: input.parentCommentId,
+            body: input.body.trim(),
+          })
+          .returning();
+
+        return {
+          created: {
+            id: created.id,
+            entityType: created.entityType,
+            entityId: created.entityId,
+            parentCommentId: created.parentCommentId,
+            createdAt: created.createdAt,
           },
         };
       },
