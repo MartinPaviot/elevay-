@@ -1009,6 +1009,69 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
       },
     }),
 
+    findDuplicateContacts: makeTool({
+      description:
+        "Scan the workspace for candidate duplicate contact groups, grouped by lowercased email. Each group lists its contacts sorted by data richness (more properties + more recent first — the best survivor candidate leads). Pair with mergeContacts to actually consolidate.",
+      inputSchema: z.object({
+        minGroupSize: z
+          .number()
+          .optional()
+          .describe("Only return groups with ≥ this many members (default 2)"),
+        limit: z.number().optional().describe("Max groups (default 50)"),
+      }),
+      execute: async (input) => {
+        const rows = await db
+          .select()
+          .from(contacts)
+          .where(eq(contacts.tenantId, tenantId));
+
+        type Row = typeof rows[number];
+        const byEmail = new Map<string, Row[]>();
+        for (const c of rows) {
+          const key = c.email?.toLowerCase().trim();
+          if (!key) continue;
+          const bucket = byEmail.get(key) ?? [];
+          bucket.push(c);
+          byEmail.set(key, bucket);
+        }
+
+        const minSize = input.minGroupSize ?? 2;
+        const limit = input.limit ?? 50;
+
+        const groups = Array.from(byEmail.entries())
+          .filter(([, arr]) => arr.length >= minSize)
+          .slice(0, limit)
+          .map(([email, arr]) => ({
+            email,
+            count: arr.length,
+            candidates: arr
+              .map((r) => ({
+                id: r.id,
+                name: [r.firstName, r.lastName].filter(Boolean).join(" "),
+                title: r.title,
+                companyId: r.companyId,
+                score: r.score,
+                updatedAt: r.updatedAt,
+                propertiesCount: r.properties
+                  ? Object.keys(r.properties as object).length
+                  : 0,
+              }))
+              .sort((a, b) => {
+                if (b.propertiesCount !== a.propertiesCount)
+                  return b.propertiesCount - a.propertiesCount;
+                const aT = a.updatedAt?.getTime?.() ?? 0;
+                const bT = b.updatedAt?.getTime?.() ?? 0;
+                return bT - aT;
+              }),
+          }));
+
+        return {
+          groupCount: groups.length,
+          groups,
+        };
+      },
+    }),
+
     listRecentToolCalls: makeTool({
       description:
         "Audit trail: list the current user's recent chat tool calls with args, result, status (executed/reverted/failed), and whether they're reversible. Use when the user asks 'what did I just do?', 'show my action history', 'what has the chat done for me today?'.",
