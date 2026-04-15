@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/ui/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts-provider";
+import { QuotaBanner } from "@/components/quota-banner";
 
 export default async function DashboardLayout({
   children,
@@ -73,6 +74,7 @@ export default async function DashboardLayout({
 
           {/* Main content */}
           <main className="flex flex-1 flex-col overflow-hidden" style={{ background: "var(--color-bg-page)" }}>
+            <QuotaBanner />
             <div className="flex-1 overflow-auto">{children}</div>
             <PersistentChatBar />
             <PostHogPageTracker userId={session.user.id} />
