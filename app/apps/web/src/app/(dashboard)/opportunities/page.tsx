@@ -7,6 +7,7 @@ import {
   Search, X, Building2, User, Calendar, DollarSign, Clock,
   LayoutGrid, List, SlidersHorizontal, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   ClipboardCheck, MonitorPlay, FlaskConical, FileText, Handshake, Trophy, XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
@@ -167,6 +168,12 @@ export default function OpportunitiesPage() {
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+  // Y12 — quick-filter toggle. Keeps the pipeline-hygiene workflow one
+  // click away: "show me only the deals I've let sit too long". The
+  // threshold matches the kanban age-in-stage badge's "stalled"
+  // bucket (14 days+), so visual signal on the card and the preset
+  // agree on the same bar.
+  const [stalledOnly, setStalledOnly] = useState(false);
   const displayPanelRef = useRef<HTMLDivElement>(null);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -361,6 +368,14 @@ export default function OpportunitiesPage() {
       const q = searchQuery.toLowerCase();
       if (!d.name.toLowerCase().includes(q) && !(d.companyName?.toLowerCase().includes(q))) return false;
     }
+    // Y12 — "Stalled" preset: only deals whose age-in-stage falls in
+    // the stalled / frozen buckets (>= 14 days). Won/Lost are excluded
+    // because ageInStage returns null for closed stages, so the filter
+    // naturally hides them.
+    if (stalledOnly) {
+      const age = ageInStage(d.updatedAt, d.stage);
+      if (!age || (age.bucket !== "stalled" && age.bucket !== "frozen")) return false;
+    }
     for (const f of activeFilters) {
       if (f.field === "stage" && d.stage !== f.value) return false;
       if (f.field === "companyName" && !(d.companyName?.toLowerCase().includes(f.value.toLowerCase()))) return false;
@@ -378,6 +393,14 @@ export default function OpportunitiesPage() {
     }
     return true;
   });
+
+  // Y12 — precompute the preset's current-tenant hit count so the
+  // toggle button shows "Stalled (7)" instead of forcing the user to
+  // click to discover the count.
+  const stalledCount = deals.reduce((n, d) => {
+    const age = ageInStage(d.updatedAt, d.stage);
+    return age && (age.bucket === "stalled" || age.bucket === "frozen") ? n + 1 : n;
+  }, 0);
 
   // Sort
   const sortedDeals = [...filteredDeals].sort((a, b) => {
@@ -595,6 +618,31 @@ export default function OpportunitiesPage() {
           </Button>
           {showFilterPanel && <FilterPanel />}
         </div>
+        {/* Y12 — Stalled preset. Renders greyed-out when nothing qualifies
+             so the button still stays in its spot but doesn't invite a
+             click that returns an empty board. */}
+        <button
+          type="button"
+          onClick={() => setStalledOnly((s) => !s)}
+          disabled={stalledCount === 0 && !stalledOnly}
+          aria-pressed={stalledOnly}
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            background: stalledOnly ? "var(--color-warning-soft)" : "transparent",
+            color: stalledOnly ? "var(--color-warning)" : "var(--color-text-secondary)",
+            border: `1px solid ${stalledOnly ? "var(--color-warning)" : "var(--color-border-default)"}`,
+          }}
+          title={
+            stalledOnly
+              ? "Showing deals that have sat in their stage for 14+ days"
+              : stalledCount === 0
+                ? "No stalled deals right now"
+                : `Show only the ${stalledCount} deal${stalledCount === 1 ? "" : "s"} that have sat in their stage for 14+ days`
+          }
+        >
+          <AlertTriangle size={12} />
+          Stalled{stalledCount > 0 ? ` · ${stalledCount}` : ""}
+        </button>
         <div className="relative" ref={displayPanelRef}>
           <Button variant="outline" size="sm" icon={<SlidersHorizontal size={12} />}
             onClick={() => { setShowDisplayPanel(!showDisplayPanel); setShowFilterPanel(false); }}>
