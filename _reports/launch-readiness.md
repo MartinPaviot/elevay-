@@ -11,7 +11,7 @@ green. **Database migrations 0008–0011 applied + journal seeded.**
 |---|---|---|
 | Production build | `cd app/apps/web && npx next build` | ✅ Compiled successfully (71s warm rebuild) |
 | Typecheck | `npx tsc --noEmit -p .` | ✅ 0 errors |
-| Unit / hook tests | `npx vitest run` | ✅ 446 / 446 (+45 added this session) |
+| Unit / hook tests | `npx vitest run` | ✅ 498 / 498 (+97 added this session) |
 | E2E (in-process) | `npx playwright test` | ✅ 6 passed, 6 skipped, 0 failed |
 | Dev server (`next dev --turbopack`) | curl /api/health | ✅ 200 in 5.3s |
 | Dev server (`next dev --turbopack`) | curl /sign-in | ✅ 200 (compiled in 17.8s) |
@@ -153,6 +153,14 @@ Smoke tests once deployed: section 6 of `_specs/PROD_SETUP.md`.
   POST resend + DELETE cancel. Also fixed `tsconfig.json` after
   pnpm bumped TypeScript 5.8 → 5.9.3 (which now rejects
   `ignoreDeprecations: "6.0"` as TS5103).
+- `test(api): cover the 3 password routes (forgot, reset, change)`
+  — 16 vitest cases on the password recovery flow that touches the
+  password_reset_tokens table from migration 0009.
+- `test(api): cover /api/contacts/merge GET + POST`
+  — 10 vitest cases on the K3 merge endpoint backing the K2 UI.
+- `test(api): cover destructive account DELETE + GDPR data export`
+  — 8 vitest cases on the right-to-erase + right-to-export legal
+  endpoints.
 - DB: applied 0008-0011 + seeded `__drizzle_migrations` directly
   via the postgres client; no separate commit (DB-only change).
 
