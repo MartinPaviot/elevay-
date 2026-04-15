@@ -79,9 +79,14 @@ function queueUpdateThrows(err: Error) {
   }));
 }
 
+interface StubStripe {
+  customers: { createBalanceTransaction: ReturnType<typeof vi.fn> };
+  _spy: ReturnType<typeof vi.fn>;
+}
+
 function makeStubStripe(overrides: Partial<{
   create: (args: unknown, opts: unknown) => Promise<unknown>;
-}> = {}) {
+}> = {}): StubStripe {
   const createSpy = vi.fn(async (..._args: unknown[]) => ({
     id: "cbtxn_test_1",
     amount: -4900,
@@ -95,7 +100,12 @@ function makeStubStripe(overrides: Partial<{
       createBalanceTransaction: createSpy,
     },
     _spy: createSpy,
-  } as never;
+  };
+}
+
+/** Drop the _spy sidecar before passing to the module under test. */
+function asStripeClient(s: StubStripe) {
+  return { customers: s.customers } as never;
 }
 
 describe("pushCreditToStripe", () => {
@@ -107,8 +117,8 @@ describe("pushCreditToStripe", () => {
 
   it("skips on non-positive amounts (zero or negative refunds)", async () => {
     const stubbed = makeStubStripe();
-    const r0 = await pushCreditToStripe("t1", "evt1", 0, { stripeClient: stubbed });
-    const rNeg = await pushCreditToStripe("t1", "evt1", -100, { stripeClient: stubbed });
+    const r0 = await pushCreditToStripe("t1", "evt1", 0, { stripeClient: asStripeClient(stubbed) });
+    const rNeg = await pushCreditToStripe("t1", "evt1", -100, { stripeClient: asStripeClient(stubbed) });
     expect(r0.status).toBe("skipped");
     expect(rNeg.status).toBe("skipped");
     expect(stubbed._spy).not.toHaveBeenCalled();
@@ -117,7 +127,7 @@ describe("pushCreditToStripe", () => {
   it("short-circuits when the event already has a Stripe txn id", async () => {
     queueSelectLimit([{ stripeBalanceTxnId: "cbtxn_existing" }]);
     const stubbed = makeStubStripe();
-    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed });
+    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) });
     expect(r.status).toBe("already_pushed");
     expect(r.stripeBalanceTxnId).toBe("cbtxn_existing");
     expect(stubbed._spy).not.toHaveBeenCalled();
@@ -127,7 +137,7 @@ describe("pushCreditToStripe", () => {
     queueSelectLimit([{ stripeBalanceTxnId: null }]); // event row, unpushed
     queueSelectLimit([]); // subscriptions row, none
     const stubbed = makeStubStripe();
-    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed });
+    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) });
     expect(r.status).toBe("pending");
     expect(r.reason).toBe("no_stripe_customer");
     expect(stubbed._spy).not.toHaveBeenCalled();
@@ -138,7 +148,7 @@ describe("pushCreditToStripe", () => {
     queueSelectLimit([{ stripeCustomerId: "cus_1" }]);
     queueUpdateOk();
     const stubbed = makeStubStripe();
-    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed });
+    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) });
     expect(r.status).toBe("pushed");
     expect(r.stripeBalanceTxnId).toBe("cbtxn_test_1");
     expect(stubbed._spy).toHaveBeenCalledOnce();
@@ -163,7 +173,7 @@ describe("pushCreditToStripe", () => {
         throw new Error("stripe temporarily unavailable");
       },
     });
-    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed });
+    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) });
     expect(r.status).toBe("pending");
     expect(r.reason).toBe("stripe_error");
   });
@@ -173,7 +183,7 @@ describe("pushCreditToStripe", () => {
     queueSelectLimit([{ stripeCustomerId: "cus_1" }]);
     queueUpdateThrows(new Error("duplicate key value violates unique constraint"));
     const stubbed = makeStubStripe();
-    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed });
+    const r = await pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) });
     expect(r.status).toBe("pushed");
   });
 
@@ -183,7 +193,7 @@ describe("pushCreditToStripe", () => {
     queueUpdateThrows(new Error("connection refused"));
     const stubbed = makeStubStripe();
     await expect(
-      pushCreditToStripe("t1", "evt1", 4900, { stripeClient: stubbed })
+      pushCreditToStripe("t1", "evt1", 4900, { stripeClient: asStripeClient(stubbed) })
     ).rejects.toThrow(/connection refused/);
   });
 
@@ -192,7 +202,7 @@ describe("pushCreditToStripe", () => {
     queueSelectLimit([{ stripeCustomerId: "cus_1" }]);
     queueUpdateOk();
     const stubbed = makeStubStripe();
-    await pushCreditToStripe("t1", "evt1", 4900.9, { stripeClient: stubbed });
+    await pushCreditToStripe("t1", "evt1", 4900.9, { stripeClient: asStripeClient(stubbed) });
     const [, body] = stubbed._spy.mock.calls[0] as [string, Record<string, unknown>];
     expect(body.amount).toBe(-4900); // floor, not round
     expect(Number.isInteger(body.amount)).toBe(true);
@@ -203,7 +213,7 @@ describe("backfillPendingCredits", () => {
   it("returns zeros when there are no pending rows", async () => {
     queueSelectWhere([]); // outer pending-events read
     const stubbed = makeStubStripe();
-    const r = await backfillPendingCredits("t1", { stripeClient: stubbed });
+    const r = await backfillPendingCredits("t1", { stripeClient: asStripeClient(stubbed) });
     expect(r).toEqual({ attempted: 0, pushed: 0, pending: 0, errors: 0 });
     expect(stubbed._spy).not.toHaveBeenCalled();
   });
@@ -221,7 +231,7 @@ describe("backfillPendingCredits", () => {
     queueSelectLimit([{ stripeCustomerId: "cus_1" }]);
     queueUpdateOk();
     const stubbed = makeStubStripe();
-    const r = await backfillPendingCredits("t1", { stripeClient: stubbed });
+    const r = await backfillPendingCredits("t1", { stripeClient: asStripeClient(stubbed) });
     expect(r).toEqual({ attempted: 2, pushed: 2, pending: 0, errors: 0 });
     expect(stubbed._spy).toHaveBeenCalledTimes(2);
   });
@@ -231,7 +241,7 @@ describe("backfillPendingCredits", () => {
     queueSelectLimit([{ stripeBalanceTxnId: null }]);
     queueSelectLimit([]); // no customer yet for this tenant
     const stubbed = makeStubStripe();
-    const r = await backfillPendingCredits("t1", { stripeClient: stubbed });
+    const r = await backfillPendingCredits("t1", { stripeClient: asStripeClient(stubbed) });
     expect(r).toEqual({ attempted: 1, pushed: 0, pending: 1, errors: 0 });
   });
 });
