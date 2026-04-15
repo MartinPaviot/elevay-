@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Zap, BarChart3, Network, Sparkles, Radio } from "lucide-react";
+import { Activity, Zap, BarChart3, Network, Sparkles, Radio, Users } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Agents", icon: Activity },
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/channel", label: "Channel", icon: Radio },
   { href: "/graph", label: "Graph", icon: Network },
   { href: "/business", label: "Business", icon: BarChart3 },
+  { href: "/tenants", label: "Tenants", icon: Users },
 ];
 
 export function AdminNav() {
