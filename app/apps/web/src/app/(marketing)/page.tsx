@@ -377,6 +377,70 @@ export default function LandingPage() {
             <Animate><h2 className="mt-4 text-3xl font-bold leading-snug tracking-tight text-gray-900">Traditional CRMs make you do the work.<br />Elevay does it for you.</h2></Animate>
             <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-500">You shouldn&apos;t spend hours logging notes, updating fields, and guessing who to call next. Elevay connects to your email, joins your calls, learns your customers, finds new ones, and runs your outbound — so you can focus on closing.</p></Animate>
           </div>
+
+          {/* L13 — concrete comparison table. Same set of sales tasks,
+               two columns. Sharper than the paragraph above because it
+               names the specific chore Traditional CRMs push onto the
+               rep (you remember, you type, you Ctrl-F) vs. the Elevay
+               behaviour that replaces it. */}
+          <Animate>
+            <div className="mt-12 overflow-hidden rounded-xl border border-gray-200">
+              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-0 bg-gray-50 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <div className="px-5 py-3">Task</div>
+                <div className="border-l border-gray-200 px-5 py-3">Traditional CRM</div>
+                <div
+                  className="border-l border-gray-200 px-5 py-3 text-gray-900"
+                  style={{
+                    background: "linear-gradient(90deg, rgba(23,195,178,0.08), rgba(44,107,237,0.08), rgba(255,122,61,0.08))",
+                  }}
+                >
+                  Elevay
+                </div>
+              </div>
+              {[
+                {
+                  task: "Log meeting notes",
+                  old: "15 min / call, manual",
+                  elevay: "Auto-transcribed + structured",
+                },
+                {
+                  task: "Update deal stage",
+                  old: "You remember to",
+                  elevay: "Suggested from meeting signals",
+                },
+                {
+                  task: "Find new accounts",
+                  old: "Import CSV, enrich, score",
+                  elevay: "Auto-built TAM from your ICP",
+                },
+                {
+                  task: "Write follow-ups",
+                  old: "Template, then edit",
+                  elevay: "Drafted from actual call content",
+                },
+                {
+                  task: "Answer “what did Sarah say?”",
+                  old: "Ctrl-F your inbox",
+                  elevay: "Chat with citations",
+                },
+              ].map((row, i, arr) => (
+                <div
+                  key={row.task}
+                  className={`grid grid-cols-[1.2fr_1fr_1fr] gap-0 text-[14px] ${i < arr.length - 1 ? "border-b border-gray-100" : ""}`}
+                >
+                  <div className="px-5 py-4 font-medium text-gray-900">
+                    {row.task}
+                  </div>
+                  <div className="border-l border-gray-200 px-5 py-4 text-gray-500">
+                    {row.old}
+                  </div>
+                  <div className="border-l border-gray-200 px-5 py-4 text-gray-900">
+                    {row.elevay}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Animate>
         </div>
       </Section>
 
