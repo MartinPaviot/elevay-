@@ -11,8 +11,20 @@ import { and, eq, desc, sql } from "drizzle-orm";
 import { getTenantSettings, type TenantSettings } from "@/lib/tenant-settings";
 import { buildChatSystemPrompt } from "@/lib/prompts/chat-system-prompt";
 import { buildAllChatTools, type ToolContext } from "@/lib/chat/tools";
+import { resolveCapabilities, type SurfaceContext } from "@/lib/agents/capability-resolver";
 
 export const maxDuration = 60;
+
+function inferSurface(contextType?: string, contextId?: string): SurfaceContext {
+  if (!contextType) return { type: "global" };
+  const t = contextType.toLowerCase();
+  if (t === "contact") return { type: "contact", entityId: contextId };
+  if (t === "account" || t === "company") return { type: "account", entityId: contextId };
+  if (t === "deal" || t === "opportunity") return { type: "deal", entityId: contextId };
+  if (t === "meeting") return { type: "meeting", entityId: contextId };
+  if (t === "list") return { type: "list", listResource: contextId };
+  return { type: "global" };
+}
 
 // ── Context Management: compact long conversations ──────────────
 function compactMessages(messages: UIMessage[], maxMessages: number = 30): UIMessage[] {
@@ -288,7 +300,17 @@ export async function POST(req: Request) {
   const rl = rateLimit(`chat:${authCtx.userId}`, 30, 60 * 1000);
   if (!rl.success) return rateLimitResponse(rl.resetAt);
 
-  const { messages, contextType, contextId }: { messages: UIMessage[]; contextType?: string; contextId?: string } = await req.json();
+  const {
+    messages,
+    contextType,
+    contextId,
+    surface: surfaceInput,
+  }: {
+    messages: UIMessage[];
+    contextType?: string;
+    contextId?: string;
+    surface?: SurfaceContext;
+  } = await req.json();
 
   const primaryModel = process.env.ANTHROPIC_API_KEY
     ? anthropic("claude-sonnet-4-6")
@@ -372,18 +394,10 @@ export async function POST(req: Request) {
 
   const tenantId = authCtx.tenantId;
 
-  const systemPrompt = buildChatSystemPrompt({
-    crmSnapshot,
-    ragContext,
-    entityContext,
-    knowledgeContext,
-    memoriesContext,
-    agentApprovalMode,
-    userName: tenantSettings.onboardingCompanyName || undefined,
-    preferredLanguage: tenantSettings.language || undefined,
-  });
+  // Back-compat: if surface isn't set explicitly, infer from contextType/Id
+  const inferredSurface: SurfaceContext = surfaceInput || inferSurface(contextType, contextId);
 
-  // Build chat tool registry from the modular factories
+  // Build chat tool registry + resolve capabilities for this turn
   const toolCtx: ToolContext = {
     tenantId,
     userId: authCtx.appUserId,
@@ -391,7 +405,26 @@ export async function POST(req: Request) {
     settings: tenantSettings,
     agentApprovalMode,
   };
-  const chatTools = buildAllChatTools(toolCtx);
+  const allTools = buildAllChatTools(toolCtx);
+  const resolved = resolveCapabilities(allTools, {
+    role: authCtx.role,
+    surface: inferredSurface,
+    // allowDestructive + planTier default to safe values (false / free)
+    // until CHAT-04 + billing integration land.
+  });
+  const chatTools = resolved.tools;
+
+  const systemPrompt =
+    buildChatSystemPrompt({
+      crmSnapshot,
+      ragContext,
+      entityContext,
+      knowledgeContext,
+      memoriesContext,
+      agentApprovalMode,
+      userName: tenantSettings.onboardingCompanyName || undefined,
+      preferredLanguage: tenantSettings.language || undefined,
+    }) + resolved.surfacePromptAddendum;
 
   // ── Context Management: compact long conversations ──
   const compactedMessages = compactMessages(messages);
@@ -413,7 +446,14 @@ export async function POST(req: Request) {
           cacheControl: { type: "ephemeral" },
         },
       },
-      _trace: { agentId: "chat", tenantId, inputPreview: lastUserText.slice(0, 300) },
+      _trace: {
+        agentId: "chat",
+        tenantId,
+        inputPreview: lastUserText.slice(0, 300),
+        surfaceType: inferredSurface.type,
+        allowedToolCount: Object.keys(chatTools).length,
+        droppedToolCount: resolved.droppedTools.length,
+      },
     });
     return result.toTextStreamResponse();
   } catch (err) {
@@ -425,7 +465,13 @@ export async function POST(req: Request) {
         messages: convertedMessages,
         tools: chatTools,
         stopWhen: stepCountIs(10),
-        _trace: { agentId: "chat", tenantId, inputPreview: lastUserText.slice(0, 300) },
+        _trace: {
+          agentId: "chat",
+          tenantId,
+          inputPreview: lastUserText.slice(0, 300),
+          surfaceType: inferredSurface.type,
+          allowedToolCount: Object.keys(chatTools).length,
+        },
       });
       return result.toTextStreamResponse();
     }

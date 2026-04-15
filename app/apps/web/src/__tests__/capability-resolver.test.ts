@@ -1,0 +1,232 @@
+import { describe, it, expect } from "vitest";
+import {
+  resolveCapabilities,
+  ADMIN_ONLY_TOOLS,
+  DESTRUCTIVE_TOOLS,
+} from "@/lib/agents/capability-resolver";
+
+// Build a fake tool registry with the names we care about. Values are
+// opaque — the resolver only filters keys.
+function fakeRegistry(): Record<string, { name: string }> {
+  const names = [
+    // basic reads
+    "searchCRM",
+    "queryContacts",
+    "queryAccounts",
+    "queryDeals",
+    "queryActivities",
+    "whoami",
+    "listSchema",
+    "listAttributeDefinitions",
+    // create (non-admin)
+    "createContact",
+    "createAccount",
+    "createDeal",
+    "createNote",
+    "createTask",
+    "createSequence",
+    "addSequenceStep",
+    "logActivity",
+    // update (non-admin)
+    "updateContact",
+    "updateAccount",
+    "updateDeal",
+    "updateDealStage",
+    "updateTask",
+    "completeTask",
+    "updateSequence",
+    "updateSequenceStep",
+    "updateMeetingNotes",
+    "updateUserProfile",
+    "updateNotificationPreferences",
+    "updateMailboxSettings",
+    "updateMemberRole",
+    // admin-only
+    "updateICP",
+    "updateWorkspace",
+    "updatePrivacySettings",
+    "updatePipelineStages",
+    "updateCustomFieldSchema",
+    "updateCustomSignalDefinitions",
+    "updateWorkflows",
+    "updateMailCalendarIntegration",
+    "createKnowledgeEntry",
+    "updateKnowledgeEntry",
+    "inviteMember",
+    "resendInvite",
+    "createCustomObjectType",
+    "updateCustomObjectType",
+    // destructive
+    "mergeContacts",
+    "deleteSequenceStep",
+    "deleteKnowledgeEntry",
+    "removeMailbox",
+    "revokeInvite",
+    // action
+    "sendMeetingFollowUp",
+    "bookMeeting",
+    "enrollInSequence",
+    "launchCampaign",
+    "runSequenceAutopilot",
+    "unsubscribeContact",
+    "addMailbox",
+    // intelligence / synthesis
+    "getDealCoaching",
+    "getAccountIntelligence",
+    "analyzePipeline",
+    "buildTAM",
+    "researchCompetitor",
+    "findLeadsByDomain",
+  ];
+  const r: Record<string, { name: string }> = {};
+  for (const n of names) r[n] = { name: n };
+  return r;
+}
+
+describe("resolveCapabilities", () => {
+  it("keeps non-admin, non-destructive tools for a regular member (global surface)", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "member" });
+    expect(res.tools.searchCRM).toBeDefined();
+    expect(res.tools.createContact).toBeDefined();
+    expect(res.tools.updateContact).toBeDefined();
+    expect(res.tools.getDealCoaching).toBeDefined();
+    expect(res.surfacePromptAddendum).toBe("");
+  });
+
+  it("drops admin-only tools for a member", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "member" });
+    for (const name of ADMIN_ONLY_TOOLS) {
+      if (name in registry) expect(res.tools[name]).toBeUndefined();
+    }
+    const reasons = new Set(res.droppedTools.map((d) => d.reason));
+    expect(reasons.has("admin-only")).toBe(true);
+  });
+
+  it("keeps admin-only tools for an admin", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "admin" });
+    expect(res.tools.updateICP).toBeDefined();
+    expect(res.tools.inviteMember).toBeDefined();
+    expect(res.tools.createKnowledgeEntry).toBeDefined();
+    expect(res.tools.createCustomObjectType).toBeDefined();
+  });
+
+  it("drops destructive tools unless explicitly allowed", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "admin" });
+    for (const name of DESTRUCTIVE_TOOLS) {
+      if (name in registry) expect(res.tools[name]).toBeUndefined();
+    }
+    const res2 = resolveCapabilities(registry, {
+      role: "admin",
+      allowDestructive: true,
+    });
+    expect(res2.tools.mergeContacts).toBeDefined();
+    expect(res2.tools.deleteSequenceStep).toBeDefined();
+  });
+
+  it("gates pro-tier tools on free plan", () => {
+    const registry = fakeRegistry();
+    const free = resolveCapabilities(registry, { role: "admin", planTier: "free" });
+    expect(free.tools.buildTAM).toBeUndefined();
+    expect(free.tools.researchCompetitor).toBeUndefined();
+    expect(free.tools.findLeadsByDomain).toBeUndefined();
+    expect(free.tools.launchCampaign).toBeUndefined();
+    expect(free.tools.runSequenceAutopilot).toBeUndefined();
+
+    const pro = resolveCapabilities(registry, { role: "admin", planTier: "pro" });
+    expect(pro.tools.buildTAM).toBeDefined();
+    expect(pro.tools.researchCompetitor).toBeDefined();
+  });
+
+  it("seeds contact surface addendum with entity info", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "contact", entityId: "c1", entityName: "Jane Doe" },
+    });
+    expect(res.surfacePromptAddendum).toContain("Jane Doe");
+    expect(res.surfacePromptAddendum).toContain("c1");
+    expect(res.surfacePromptAddendum.toLowerCase()).toContain("contact");
+  });
+
+  it("seeds deal surface addendum differently than account surface", () => {
+    const registry = fakeRegistry();
+    const dealRes = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "deal", entityId: "d1" },
+    });
+    const accountRes = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "account", entityId: "a1" },
+    });
+    expect(dealRes.surfacePromptAddendum).not.toBe(accountRes.surfacePromptAddendum);
+    expect(dealRes.surfacePromptAddendum.toLowerCase()).toContain("deal");
+    expect(accountRes.surfacePromptAddendum.toLowerCase()).toContain("account");
+  });
+
+  it("disables mutations on slack surface until CHAT-08", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, {
+      role: "admin",
+      surface: { type: "slack" },
+    });
+    expect(res.tools.createContact).toBeUndefined();
+    expect(res.tools.updateContact).toBeUndefined();
+    expect(res.tools.sendMeetingFollowUp).toBeUndefined();
+    // Reads still allowed
+    expect(res.tools.searchCRM).toBeDefined();
+    expect(res.tools.queryContacts).toBeDefined();
+    expect(res.tools.getDealCoaching).toBeDefined();
+    const slackReasons = res.droppedTools
+      .filter((d) => d.reason.startsWith("slack:"))
+      .map((d) => d.name);
+    expect(slackReasons).toContain("createContact");
+  });
+
+  it("list surface addendum mentions the resource", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "list", listResource: "deals" },
+    });
+    expect(res.surfacePromptAddendum).toContain("deals");
+    expect(res.surfacePromptAddendum.toLowerCase()).toContain("bulk");
+  });
+
+  it("global surface produces empty addendum", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "global" },
+    });
+    expect(res.surfacePromptAddendum).toBe("");
+  });
+
+  it("mcp surface addendum advises the external client", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, {
+      role: "member",
+      surface: { type: "mcp" },
+    });
+    expect(res.surfacePromptAddendum.toLowerCase()).toContain("mcp");
+  });
+
+  it("registry pass-through: tool objects are referentially equal", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "member" });
+    expect(res.tools.searchCRM).toBe(registry.searchCRM);
+  });
+
+  it("droppedTools reason coverage: every dropped tool has a reason", () => {
+    const registry = fakeRegistry();
+    const res = resolveCapabilities(registry, { role: "member" });
+    for (const d of res.droppedTools) {
+      expect(d.reason).toBeTruthy();
+      expect(d.reason.length).toBeGreaterThan(0);
+      expect(d.name in registry).toBe(true);
+    }
+  });
+});

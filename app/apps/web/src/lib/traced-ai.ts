@@ -26,6 +26,10 @@ interface TraceMetadata {
   tenantId?: string;
   traceId?: string;
   inputPreview?: string; // short description of what was sent
+  // CHAT-02: surface + resolver telemetry
+  surfaceType?: string;
+  allowedToolCount?: number;
+  droppedToolCount?: number;
 }
 
 /**
