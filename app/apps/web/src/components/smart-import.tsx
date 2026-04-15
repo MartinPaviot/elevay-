@@ -17,6 +17,11 @@ interface ImportResult {
 export function SmartImport({ onClose, onComplete }: { onClose: () => void; onComplete?: () => void }) {
   const [step, setStep] = useState<"upload" | "processing" | "result">("upload");
   const [csvText, setCsvText] = useState("");
+  // K4 — index of the row the user has marked as the header. Defaults to
+  // 0 (most CSVs are clean); bumped when the user has metadata above the
+  // real header (notes, source URL, exported-at timestamps, etc.). The
+  // value indexes into `csvLines`, NOT into the raw `csvText` string.
+  const [headerRowIndex, setHeaderRowIndex] = useState(0);
   const [entityType, setEntityType] = useState<string>("");
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,10 +30,7 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
   async function handleFileUpload(file: File) {
     const text = await file.text();
     setCsvText(text);
-
-    // Preview: show first 5 lines
-    const lines = text.split("\n").slice(0, 6);
-    setCsvText(text);
+    setHeaderRowIndex(0);
   }
 
   async function handleImport() {
@@ -36,11 +38,19 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
     setStep("processing");
     setError(null);
 
+    // K4 — when the user said the header isn't at row 0 we strip the
+    // metadata prefix client-side and send a clean CSV so the import
+    // route doesn't need to learn about header offsets.
+    const trimmedCsv =
+      headerRowIndex === 0
+        ? csvText
+        : csvText.split("\n").slice(headerRowIndex).join("\n");
+
     try {
       const res = await fetch("/api/import/smart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ csvText, entityType: entityType || undefined }),
+        body: JSON.stringify({ csvText: trimmedCsv, entityType: entityType || undefined }),
       });
 
       const data = await res.json();
@@ -60,8 +70,17 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
   }
 
   const csvLines = csvText.split("\n").filter(Boolean);
-  const headers = csvLines[0]?.split(",").map((h) => h.trim().replace(/^["']|["']$/g, "")) || [];
-  const previewRows = csvLines.slice(1, 4).map((l) => l.split(",").map((c) => c.trim().replace(/^["']|["']$/g, "")));
+  // K4 — preview the first 5 non-empty lines so the user can see which
+  // one is the actual header. Capped here, not in state, so the picker
+  // never tries to render thousands of options on a huge file.
+  const headerCandidates = csvLines.slice(0, Math.min(5, csvLines.length));
+  // Clamp to a valid index whenever the file changes underneath us.
+  const safeHeaderRowIndex = Math.min(headerRowIndex, Math.max(0, csvLines.length - 1));
+  const headers = csvLines[safeHeaderRowIndex]?.split(",").map((h) => h.trim().replace(/^["']|["']$/g, "")) || [];
+  const previewRows = csvLines
+    .slice(safeHeaderRowIndex + 1, safeHeaderRowIndex + 4)
+    .map((l) => l.split(",").map((c) => c.trim().replace(/^["']|["']$/g, "")));
+  const dataRowCount = Math.max(0, csvLines.length - safeHeaderRowIndex - 1);
 
   return (
     <div
@@ -157,6 +176,57 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
                 />
               </div>
 
+              {/* K4 — Header row picker. Only shown when the file has
+                   enough rows to be ambiguous (>= 2). For a single-row
+                   file there's nothing to disambiguate. */}
+              {csvLines.length >= 2 && csvText.trim() && (
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <FileText size={13} style={{ color: "var(--color-text-tertiary)" }} />
+                    <span className="text-[12px] font-medium"
+                      style={{ color: "var(--color-text-secondary)" }}>
+                      Pick your header row
+                    </span>
+                    <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                      (skip metadata above the real column names)
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {headerCandidates.map((line, i) => {
+                      const active = i === safeHeaderRowIndex;
+                      return (
+                        <label
+                          key={i}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer transition-colors"
+                          style={{
+                            background: active ? "var(--color-accent-soft)" : "var(--color-bg-page)",
+                            border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="headerRowIndex"
+                            checked={active}
+                            onChange={() => setHeaderRowIndex(i)}
+                            className="h-3.5 w-3.5 shrink-0"
+                          />
+                          <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
+                            Row {i + 1}
+                          </span>
+                          <span
+                            className="truncate text-[11px] font-mono"
+                            style={{ color: "var(--color-text-primary)" }}
+                            title={line}
+                          >
+                            {line}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Preview table */}
               {headers.length > 0 && csvText.trim() && (
                 <div>
@@ -164,7 +234,7 @@ export function SmartImport({ onClose, onComplete }: { onClose: () => void; onCo
                     <FileText size={13} style={{ color: "var(--color-text-tertiary)" }} />
                     <span className="text-[12px] font-medium"
                       style={{ color: "var(--color-text-secondary)" }}>
-                      Preview ({csvLines.length - 1} rows)
+                      Preview ({dataRowCount} row{dataRowCount === 1 ? "" : "s"})
                     </span>
                   </div>
                   <div className="overflow-x-auto rounded-lg"

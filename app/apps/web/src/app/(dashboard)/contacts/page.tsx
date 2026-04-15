@@ -245,11 +245,31 @@ export default function ContactsPage() {
         {loading ? (
           <TableSkeleton rows={5} cols={10 + customFields.length} />
         ) : filteredContacts.length === 0 ? (
-          <EmptyState
-            icon={<Users size={28} />}
-            title={contacts.length === 0 ? "No contacts" : "No matching contacts"}
-            description={contacts.length === 0 ? "Import a CSV or create contacts to get started." : "Try adjusting your search query."}
-          />
+          /* K15 — fresh-tenant empty state offers two clear paths to
+             value: import what the user already has, or have us go
+             enrich the TAM accounts they just built. The "search returned
+             nothing" case keeps the simpler search-clear CTA. */
+          contacts.length === 0 ? (
+            <EmptyState
+              icon={<Users size={28} />}
+              title="No contacts yet"
+              description="Get your first contacts in two clicks — import a CSV you already have, or let Apollo find decision-makers at your TAM accounts."
+              actionLabel="Import CSV"
+              onAction={() => setShowSmartImport(true)}
+              actionVariant="gradient"
+              secondaryActionLabel="Find contacts at top accounts"
+              onSecondaryAction={() => router.push("/accounts?sort=score&dir=desc")}
+            />
+          ) : (
+            <EmptyState
+              icon={<Users size={28} />}
+              title="No matching contacts"
+              description="Try adjusting your search query, or clear it to see your full list."
+              actionLabel="Clear search"
+              onAction={() => setSearchQuery("")}
+              actionVariant="outline"
+            />
+          )
         ) : (
           <table className="ls-table">
             <thead>
@@ -304,7 +324,7 @@ export default function ContactsPage() {
                     key={contact.id}
                     data-selected={selectedRows.has(contact.id) ? "true" : undefined}
                     className="cursor-pointer"
-                    onClick={() => (window.location.href = `/contacts/${contact.id}`)}
+                    onClick={() => router.push(`/contacts/${contact.id}`)}
                   >
                     {/* Selection checkbox */}
                     <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
@@ -327,7 +347,7 @@ export default function ContactsPage() {
                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${enrichStatus[contact.id] === "enriching" ? "animate-pulse" : ""}`} style={{ background: statusColor }} />
                         <CompanyLogo domain={contact.companyDomain} name={contact.firstName || contact.email || "?"} size={24} />
                         <div className="min-w-0">
-                          <button onClick={() => (window.location.href = `/contacts/${contact.id}`)} className="truncate text-left text-[13px] font-medium transition-colors hover:underline" style={{ color: "var(--color-text-primary)" }}>
+                          <button onClick={() => router.push(`/contacts/${contact.id}`)} className="truncate text-left text-[13px] font-medium transition-colors hover:underline" style={{ color: "var(--color-text-primary)" }}>
                             {name}
                           </button>
                         </div>
