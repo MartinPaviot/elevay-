@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface KnowledgeTopic {
   id: string;
@@ -71,18 +72,32 @@ export default function KnowledgeSettingsPage() {
     }
   }
 
-  async function removeTopic(id: string) {
+  // E5 — knowledge deletes now route through ConfirmDialog. Temp rows
+  // (never saved) skip the dialog since there's nothing destructive to
+  // confirm — they exist only in local state.
+  const [removeTopicId, setRemoveTopicId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+
+  function removeTopic(id: string) {
     if (id.startsWith("temp-")) {
       setTopics(topics.filter((t) => t.id !== id));
       return;
     }
+    setRemoveTopicId(id);
+  }
 
+  async function confirmRemoveTopic() {
+    if (!removeTopicId) return;
+    setRemoving(true);
     setError("");
     try {
-      await fetch(`/api/settings/knowledge?id=${id}`, { method: "DELETE" });
-      setTopics(topics.filter((t) => t.id !== id));
+      await fetch(`/api/settings/knowledge?id=${removeTopicId}`, { method: "DELETE" });
+      setTopics((prev) => prev.filter((t) => t.id !== removeTopicId));
     } catch {
       setError("Failed to remove topic");
+    } finally {
+      setRemoving(false);
+      setRemoveTopicId(null);
     }
   }
 
@@ -172,6 +187,17 @@ export default function KnowledgeSettingsPage() {
           ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={removeTopicId !== null}
+        title="Remove this knowledge topic?"
+        description="This topic will stop being included in Elevay's AI context for your workspace. You can add it again later."
+        confirmLabel="Remove topic"
+        variant="destructive"
+        onConfirm={confirmRemoveTopic}
+        onCancel={() => setRemoveTopicId(null)}
+        busy={removing}
+      />
     </>
   );
 }

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge, Tag } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -129,12 +130,28 @@ export default function MailCalendarPage() {
     signIn("microsoft-entra-id", { callbackUrl: "/settings/mail-calendar" });
   }
 
-  async function deleteAccount(id: string) {
-    if (!confirm("Remove this account? Email sync and sending will stop for this account.")) return;
-    const { error: err } = await sfetch(`/api/settings/mailboxes?id=${id}`, {
-      method: "DELETE",
-      errorMessage: "Failed to remove account",
-    });
+  // E5 — mailbox removal now routes through ConfirmDialog instead of
+  // `window.confirm`. Pending id lives in state so the dialog knows
+  // which row the user is confirming; `null` closes it.
+  const [removeMailboxId, setRemoveMailboxId] = useState<string | null>(null);
+  const [removingMailbox, setRemovingMailbox] = useState(false);
+
+  function deleteAccount(id: string) {
+    setRemoveMailboxId(id);
+  }
+
+  async function confirmDeleteAccount() {
+    if (!removeMailboxId) return;
+    setRemovingMailbox(true);
+    const { error: err } = await sfetch(
+      `/api/settings/mailboxes?id=${removeMailboxId}`,
+      {
+        method: "DELETE",
+        errorMessage: "Failed to remove account",
+      }
+    );
+    setRemovingMailbox(false);
+    setRemoveMailboxId(null);
     if (!err) loadData();
   }
 
@@ -569,6 +586,17 @@ export default function MailCalendarPage() {
           </div>
         </div>
       </section>
+
+      <ConfirmDialog
+        open={removeMailboxId !== null}
+        title="Remove this account?"
+        description="Email sync and sending will stop for this account. You can reconnect it later."
+        confirmLabel="Remove account"
+        variant="destructive"
+        onConfirm={confirmDeleteAccount}
+        onCancel={() => setRemoveMailboxId(null)}
+        busy={removingMailbox}
+      />
     </>
   );
 }
