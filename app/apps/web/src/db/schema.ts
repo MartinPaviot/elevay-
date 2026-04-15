@@ -704,6 +704,10 @@ export const chatMemories = pgTable(
     userId: text("user_id").references(() => users.id).notNull(),
     // Memory category: user_preference, decision, learned_context, relationship_note
     category: text("category").notNull().default("learned_context"),
+    // CHAT-07: scope of visibility — 'user' (private), 'workspace' (all
+    // members of the tenant see it). 'team' reserved for CHAT-07 team
+    // scopes once the teams table lands.
+    scope: text("scope").notNull().default("user"),
     // Short key for retrieval (e.g. "communication_style", "deal_strategy_acme")
     key: text("key").notNull(),
     // The actual memory content
@@ -718,6 +722,7 @@ export const chatMemories = pgTable(
   (table) => [
     index("chat_memories_tenant_user_idx").on(table.tenantId, table.userId),
     index("chat_memories_category_idx").on(table.category),
+    index("chat_memories_scope_idx").on(table.tenantId, table.scope),
   ]
 );
 

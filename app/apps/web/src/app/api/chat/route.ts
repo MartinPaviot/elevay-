@@ -7,7 +7,7 @@ import { searchSimilar } from "@/lib/embeddings";
 import { searchContextGraph } from "@/lib/context-graph";
 import { db } from "@/db";
 import { companies, contacts, deals, activities, notes, chatMemories } from "@/db/schema";
-import { and, eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, sql, or } from "drizzle-orm";
 import { getTenantSettings, type TenantSettings } from "@/lib/tenant-settings";
 import { buildChatSystemPrompt } from "@/lib/prompts/chat-system-prompt";
 import { buildAllChatTools, type ToolContext } from "@/lib/chat/tools";
@@ -375,14 +375,23 @@ export async function POST(req: Request) {
     // Load persistent memories for this user
     (async () => {
       try {
+        // CHAT-07: include both this user's private memories AND all
+        // workspace-scoped memories in the context pulled into the
+        // system prompt.
         const memories = await db.select()
           .from(chatMemories)
           .where(and(
             eq(chatMemories.tenantId, authCtx.tenantId),
-            eq(chatMemories.userId, authCtx.appUserId),
+            or(
+              eq(chatMemories.scope, "workspace"),
+              and(
+                eq(chatMemories.scope, "user"),
+                eq(chatMemories.userId, authCtx.appUserId),
+              ),
+            )!,
           ))
           .orderBy(desc(chatMemories.updatedAt))
-          .limit(10);
+          .limit(15);
         if (memories.length === 0) return "";
         return "\n\n## Agent Memory (learned from previous conversations)\n" +
           memories.map((m) => `- [${m.category}] ${m.key}: ${m.content}`).join("\n");
