@@ -122,6 +122,22 @@ export default function KnowledgeSettingsPage() {
           topics.map((topic) => (
             <Card key={topic.id}>
               <CardBody>
+                {/* N14 — unsaved indicator. Topics created via "+ Add"
+                    keep a `temp-` id until the first successful POST.
+                    The id never renders, but a small badge tells the
+                    user the row only exists locally so they don't
+                    assume "Add" already saved it. */}
+                {topic.id.startsWith("temp-") && (
+                  <span
+                    className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    style={{
+                      background: "var(--color-warning-soft)",
+                      color: "var(--color-warning)",
+                    }}
+                  >
+                    Unsaved
+                  </span>
+                )}
                 <Input
                   label="Topic"
                   value={topic.topic}
