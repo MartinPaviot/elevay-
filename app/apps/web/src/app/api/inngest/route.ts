@@ -18,6 +18,7 @@ import { researchAgent } from "@/inngest/research-agent";
 import { memoryAutoExtract } from "@/inngest/memory-auto-extract";
 import { enrichmentEmailExtractFunction, enrichmentEmailExtractBatchFunction } from "@/inngest/enrichment-email-extract-functions";
 import { generateDealBrief, scheduledDealDigest } from "@/inngest/deal-briefing";
+import { analyzeOutgoingEmail, postInteractionCoaching, analyzeDealEvent, weeklyPerformanceSnapshot } from "@/inngest/coaching-engine";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -69,5 +70,10 @@ export const { GET, POST, PUT } = serve({
     // Deal briefing: on-demand + scheduled daily digest
     generateDealBrief,
     scheduledDealDigest,
+    // Coaching engine: pre-send review, post-interaction, deal events, weekly snapshot
+    analyzeOutgoingEmail,
+    postInteractionCoaching,
+    analyzeDealEvent,
+    weeklyPerformanceSnapshot,
   ],
 });

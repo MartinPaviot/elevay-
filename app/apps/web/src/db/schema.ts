@@ -1233,6 +1233,92 @@ export const referralCreditEvents = pgTable(
   ]
 );
 
+// ── Coaching & Performance (C5/C7) ─────────────────────
+
+export const coachingInsights = pgTable(
+  "coaching_insights",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    userId: text("user_id").references(() => users.id),
+    entityType: text("entity_type").notNull(), // "deal" | "email" | "meeting" | "call"
+    entityId: text("entity_id").notNull(),
+    activityId: text("activity_id").references(() => activities.id),
+    insightType: text("insight_type").notNull(), // "pre_send" | "post_interaction" | "deal_risk" | "process_gap"
+    category: text("category").notNull(), // "tone" | "completeness" | "objection_handling" | "next_step" | "process_adherence" | "timing"
+    score: real("score"), // 0.0 - 1.0
+    summary: text("summary").notNull(),
+    detail: text("detail").notNull(),
+    suggestion: text("suggestion"),
+    acknowledged: boolean("acknowledged").default(false),
+    applied: boolean("applied").default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("coaching_insights_tenant_idx").on(table.tenantId),
+    index("coaching_insights_user_idx").on(table.userId),
+    index("coaching_insights_entity_idx").on(table.entityType, table.entityId),
+    index("coaching_insights_created_at_idx").on(table.createdAt),
+  ]
+);
+
+export const aePerformanceSnapshots = pgTable(
+  "ae_performance_snapshots",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    userId: text("user_id").references(() => users.id).notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    emailsSent: integer("emails_sent").default(0),
+    emailsReplied: integer("emails_replied").default(0),
+    meetingsBooked: integer("meetings_booked").default(0),
+    meetingsCompleted: integer("meetings_completed").default(0),
+    dealsCreated: integer("deals_created").default(0),
+    dealsAdvanced: integer("deals_advanced").default(0),
+    dealsWon: integer("deals_won").default(0),
+    dealsLost: integer("deals_lost").default(0),
+    avgToneScore: real("avg_tone_score"),
+    avgCompletenessScore: real("avg_completeness_score"),
+    avgObjectionHandlingScore: real("avg_objection_handling_score"),
+    avgProcessAdherenceScore: real("avg_process_adherence_score"),
+    avgResponseTimeMinutes: real("avg_response_time_minutes"),
+    winRate: real("win_rate"),
+    overallScore: real("overall_score"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("ae_perf_tenant_user_idx").on(table.tenantId, table.userId),
+    index("ae_perf_period_idx").on(table.periodStart, table.periodEnd),
+  ]
+);
+
+export const customSkillTemplates = pgTable(
+  "custom_skill_templates",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    category: text("category").notNull(), // "qualification" | "discovery" | "proposal" | "objection" | "closing" | "re_engage"
+    description: text("description").notNull(),
+    trigger: text("trigger"),
+    contextRequired: jsonb("context_required"),
+    outputFormat: text("output_format"),
+    guidelines: text("guidelines").notNull(),
+    examples: jsonb("examples"),
+    version: integer("version").default(1),
+    isActive: boolean("is_active").default(true),
+    createdByUserId: text("created_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("custom_skill_templates_tenant_idx").on(table.tenantId),
+    index("custom_skill_templates_slug_idx").on(table.tenantId, table.slug),
+  ]
+);
+
 // ── Pending Invitations ────────────────────────────────
 export const pendingInvites = pgTable(
   "pending_invites",
