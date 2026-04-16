@@ -197,16 +197,16 @@ beforeEach(() => {
 });
 
 describe("generateVerifyToken", () => {
-  it("returns a base64url token + sha256 hex hash that round-trip", () => {
-    const { token, tokenHash } = generateVerifyToken();
+  it("returns a base64url token + sha256 hex hash that round-trip", async () => {
+    const { token, tokenHash } = await generateVerifyToken();
     expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(tokenHash).toHaveLength(64);
-    expect(tokenHash).toBe(hashVerifyToken(token));
+    expect(tokenHash).toBe(await hashVerifyToken(token));
   });
 
-  it("never collides across 50 calls", () => {
+  it("never collides across 50 calls", async () => {
     const seen = new Set<string>();
-    for (let i = 0; i < 50; i++) seen.add(generateVerifyToken().token);
+    for (let i = 0; i < 50; i++) seen.add((await generateVerifyToken()).token);
     expect(seen.size).toBe(50);
   });
 });
@@ -221,7 +221,7 @@ describe("createVerifyTokenForUser", () => {
     expect(tokenRows).toHaveLength(1);
     const r = tokenRows[0];
     expect(r.userId).toBe("u1");
-    expect(r.tokenHash).toBe(hashVerifyToken(token));
+    expect(r.tokenHash).toBe(await hashVerifyToken(token));
     expect(r.requestedIp).toBe("10.0.0.1");
     expect(r.requestedUserAgent).toBe("Mozilla/5.0");
     expect(r.expiresAt.getTime()).toBeGreaterThanOrEqual(before + VERIFY_TOKEN_TTL_MS - 100);
@@ -233,8 +233,9 @@ describe("createVerifyTokenForUser", () => {
     const t1 = await createVerifyTokenForUser("u1");
     const t2 = await createVerifyTokenForUser("u1");
     expect(t1).not.toBe(t2);
-    const first = tokenRows.find((r) => r.tokenHash === hashVerifyToken(t1));
-    const second = tokenRows.find((r) => r.tokenHash === hashVerifyToken(t2));
+    const [hash1, hash2] = await Promise.all([hashVerifyToken(t1), hashVerifyToken(t2)]);
+    const first = tokenRows.find((r) => r.tokenHash === hash1);
+    const second = tokenRows.find((r) => r.tokenHash === hash2);
     expect(first?.usedAt).not.toBeNull();
     expect(second?.usedAt).toBeNull();
   });
@@ -242,8 +243,9 @@ describe("createVerifyTokenForUser", () => {
   it("does not invalidate other users' tokens", async () => {
     const tA = await createVerifyTokenForUser("uA");
     const tB = await createVerifyTokenForUser("uB");
-    const a = tokenRows.find((r) => r.tokenHash === hashVerifyToken(tA));
-    const b = tokenRows.find((r) => r.tokenHash === hashVerifyToken(tB));
+    const [hashA, hashB] = await Promise.all([hashVerifyToken(tA), hashVerifyToken(tB)]);
+    const a = tokenRows.find((r) => r.tokenHash === hashA);
+    const b = tokenRows.find((r) => r.tokenHash === hashB);
     expect(a?.usedAt).toBeNull();
     expect(b?.usedAt).toBeNull();
   });

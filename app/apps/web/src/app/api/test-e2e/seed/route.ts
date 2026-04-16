@@ -26,7 +26,17 @@ import { hashPassword } from "@/lib/password-hash";
  * tenant-scoped row + the auth user + auth account.
  */
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  // M5 — dual gate. `NODE_ENV` alone is too easy to get wrong on a
+  // preview deploy (staging builds where NODE_ENV defaults to
+  // "development" would have left this endpoint wide open, including
+  // `role: "admin"` impersonation). The canonical gate now is the
+  // explicit `ENABLE_E2E_SEED=1` env var — only set on the CI
+  // pipeline that runs our Playwright suite. The NODE_ENV check
+  // stays as a belt-and-braces second wall.
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.ENABLE_E2E_SEED !== "1"
+  ) {
     return NextResponse.json({ error: "Seed endpoint disabled" }, { status: 404 });
   }
 

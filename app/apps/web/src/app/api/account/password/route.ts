@@ -11,7 +11,7 @@ import { logger } from "@/lib/logger";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(10).max(256),
+  newPassword: z.string().min(12).max(256),
 });
 
 /**
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "New password must be ≥10 characters with a digit, a lowercase letter, and an uppercase letter.",
+          "New password must be ≥12 characters with a digit, a lowercase letter, and an uppercase letter.",
       },
       { status: 400 }
     );

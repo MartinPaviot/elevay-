@@ -35,7 +35,7 @@ export default async function SignUpPage({
     PasswordTooShort: {
       field: "password",
       message:
-        "Password must be at least 10 characters, with a digit, a lowercase, and an uppercase letter.",
+        "Password must be at least 12 characters, with a digit, a lowercase, and an uppercase letter.",
     },
     PasswordPwned: {
       field: "password",
@@ -85,8 +85,8 @@ export default async function SignUpPage({
       redirect(`/sign-up?error=MissingFields${q}`);
     }
 
-    // Matches the password-reset + credentials-provider policy (T0.8):
-    // ≥10 chars with at least one digit, lower, upper. The credentials
+    // Matches the password-reset + credentials-provider policy (M11):
+    // ≥12 chars with at least one digit, lower, upper. The credentials
     // provider itself is agnostic on length, but this keeps the two
     // sign-up / reset paths from diverging.
     if (!isPasswordStrong(password)) {

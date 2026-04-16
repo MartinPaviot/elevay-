@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { pendingInvites, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { hashInviteToken } from "@/lib/invite-token";
 import { logAudit } from "@/lib/audit-log";
 
@@ -60,6 +60,51 @@ export async function POST(req: Request) {
       { error: "This invitation was sent to a different email address. Sign in with that account." },
       { status: 403 },
     );
+  }
+
+  // No-op if the user is already in the target tenant — accepting
+  // an invite you've already accepted shouldn't 500.
+  if (authCtx.tenantId === invite.tenantId) {
+    await db
+      .update(pendingInvites)
+      .set({
+        status: "accepted",
+        acceptedAt: new Date(),
+        acceptedByUserId: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(pendingInvites.id, invite.id));
+    return Response.json({ success: true, tenantId: invite.tenantId, role: invite.role, requiresReauth: false });
+  }
+
+  // M10 — block the accept if leaving the current tenant would strand
+  // it with no admin. Without this guard, a workspace founder who
+  // accepts a cross-tenant invite quietly abandons their own org; any
+  // remaining members are locked out of billing, invites, and settings
+  // (all admin-gated). We look for any OTHER admin in the current
+  // tenant; if there isn't one, the user has to promote someone else
+  // first.
+  if (authCtx.role === "admin") {
+    const [anotherAdmin] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.tenantId, authCtx.tenantId),
+          eq(users.role, "admin"),
+          ne(users.id, user.id)
+        )
+      )
+      .limit(1);
+    if (!anotherAdmin) {
+      return Response.json(
+        {
+          error:
+            "You're the only admin in your current workspace. Promote another member to admin before accepting this invitation, or delete the workspace first.",
+        },
+        { status: 409 }
+      );
+    }
   }
 
   // Switch tenant + role

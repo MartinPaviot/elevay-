@@ -138,21 +138,21 @@ beforeEach(() => {
 });
 
 describe("hashIdentifier", () => {
-  it("normalises case + whitespace before hashing", () => {
-    expect(hashIdentifier("Alice@Example.com")).toBe(
-      hashIdentifier("  alice@example.com  ")
+  it("normalises case + whitespace before hashing", async () => {
+    expect(await hashIdentifier("Alice@Example.com")).toBe(
+      await hashIdentifier("  alice@example.com  ")
     );
   });
 
-  it("never returns the raw email (anti-enumeration)", () => {
-    const h = hashIdentifier("alice@example.com");
+  it("never returns the raw email (anti-enumeration)", async () => {
+    const h = await hashIdentifier("alice@example.com");
     expect(h).not.toContain("alice");
     expect(h).not.toContain("@");
     expect(h).toHaveLength(64);
   });
 
-  it("differs across distinct emails", () => {
-    expect(hashIdentifier("a@x.com")).not.toBe(hashIdentifier("b@x.com"));
+  it("differs across distinct emails", async () => {
+    expect(await hashIdentifier("a@x.com")).not.toBe(await hashIdentifier("b@x.com"));
   });
 });
 

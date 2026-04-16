@@ -18,6 +18,7 @@ import bcrypt from "bcryptjs";
 import { inngest } from "./inngest/client";
 import {
   clearFailedSignIns,
+  getIpLockoutStatus,
   getLockoutStatus,
   recordFailedSignIn,
 } from "./lib/auth-lockout";
@@ -164,13 +165,21 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             .split(",")[0]
             .trim() || null;
 
-        // I6: short-circuit if this account is currently locked. We run
-        // this BEFORE the DB look-up so a locked account doesn't even
-        // touch bcrypt — and we do it for unknown emails too so an
-        // attacker can't tell a locked-real account apart from an
-        // unknown one (same response shape, same timing class).
+        // I6 + L4: short-circuit if either the account OR the source
+        // IP is currently locked out. Per-email protects a specific
+        // victim from brute-force; per-IP protects against credential
+        // stuffing that spreads across many accounts to stay under
+        // the per-email cap. Both checks BEFORE the DB lookup so a
+        // locked attempt doesn't even touch bcrypt — and we keep the
+        // same response shape as the unknown-email path so an
+        // attacker can't distinguish locked from unknown via timing
+        // or error details.
         const lockout = await getLockoutStatus(email);
         if (lockout.locked) {
+          throw new AccountLockedError();
+        }
+        const ipLockout = await getIpLockoutStatus(ip);
+        if (ipLockout.locked) {
           throw new AccountLockedError();
         }
 

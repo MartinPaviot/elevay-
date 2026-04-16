@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { failedSignInAttempts } from "@/db/schema";
@@ -26,11 +25,36 @@ import { failedSignInAttempts } from "@/db/schema";
 export const LOCKOUT_THRESHOLD = 5;
 export const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
-/** SHA-256 the normalised email so the failure log is enumeration-proof. */
-export function hashIdentifier(email: string): string {
-  return createHash("sha256")
-    .update(email.toLowerCase().trim())
-    .digest("hex");
+// L4 — per-IP lockout: a separate, looser ceiling. Per-account
+// protects a known victim from being brute-forced, but an attacker
+// can still hammer an IP with 5 probes per account across many
+// accounts. Per-IP caps total failed attempts from one source over
+// 1h — generous enough not to trip a corp NAT with a few mistyped
+// passwords, tight enough to make credential-stuffing expensive.
+export const IP_LOCKOUT_THRESHOLD = 30;
+export const IP_LOCKOUT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * SHA-256 the normalised email so the failure log is enumeration-proof.
+ *
+ * Uses the Web Crypto API (`globalThis.crypto.subtle.digest`) rather
+ * than Node's `node:crypto` so the same module can be evaluated in
+ * both the Node runtime (API routes, server actions, credentials
+ * `authorize()`) and the Edge runtime (NextAuth middleware pulls this
+ * transitively via `auth.ts` for session handling). Web Crypto is
+ * async, so callers await — the other three functions in this file
+ * are already async, so the change only adds an await at the hash
+ * call site.
+ */
+export async function hashIdentifier(email: string): Promise<string> {
+  const bytes = new TextEncoder().encode(email.toLowerCase().trim());
+  const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+  const bytesOut = new Uint8Array(hashBuf);
+  let hex = "";
+  for (let i = 0; i < bytesOut.length; i++) {
+    hex += bytesOut[i].toString(16).padStart(2, "0");
+  }
+  return hex;
 }
 
 export interface LockoutStatus {
@@ -47,7 +71,7 @@ export interface LockoutStatus {
  * the bcrypt comparison even runs.
  */
 export async function getLockoutStatus(email: string): Promise<LockoutStatus> {
-  const identifierHash = hashIdentifier(email);
+  const identifierHash = await hashIdentifier(email);
   const windowStart = new Date(Date.now() - LOCKOUT_WINDOW_MS);
 
   const rows = await db
@@ -76,6 +100,43 @@ export async function getLockoutStatus(email: string): Promise<LockoutStatus> {
 }
 
 /**
+ * L4 — per-IP status. Returns `locked: true` when this IP has
+ * accumulated `IP_LOCKOUT_THRESHOLD` failures across any account in
+ * the last `IP_LOCKOUT_WINDOW_MS`. The per-email check in
+ * `getLockoutStatus` remains the primary defense; this layer catches
+ * credential-stuffing runs that spread thin across many accounts to
+ * stay under the per-email cap.
+ */
+export async function getIpLockoutStatus(
+  ip: string | null
+): Promise<LockoutStatus> {
+  if (!ip) return { locked: false, retryAt: null, attemptsInWindow: 0 };
+  const windowStart = new Date(Date.now() - IP_LOCKOUT_WINDOW_MS);
+  const rows = await db
+    .select({ attemptedAt: failedSignInAttempts.attemptedAt })
+    .from(failedSignInAttempts)
+    .where(
+      and(
+        eq(failedSignInAttempts.ip, ip),
+        gt(failedSignInAttempts.attemptedAt, windowStart)
+      )
+    );
+
+  const attemptsInWindow = rows.length;
+  if (attemptsInWindow < IP_LOCKOUT_THRESHOLD) {
+    return { locked: false, retryAt: null, attemptsInWindow };
+  }
+  const oldest = rows
+    .map((r) => r.attemptedAt.getTime())
+    .reduce((a, b) => Math.min(a, b), Infinity);
+  return {
+    locked: true,
+    retryAt: new Date(oldest + IP_LOCKOUT_WINDOW_MS),
+    attemptsInWindow,
+  };
+}
+
+/**
  * Record a failed sign-in. Always succeeds — failures here must NEVER
  * propagate up and turn into a 500 (we'd be giving the attacker a
  * trivial DoS against the DB by triggering enough failures to break
@@ -88,7 +149,7 @@ export async function recordFailedSignIn(
   email: string,
   ip?: string | null
 ): Promise<void> {
-  const identifierHash = hashIdentifier(email);
+  const identifierHash = await hashIdentifier(email);
   try {
     await db.insert(failedSignInAttempts).values({
       identifierHash,
@@ -115,7 +176,7 @@ export async function recordFailedSignIn(
  * counter can't drift past 5 across legitimate sessions.
  */
 export async function clearFailedSignIns(email: string): Promise<void> {
-  const identifierHash = hashIdentifier(email);
+  const identifierHash = await hashIdentifier(email);
   try {
     await db
       .delete(failedSignInAttempts)

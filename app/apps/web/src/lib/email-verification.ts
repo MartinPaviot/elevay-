@@ -1,4 +1,3 @@
-import { randomBytes, createHash } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { authUsers, emailVerificationTokens } from "@/db/schema";
@@ -31,14 +30,37 @@ export interface GeneratedVerifyToken {
   tokenHash: string;
 }
 
-export function generateVerifyToken(): GeneratedVerifyToken {
-  const token = randomBytes(TOKEN_BYTES).toString("base64url");
-  const tokenHash = hashVerifyToken(token);
+/**
+ * Web Crypto replaces node:crypto so this module stays edge-safe.
+ * NextAuth middleware transitively imports this file (via `auth.ts`),
+ * and the middleware runs on the Edge runtime where `node:*` modules
+ * aren't available.
+ */
+function toBase64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  // `btoa` is available on both Node 16+ and Edge.
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function toHex(bytes: Uint8Array): string {
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0");
+  return hex;
+}
+
+export async function generateVerifyToken(): Promise<GeneratedVerifyToken> {
+  const raw = new Uint8Array(TOKEN_BYTES);
+  crypto.getRandomValues(raw);
+  const token = toBase64Url(raw);
+  const tokenHash = await hashVerifyToken(token);
   return { token, tokenHash };
 }
 
-export function hashVerifyToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
+export async function hashVerifyToken(token: string): Promise<string> {
+  const bytes = new TextEncoder().encode(token);
+  const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+  return toHex(new Uint8Array(hashBuf));
 }
 
 /**
@@ -60,7 +82,7 @@ export async function createVerifyTokenForUser(
       )
     );
 
-  const { token, tokenHash } = generateVerifyToken();
+  const { token, tokenHash } = await generateVerifyToken();
   await db.insert(emailVerificationTokens).values({
     userId,
     tokenHash,
@@ -90,7 +112,7 @@ export async function validateVerifyToken(
   token: string
 ): Promise<ValidVerifyToken | null> {
   if (!token || token.length < 10) return null;
-  const tokenHash = hashVerifyToken(token);
+  const tokenHash = await hashVerifyToken(token);
   const [row] = await db
     .select()
     .from(emailVerificationTokens)
