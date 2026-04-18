@@ -14,7 +14,7 @@
 import { inngest } from "./client";
 import { db } from "@/db";
 import { outboundEmails, contacts, connectedMailboxes } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 export const handleAutoPipelineDraft = inngest.createFunction(
   {
@@ -63,6 +63,26 @@ export const handleAutoPipelineDraft = inngest.createFunction(
         ),
       )
       .limit(1);
+
+    // Idempotency: check if we already queued an email for this deal+contact today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [existing] = await db
+      .select({ id: outboundEmails.id })
+      .from(outboundEmails)
+      .where(
+        and(
+          eq(outboundEmails.tenantId, tenantId),
+          eq(outboundEmails.contactId, contactId),
+          eq(outboundEmails.campaignId, dealId),
+          sql`${outboundEmails.queuedAt} >= ${today}`,
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      return { skipped: true, reason: "Already queued an email for this deal+contact today", existingId: existing.id };
+    }
 
     // Create the outbound email row as "queued" — the email-send-worker
     // will pick it up on its next cron cycle (every 2 minutes).

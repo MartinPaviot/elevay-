@@ -62,24 +62,57 @@ export const enrichCompany = inngest.createFunction(
       return { companyId, enriched: false, reason: "Already enriched from Apollo" };
     }
 
-    if (!isApolloAvailable()) {
-      return { companyId, enriched: false, reason: "Apollo API key not configured" };
-    }
-
     if (!company.domain) {
       return { companyId, enriched: false, reason: "No domain — cannot enrich without domain" };
     }
 
-    const org = await step.run("enrich-from-apollo", async () => {
-      try {
-        return await enrichOrganization(company.domain!);
-      } catch (err) {
-        console.warn(`Apollo enrichment failed for ${company.domain}:`, err);
-        return null;
-      }
-    });
+    let org: Awaited<ReturnType<typeof enrichOrganization>> = null;
 
+    if (isApolloAvailable()) {
+      org = await step.run("enrich-from-apollo", async () => {
+        try {
+          return await enrichOrganization(company.domain!);
+        } catch (err) {
+          console.warn(`Apollo enrichment failed for ${company.domain}:`, err);
+          return null;
+        }
+      });
+    }
+
+    // LLM fallback when Apollo is unavailable or returned nothing
     if (!org) {
+      const { enrichCompanyViaLLM } = await import("@/lib/llm-enrichment");
+      const llmResult = await step.run("enrich-from-llm", async () => {
+        return enrichCompanyViaLLM(company.name, company.domain, event.data.tenantId || company.tenantId);
+      });
+
+      if (llmResult) {
+        await step.run("update-company-llm", async () => {
+          await db
+            .update(companies)
+            .set({
+              industry: llmResult.industry || company.industry,
+              description: llmResult.description || company.description,
+              size: llmResult.size || company.size,
+              revenue: llmResult.revenue || company.revenue,
+              properties: {
+                ...props,
+                enrichment_source: "llm",
+                enrichment_attempted_at: new Date().toISOString(),
+                founded_year: llmResult.founded_year,
+                technologies: llmResult.technologies,
+                city: llmResult.city,
+                country: llmResult.country,
+                keywords: llmResult.keywords,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(companies.id, companyId));
+        });
+        return { companyId, enriched: true, source: "llm" };
+      }
+
+      // Both Apollo and LLM failed
       await step.run("mark-unenriched", async () => {
         await db
           .update(companies)
@@ -93,7 +126,7 @@ export const enrichCompany = inngest.createFunction(
           })
           .where(eq(companies.id, companyId));
       });
-      return { companyId, enriched: false, reason: "Apollo returned no data" };
+      return { companyId, enriched: false, reason: "Both Apollo and LLM returned no data" };
     }
 
     await step.run("update-company", async () => {

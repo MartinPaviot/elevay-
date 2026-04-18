@@ -24,6 +24,7 @@ import { syncSignalsToDeal } from "@/inngest/deal-signal-sync";
 import { autoPipelineStep } from "@/inngest/autonomous-pipeline";
 import { handleAutoPipelineDraft } from "@/inngest/auto-pipeline-email-handler";
 import { dailyFounderBrief } from "@/inngest/founder-coach";
+import { serviceHealthCheck } from "@/inngest/health-checks";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -86,5 +87,7 @@ export const { GET, POST, PUT } = serve({
     autoPipelineStep,
     handleAutoPipelineDraft,
     dailyFounderBrief,
+    // Health checks: service status monitoring every 6h
+    serviceHealthCheck,
   ],
 });
