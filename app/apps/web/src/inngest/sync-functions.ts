@@ -111,7 +111,10 @@ export const syncEmails = inngest.createFunction(
 
     if (!userEmail) return { synced: 0, reason: "No user email found" };
 
-    // Fetch emails — route by provider
+    // Fetch emails — route by provider. Surface auth failures as
+    // notifications so the user knows their sync stopped working
+    // (previously these were swallowed and returned silent zeros).
+    let fetchError: string | null = null;
     const emails = await step.run("fetch-emails", async () => {
       try {
         if (provider === "microsoft") {
@@ -119,12 +122,40 @@ export const syncEmails = inngest.createFunction(
         }
         return await fetchRecentEmails(userId, userEmail, daysBack);
       } catch (err) {
-        console.error(`Email fetch failed (${provider || "google"}):`, err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Email fetch failed (${provider || "google"}):`, msg);
+        // Detect auth failures — these need user action
+        const isAuthError = msg.includes("401") || msg.includes("403") ||
+          msg.includes("invalid_grant") || msg.includes("token") ||
+          msg.includes("unauthorized") || msg.includes("auth");
+        if (isAuthError) {
+          fetchError = `Email sync failed: ${provider || "Google"} OAuth token expired. Reconnect in Settings → Mail & Calendar.`;
+        }
         return [];
       }
     });
 
-    if (emails.length === 0) return { synced: 0, reason: `No emails or ${provider || "google"} not connected` };
+    // Surface auth errors as notifications so the user knows
+    if (fetchError) {
+      try {
+        const { notifications, users } = await import("@/db/schema");
+        const tenantUsers = await db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId)).limit(5);
+        for (const u of tenantUsers) {
+          await db.insert(notifications).values({
+            tenantId,
+            userId: u.id,
+            type: "system" as const,
+            title: "Email sync disconnected",
+            body: fetchError,
+          });
+        }
+      } catch (e) {
+        console.warn("sync: notification creation failed", e);
+      }
+      return { synced: 0, reason: fetchError };
+    }
+
+    if (emails.length === 0) return { synced: 0, reason: "No new emails in sync window" };
 
     // Get existing contacts for matching
     const existingContacts: ContactRow[] = await step.run("get-contacts", async () => {

@@ -398,6 +398,18 @@ export const processOutboundEmails = inngest.createFunction(
               );
           }
 
+          // Fire coaching analysis event (non-blocking) so the coaching
+          // engine can score this email and provide feedback.
+          await inngest.send({
+            name: "coaching/pre-send-analysis",
+            data: {
+              tenantId: email.tenantId,
+              emailId: email.id,
+              dealId: email.campaignId || undefined,
+              contactId: email.contactId || undefined,
+            },
+          }).catch(() => { /* non-blocking */ });
+
           sent++;
         } catch (err) {
           const errorMsg =

@@ -22,6 +22,7 @@ import { analyzeOutgoingEmail, postInteractionCoaching, analyzeDealEvent, weekly
 import { signalToDealAlert } from "@/inngest/signal-to-deal-alert";
 import { syncSignalsToDeal } from "@/inngest/deal-signal-sync";
 import { autoPipelineStep } from "@/inngest/autonomous-pipeline";
+import { handleAutoPipelineDraft } from "@/inngest/auto-pipeline-email-handler";
 import { dailyFounderBrief } from "@/inngest/founder-coach";
 
 export const { GET, POST, PUT } = serve({
@@ -83,6 +84,7 @@ export const { GET, POST, PUT } = serve({
     signalToDealAlert,
     syncSignalsToDeal,
     autoPipelineStep,
+    handleAutoPipelineDraft,
     dailyFounderBrief,
   ],
 });
