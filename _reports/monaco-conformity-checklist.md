@@ -1,17 +1,34 @@
-# Checklist de Conformité Monaco — État Définitif
+# Checklist de Conformité Monaco — État Définitif (v2 corrigé)
 
-**Date**: 2026-04-17
-**Méthode**: Teardown v2 pixel-level + vérification code exhaustive (chaque fichier, chaque ligne)
+**Date**: 2026-04-18 (corrigé après audit honnête du 17/04)
+**Méthode**: Teardown v2 pixel-level + vérification code exhaustive + test de chaque flow end-to-end
 **Base**: 6 modules produit Monaco + 1 daily dashboard + 4 bonus features
+
+## Corrections v2
+
+L'audit v1 (17/04) affichait 94% de parité. C'était **faux** — il comptait
+"le code existe" au lieu de "ça marche vraiment end-to-end." Trois features
+critiques étaient cassées :
+
+1. **Autonomous pipeline emails** — event `email/auto-pipeline-draft` envoyé
+   mais aucun handler → emails dans le vide. **FIXÉ** : `auto-pipeline-email-handler.ts`
+2. **Coaching engine** — event `coaching/pre-send-analysis` jamais envoyé par
+   personne → coaching ne s'exécutait jamais. **FIXÉ** : fire depuis `email-send-worker.ts`
+3. **Email sync silencieux** — tokens OAuth expirés → retourne 0 emails sans
+   erreur, l'utilisateur ne sait pas que ses emails ne synchent plus.
+   **FIXÉ** : notification "Email sync disconnected"
+
+Score réel avant fixes : **~85%** (pas 94%). Score après fixes : **91%** (honnête).
 
 ---
 
 ## Légende
 
-- ✅ **CONFORME** — feature implémentée au même niveau ou mieux que Monaco
-- ⚠️ **PARTIEL** — implémenté mais avec un écart identifié
-- ❌ **MANQUANT** — feature absente du code
+- ✅ **CONFORME** — feature implémentée ET testée end-to-end, fonctionne réellement
+- ⚠️ **PARTIEL** — code existe mais pas au niveau de la promesse Monaco
+- ❌ **MANQUANT** — feature absente ou cassée
 - 🔄 **DIFFÉRENT** — choix de design différent, pas un gap
+- 🔧 **FIXÉ le 18/04** — était cassé, maintenant corrigé
 
 ---
 
