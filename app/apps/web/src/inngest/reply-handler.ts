@@ -163,23 +163,33 @@ ADDITIONAL RULES:
         return object as { subject: string; body: string };
       });
 
-      // Create draft
-      await step.run("create-positive-draft", async () => {
+      // Auto-queue the positive reply for sending (not just draft).
+      // The email-send-worker picks it up on its next 2-min cron cycle.
+      // For "ask" approval mode, keep as draft so user reviews first.
+      const settings = await step.run("load-settings", async () => {
+        const { getTenantSettings } = await import("@/lib/tenant-settings");
+        return getTenantSettings(tenantId);
+      });
+
+      const autoSend = settings.agentApprovalMode === "auto";
+
+      await step.run("create-positive-reply", async () => {
         await db.insert(outboundEmails).values({
           tenantId,
           enrollmentId,
           contactId: enrollment.contactId,
-          stepNumber: (enrollment.currentStep || 1) + 100, // high number = reply, not sequence step
+          stepNumber: (enrollment.currentStep || 1) + 100,
           fromAddress: "pending@rotation",
           toAddress: contact.email!,
           subject: reply.subject,
           bodyHtml: `<div>${reply.body.replace(/\n/g, "<br>")}</div>`,
           bodyText: reply.body,
-          status: "draft",
+          status: autoSend ? "queued" : "draft",
+          queuedAt: autoSend ? new Date() : null,
         });
       });
 
-      return { enrollmentId, result: "draft_created", classification, urgency };
+      return { enrollmentId, result: autoSend ? "auto_queued" : "draft_created", classification, urgency };
     }
 
     if (classification.startsWith("objection_")) {

@@ -72,7 +72,20 @@ export const signalToDealAlert = inngest.createFunction(
             ),
           );
 
-        if (openDeals.length === 0) return; // No open deals — signal stays as TAM intel
+        if (openDeals.length === 0) {
+          // No open deals — auto-enroll contacts into outbound sequence
+          await inngest.send({
+            name: "signals/auto-enroll",
+            data: {
+              tenantId,
+              companyId: signal.companyId,
+              companyName: signal.companyName,
+              signalType: signal.signalType,
+              signalTitle: signal.title,
+            },
+          }).catch((e) => console.warn("signal-to-deal-alert: auto-enroll trigger failed", e));
+          return;
+        }
 
         for (const deal of openDeals) {
           // Generate impact assessment

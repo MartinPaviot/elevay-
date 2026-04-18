@@ -25,6 +25,7 @@ import { autoPipelineStep } from "@/inngest/autonomous-pipeline";
 import { handleAutoPipelineDraft } from "@/inngest/auto-pipeline-email-handler";
 import { dailyFounderBrief } from "@/inngest/founder-coach";
 import { serviceHealthCheck } from "@/inngest/health-checks";
+import { signalAutoEnroll } from "@/inngest/signal-to-sequence";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -87,6 +88,8 @@ export const { GET, POST, PUT } = serve({
     autoPipelineStep,
     handleAutoPipelineDraft,
     dailyFounderBrief,
+    // Signal → auto-enroll contacts into outbound sequences
+    signalAutoEnroll,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
   ],

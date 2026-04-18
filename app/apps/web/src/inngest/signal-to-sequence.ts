@@ -1,0 +1,197 @@
+/**
+ * Signal → Auto-Sequence Enrollment
+ *
+ * When a buying signal is detected on a TAM company that has NO open
+ * deal, this function auto-enrolls the company's contacts into the
+ * tenant's default outbound sequence.
+ *
+ * This closes the gap: TAM → Signals → ???. Without this, signals
+ * are detected but nobody acts on them automatically.
+ *
+ * Flow:
+ * 1. Signal detected on company (no open deal)
+ * 2. Find contacts at that company
+ * 3. Find the tenant's active outbound sequence
+ * 4. Enroll contacts that aren't already enrolled
+ * 5. Create a deal at "lead" stage for the company
+ */
+
+import { inngest } from "./client";
+import { db } from "@/db";
+import {
+  contacts,
+  companies,
+  deals,
+  sequences,
+  sequenceEnrollments,
+  notifications,
+  users,
+} from "@/db/schema";
+import { and, eq, notInArray, inArray, desc } from "drizzle-orm";
+
+export const signalAutoEnroll = inngest.createFunction(
+  {
+    id: "signal-auto-enroll",
+    retries: 1,
+    triggers: [{ event: "signals/auto-enroll" }],
+  },
+  async ({ event, step }: {
+    event: {
+      data: {
+        tenantId: string;
+        companyId: string;
+        companyName: string;
+        signalType: string;
+        signalTitle: string;
+      };
+    };
+    step: any;
+  }) => {
+    const { tenantId, companyId, companyName, signalType, signalTitle } = event.data;
+
+    // 1. Check: does this company already have an open deal?
+    const existingDeal = await step.run("check-existing-deal", async () => {
+      const [deal] = await db
+        .select({ id: deals.id })
+        .from(deals)
+        .where(
+          and(
+            eq(deals.tenantId, tenantId),
+            eq(deals.companyId, companyId),
+            notInArray(deals.stage, ["won", "lost"]),
+          ),
+        )
+        .limit(1);
+      return deal || null;
+    });
+
+    if (existingDeal) {
+      return { skipped: true, reason: "Company already has open deal", dealId: existingDeal.id };
+    }
+
+    // 2. Find contacts at this company
+    const companyContacts = await step.run("find-contacts", async () => {
+      return db
+        .select({ id: contacts.id, email: contacts.email, firstName: contacts.firstName })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.tenantId, tenantId),
+            eq(contacts.companyId, companyId),
+          ),
+        )
+        .limit(5); // Max 5 contacts per company auto-enrollment
+    });
+
+    if (companyContacts.length === 0) {
+      return { skipped: true, reason: "No contacts at this company" };
+    }
+
+    // Filter to contacts with email
+    const enrollableContacts = companyContacts.filter((c: { id: string; email: string | null }) => c.email);
+    if (enrollableContacts.length === 0) {
+      return { skipped: true, reason: "No contacts with email addresses" };
+    }
+
+    // 3. Find an active outbound sequence for this tenant
+    const activeSequence = await step.run("find-sequence", async () => {
+      const [seq] = await db
+        .select({ id: sequences.id, name: sequences.name })
+        .from(sequences)
+        .where(
+          and(
+            eq(sequences.tenantId, tenantId),
+            eq(sequences.status, "active"),
+          ),
+        )
+        .orderBy(desc(sequences.createdAt))
+        .limit(1);
+      return seq || null;
+    });
+
+    if (!activeSequence) {
+      return { skipped: true, reason: "No active sequence found for tenant" };
+    }
+
+    // 4. Check which contacts are already enrolled
+    const contactIds = enrollableContacts.map((c: { id: string }) => c.id);
+    const alreadyEnrolled = await step.run("check-enrolled", async () => {
+      const enrolled = await db
+        .select({ contactId: sequenceEnrollments.contactId })
+        .from(sequenceEnrollments)
+        .where(
+          and(
+            eq(sequenceEnrollments.sequenceId, activeSequence.id),
+            inArray(sequenceEnrollments.contactId, contactIds),
+          ),
+        );
+      return new Set(enrolled.map((e) => e.contactId));
+    });
+
+    const toEnroll = enrollableContacts.filter((c: { id: string }) => !alreadyEnrolled.has(c.id));
+    if (toEnroll.length === 0) {
+      return { skipped: true, reason: "All contacts already enrolled" };
+    }
+
+    // 5. Enroll contacts
+    let enrolled = 0;
+    await step.run("enroll-contacts", async () => {
+      for (const contact of toEnroll) {
+        await db.insert(sequenceEnrollments).values({
+          sequenceId: activeSequence.id,
+          contactId: contact.id,
+          status: "active",
+          currentStep: 1,
+          nextStepAt: new Date(), // Immediate first step
+        });
+        enrolled++;
+      }
+    });
+
+    // 6. Create a deal for this company at "lead" stage
+    const newDeal = await step.run("create-deal", async () => {
+      const [deal] = await db
+        .insert(deals)
+        .values({
+          tenantId,
+          companyId,
+          name: `${companyName} — ${signalType}`,
+          stage: "lead",
+          summary: `Auto-created from ${signalType} signal: ${signalTitle}`,
+        })
+        .returning({ id: deals.id });
+      return deal;
+    });
+
+    // 7. Notify the user
+    await step.run("notify", async () => {
+      const tenantUsers = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.tenantId, tenantId))
+        .limit(3);
+
+      for (const u of tenantUsers) {
+        await db.insert(notifications).values({
+          tenantId,
+          userId: u.id,
+          type: "system",
+          title: `Auto-enrolled ${enrolled} contact${enrolled > 1 ? "s" : ""} from ${companyName}`,
+          body: `Signal: ${signalTitle}\nSequence: ${activeSequence.name}\nDeal created: ${companyName}`,
+          entityType: "deal",
+          entityId: newDeal?.id || null,
+        });
+      }
+    });
+
+    return {
+      companyId,
+      companyName,
+      enrolled,
+      sequenceId: activeSequence.id,
+      sequenceName: activeSequence.name,
+      dealId: newDeal?.id,
+      signalType,
+    };
+  },
+);

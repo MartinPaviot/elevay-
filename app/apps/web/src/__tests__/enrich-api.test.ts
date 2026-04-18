@@ -230,8 +230,9 @@ describe("POST /api/enrich", () => {
 
     await POST(req);
 
-    // Should only process 20
-    expect(db.select).toHaveBeenCalledTimes(20);
+    // Should only process 20 companies (each may trigger multiple DB
+    // calls due to LLM fallback path, but the loop cap is 20)
+    expect(limitFn).toHaveBeenCalledTimes(20);
   });
 
   it("counts failures for missing companies", async () => {
