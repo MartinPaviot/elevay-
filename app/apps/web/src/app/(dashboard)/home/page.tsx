@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { EmailComposer } from "@/components/email-composer";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { OnboardingV2Wrapper } from "@/components/onboarding-v2-wrapper";
+import { WarmLeadPrompt } from "@/components/WarmLeadPrompt";
 import { CompanyLogo } from "@/components/ui/company-logo";
 
 interface Action {
@@ -133,6 +134,8 @@ export default function DashboardPage() {
   const [onboardingInitialStep, setOnboardingInitialStep] = useState<string | null>(null);
   // WS-2 — v2 confirmation-card feature flag. Fetched alongside hydrate.
   const [onboardingV2Enabled, setOnboardingV2Enabled] = useState<boolean>(false);
+  // WS-3 — warm-lead prompt flag.
+  const [warmLeadPromptEnabled, setWarmLeadPromptEnabled] = useState<boolean>(false);
   const [emailComposer, setEmailComposer] = useState<{
     to: string;
     subject: string;
@@ -187,6 +190,7 @@ export default function DashboardPage() {
         if (cancelled) return;
         const flags = (payload?.flags ?? {}) as Record<string, boolean>;
         setOnboardingV2Enabled(!!flags["onboarding.v2.confirmation-card"]);
+        setWarmLeadPromptEnabled(!!flags["onboarding.v2.warm-lead-prompt"]);
       })
       .catch(() => {
         /* v1 default */
@@ -347,6 +351,14 @@ export default function DashboardPage() {
               </div>
             </CardBody>
           </Card>
+        )}
+
+        {/* WS-3 — Warm-lead prompt, gated by onboarding.v2.warm-lead-prompt.
+            Renders only post-onboarding so it doesn't race the wizard. */}
+        {warmLeadPromptEnabled && !showOnboarding && (
+          <div className="mt-4">
+            <WarmLeadPrompt />
+          </div>
         )}
 
         {/* Weekly Summary — show outbound stats if active, founder stats otherwise */}
