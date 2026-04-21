@@ -84,6 +84,23 @@ export interface TenantSettings {
   // ── Agent behavior ──
   agentApprovalMode?: "auto" | "ask" | "manual";
 
+  /**
+   * Per-tenant monthly LLM budget cap in US dollars. When set, every
+   * traced-ai call goes through `enforceLlmBudget` which sums
+   * `usage_events.metadata.estimatedCost` for the current calendar
+   * month and throws `BudgetExceededError` once the cap is reached.
+   *
+   * Semantics:
+   *   - undefined or 0 → no cap (LLM calls always allowed).
+   *   - number > 0 → cap in USD, checked pre-dispatch.
+   *
+   * Callers of the traced-ai helpers should not try/catch this error
+   * silently; the intended flow is to surface "you've hit your AI
+   * budget for this month — increase cap or wait for next month" to
+   * the user so they can take action.
+   */
+  llmMonthlyCostCapUsd?: number;
+
   // ── Custom objects ──
   customObjectTypes?: CustomObjectTypeDef[];
 
