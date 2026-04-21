@@ -99,7 +99,43 @@ export interface TenantSettings {
   timezone?: string; // e.g. "America/New_York", "Europe/Paris"
 
   // ── Agent behavior ──
-  agentApprovalMode?: "auto" | "ask" | "manual";
+  /**
+   * Trust calibration knob — controls when autonomous actions require
+   * human approval. WS-1 migrated this from the legacy enum
+   * ("auto" | "ask" | "manual") to the v2 values below. Reads should
+   * go through `readApprovalMode()` in lib/guardrails/approval-mode.ts,
+   * which coerces any remaining legacy values so rollback stays safe.
+   *
+   * - "review-each"           → every autonomous action requires a
+   *                             per-item human approval before dispatch.
+   *                             The conservative default for every new
+   *                             tenant (brief §6 success criterion
+   *                             "zero silent actions").
+   * - "batch-daily"           → actions accumulate in a daily queue the
+   *                             user reviews once; approve all / reject
+   *                             individually. Unlocked via
+   *                             progressive-autonomy nudge at
+   *                             trustScore ≥ 0.5.
+   * - "auto-high-confidence"  → the agent sends actions whose confidence
+   *                             score crosses the agent-specific
+   *                             threshold without prompting. Lower-
+   *                             confidence actions still queue for
+   *                             review. Unlocked at trustScore ≥ 0.8.
+   *
+   * Legacy values `"auto" | "ask" | "manual" | "off"` are accepted on
+   * read so tenants migrated by WS-1 but not yet rewritten by the
+   * runner keep compiling. Writers should always emit v2 values;
+   * `readApprovalMode()` (PR B) coerces for callers that branch on the
+   * effective mode.
+   */
+  agentApprovalMode?:
+    | "review-each"
+    | "batch-daily"
+    | "auto-high-confidence"
+    | "auto"
+    | "ask"
+    | "manual"
+    | "off";
 
   /**
    * Per-tenant monthly LLM budget cap in US dollars. When set, every
@@ -123,6 +159,69 @@ export interface TenantSettings {
 
   // ── MCP API keys ──
   mcpApiKeys?: McpApiKeyEntry[];
+
+  // ── WS-1 guardrails ──
+  /**
+   * How outbound emails leave Elevay. Gates every send via
+   * `enforceSendingIdentity()` in lib/guardrails/sending-identity.ts.
+   *
+   * - "primary-with-caps"       → send from the user's primary mailbox
+   *                               (Gmail/Outlook OAuth) with a daily cap
+   *                               and a cold-outreach block. Default for
+   *                               every new tenant so nobody accidentally
+   *                               torches their primary domain.
+   * - "external-connected"      → route through a user-connected third-
+   *                               party sender (Instantly first; Smartlead
+   *                               etc. later). Credentials live in
+   *                               `instantlyCredentialsEncrypted`.
+   * - "elevay-managed-requested"→ user asked Elevay to set up a dedicated
+   *                               sending domain. Ticketed in
+   *                               `sending_infra_requests` table; no
+   *                               automated provisioning.
+   * - "elevay-managed-active"   → managed domain is warm and ready.
+   */
+  sendingMailboxMode?:
+    | "primary-with-caps"
+    | "external-connected"
+    | "elevay-managed-requested"
+    | "elevay-managed-active";
+  /** Max sends per calendar day from the user's primary mailbox when
+   *  `sendingMailboxMode === "primary-with-caps"`. Default 20. */
+  sendingDailyCapPrimary?: number;
+  /** When false (default), cold outreach from the primary inbox is
+   *  blocked and routed to the scaling-path prompt instead. */
+  sendingAllowColdOnPrimary?: boolean;
+  /** AES-GCM ciphertext of the Instantly Hypergrowth API key, encrypted
+   *  with ELEVAY_APP_SECRET. Present only when the tenant has connected
+   *  Instantly via `external-connected`. */
+  instantlyCredentialsEncrypted?: string;
+
+  /** Progressive-autonomy trust score, 0.0 - 1.0. Drives nudge thresholds.
+   *  See lib/guardrails/trust-score.ts. Never write directly — use the
+   *  helpers so the audit trail in `trust_events` stays in sync. */
+  trustScore?: number;
+  /** Tracks whether each progressive-autonomy nudge has been offered
+   *  and whether the user accepted or dismissed it. */
+  autonomyNudgeState?: {
+    batchDailyOffered: boolean;
+    batchDailyOfferedAt?: string;
+    batchDailyDismissedAt?: string;
+    batchDailyAcceptedAt?: string;
+    autoHighConfidenceOffered: boolean;
+    autoHighConfidenceOfferedAt?: string;
+    autoHighConfidenceDismissedAt?: string;
+    autoHighConfidenceAcceptedAt?: string;
+  };
+  /** T2+T4 mitigation (master brief §8.1): autonomy nudges cannot surface
+   *  until this flag is `true`. Flipped by WS-8 on first open of the
+   *  Agent Memory panel. WS-1 only seeds `false`. */
+  agentMemoryPanelDiscovered?: boolean;
+  /** Idempotency guard for the WS-1 migration runner. ISO timestamp. */
+  ws1MigrationRanAt?: string;
+  /** ISO timestamp of when the user dismissed the one-shot WS-1 banner.
+   *  Banner renders only for tenants whose legacy mode was "auto"
+   *  (i.e. the migration tightened their approval rule). */
+  ws1MigrationBannerDismissedAt?: string;
 }
 
 export interface McpApiKeyEntry {
@@ -192,10 +291,29 @@ export interface CustomObjectTypeDef {
 
 // ── Defaults ──
 
-const DEFAULTS: Required<Pick<TenantSettings, "aiTone" | "salesMotion" | "agentApprovalMode">> = {
+const DEFAULTS: Required<Pick<
+  TenantSettings,
+  | "aiTone"
+  | "salesMotion"
+  | "agentApprovalMode"
+  | "sendingMailboxMode"
+  | "sendingDailyCapPrimary"
+  | "sendingAllowColdOnPrimary"
+  | "trustScore"
+  | "agentMemoryPanelDiscovered"
+>> = {
   aiTone: "Direct",
   salesMotion: "Founder-led sales",
-  agentApprovalMode: "auto",
+  // WS-1: default changed from "auto" to "review-each" to honor the
+  // brief's "zero silent actions" success criterion. Legacy tenants
+  // keep their previous mode (migrated via ws-1-guardrail-defaults.ts);
+  // fresh tenants start conservative.
+  agentApprovalMode: "review-each",
+  sendingMailboxMode: "primary-with-caps",
+  sendingDailyCapPrimary: 20,
+  sendingAllowColdOnPrimary: false,
+  trustScore: 0.0,
+  agentMemoryPanelDiscovered: false,
 };
 
 // ── Per-request cache ──
