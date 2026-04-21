@@ -26,6 +26,7 @@ import { handleAutoPipelineDraft } from "@/inngest/auto-pipeline-email-handler";
 import { dailyFounderBrief } from "@/inngest/founder-coach";
 import { serviceHealthCheck } from "@/inngest/health-checks";
 import { signalAutoEnroll } from "@/inngest/signal-to-sequence";
+import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -92,5 +93,8 @@ export const { GET, POST, PUT } = serve({
     signalAutoEnroll,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
+    // Relationship graph: KNOWS edges for warm-intro discovery
+    nightlyRelationshipGraphBuild,
+    onDemandRelationshipGraphBuild,
   ],
 });
