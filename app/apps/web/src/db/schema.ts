@@ -1503,3 +1503,71 @@ export const pendingInvites = pgTable(
     index("pending_invites_email_idx").on(table.tenantId, table.email),
   ]
 );
+
+// ============================================================
+// WS-1 — Guardrail collection infrastructure
+// ============================================================
+
+/**
+ * Manual-ops handoff queue for tenants who requested an Elevay-managed
+ * sending domain. One active row per tenant; lifecycle
+ * pending → in_progress → completed (or cancelled). Never deleted,
+ * kept as an ops audit trail. See WS-1-spec §4.1.
+ */
+export const sendingInfraRequests = pgTable(
+  "sending_infra_requests",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    requestedByUserId: text("requested_by_user_id").notNull().references(() => authUsers.id),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    /** pending | in_progress | completed | cancelled — enforced in SQL via CHECK. */
+    status: text("status").notNull().default("pending"),
+    assigneeEmail: text("assignee_email"),
+    notes: text("notes"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("sending_infra_requests_tenant_idx").on(table.tenantId),
+    index("sending_infra_requests_status_idx").on(table.status),
+  ]
+);
+
+/**
+ * Append-only audit trail for every trustScore change. Visible to the
+ * user via WS-8's Agent Memory panel (learned-preference category).
+ * T2 mitigation in the master brief §8.1 — trustScore is never silent.
+ * See WS-1-spec §4.2.
+ */
+export const trustEvents = pgTable(
+  "trust_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    /** Null when the event is tenant-scoped (e.g. system correction); otherwise
+     * the user whose action generated the score change. */
+    userId: text("user_id").references(() => authUsers.id, { onDelete: "set null" }),
+    /** approved_no_edit | approved_with_edit | rejected | undone_after_send |
+     * nudge_offered | nudge_accepted | nudge_dismissed — free-form string
+     * so WS-8 can add categories without a migration. */
+    eventType: text("event_type").notNull(),
+    /** Delta applied to settings.trustScore. Can be negative (undo, etc.). */
+    scoreDelta: real("score_delta").notNull().default(0),
+    /** Resulting score after the delta was applied. Stored for audit so we
+     * can reconstruct the trajectory without replaying every event. */
+    newScore: real("new_score").notNull(),
+    /** Optional ref to the action that triggered this event (email id,
+     * contact id, etc.). Free-form string so WS-7's undo layer can write
+     * compound refs like `agent_action:xxxx`. */
+    entityRef: text("entity_ref"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("trust_events_tenant_created_idx").on(table.tenantId, table.createdAt),
+    index("trust_events_event_type_idx").on(table.eventType),
+  ]
+);

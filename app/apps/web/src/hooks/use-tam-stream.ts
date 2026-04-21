@@ -54,13 +54,14 @@ export interface TamStreamState {
   terminated: "done" | "cancelled" | "error" | null;
 }
 
-type Action =
+export type TamStreamAction =
   | { type: "start" }
   | { type: "event"; event: TamEvent }
   | { type: "cancel" }
-  | { type: "stream_error"; message: string };
+  | { type: "stream_error"; message: string }
+  | { type: "stream_closed" };
 
-const initialState: TamStreamState = {
+export const initialTamStreamState: TamStreamState = {
   jobId: null,
   startedAt: null,
   strategies: [],
@@ -78,11 +79,12 @@ const initialState: TamStreamState = {
   terminated: null,
 };
 
-function tamReducer(state: TamStreamState, action: Action): TamStreamState {
+/** Exported for unit tests — the hook wires this via `useReducer`. */
+export function tamReducer(state: TamStreamState, action: TamStreamAction): TamStreamState {
   switch (action.type) {
     case "start":
       return {
-        ...initialState,
+        ...initialTamStreamState,
         // Preserve rows from previous run if any — the accounts page
         // layers newly streamed rows on top of whatever was there.
         rows: state.rows,
@@ -102,6 +104,19 @@ function tamReducer(state: TamStreamState, action: Action): TamStreamState {
           ...state.errors,
           { stage: "stream", message: action.message },
         ],
+      };
+
+    case "stream_closed":
+      // Safety net: the NDJSON response closed without us receiving
+      // a terminal `done` event. This happens when the server throws
+      // *after* emitting a recoverable error (fallbacks to the outer
+      // catch) or when the network drops mid-stream. We don't want
+      // the UI to keep spinning "Building…" in that case.
+      if (!state.isRunning) return state;
+      return {
+        ...state,
+        isRunning: false,
+        terminated: state.errors.length > 0 ? "error" : "done",
       };
 
     case "event":
@@ -339,6 +354,20 @@ export function useTamStream() {
           }
         }
       }
+      // Flush any trailing buffered line that didn't end with a newline.
+      const tail = buffer.trim();
+      if (tail) {
+        try {
+          dispatch({ type: "event", event: JSON.parse(tail) as TamEvent });
+        } catch {
+          console.warn("[tam-stream] trailing line dropped:", tail);
+        }
+      }
+      // Stream ended cleanly — clamp isRunning in case the server
+      // never got to emit its terminal `done` (e.g. threw after
+      // starting work). The reducer is idempotent if a `done` did
+      // arrive earlier.
+      dispatch({ type: "stream_closed" });
     } catch (err) {
       if ((err as { name?: string })?.name === "AbortError") {
         dispatch({ type: "cancel" });
