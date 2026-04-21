@@ -719,7 +719,11 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
       const valid = websiteAnalysis.targetGeographies.filter((g) => (GEOGRAPHIES as readonly string[]).includes(g));
       setGeographies(valid.length > 0 ? valid : websiteAnalysis.targetGeographies);
     }
-    if (websiteAnalysis.suggestedTone && aiTone === "Direct") setAiTone(websiteAnalysis.suggestedTone);
+    // WS-2 — silent aiTone override removed. The suggested tone is now
+    // surfaced explicitly in the confirmation card (BUG-WS0-004). The
+    // v1 wizard leaves `aiTone` at its default until the user edits it
+    // in Settings → Workspace. Grep for `suggestedTone && aiTone` on
+    // main should return zero matches.
   };
 
   const handleProductContinue = async () => {
