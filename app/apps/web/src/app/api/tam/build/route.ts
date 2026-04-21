@@ -47,65 +47,68 @@ const APOLLO_PAGE_SIZE = 100;
 // already bias the result toward high-signal accounts before signals
 // are re-computed per-row.
 
+// NOTE: `z.array(...).min(N).max(M)` with N > 1 maps to JSON Schema
+// `minItems/maxItems` values > 1, which Anthropic's structured-output
+// endpoint rejects ("For 'array' type, 'minItems' values other than
+// 0 or 1 are not supported"). We enforce the count with a
+// `length >= 1` schema + an instruction in the prompt + a
+// server-side `slice(0, strategyCount)` after generation.
 const searchStrategySchema = z.object({
-  strategies: z
-    .array(
-      z.object({
-        label: z.string().describe(
-          "Short label like 'Direct ICP fit', 'Recent-funded adjacent', 'Actively hiring'",
+  strategies: z.array(
+    z.object({
+      label: z.string().describe(
+        "Short label like 'Direct ICP fit', 'Recent-funded adjacent', 'Actively hiring'",
+      ),
+      reasoning: z.string().describe(
+        "One sentence: why this angle fits the user's business",
+      ),
+      filters: z.object({
+        organization_num_employees_ranges: z.array(z.string()).describe(
+          "Apollo ranges like '51,200'. Always include at least one range.",
         ),
-        reasoning: z.string().describe(
-          "One sentence: why this angle fits the user's business",
+        organization_locations: z.array(z.string()).optional(),
+        q_organization_keyword_tags: z.array(z.string()).optional().describe(
+          "Business-domain keywords, not generic ('developer tools', not 'tech').",
         ),
-        filters: z.object({
-          organization_num_employees_ranges: z.array(z.string()).describe(
-            "Apollo ranges like '51,200'. Always include at least one range.",
+        currently_using_any_of_technology_uids: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Only when strongly relevant (e.g. selling Kubernetes monitoring → 'kubernetes').",
           ),
-          organization_locations: z.array(z.string()).optional(),
-          q_organization_keyword_tags: z.array(z.string()).optional().describe(
-            "Business-domain keywords, not generic ('developer tools', not 'tech').",
+        revenue_range: z
+          .object({ min: z.number().optional(), max: z.number().optional() })
+          .optional(),
+        latest_funding_date_range: z
+          .object({
+            min: z
+              .string()
+              .optional()
+              .describe("ISO date, e.g. '2025-10-01' for last ~6 months"),
+            max: z.string().optional(),
+          })
+          .optional()
+          .describe(
+            "Use for 'recent funding' plays — companies with runway to spend.",
           ),
-          currently_using_any_of_technology_uids: z
-            .array(z.string())
-            .optional()
-            .describe(
-              "Only when strongly relevant (e.g. selling Kubernetes monitoring → 'kubernetes').",
-            ),
-          revenue_range: z
-            .object({ min: z.number().optional(), max: z.number().optional() })
-            .optional(),
-          latest_funding_date_range: z
-            .object({
-              min: z
-                .string()
-                .optional()
-                .describe("ISO date, e.g. '2025-10-01' for last ~6 months"),
-              max: z.string().optional(),
-            })
-            .optional()
-            .describe(
-              "Use for 'recent funding' plays — companies with runway to spend.",
-            ),
-          organization_num_jobs_range: z
-            .object({
-              min: z.number().optional(),
-              max: z.number().optional(),
-            })
-            .optional()
-            .describe(
-              "Use `{ min: 1 }` or `{ min: 5 }` for hiring-intent plays.",
-            ),
-          q_organization_job_titles: z
-            .array(z.string())
-            .optional()
-            .describe(
-              "Job titles actively being recruited. Use when the buyer persona is hiring-adjacent (e.g. 'data engineer' for a data-platform seller).",
-            ),
-        }),
+        organization_num_jobs_range: z
+          .object({
+            min: z.number().optional(),
+            max: z.number().optional(),
+          })
+          .optional()
+          .describe(
+            "Use `{ min: 1 }` or `{ min: 5 }` for hiring-intent plays.",
+          ),
+        q_organization_job_titles: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Job titles actively being recruited. Use when the buyer persona is hiring-adjacent (e.g. 'data engineer' for a data-platform seller).",
+          ),
       }),
-    )
-    .min(2)
-    .max(6),
+    }),
+  ),
 });
 
 // ── Handler ──────────────────────────────────────────────────────
@@ -162,12 +165,26 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      let eventCount = 0;
       const send = (event: TamEvent) => {
         try {
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
-        } catch {
-          // Controller closed (client disconnected). Swallow — the
-          // cancel() callback has set abortController.
+          eventCount++;
+          if (process.env.NODE_ENV !== "production") {
+            const summary =
+              event.type === "company.inserted"
+                ? `${event.company.name} (${event.company.domain ?? "no-domain"})`
+                : event.type === "signal.computed"
+                  ? `${event.key}=${event.payload.value}`
+                  : event.type === "strategy.generated"
+                    ? `${event.strategies.length} strategies`
+                    : event.type === "error"
+                      ? `${event.stage}: ${event.message}`
+                      : "";
+            console.log(`[tam-stream ${jobId.slice(0, 8)}] send #${eventCount} ${event.type} ${summary}`);
+          }
+        } catch (err) {
+          console.warn(`[tam-stream ${jobId.slice(0, 8)}] enqueue failed (client gone?)`, (err as Error)?.message);
         }
       };
 
@@ -178,6 +195,19 @@ export async function POST(req: Request) {
       const summary = initSummary();
 
       try {
+        console.log(`[tam-stream ${jobId.slice(0, 8)}] start — tenant=${authCtx.tenantId} target=${targetCount}`);
+        // Emit hello immediately so the client knows we're alive
+        // before we block on settings/DB/LLM. Having a signal this
+        // early makes the UI feel instant and also lets us diagnose
+        // "did events reach the client at all?" without waiting for
+        // the full pipeline.
+        send({
+          type: "hello",
+          jobId,
+          tenantId: authCtx.tenantId,
+          startedAt: new Date(startedAt).toISOString(),
+        });
+
         // ── Context ──
         const settings = await getTenantSettings(authCtx.tenantId);
         const ownDomain = settings.companyDomain
@@ -220,12 +250,7 @@ export async function POST(req: Request) {
           settings.targetSeniorities ?? [],
         );
 
-        send({
-          type: "hello",
-          jobId,
-          tenantId: authCtx.tenantId,
-          startedAt: new Date(startedAt).toISOString(),
-        });
+        console.log(`[tam-stream ${jobId.slice(0, 8)}] context loaded — existingDomains=${existingDomains.size} investors=${tenantInvestors.size} industries=${settings.targetIndustries?.length ?? 0}`);
 
         // ── Plan strategies via LLM ──
         const strategies = await planStrategies({
@@ -340,8 +365,10 @@ export async function POST(req: Request) {
         await Promise.allSettled(allPerCompanyWork);
 
         summary.durationMs = Date.now() - startedAt;
+        console.log(`[tam-stream ${jobId.slice(0, 8)}] done — inserted=${summary.companiesInserted} skipped=${summary.companiesSkipped} aBurning=${summary.aBurningCount} duration=${summary.durationMs}ms`);
         send({ type: "done", summary });
       } catch (err) {
+        console.error(`[tam-stream ${jobId.slice(0, 8)}] FAILED`, err);
         send({
           type: "error",
           stage: "build",

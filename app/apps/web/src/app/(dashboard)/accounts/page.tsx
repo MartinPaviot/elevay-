@@ -963,7 +963,7 @@ export default function AccountsPage() {
             // +4 for built-in TAM signals + N for custom signals.
             cols={8 + 4 + customSignals.length + signalTypeColumns.length + customBoolColumns.length + customFields.length}
           />
-        ) : accounts.length === 0 ? (
+        ) : mergedAccounts.length === 0 ? (
           <EmptyState
             icon={<Building2 size={24} />}
             title="No accounts"
