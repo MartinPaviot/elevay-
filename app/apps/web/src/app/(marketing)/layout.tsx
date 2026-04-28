@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Elevay — Your CRM finds customers, remembers everything, and does the work",
+  title: "Elevay — Your Revenue Engine Is Ready",
   description:
-    "AI-powered CRM for founder-led sales. Auto-built TAM, ML scoring, outbound sequences, deal coaching — zero manual data entry. Start free.",
+    "The pre-built revenue engine for founder-led sales. Connect your inbox, build your TAM, write sequences, capture calls, automate follow-ups — everything a sales org does, without the sales org.",
   openGraph: {
-    title: "Elevay — Your CRM finds customers, remembers everything, and does the work",
+    title: "Elevay — Your Revenue Engine Is Ready",
     description:
-      "AI-powered CRM for founder-led sales. Auto-built TAM, ML scoring, outbound sequences, deal coaching — zero manual data entry.",
+      "The pre-built revenue engine for founder-led sales. Connect your inbox, build your TAM, write sequences, capture calls, automate follow-ups.",
     url: "/",
     siteName: "Elevay",
     locale: "en_US",
@@ -15,9 +15,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Elevay — Your CRM finds customers, remembers everything, and does the work",
+    title: "Elevay — Your Revenue Engine Is Ready",
     description:
-      "AI-powered CRM for founder-led sales. Zero manual data entry. Start free.",
+      "The pre-built revenue engine for founder-led sales. Everything a sales org does — without the sales org.",
   },
 };
 
@@ -40,7 +40,7 @@ const softwareJsonLd = {
   operatingSystem: "Web",
   url: APP_URL,
   description:
-    "AI-powered CRM for founder-led sales. Auto-built TAM, ML scoring, outbound sequences, deal coaching — zero manual data entry.",
+    "The pre-built revenue engine for founder-led sales. Connect your inbox, build your TAM, write sequences, capture calls, automate follow-ups.",
   offers: {
     "@type": "Offer",
     price: "0",

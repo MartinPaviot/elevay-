@@ -9,6 +9,7 @@
 @theme {
   /* === TYPOGRAPHY === */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Fraunces', 'Georgia', serif;
   --font-mono: 'JetBrains Mono', 'DM Mono', monospace;
 
   /* === LAYOUT === */
@@ -102,6 +103,20 @@
   --gradient-brand: linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D);
   --gradient-brand-hover: linear-gradient(90deg, #14b0a0, #245ec9, #e56d35);
   --gradient-shimmer: linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D, #17C3B2);
+
+  /* LP-specific tokens (marketing page only — do not leak into dashboard) */
+  --lp-bg: #FAFAF7;
+  --lp-bg-elevated: #FFFFFF;
+  --lp-bg-subtle: #F2F1EC;
+  --lp-text-primary: #0A0B10;
+  --lp-text-body: rgba(10, 11, 16, 0.64);
+  --lp-text-muted: rgba(10, 11, 16, 0.42);
+  --lp-text-faint: rgba(10, 11, 16, 0.28);
+  --lp-border: rgba(10, 11, 16, 0.08);
+  --lp-border-emphasis: rgba(10, 11, 16, 0.14);
+  --lp-shadow-sm: 0 1px 2px rgba(10, 11, 16, 0.04), 0 1px 1px rgba(10, 11, 16, 0.02);
+  --lp-shadow-md: 0 4px 12px rgba(10, 11, 16, 0.06), 0 1px 3px rgba(10, 11, 16, 0.04);
+  --lp-shadow-lg: 0 12px 32px rgba(10, 11, 16, 0.08), 0 2px 6px rgba(10, 11, 16, 0.04);
 }
 
 /* ================================================================
@@ -245,6 +260,23 @@
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
 }
+
+/* LP grain texture — SVG noise at 3% opacity, multiply blend.
+   Only perceptible on large empty areas; invisible on cards/text. */
+.lp-grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* marquee keyframe removed — trust strip now uses static pills (Polish Pass #3) */
 
 /* ================================================================
    AUTH INPUT FOCUS STYLES
