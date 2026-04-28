@@ -14,7 +14,7 @@
  */
 
 import { generateText, generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import logger from "./logger";

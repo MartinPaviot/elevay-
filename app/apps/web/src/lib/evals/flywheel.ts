@@ -25,7 +25,7 @@ import {
 } from "@/db/schema";
 import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
 import { generateText, generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { AGENT_REGISTRY } from "../observability";
@@ -728,10 +728,12 @@ async function evaluatePromptWithRealCases(
         prompt: evalCase.input,
       });
 
-      // Run deterministic graders
-      const graderResults = evalCase.graders
-        .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
-        .map((g) => runGrader(g, result.text, [], 0));
+      // Run deterministic graders (runGrader is async but these types resolve synchronously)
+      const graderResults = await Promise.all(
+        evalCase.graders
+          .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
+          .map((g) => runGrader(g, result.text, [], 0)),
+      );
 
       // Run one dimension judge for accuracy (cheaper than full dimension suite)
       const hasLlmJudge = evalCase.graders.some((g) => g.type === "llm_judge");

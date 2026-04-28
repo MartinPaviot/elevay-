@@ -31,11 +31,34 @@ import {
 } from "@/lib/tenant-settings";
 import logger from "@/lib/logger";
 
-export const TRUST_SCORE_DELTAS = {
+/**
+ * Configurable delta values for trust score adjustments.
+ *
+ * These control how fast the tenant's autonomy trust score moves toward
+ * or away from the thresholds that trigger batch-daily and
+ * auto-high-confidence nudges. Tuning guide:
+ *
+ * - Positive deltas should be small so trust is earned gradually over
+ *   many interactions, not granted after a handful of approvals.
+ * - The negative delta for "undone_after_send" is intentionally 2.5x
+ *   the largest positive delta: a single regretted send should
+ *   outweigh several clean approvals, because the cost of a bad
+ *   autonomous action is higher than the benefit of a good one.
+ * - Zero-delta events still produce audit rows so the WS-8 Agent
+ *   Memory panel can render a complete timeline.
+ */
+export const TRUST_SCORE_CONFIG = {
+  /** User approved the draft without any edits -- strongest positive signal. */
   approved_no_edit: 0.02,
+  /** User approved with light edits -- still positive, but weaker than no-edit. */
   approved_with_edit: 0.01,
+  /** User heavily rewrote the draft -- no signal either way. */
   heavily_edited: 0,
+  /** User rejected the draft outright -- neutral (rejection is expected early). */
   rejected: 0,
+  /** User undid/recalled an already-sent action -- strong negative signal
+   *  that the agent acted prematurely. Asymmetrically large to slow down
+   *  autonomy progression after a mistake. */
   undone_after_send: -0.05,
   // Nudge lifecycle events themselves don't move the score, but are
   // logged so the audit trail reflects the user's autonomy decisions.
@@ -44,12 +67,23 @@ export const TRUST_SCORE_DELTAS = {
   nudge_dismissed: 0,
 } as const;
 
+/** @deprecated Use TRUST_SCORE_CONFIG instead. Kept for backward compatibility. */
+export const TRUST_SCORE_DELTAS = TRUST_SCORE_CONFIG;
+
 export type TrustEventType = keyof typeof TRUST_SCORE_DELTAS;
 
 export const NUDGE_THRESHOLDS = {
   batchDaily: 0.5,
   autoHighConfidence: 0.8,
 } as const;
+
+// Trust scores decay over inactivity. If no positive trust event
+// (approved_no_edit or approved_with_edit) occurs within DECAY_WINDOW_MS,
+// the score is multiplied by DECAY_FACTOR when read. This prevents
+// stale trust scores from granting autonomy to tenants who stopped
+// actively calibrating the agent months ago.
+const DECAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const DECAY_FACTOR = 0.85; // 15% decay per inactive window
 
 export type NudgeKind = "batch-daily" | "auto-high-confidence";
 
@@ -112,8 +146,16 @@ export async function recordAutonomyEvent(
 
     // No-op write when delta is 0 (nudge lifecycle events). Still
     // record the audit row so WS-8 can render the user's decisions.
+    const updates: Partial<TenantSettings> = {};
     if (delta !== 0) {
-      await updateTenantSettings(tenantId, { trustScore: newScore });
+      updates.trustScore = newScore;
+    }
+    // Track last positive event for decay calculation.
+    if (delta > 0) {
+      updates.lastPositiveTrustEventAt = new Date().toISOString();
+    }
+    if (Object.keys(updates).length > 0) {
+      await updateTenantSettings(tenantId, updates);
     }
 
     return {
@@ -154,6 +196,23 @@ export async function getNudgeCandidate(
   }
 }
 
+/**
+ * Apply time-based decay to a trust score. If the most recent positive
+ * event is older than DECAY_WINDOW_MS, the score is multiplied by
+ * DECAY_FACTOR for each elapsed window. Returns the effective score.
+ */
+export function applyTrustDecay(
+  rawScore: number,
+  lastPositiveEventAt: string | null | undefined,
+  now: Date = new Date(),
+): number {
+  if (!lastPositiveEventAt || rawScore <= 0) return rawScore;
+  const elapsed = now.getTime() - new Date(lastPositiveEventAt).getTime();
+  if (elapsed <= DECAY_WINDOW_MS) return rawScore;
+  const windows = Math.floor(elapsed / DECAY_WINDOW_MS);
+  return rawScore * Math.pow(DECAY_FACTOR, windows);
+}
+
 /** Pure-function core of `getNudgeCandidate`, exported for unit tests. */
 export function computeNudgeCandidate(
   settings: Pick<
@@ -162,6 +221,7 @@ export function computeNudgeCandidate(
     | "agentMemoryPanelDiscovered"
     | "autonomyNudgeState"
     | "agentApprovalMode"
+    | "lastPositiveTrustEventAt"
   >,
   now: Date = new Date(),
 ): NudgeKind | null {
@@ -169,7 +229,11 @@ export function computeNudgeCandidate(
   // user has seen the Agent Memory surface at least once.
   if (!settings.agentMemoryPanelDiscovered) return null;
 
-  const score = settings.trustScore ?? 0;
+  const score = applyTrustDecay(
+    settings.trustScore ?? 0,
+    settings.lastPositiveTrustEventAt,
+    now,
+  );
   const state = settings.autonomyNudgeState;
   const currentMode = settings.agentApprovalMode;
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { z } from "zod";
 import { db } from "@/db";
 import { activities, contacts } from "@/db/schema";

@@ -1,6 +1,6 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
 import { INDUSTRIES, industriesPromptHint, companySizesPromptHint } from "@/lib/icp-constants";
@@ -248,6 +248,7 @@ Think step by step about what the evidence tells you, then produce your inferenc
       providerOptions: {
         anthropic: {
           thinking: { type: "enabled", budgetTokens: 4000 },
+          cacheControl: { type: "ephemeral" },
         },
       },
       _trace: { agentId: "icp-analysis", tenantId: authCtx.tenantId, inputPreview: `Step 2: Infer ICP for ${cleanDomain}` },

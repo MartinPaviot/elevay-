@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { deals } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -82,6 +82,9 @@ Extract:
       model,
       schema: extractionSchema,
       prompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "deal-extract-intel", tenantId: authCtx.tenantId },
     });
     const result = object as any;

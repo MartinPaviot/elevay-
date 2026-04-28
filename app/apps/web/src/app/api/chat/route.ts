@@ -1,6 +1,8 @@
 import { getAuthContext } from "@/lib/auth-utils";
-import { anthropic } from "@ai-sdk/anthropic";
+import { clearTenantId } from "@/db/rls";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
+import { isCircuitClosed, ANTHROPIC_CIRCUIT } from "@/lib/circuit-breaker";
 import { UIMessage, convertToModelMessages, stepCountIs } from "ai";
 import { tracedStreamText } from "@/lib/traced-ai";
 import { searchSimilar } from "@/lib/embeddings";
@@ -8,7 +10,7 @@ import { searchContextGraph } from "@/lib/context-graph";
 import { db } from "@/db";
 import { companies, contacts, deals, activities, notes, chatMemories } from "@/db/schema";
 import { and, eq, desc, sql, or } from "drizzle-orm";
-import { getTenantSettings, type TenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles, type TenantSettings } from "@/lib/tenant-settings";
 import { buildChatSystemPrompt } from "@/lib/prompts/chat-system-prompt";
 import { buildAllChatTools, type ToolContext } from "@/lib/chat/tools";
 import { resolveCapabilities, type SurfaceContext } from "@/lib/agents/capability-resolver";
@@ -151,7 +153,9 @@ async function getCRMSnapshot(tenantId: string, settings: TenantSettings): Promi
     contextParts.push(`Target industries: ${settings.targetIndustries.join(", ")}`);
   if (settings.targetCompanySizes?.length)
     contextParts.push(`Target company sizes: ${settings.targetCompanySizes.join(", ")}`);
-  if (settings.targetRoles) contextParts.push(`Target buyer roles: ${settings.targetRoles}`);
+  // BUG-WS0-008: derive targetRoles at read time
+  const derivedRoles = deriveTargetRoles(settings);
+  if (derivedRoles) contextParts.push(`Target buyer roles: ${derivedRoles}`);
   if (settings.targetGeographies?.length)
     contextParts.push(`Target geographies: ${settings.targetGeographies.join(", ")}`);
   if (contextParts.length > 0) {
@@ -319,13 +323,20 @@ export async function POST(req: Request) {
     threadId?: string;
   } = await req.json();
 
-  const primaryModel = process.env.ANTHROPIC_API_KEY
-    ? anthropic("claude-sonnet-4-6")
-    : null;
+  // If the Anthropic circuit breaker is open, skip straight to OpenAI
+  // instead of waiting for each request to individually time out.
+  const anthropicUp =
+    !!process.env.ANTHROPIC_API_KEY &&
+    isCircuitClosed(ANTHROPIC_CIRCUIT.name);
+  const primaryModel = anthropicUp ? anthropic("claude-sonnet-4-6") : null;
   const fallbackModel = process.env.OPENAI_API_KEY
     ? openai("gpt-4o-mini")
     : null;
-  const model = primaryModel || fallbackModel;
+  const model = primaryModel || fallbackModel || (
+    // Last resort: try Anthropic even with open circuit rather than
+    // returning a "no LLM" error.
+    process.env.ANTHROPIC_API_KEY ? anthropic("claude-sonnet-4-6") : null
+  );
 
   if (!model) {
     return new Response(
@@ -410,107 +421,116 @@ export async function POST(req: Request) {
 
   const tenantId = authCtx.tenantId;
 
-  // Back-compat: if surface isn't set explicitly, infer from contextType/Id
-  const inferredSurface: SurfaceContext = surfaceInput || inferSurface(contextType, contextId);
-
-  // Build chat tool registry + resolve capabilities for this turn
-  const toolCtx: ToolContext = {
-    tenantId,
-    userId: authCtx.appUserId,
-    authCtx,
-    settings: tenantSettings,
-    agentApprovalMode,
-  };
-  const allTools = buildAllChatTools(toolCtx);
-  const resolved = resolveCapabilities(allTools, {
-    role: authCtx.role,
-    surface: inferredSurface,
-    // allowDestructive + planTier default to safe values (false / free)
-    // until CHAT-04 + billing integration land.
-  });
-  const chatTools = resolved.tools;
-
-  const systemPrompt =
-    buildChatSystemPrompt({
-      crmSnapshot,
-      ragContext,
-      entityContext,
-      knowledgeContext,
-      memoriesContext,
-      agentApprovalMode,
-      userName: tenantSettings.onboardingCompanyName || undefined,
-      preferredLanguage: tenantSettings.language || undefined,
-    }) + resolved.surfacePromptAddendum;
-
-  // ── Context Management: compact long conversations ──
-  const compactedMessages = compactMessages(messages);
-  const convertedMessages = await convertToModelMessages(compactedMessages);
-
-  // CHAT-07: fire auto-extract every ~20 turns on a thread. Fire-and-
-  // forget — the chat response doesn't wait on it. The worker dedupes
-  // via (tenant, scope, key) existence checks so re-firing is safe.
-  if (threadId && messages.length > 0 && messages.length % 20 === 0) {
-    void (async () => {
-      try {
-        const { inngest } = await import("@/inngest/client");
-        await inngest.send({
-          name: "memory/auto-extract",
-          data: { tenantId, userId: authCtx.appUserId, threadId },
-        });
-      } catch (err) {
-        console.warn("chat: memory/auto-extract emit failed (non-fatal)", err);
-      }
-    })();
-  }
+  // FINDING-007: Set RLS tenant context so DB-level policies enforce isolation
+  // even if a tool query forgets the WHERE tenantId clause.
+  const { setTenantId } = await import("@/db/rls");
+  await setTenantId(tenantId);
 
   try {
-    const result = await tracedStreamText({
-      model,
-      system: systemPrompt,
-      messages: convertedMessages,
-      tools: chatTools,
-      // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
-      maxTokens: 2000,
-      temperature: 0.4,
-      stopWhen: stepCountIs(10),
-      providerOptions: {
-        anthropic: {
-          thinking: { type: "enabled", budgetTokens: 16000 },
-          cacheControl: { type: "ephemeral" },
-        },
-      },
-      _trace: {
-        agentId: "chat",
-        tenantId,
-        inputPreview: lastUserText.slice(0, 300),
-        surfaceType: inferredSurface.type,
-        allowedToolCount: Object.keys(chatTools).length,
-        droppedToolCount: resolved.droppedTools.length,
-      },
+    // Back-compat: if surface isn't set explicitly, infer from contextType/Id
+    const inferredSurface: SurfaceContext = surfaceInput || inferSurface(contextType, contextId);
+
+    // Build chat tool registry + resolve capabilities for this turn
+    const toolCtx: ToolContext = {
+      tenantId,
+      userId: authCtx.appUserId,
+      authCtx,
+      settings: tenantSettings,
+      agentApprovalMode,
+    };
+    const allTools = buildAllChatTools(toolCtx);
+    const resolved = resolveCapabilities(allTools, {
+      role: authCtx.role,
+      surface: inferredSurface,
+      // allowDestructive + planTier default to safe values (false / free)
+      // until CHAT-04 + billing integration land.
     });
-    return result.toTextStreamResponse();
-  } catch (err) {
-    if (model === primaryModel && fallbackModel) {
-      console.warn("Primary model failed, falling back to OpenAI:", err);
+    const chatTools = resolved.tools;
+
+    const systemPrompt =
+      buildChatSystemPrompt({
+        crmSnapshot,
+        ragContext,
+        entityContext,
+        knowledgeContext,
+        memoriesContext,
+        agentApprovalMode,
+        userName: tenantSettings.onboardingCompanyName || undefined,
+        preferredLanguage: tenantSettings.language || undefined,
+      }) + resolved.surfacePromptAddendum;
+
+    // ── Context Management: compact long conversations ──
+    const compactedMessages = compactMessages(messages);
+    const convertedMessages = await convertToModelMessages(compactedMessages);
+
+    // CHAT-07: fire auto-extract every ~20 turns on a thread. Fire-and-
+    // forget — the chat response doesn't wait on it. The worker dedupes
+    // via (tenant, scope, key) existence checks so re-firing is safe.
+    if (threadId && messages.length > 0 && messages.length % 20 === 0) {
+      void (async () => {
+        try {
+          const { inngest } = await import("@/inngest/client");
+          await inngest.send({
+            name: "memory/auto-extract",
+            data: { tenantId, userId: authCtx.appUserId, threadId },
+          });
+        } catch (err) {
+          console.warn("chat: memory/auto-extract emit failed (non-fatal)", err);
+        }
+      })();
+    }
+
+    try {
       const result = await tracedStreamText({
-        model: fallbackModel,
+        model,
         system: systemPrompt,
         messages: convertedMessages,
         tools: chatTools,
+        // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
+        maxTokens: 2000,
+        temperature: 0.4,
         stopWhen: stepCountIs(10),
+        providerOptions: {
+          anthropic: {
+            thinking: { type: "enabled", budgetTokens: 16000 },
+            cacheControl: { type: "ephemeral" },
+          },
+        },
         _trace: {
           agentId: "chat",
           tenantId,
           inputPreview: lastUserText.slice(0, 300),
           surfaceType: inferredSurface.type,
           allowedToolCount: Object.keys(chatTools).length,
+          droppedToolCount: resolved.droppedTools.length,
         },
       });
       return result.toTextStreamResponse();
+    } catch (err) {
+      if (model === primaryModel && fallbackModel) {
+        console.warn("Primary model failed, falling back to OpenAI:", err);
+        const result = await tracedStreamText({
+          model: fallbackModel,
+          system: systemPrompt,
+          messages: convertedMessages,
+          tools: chatTools,
+          stopWhen: stepCountIs(10),
+          _trace: {
+            agentId: "chat",
+            tenantId,
+            inputPreview: lastUserText.slice(0, 300),
+            surfaceType: inferredSurface.type,
+            allowedToolCount: Object.keys(chatTools).length,
+          },
+        });
+        return result.toTextStreamResponse();
+      }
+      return Response.json(
+        { error: "AI service temporarily unavailable. Please try again." },
+        { status: 503 }
+      );
     }
-    return Response.json(
-      { error: "AI service temporarily unavailable. Please try again." },
-      { status: 503 }
-    );
+  } finally {
+    await clearTenantId();
   }
 }

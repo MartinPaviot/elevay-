@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { activities, contacts, companies, deals } from "@/db/schema";
 import { eq, and, ilike, or } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { embedEntity, activityToText } from "@/lib/embeddings";
@@ -85,6 +85,9 @@ RULES:
 - For buying signals, only include if explicitly mentioned
 - Set fields to null/empty if not discussed
 - Be specific with action items — include who and what`,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "process-transcript", tenantId: authCtx.tenantId },
     });
     const notes = rawNotes as any;

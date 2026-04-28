@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { activities, deals, notifications, tenants, contacts, companies, users, outboundEmails, connectedMailboxes } from "@/db/schema";
 import { eq, and, desc, sql, or, ne } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { getAuthContext } from "@/lib/auth-utils";
+import { withAuthRLS } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { contacts, companies, activities, deals } from "@/db/schema";
 import { eq, and, sql, desc, lt, isNull } from "drizzle-orm";
 
 export async function GET(req: Request) {
-  const authCtx = await getAuthContext();
-  if (!authCtx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return withAuthRLS(async (authCtx) => {
 
   const actions: {
     action: string;
@@ -250,4 +249,5 @@ export async function GET(req: Request) {
   actions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
   return NextResponse.json({ actions: actions.slice(0, 5) });
+  });
 }

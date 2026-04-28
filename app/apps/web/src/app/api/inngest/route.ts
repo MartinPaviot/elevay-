@@ -18,6 +18,7 @@ import { researchAgent } from "@/inngest/research-agent";
 import { memoryAutoExtract } from "@/inngest/memory-auto-extract";
 import { enrichmentEmailExtractFunction, enrichmentEmailExtractBatchFunction } from "@/inngest/enrichment-email-extract-functions";
 import { generateDealBrief, scheduledDealDigest } from "@/inngest/deal-briefing";
+import { autoBriefingTrigger } from "@/inngest/auto-briefing-trigger";
 import { analyzeOutgoingEmail, postInteractionCoaching, analyzeDealEvent, weeklyPerformanceSnapshot } from "@/inngest/coaching-engine";
 import { signalToDealAlert } from "@/inngest/signal-to-deal-alert";
 import { syncSignalsToDeal } from "@/inngest/deal-signal-sync";
@@ -79,6 +80,8 @@ export const { GET, POST, PUT } = serve({
     // Deal briefing: on-demand + scheduled daily digest
     generateDealBrief,
     scheduledDealDigest,
+    // FINDING-008: 24h auto-briefing — meeting prep + deal brief before meetings
+    autoBriefingTrigger,
     // Coaching engine: pre-send review, post-interaction, deal events, weekly snapshot
     analyzeOutgoingEmail,
     postInteractionCoaching,

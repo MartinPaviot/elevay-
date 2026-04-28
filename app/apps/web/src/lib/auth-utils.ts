@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { setTenantId, clearTenantId } from "@/db/rls";
 
 export interface AuthContext {
   userId: string;
@@ -28,6 +29,38 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     appUserId: appUserId || session.user.id,
     role: role || "member",
   };
+}
+
+/**
+ * Authenticate, set RLS tenant context, run the handler, then clear RLS.
+ *
+ * This is the recommended wrapper for API routes that perform
+ * tenant-scoped database queries. It combines authentication with
+ * Row-Level Security enforcement so every route that uses it
+ * automatically gets defense-in-depth tenant isolation.
+ *
+ * @example
+ * export async function GET() {
+ *   return withAuthRLS(async (authCtx) => {
+ *     const rows = await db.select().from(contacts);
+ *     return Response.json({ rows });
+ *   });
+ * }
+ */
+export async function withAuthRLS(
+  handler: (authCtx: AuthContext) => Promise<Response>,
+): Promise<Response> {
+  const authCtx = await getAuthContext();
+  if (!authCtx) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  await setTenantId(authCtx.tenantId);
+  try {
+    return await handler(authCtx);
+  } finally {
+    await clearTenantId();
+  }
 }
 
 /**

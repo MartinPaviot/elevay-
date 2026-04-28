@@ -237,6 +237,9 @@ Keep it concise and actionable. Use bullet points. No fluff.`;
       const result = await generateText({
         model: anthropic("claude-sonnet-4-6"),
         prompt,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
       });
       return result.text;
     } else if (openaiKey) {

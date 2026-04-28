@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { deals, activities, companies } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getTenantSettings, getStageNames } from "@/lib/tenant-settings";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -109,6 +109,9 @@ Based on the deal data, provide:
 4. Recommended next actions
 
 Be realistic — don't assume progress without evidence.`,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" } },
+          },
           _trace: { agentId: "deal-analyze", tenantId: authCtx.tenantId },
         });
 

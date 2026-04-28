@@ -12,7 +12,7 @@ import {
 import { and, eq, sql, gte, inArray, isNotNull } from "drizzle-orm";
 import { enrichOrganization, searchPeople, isApolloAvailable } from "@/lib/apollo-client";
 import { scoreContact } from "@/lib/contact-scoring";
-import { getTenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles } from "@/lib/tenant-settings";
 import type { CampaignConfig } from "@/lib/campaign-types";
 import { buildProspectContext } from "@/lib/prospect-context";
 import { personalizeStepEmail } from "@/lib/sequence-generator";
@@ -264,7 +264,8 @@ export const prepareCampaign = inngest.createFunction(
       for (const contactId of discoveredContacts.contactIds) {
         try {
           const result = await scoreContact(contactId, tenantId, {
-            targetRoles: settings.targetRoles,
+            // BUG-WS0-008: derive targetRoles at read time
+            targetRoles: deriveTargetRoles(settings),
             targetIndustries: settings.targetIndustries,
           });
           await db

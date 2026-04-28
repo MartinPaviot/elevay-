@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { searchPeople, isApolloAvailable } from "@/lib/apollo-client";
-import { getTenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles } from "@/lib/tenant-settings";
 
 /** Derive Apollo seniority filters from targetRoles text (e.g. "VP Engineering, CTO") */
 function deriveSeniorities(targetRoles: string): string[] {
@@ -43,7 +43,8 @@ export async function GET(
 
   // Load tenant ICP for seniority targeting
   const settings = await getTenantSettings(authCtx.tenantId);
-  const targetRoles = settings.targetRoles || "";
+  // BUG-WS0-008: derive targetRoles at read time
+  const targetRoles = deriveTargetRoles(settings);
   const seniorities = deriveSeniorities(targetRoles);
 
   // Apollo-only — no LLM fallback for contact suggestions

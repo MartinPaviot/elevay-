@@ -6,7 +6,7 @@ import {
   searchPeople,
   isApolloAvailable,
 } from "@/lib/apollo-client";
-import { getTenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles } from "@/lib/tenant-settings";
 import { embedEntity, companyToText } from "@/lib/embeddings";
 
 /**
@@ -43,7 +43,8 @@ export const onOnboardingCompleted = inngest.createFunction(
       return getTenantSettings(tenantId);
     });
 
-    const targetRoles = settings.targetRoles || "";
+    // BUG-WS0-008: derive targetRoles at read time
+    const targetRoles = deriveTargetRoles(settings);
 
     if (!isApolloAvailable()) {
       return { tenantId, result: "skipped", reason: "No Apollo API key" };

@@ -124,7 +124,7 @@ vi.mock("@/lib/traced-ai", () => ({
   }),
 }));
 
-vi.mock("@ai-sdk/anthropic", () => ({
+vi.mock("@/lib/ai-provider", () => ({
   anthropic: vi.fn().mockReturnValue("mock-model"),
 }));
 

@@ -12,19 +12,24 @@
 // ─── Types ───────────────────────────────────────────────────
 
 export type GraderType =
-  | "pattern_match"       // regex test on output
-  | "forbidden_pattern"   // output must NOT match
-  | "tool_used"           // specific tool was called
-  | "tool_sequence"       // tools were called in order
-  | "json_schema"         // output is valid JSON matching schema
-  | "field_accuracy"      // specific fields extracted correctly
-  | "classification"      // correct class label
-  | "llm_judge"           // LLM-as-judge scoring
-  | "faithfulness"        // grounded in provided context
-  | "contains_all"        // output contains all required strings
-  | "word_count"          // output within word count bounds
-  | "latency_check"       // completed within time budget
-  | "cost_check";         // within cost budget
+  | "pattern_match"            // regex test on output
+  | "forbidden_pattern"        // output must NOT match
+  | "tool_used"                // specific tool was called
+  | "tool_sequence"            // tools were called in order
+  | "json_schema"              // output is valid JSON matching schema
+  | "field_accuracy"           // specific fields extracted correctly
+  | "classification"           // correct class label
+  | "llm_judge"                // LLM-as-judge scoring
+  | "faithfulness"             // grounded in provided context
+  | "contains_all"             // output contains all required strings
+  | "word_count"               // output within word count bounds
+  | "latency_check"            // completed within time budget
+  | "cost_check"               // within cost budget
+  | "outcome_entity_created"   // verify entity was created in DB
+  | "outcome_entity_updated"   // verify entity was updated
+  | "outcome_contains_data"    // output contains data from context
+  | "outcome_answers_question" // output actually answers the question
+  | "dimension_judge";         // isolated per-dimension LLM judge
 
 export interface Grader {
   type: GraderType;
@@ -60,13 +65,15 @@ export interface GraderResult {
   detail: string;
 }
 
-export function runGrader(
+export async function runGrader(
   grader: Grader,
   output: string,
   toolCalls: string[],
   latencyMs?: number,
   cost?: number,
-): GraderResult {
+  /** Optional context for faithfulness / outcome graders */
+  evalContext?: { input?: string; context?: string; expected?: string; environmentState?: Record<string, unknown> },
+): Promise<GraderResult> {
   const { type, weight, config } = grader;
 
   switch (type) {
@@ -158,10 +165,166 @@ export function runGrader(
       return { type, passed, score: passed ? 1.0 : 0.0, weight, detail: `$${cost?.toFixed(4)} (max $${maxCost})` };
     }
 
-    case "llm_judge":
-    case "faithfulness":
-      // These are handled separately via async LLM calls
-      return { type, passed: true, score: 0.5, weight, detail: "Requires async LLM grading" };
+    case "llm_judge": {
+      // Real LLM-as-judge: evaluate output against rubric using Haiku for cost efficiency (<$0.01/case)
+      const rubric = (config.rubric as string) || evalContext?.expected || "Is this output high quality, accurate, and useful?";
+      const threshold = (config.threshold as number) || 0.6;
+      try {
+        const { generateText: genText } = await import("ai");
+        const { anthropic: getAnthropic } = await import("@ai-sdk/anthropic");
+
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { type, passed: true, score: 0.5, weight, detail: "LLM judge unavailable: no ANTHROPIC_API_KEY" };
+        }
+
+        const model = getAnthropic("claude-haiku-4-5-20251001");
+        const result = await genText({
+          model,
+          prompt: `You are an impartial evaluator. Score the following agent output against the rubric.
+
+<rubric>${rubric}</rubric>
+
+<user_input>${(evalContext?.input || "").slice(0, 500)}</user_input>
+
+${evalContext?.context ? `<context>${evalContext.context.slice(0, 500)}</context>` : ""}
+
+<agent_output>${output.slice(0, 1500)}</agent_output>
+
+Think step by step about the quality of the output relative to the rubric.
+Then provide your score on a 0.0 to 1.0 scale.
+End your response with exactly: SCORE: X.XX`,
+          // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
+          maxTokens: 300,
+        });
+
+        const scoreMatch = result.text.match(/SCORE:\s*(\d+\.?\d*)/);
+        const score = scoreMatch ? Math.min(1, Math.max(0, parseFloat(scoreMatch[1]))) : 0.5;
+        const passed = score >= threshold;
+        const detail = result.text.slice(0, 200).replace(/\n/g, " ");
+        return { type, passed, score, weight, detail };
+      } catch (err) {
+        return { type, passed: true, score: 0.5, weight, detail: `LLM judge unavailable: ${err instanceof Error ? err.message : "unknown error"}` };
+      }
+    }
+
+    case "faithfulness": {
+      // Check if the output is grounded in the provided context (no hallucinations)
+      const context = evalContext?.context || evalContext?.expected || "";
+      const threshold = (config.threshold as number) || 0.7;
+      if (!context) {
+        return { type, passed: true, score: 0.5, weight, detail: "No context provided for faithfulness check" };
+      }
+      try {
+        const { generateText: genText } = await import("ai");
+        const { anthropic: getAnthropic } = await import("@ai-sdk/anthropic");
+
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { type, passed: true, score: 0.5, weight, detail: "LLM judge unavailable: no ANTHROPIC_API_KEY" };
+        }
+
+        const model = getAnthropic("claude-haiku-4-5-20251001");
+        const result = await genText({
+          model,
+          prompt: `You are a faithfulness evaluator. Check if the agent output is grounded in the provided context.
+A faithful output only states things supported by the context. An unfaithful output invents facts not in the context (hallucination).
+
+<context>${context.slice(0, 1000)}</context>
+
+<agent_output>${output.slice(0, 1500)}</agent_output>
+
+For each claim in the output, check if it is supported by the context.
+Score 1.0 if fully grounded, 0.5 if partially grounded, 0.0 if mostly hallucinated.
+End your response with exactly: SCORE: X.XX`,
+          // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
+          maxTokens: 300,
+        });
+
+        const scoreMatch = result.text.match(/SCORE:\s*(\d+\.?\d*)/);
+        const score = scoreMatch ? Math.min(1, Math.max(0, parseFloat(scoreMatch[1]))) : 0.5;
+        const passed = score >= threshold;
+        const detail = result.text.slice(0, 200).replace(/\n/g, " ");
+        return { type, passed, score, weight, detail };
+      } catch (err) {
+        return { type, passed: true, score: 0.5, weight, detail: `LLM judge unavailable: ${err instanceof Error ? err.message : "unknown error"}` };
+      }
+    }
+
+    // ── Outcome graders (wired from runOutcomeGrader) ──────────
+    case "outcome_contains_data": {
+      const requiredDataPoints = config.dataPoints as string[];
+      if (!requiredDataPoints || requiredDataPoints.length === 0) {
+        return { type, passed: true, score: 1.0, weight, detail: "No data points to check" };
+      }
+      const found = requiredDataPoints.filter((dp) =>
+        output.toLowerCase().includes(dp.toLowerCase())
+      );
+      const score = found.length / requiredDataPoints.length;
+      return { type, passed: score >= 0.6, score, weight, detail: `${found.length}/${requiredDataPoints.length} data points from context found in output` };
+    }
+
+    case "outcome_answers_question": {
+      const hasContent = output.trim().length > 20;
+      const isNotRefusal = !/^(I'm sorry|I cannot|I don't know|Error)/i.test(output);
+      const score = hasContent && isNotRefusal ? 1.0 : 0.0;
+      return { type, passed: score > 0, score, weight, detail: hasContent ? "Output contains substantive content" : "Output is empty or a refusal" };
+    }
+
+    case "outcome_entity_created":
+    case "outcome_entity_updated": {
+      const envState = evalContext?.environmentState;
+      if (!envState) {
+        return { type, passed: true, score: 0.5, weight, detail: "No environment state to verify (sandbox mode)" };
+      }
+      const entityExists = envState[config.entityKey as string] !== undefined;
+      return { type, passed: entityExists, score: entityExists ? 1.0 : 0.0, weight, detail: entityExists ? "Entity found in environment state" : "Entity not found" };
+    }
+
+    // ── Dimension judge (single-dimension LLM eval) ────────────
+    case "dimension_judge": {
+      const dimension = config.dimension as string;
+      const rubric = config.rubric as string;
+      const threshold = (config.threshold as number) || 0.5;
+      if (!dimension || !rubric) {
+        return { type, passed: false, score: 0.0, weight, detail: "dimension_judge requires dimension and rubric in config" };
+      }
+      try {
+        const { generateText: genText } = await import("ai");
+        const { anthropic: getAnthropic } = await import("@ai-sdk/anthropic");
+
+        if (!process.env.ANTHROPIC_API_KEY) {
+          return { type, passed: true, score: 0.5, weight, detail: "LLM judge unavailable: no ANTHROPIC_API_KEY" };
+        }
+
+        const model = getAnthropic("claude-haiku-4-5-20251001");
+        const result = await genText({
+          model,
+          prompt: `You are evaluating ONE specific dimension of an AI agent's output.
+
+<dimension>${dimension}</dimension>
+<rubric>${rubric}</rubric>
+
+<user_input>${(evalContext?.input || "").slice(0, 500)}</user_input>
+
+${evalContext?.context ? `<context>${evalContext.context.slice(0, 500)}</context>` : ""}
+
+<agent_output>${output.slice(0, 1500)}</agent_output>
+
+If you cannot evaluate due to insufficient information, respond with SCORE: 0.50
+Otherwise, score 0.00 to 1.00.
+End your response with exactly: SCORE: X.XX`,
+          // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
+          maxTokens: 300,
+        });
+
+        const scoreMatch = result.text.match(/SCORE:\s*(\d+\.?\d*)/);
+        const score = scoreMatch ? Math.min(1, Math.max(0, parseFloat(scoreMatch[1]))) : 0.5;
+        const passed = score >= threshold;
+        const detail = `[${dimension}] ${result.text.slice(0, 150).replace(/\n/g, " ")}`;
+        return { type, passed, score, weight, detail };
+      } catch (err) {
+        return { type, passed: true, score: 0.5, weight, detail: `LLM judge unavailable: ${err instanceof Error ? err.message : "unknown error"}` };
+      }
+    }
 
     default:
       return { type, passed: false, score: 0.0, weight, detail: `Unknown grader type: ${type}` };

@@ -100,8 +100,8 @@ const steps = [
   },
   {
     num: "02",
-    title: "An AI bot joins your calls",
-    desc: "Elevay auto-joins Google Meet, Zoom, and Teams. It records, transcribes, and extracts buying signals — budget, timeline, competitors, objections.",
+    title: "A bot connects to your calls",
+    desc: "Elevay connects to Google Meet, Zoom, and Teams via Recall.ai. It records, transcribes, and extracts buying signals — budget, timeline, competitors, objections.",
     icon: Play,
   },
   {
@@ -143,11 +143,11 @@ const steps = [
 const faqs = [
   {
     q: "How is this different from HubSpot or Salesforce?",
-    a: "They're databases you update manually. Elevay captures every email, joins your calls with a bot, transcribes and extracts deal intel automatically, and writes your follow-ups. You review and confirm — it does the rest.",
+    a: "They're databases you update manually. Elevay captures every email, connects a bot to your calls via Recall.ai, transcribes and extracts deal intel automatically, and writes your follow-ups. You review and confirm — it does the rest.",
   },
   {
     q: "How does the meeting bot work?",
-    a: "When you have a meeting with a Google Meet, Zoom, or Teams link in your calendar, Elevay automatically sends a bot to join and record. After the call, it extracts structured notes, buying signals, action items, and lets you review before updating your CRM.",
+    a: "When you have a meeting with a Google Meet, Zoom, or Teams link in your calendar, Elevay connects a bot via Recall.ai to record the call. After the call, it extracts structured notes, buying signals, action items, and lets you review before updating your CRM.",
   },
   {
     q: "Do I need a sales team?",
@@ -357,9 +357,9 @@ export default function LandingPage() {
       <Section className="relative pb-24 pt-20">
         <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
         <div className="relative mx-auto max-w-[1400px] px-6 text-center">
-          <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-500">The autonomous GTM engine for founders</p></Animate>
-          <Animate><h1 className="mx-auto mt-6 max-w-[800px] text-[28px] font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl">Your CRM finds customers, joins your calls, and does the work for you.</h1></Animate>
-          <Animate><p className="mx-auto mt-6 max-w-[600px] text-lg leading-relaxed text-gray-500">Connect your email. An AI bot joins your calls, transcribes everything, and updates your CRM. You just review and close.</p></Animate>
+          <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-500">The progressively autonomous GTM engine for founders</p></Animate>
+          <Animate><h1 className="mx-auto mt-6 max-w-[800px] text-[28px] font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl">Your CRM finds customers, connects to your meetings, and does the work for you.</h1></Animate>
+          <Animate><p className="mx-auto mt-6 max-w-[600px] text-lg leading-relaxed text-gray-500">Connect your email. A meeting bot connects to your calls via Recall.ai, transcribes everything, and updates your CRM. You just review and close.</p></Animate>
           <Animate>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link href="/sign-up" className="rounded-lg px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Try for free</Link>
@@ -378,7 +378,7 @@ export default function LandingPage() {
           <div className="max-w-3xl">
             <Animate><p className="text-xs font-medium uppercase tracking-wider text-gray-400">Why Elevay</p></Animate>
             <Animate><h2 className="mt-4 text-3xl font-bold leading-snug tracking-tight text-gray-900">Traditional CRMs make you do the work.<br />Elevay does it for you.</h2></Animate>
-            <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-500">You shouldn&apos;t spend hours logging notes, updating fields, and guessing who to call next. Elevay connects to your email, joins your calls, learns your customers, finds new ones, and runs your outbound — so you can focus on closing.</p></Animate>
+            <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-500">You shouldn&apos;t spend hours logging notes, updating fields, and guessing who to call next. Elevay connects to your email and your meetings, learns your customers, finds new ones, and runs your outbound — so you can focus on closing.</p></Animate>
           </div>
 
           {/* L13 — concrete comparison table. Same set of sales tasks,
@@ -508,7 +508,7 @@ export default function LandingPage() {
           <div className="mt-12 grid gap-6 md:grid-cols-3">
             {[
               { icon: Mail, title: "Auto-capture everything", body: "Emails, meetings, call transcripts — captured and linked to the right contact automatically. Your CRM is always up to date without typing a word." },
-              { icon: BarChart3, title: "An AI bot joins your calls", body: "A recording bot auto-joins your Google Meet, Zoom, and Teams calls. It transcribes, extracts buying signals, and updates your deals — you just review and confirm." },
+              { icon: BarChart3, title: "A bot connects to your calls", body: "Via Recall.ai, a recording bot connects to your Google Meet, Zoom, and Teams calls. It transcribes, extracts buying signals, and updates your deals — you just review and confirm." },
               { icon: MessageSquare, title: "Outreach that sounds like you", body: "AI writes follow-ups from real meeting notes and email threads. Not templates — personalized sequences based on what was actually discussed." },
             ].map((card) => { const Icon = card.icon; return (
               <Animate key={card.title}><div className="rounded-xl border border-gray-200 bg-white p-8 transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]"><div className="mb-4 inline-flex rounded-lg border border-gray-100 bg-gray-50 p-2.5"><Icon size={20} className="text-gray-600" /></div><h3 className="text-base font-semibold text-gray-900">{card.title}</h3><p className="mt-2 text-sm leading-relaxed text-gray-500">{card.body}</p></div></Animate>

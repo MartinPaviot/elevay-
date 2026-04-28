@@ -2,7 +2,7 @@ import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { activities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
 
@@ -71,6 +71,9 @@ ${partialTranscript.slice(-5000)}
 
 Extract: budget, team size, current tools/CRM, competitors, overall sentiment.`,
       maxTokens: 150,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _meta: { tenantId: authCtx.tenantId, feature: "live-meeting-extraction" },
     });
 

@@ -86,10 +86,11 @@ export async function POST(req: Request) {
     updates.targetCompanySizes = data.companySizes;
     updates.targetSeniorities = data.targetSeniorities;
     updates.targetDepartments = data.targetDepartments;
-    // Derive targetRoles string for backward compat with scoring, TAM, chat prompts
-    const seniorities = (data.targetSeniorities || []) as string[];
-    const departments = (data.targetDepartments || []) as string[];
-    updates.targetRoles = [...seniorities, ...departments].join(", ");
+    // BUG-WS0-008: targetRoles is now always derived at read time from
+    // targetSeniorities + targetDepartments via deriveTargetRoles() in
+    // tenant-settings.ts. We no longer persist it here — that was the
+    // source of the desync (editing seniorities/departments on the ICP
+    // settings page did not re-derive targetRoles).
     updates.targetGeographies = data.geographies;
     if (data.aiTone) updates.aiTone = data.aiTone;
   }

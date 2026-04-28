@@ -15,7 +15,7 @@ import { db } from "@/db";
 import { deals, companies, coachingInsights, notifications, users } from "@/db/schema";
 import { and, eq, notInArray } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 

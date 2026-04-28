@@ -329,9 +329,11 @@ const CREATION_OPTIONS = [
 // O7 — visibility default for newly captured records. Defaults to
 // "everyone" so single-tenant founders see no behavior change; multi-user
 // tenants can lock down here on day one.
+// BUG-WS0-002: "team" removed — team scoping is not implemented yet.
+// Offering it in the wizard promises a feature that doesn't exist.
+// Re-add when team-level visibility is actually wired up.
 const VISIBILITY_OPTIONS = [
   { value: "everyone", label: "Everyone", short: "All members", icon: <Users size={12} /> },
-  { value: "team", label: "Team", short: "Your team", icon: <Shield size={12} /> },
   { value: "private", label: "Private", short: "Only you", icon: <EyeOff size={12} /> },
 ] as const;
 
@@ -384,6 +386,8 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
   const [targetSeniorities, setTargetSeniorities] = useState<string[]>([]);
   const [targetDepartments, setTargetDepartments] = useState<string[]>([]);
   const [geographies, setGeographies] = useState<string[]>([]);
+  // BUG-WS0-003: answers to confidence-gap questions from the AI
+  const [confidenceGapAnswers, setConfidenceGapAnswers] = useState<Record<number, string>>({});
 
   // ── Onboarding wow effect 1 — streamed narrative of "what the
   // agent understood about your company." Fired in the background
@@ -770,7 +774,16 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
 
     try {
       const derivedRoles = [...targetSeniorities, ...targetDepartments].join(", ");
-      await saveOnboardingData({ industries, companySizes, targetSeniorities, targetDepartments, geographies, aiTone, step: "icp" });
+      // BUG-WS0-003: include confidence gap answers so downstream prompts
+      // can use them for better targeting precision.
+      const gapAnswers = websiteAnalysis?.confidenceGaps
+        ?.map((gap, i) => ({
+          field: gap.field,
+          question: gap.question,
+          answer: confidenceGapAnswers[i]?.trim() || null,
+        }))
+        .filter((g) => g.answer) || [];
+      await saveOnboardingData({ industries, companySizes, targetSeniorities, targetDepartments, geographies, aiTone, confidenceGapAnswers: gapAnswers, step: "icp" });
 
       // Build TAM
       const tamRes = await fetch("/api/tam", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ industries, companySizes: apolloSizeRanges, targetRoles: derivedRoles, geographies, productDescription: productDesc }) });
@@ -1091,10 +1104,10 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                 </div>
               </div>
 
-              {/* O7 — Visibility default — 3-col segmented (was stacked rows) */}
+              {/* O7 — Visibility default — 2-col segmented (BUG-WS0-002: "team" removed) */}
               <div>
                 <span className={label} style={labelStyle}>Default visibility</span>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5">
                   {VISIBILITY_OPTIONS.map((opt) => {
                     const active = defaultVisibility === opt.value;
                     return (
@@ -1253,6 +1266,54 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                 <span className={label} style={labelStyle}>Biggest challenge *</span>
                 <PillSelect options={CHALLENGES} selected={challenge ? [challenge] : []} onToggle={(val) => setChallenge(val)} multi={false} />
               </div>
+
+              {/* BUG-WS0-004: Surface suggestedTone so the user knows what the
+                  AI inferred and can accept or ignore it. Previously this was
+                  silently overwriting aiTone without any UI. */}
+              {websiteAnalysis?.suggestedTone && websiteAnalysis.suggestedTone !== aiTone && (
+                <div
+                  className="rounded-lg p-2.5"
+                  style={{
+                    background: "var(--color-bg-page)",
+                    border: "1px solid var(--color-border-default)",
+                  }}
+                >
+                  <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                    Based on your website, we suggest a <strong>{websiteAnalysis.suggestedTone}</strong> tone for AI-generated emails.
+                  </span>
+                  <div className="flex gap-2 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAiTone(websiteAnalysis.suggestedTone)}
+                      className="rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: "var(--color-accent)",
+                        color: "white",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Use {websiteAnalysis.suggestedTone}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Dismiss by setting analysis tone to match current
+                        setWebsiteAnalysis((prev) => prev ? { ...prev, suggestedTone: aiTone } : prev);
+                      }}
+                      className="rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: "transparent",
+                        color: "var(--color-text-tertiary)",
+                        border: "1px solid var(--color-border-default)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Keep {aiTone}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <StepFooter onBack={() => setStep(emailConnected ? "privacy" : "connect")} onNext={handleProductContinue} disabled={!canContinueProduct} loading={saving} />
@@ -1351,7 +1412,10 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
               </div>
             )}
 
-            {/* Confidence gaps — targeted questions when AI needs clarification */}
+            {/* BUG-WS0-003: Confidence gaps — interactive inputs so the user
+                can actually answer the AI's clarifying questions. Answers are
+                stored in local state and included in the save payload when the
+                user clicks "Build my prospect list". */}
             {websiteAnalysis?.confidenceGaps && websiteAnalysis.confidenceGaps.length > 0 && (
               <div className="mb-3 rounded-lg p-3" style={{ background: "var(--color-accent-soft)", border: "1px solid var(--color-accent)20" }}>
                 <div className="flex items-center gap-1.5 mb-2">
@@ -1360,13 +1424,20 @@ export function OnboardingWizard({ onComplete, hasGoogle, hasMicrosoft, userEmai
                     Quick questions to refine your targeting
                   </span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {websiteAnalysis.confidenceGaps.map((gap, i) => (
-                    <div key={i} className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                      <span style={{ fontWeight: 500 }}>{gap.question}</span>
-                      <span className="ml-1" style={{ color: "var(--color-text-tertiary)" }}>
-                        (current guess: {gap.currentGuess})
-                      </span>
+                    <div key={i}>
+                      <label className="block text-[12px] mb-0.5" style={{ color: "var(--color-text-secondary)", fontWeight: 500 }}>
+                        {gap.question}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={gap.currentGuess}
+                        value={confidenceGapAnswers[i] || ""}
+                        onChange={(e) => setConfidenceGapAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+                        className={inputCls}
+                        style={inputStyle}
+                      />
                     </div>
                   ))}
                 </div>

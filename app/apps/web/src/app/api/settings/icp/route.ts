@@ -2,6 +2,7 @@ import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { deriveTargetRoles } from "@/lib/tenant-settings";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -12,6 +13,9 @@ export async function GET() {
     if (!tenant) return Response.json({ error: "Workspace not found" }, { status: 404 });
 
     const s = (tenant.settings || {}) as Record<string, unknown>;
+    // BUG-WS0-008: return derived targetRoles so the UI always reflects
+    // the current seniorities + departments combination.
+    const settingsTyped = s as import("@/lib/tenant-settings").TenantSettings;
     return Response.json({
       productDescription: s.productDescription || "",
       salesMotion: s.salesMotion || "",
@@ -19,7 +23,7 @@ export async function GET() {
       aiTone: s.aiTone || "",
       targetIndustries: s.targetIndustries || [],
       targetCompanySizes: s.targetCompanySizes || [],
-      targetRoles: s.targetRoles || "",
+      targetRoles: deriveTargetRoles(settingsTyped),
       targetGeographies: s.targetGeographies || [],
     });
   } catch (error) {

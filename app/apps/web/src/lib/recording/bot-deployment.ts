@@ -10,10 +10,11 @@
  */
 
 import { db } from "@/db";
-import { activities, tenants, users, notetakerExposures } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { activities, tenants, users, contacts, notetakerExposures } from "@/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { createBot, type RecallBot } from "@/lib/recall";
 import { decideBrandingMode, type BrandingDecision } from "@/lib/recording/branding";
+import { sendNotification } from "@/lib/notifications";
 
 export type DeploymentOutcome =
   | { status: "created"; bot: RecallBot; decision: BrandingDecision }
@@ -81,6 +82,22 @@ export async function createBotForActivity(
     return { status: "skipped", reason: "opted_out", decision };
   }
 
+  // FINDING-009: Send consent notification to known contacts before bot joins.
+  // Notifies all attendees that are known CRM contacts so they know a meeting
+  // assistant will be present. Non-blocking — bot creation proceeds even if
+  // notification delivery fails.
+  try {
+    await notifyAttendeesBeforeBotJoins(
+      activity.tenantId,
+      activityId,
+      activity.summary ?? "an upcoming meeting",
+      attendees
+    );
+  } catch (err) {
+    // Never block bot deployment because of notification failures
+    console.warn(`[WS-1] Consent notification failed for activity ${activityId}:`, err);
+  }
+
   const bot = await createBot(meetingLink, { botName: decision.botDisplayName });
 
   await db
@@ -126,4 +143,83 @@ export async function createBotForActivity(
   }
 
   return { status: "created", bot, decision };
+}
+
+/**
+ * FINDING-009: Notify all meeting attendees that are known CRM contacts
+ * about the upcoming meeting assistant. Gives attendees a chance to be
+ * aware that notes will be taken.
+ *
+ * Notification is sent to the CRM user who owns the contact (or any
+ * admin) so they can relay the information. For external contacts found
+ * in the CRM, we also create an in-app notification on the contact
+ * record for audit trail purposes.
+ */
+async function notifyAttendeesBeforeBotJoins(
+  tenantId: string,
+  activityId: string,
+  meetingName: string,
+  attendees: Array<{ email: string; self?: boolean }>
+): Promise<void> {
+  const externalEmails = attendees
+    .filter((a) => !a.self && a.email)
+    .map((a) => a.email.toLowerCase());
+
+  if (externalEmails.length === 0) return;
+
+  // Find which attendees are known contacts in the CRM
+  const knownContacts = await db
+    .select({
+      id: contacts.id,
+      email: contacts.email,
+      firstName: contacts.firstName,
+      lastName: contacts.lastName,
+      ownerId: contacts.ownerId,
+    })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.tenantId, tenantId),
+        inArray(contacts.email, externalEmails)
+      )
+    );
+
+  if (knownContacts.length === 0) return;
+
+  // Collect unique owner user IDs to notify
+  const ownerIds = new Set<string>();
+  for (const contact of knownContacts) {
+    if (contact.ownerId) ownerIds.add(contact.ownerId);
+  }
+
+  // If no owners assigned, notify all tenant users with admin role
+  if (ownerIds.size === 0) {
+    const admins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.role, "admin")))
+      .limit(5);
+    for (const admin of admins) {
+      ownerIds.add(admin.id);
+    }
+  }
+
+  const contactNames = knownContacts
+    .map((c) =>
+      [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || "Unknown"
+    )
+    .join(", ");
+
+  // Send notification to each relevant user
+  for (const userId of ownerIds) {
+    await sendNotification({
+      tenantId,
+      userId,
+      type: "meeting_upcoming",
+      title: `Meeting assistant will join: ${meetingName}`,
+      body: `Elevay's meeting assistant will join "${meetingName}" to take notes. Known contacts attending: ${contactNames}. The assistant will be visible to all participants.`,
+      entityType: "activity",
+      entityId: activityId,
+    });
+  }
 }

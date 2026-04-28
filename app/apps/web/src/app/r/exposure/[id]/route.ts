@@ -27,9 +27,10 @@ function getAppBaseUrl(req: Request): string {
   }
 }
 
-// Very light heuristic: EU country hints via geo headers or the participant
-// email TLD. True GDPR compliance would use a proper geo-IP provider — this
-// keeps the V1 safe-by-default for likely EU prospects.
+// EU detection heuristic: Vercel's x-vercel-ip-country header is the
+// primary signal, with email TLD as a fallback only when no geo header is
+// present. Region configuration for LLM and database endpoints is
+// centralized in lib/ai-provider.ts and db/index.ts (FINDING-004).
 function isLikelyEu(req: Request, participantEmail: string | null): boolean {
   const country =
     req.headers.get("x-vercel-ip-country") ||

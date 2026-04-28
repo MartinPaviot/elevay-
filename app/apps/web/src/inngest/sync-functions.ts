@@ -8,7 +8,7 @@ import { fetchRecentMeetings, type SyncedMeeting } from "@/lib/calendar";
 import { embedEntity, activityToText, contactToText, companyToText } from "@/lib/embeddings";
 import { getTenantSettings, backsyncRangeToDays, buildIgnoredDomains, shouldAutoCreateContact } from "@/lib/tenant-settings";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
