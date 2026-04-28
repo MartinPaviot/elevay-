@@ -65,6 +65,9 @@ export interface SyncedMeeting {
   location: string | null;
   meetingLink: string | null;
   status: string; // confirmed, tentative, cancelled
+  isAllDay: boolean;
+  organizer: { email: string; displayName: string | null } | null;
+  recurrence: string[] | null; // RRULE strings if recurring
 }
 
 export async function fetchRecentMeetings(
@@ -102,8 +105,7 @@ export async function fetchRecentMeetings(
   for (const event of events) {
     if (!event.id || !event.start) continue;
 
-    // Skip all-day events (no dateTime)
-    if (!event.start.dateTime) continue;
+    const isAllDay = !event.start.dateTime;
 
     // Extract meeting link from conferenceData or description
     let meetingLink: string | null = null;
@@ -117,12 +119,22 @@ export async function fetchRecentMeetings(
       meetingLink = event.hangoutLink;
     }
 
+    // For all-day events, use the date field; for timed events, use dateTime
+    const startTime = event.start.dateTime
+      ? new Date(event.start.dateTime)
+      : new Date(event.start.date + "T00:00:00");
+    const endTime = event.end?.dateTime
+      ? new Date(event.end.dateTime)
+      : event.end?.date
+        ? new Date(event.end.date + "T23:59:59")
+        : startTime;
+
     meetings.push({
       calendarEventId: event.id,
       title: event.summary || "Untitled meeting",
       description: event.description || null,
-      startTime: new Date(event.start.dateTime),
-      endTime: event.end?.dateTime ? new Date(event.end.dateTime) : new Date(event.start.dateTime),
+      startTime,
+      endTime,
       attendees: (event.attendees || []).map((a) => ({
         email: a.email || "",
         displayName: a.displayName || null,
@@ -131,6 +143,11 @@ export async function fetchRecentMeetings(
       location: event.location || null,
       meetingLink,
       status: event.status || "confirmed",
+      isAllDay,
+      organizer: event.organizer
+        ? { email: event.organizer.email || "", displayName: event.organizer.displayName || null }
+        : null,
+      recurrence: event.recurrence || null,
     });
   }
 

@@ -112,8 +112,7 @@ export async function fetchMicrosoftMeetings(
   for (const event of events) {
     if (!event.id || !event.start?.dateTime) continue;
 
-    // Skip all-day events (no time component)
-    if (event.isAllDay) continue;
+    const isAllDay = !!event.isAllDay;
 
     // Extract meeting link
     let meetingLink: string | null = null;
@@ -125,12 +124,16 @@ export async function fetchMicrosoftMeetings(
 
     const status = event.isCancelled ? "cancelled" : "confirmed";
 
+    // For all-day events, Microsoft returns dateTime without timezone offset
+    const startTime = new Date(event.start.dateTime + "Z");
+    const endTime = event.end?.dateTime ? new Date(event.end.dateTime + "Z") : startTime;
+
     meetings.push({
       calendarEventId: event.id,
       title: event.subject || "Untitled meeting",
       description: event.bodyPreview || null,
-      startTime: new Date(event.start.dateTime + "Z"),
-      endTime: event.end?.dateTime ? new Date(event.end.dateTime + "Z") : new Date(event.start.dateTime + "Z"),
+      startTime,
+      endTime,
       attendees: (event.attendees || []).map((a: any) => ({
         email: a.emailAddress?.address || "",
         displayName: a.emailAddress?.name || null,
@@ -139,6 +142,11 @@ export async function fetchMicrosoftMeetings(
       location: event.location?.displayName || null,
       meetingLink,
       status,
+      isAllDay,
+      organizer: event.organizer?.emailAddress
+        ? { email: event.organizer.emailAddress.address || "", displayName: event.organizer.emailAddress.name || null }
+        : null,
+      recurrence: event.recurrence ? [JSON.stringify(event.recurrence)] : null,
     });
   }
 

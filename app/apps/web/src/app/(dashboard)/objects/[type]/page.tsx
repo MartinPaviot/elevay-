@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Plus,
@@ -86,6 +86,19 @@ export default function CustomObjectRecordsPage() {
   const [formName, setFormName] = useState("");
   const [formProps, setFormProps] = useState<Record<string, unknown>>({});
   const [isEditing, setIsEditing] = useState(false);
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
+  // Inline editing
+  const [inlineEditCell, setInlineEditCell] = useState<{
+    recordId: string;
+    fieldKey: string; // "name" or field.id
+  } | null>(null);
+  const [inlineEditValue, setInlineEditValue] = useState<unknown>("");
+  const inlineInputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(null);
 
   const fetchRecords = useCallback(async () => {
     try {
@@ -195,6 +208,136 @@ export default function CustomObjectRecordsPage() {
     } catch {
       console.error("Failed to delete record");
     }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch(`/api/custom-objects/${type}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        setRecords(records.filter((r) => !selectedIds.has(r.id)));
+        setSelectedIds(new Set());
+        setConfirmBulkDelete(false);
+      }
+    } catch {
+      console.error("Failed to bulk delete records");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  function startInlineEdit(recordId: string, fieldKey: string, currentValue: unknown) {
+    setInlineEditCell({ recordId, fieldKey });
+    setInlineEditValue(currentValue ?? "");
+    // Focus the input on next render
+    setTimeout(() => inlineInputRef.current?.focus(), 0);
+  }
+
+  async function commitInlineEdit() {
+    if (!inlineEditCell) return;
+    const { recordId, fieldKey } = inlineEditCell;
+    const record = records.find((r) => r.id === recordId);
+    if (!record) { setInlineEditCell(null); return; }
+
+    const isNameField = fieldKey === "name";
+    const newName = isNameField ? String(inlineEditValue).trim() : record.name;
+    const newProps = isNameField
+      ? record.properties
+      : { ...(record.properties || {}), [fieldKey]: inlineEditValue };
+
+    // Don't save if name is empty
+    if (isNameField && !newName) { setInlineEditCell(null); return; }
+
+    // Skip if value didn't change
+    const oldValue = isNameField ? record.name : record.properties?.[fieldKey];
+    if (String(oldValue ?? "") === String(inlineEditValue ?? "")) {
+      setInlineEditCell(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/custom-objects/${type}/${recordId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName,
+          properties: newProps,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecords(records.map((r) => (r.id === recordId ? data.record : r)));
+      }
+    } catch {
+      console.error("Failed to inline-edit record");
+    }
+    setInlineEditCell(null);
+  }
+
+  function cancelInlineEdit() {
+    setInlineEditCell(null);
+    setInlineEditValue("");
+  }
+
+  function renderInlineEditInput(field: FieldDef | null, value: unknown) {
+    const fieldType = field?.type ?? "text";
+
+    if (fieldType === "select" && field?.options) {
+      return (
+        <select
+          ref={inlineInputRef as React.RefObject<HTMLSelectElement>}
+          value={String(value || "")}
+          onChange={(e) => setInlineEditValue(e.target.value)}
+          onBlur={commitInlineEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitInlineEdit();
+            if (e.key === "Escape") cancelInlineEdit();
+          }}
+          className="h-7 w-full appearance-none rounded px-2 text-[12px] outline-none"
+          style={{
+            background: "var(--color-bg-page)",
+            border: "2px solid var(--color-accent)",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          <option value="">Select...</option>
+          {field.options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <input
+        ref={inlineInputRef as React.RefObject<HTMLInputElement>}
+        type={fieldType === "number" ? "number" : "text"}
+        value={String(value ?? "")}
+        onChange={(e) =>
+          setInlineEditValue(
+            fieldType === "number" && e.target.value
+              ? Number(e.target.value)
+              : e.target.value
+          )
+        }
+        onBlur={commitInlineEdit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commitInlineEdit();
+          if (e.key === "Escape") cancelInlineEdit();
+        }}
+        className="h-7 w-full rounded px-2 text-[12px] outline-none"
+        style={{
+          background: "var(--color-bg-page)",
+          border: "2px solid var(--color-accent)",
+          color: "var(--color-text-primary)",
+        }}
+      />
+    );
   }
 
   function renderFieldValue(field: FieldDef, value: unknown): React.ReactNode {
@@ -358,6 +501,10 @@ export default function CustomObjectRecordsPage() {
       ? ICON_MAP[objectType.icon]
       : Box;
 
+  // Inline-editable field types (boolean and url are better edited in modal)
+  const isInlineEditable = (type: string) =>
+    type === "text" || type === "number" || type === "select";
+
   // Build table columns from object type fields
   const columns: Column<CustomRecord>[] = useMemo(() => {
     if (!objectType) return [];
@@ -367,14 +514,30 @@ export default function CustomObjectRecordsPage() {
         key: "name",
         header: "Name",
         sortable: true,
-        render: (row) => (
-          <span
-            className="text-[13px] font-medium"
-            style={{ color: "var(--color-text-primary)" }}
-          >
-            {row.name}
-          </span>
-        ),
+        render: (row) => {
+          const isEditingThis =
+            inlineEditCell?.recordId === row.id && inlineEditCell?.fieldKey === "name";
+          if (isEditingThis) {
+            return (
+              <div onClick={(e) => e.stopPropagation()}>
+                {renderInlineEditInput(null, inlineEditValue)}
+              </div>
+            );
+          }
+          return (
+            <span
+              className="text-[13px] font-medium cursor-text"
+              style={{ color: "var(--color-text-primary)" }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                startInlineEdit(row.id, "name", row.name);
+              }}
+              title="Double-click to edit"
+            >
+              {row.name}
+            </span>
+          );
+        },
       },
     ];
 
@@ -385,11 +548,36 @@ export default function CustomObjectRecordsPage() {
         key: field.id,
         header: field.name,
         sortable: field.type === "text" || field.type === "number",
-        render: (row) => (
-          <span className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
-            {renderFieldValue(field, row.properties?.[field.id])}
-          </span>
-        ),
+        render: (row) => {
+          const isEditingThis =
+            inlineEditCell?.recordId === row.id && inlineEditCell?.fieldKey === field.id;
+          if (isEditingThis) {
+            return (
+              <div onClick={(e) => e.stopPropagation()}>
+                {renderInlineEditInput(field, inlineEditValue)}
+              </div>
+            );
+          }
+
+          const canInlineEdit = isInlineEditable(field.type);
+          return (
+            <span
+              className={`text-[13px] ${canInlineEdit ? "cursor-text" : ""}`}
+              style={{ color: "var(--color-text-secondary)" }}
+              onDoubleClick={
+                canInlineEdit
+                  ? (e) => {
+                      e.stopPropagation();
+                      startInlineEdit(row.id, field.id, row.properties?.[field.id]);
+                    }
+                  : undefined
+              }
+              title={canInlineEdit ? "Double-click to edit" : undefined}
+            >
+              {renderFieldValue(field, row.properties?.[field.id])}
+            </span>
+          );
+        },
       });
     }
 
@@ -406,7 +594,8 @@ export default function CustomObjectRecordsPage() {
     });
 
     return cols;
-  }, [objectType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objectType, inlineEditCell, inlineEditValue]);
 
   if (loading) {
     return (
@@ -452,6 +641,17 @@ export default function CustomObjectRecordsPage() {
         title={objectType.name}
         subtitle={`${records.length} record${records.length !== 1 ? "s" : ""}`}
       >
+        {selectedIds.size > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            icon={<Trash2 size={13} />}
+            onClick={() => setConfirmBulkDelete(true)}
+            loading={bulkDeleting}
+          >
+            Delete {selectedIds.size} selected
+          </Button>
+        )}
         <div className="relative">
           <Search
             size={14}
@@ -492,12 +692,14 @@ export default function CustomObjectRecordsPage() {
             }
             description={
               searchQuery
-                ? "Try a different search."
-                : `Create your first ${objectType.nameSingular.toLowerCase()} to get started.`
+                ? "Try a different search term or clear your filter."
+                : `Custom objects let you track anything specific to your business -- ${objectType.name.toLowerCase()} in this case. Add your first record to get started, or configure the fields in Settings.`
             }
             actionLabel={searchQuery ? undefined : `New ${objectType.nameSingular}`}
             onAction={searchQuery ? undefined : openCreate}
             actionVariant="gradient"
+            secondaryActionLabel={searchQuery ? undefined : "Configure fields"}
+            onSecondaryAction={searchQuery ? undefined : () => router.push("/settings")}
           />
         ) : (
           <DataTable
@@ -505,6 +707,9 @@ export default function CustomObjectRecordsPage() {
             data={filteredRecords}
             getRowId={(r) => r.id}
             onRowClick={openDetail}
+            selectable
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
             emptyIcon={<Icon size={24} />}
             emptyTitle={`No ${objectType.name.toLowerCase()}`}
           />
@@ -554,6 +759,40 @@ export default function CustomObjectRecordsPage() {
             <div key={field.id}>{renderFieldInput(field)}</div>
           ))}
         </div>
+      </Modal>
+
+      {/* Bulk delete confirmation */}
+      <Modal
+        open={confirmBulkDelete}
+        onClose={() => setConfirmBulkDelete(false)}
+        title={`Delete ${selectedIds.size} record${selectedIds.size !== 1 ? "s" : ""}?`}
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmBulkDelete(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              loading={bulkDeleting}
+            >
+              Delete {selectedIds.size} record{selectedIds.size !== 1 ? "s" : ""}
+            </Button>
+          </>
+        }
+      >
+        <p
+          className="text-[13px]"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          This action cannot be undone. The selected records will be permanently removed.
+        </p>
       </Modal>
 
       {/* Detail slide-over / modal */}

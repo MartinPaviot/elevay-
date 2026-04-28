@@ -44,11 +44,25 @@ interface Sequence {
   };
 }
 
+interface StepAnalytics {
+  stepNumber: number;
+  sent: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  replied: number;
+  total: number;
+  openRate: number;
+  clickRate: number;
+  replyRate: number;
+}
+
 interface Analytics {
   sequenceId: string;
   enrollment: Record<string, number>;
   emails: Record<string, number> & { totalOpened: number; totalClicked: number };
   rates: { openRate: number; clickRate: number; bounceRate: number; replyRate: number };
+  perStep?: StepAnalytics[];
 }
 
 type DetailTab = "steps" | "analytics";
@@ -646,7 +660,7 @@ export default function SequenceDetailPage({ params }: { params: Promise<{ id: s
 
 function AnalyticsPanel({ loading, data }: { loading: boolean; data: Analytics | null }) {
   if (loading && !data) {
-    return <div className="py-10 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Loading analytics…</div>;
+    return <div className="py-10 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Loading analytics...</div>;
   }
   if (!data) {
     return <div className="py-10 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>No analytics yet.</div>;
@@ -660,6 +674,7 @@ function AnalyticsPanel({ loading, data }: { loading: boolean; data: Analytics |
     { label: "Replied", value: data.enrollment.replied || 0 },
   ];
   const max = Math.max(...funnel.map((f) => f.value), 1);
+  const perStep = data.perStep || [];
   return (
     <div className="space-y-6">
       <section>
@@ -710,6 +725,100 @@ function AnalyticsPanel({ loading, data }: { loading: boolean; data: Analytics |
           ))}
         </div>
       </section>
+
+      {/* ── PER-STEP BREAKDOWN ── */}
+      {perStep.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+            Per-step performance
+          </h2>
+          <Card>
+            <CardBody className="p-0">
+              <table className="w-full text-left text-[12px]">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+                    <th className="px-4 py-2.5 font-medium" style={{ color: "var(--color-text-tertiary)" }}>Step</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Sent</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Opened</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Clicked</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Replied</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Bounced</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Open %</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Click %</th>
+                    <th className="px-4 py-2.5 font-medium text-right" style={{ color: "var(--color-text-tertiary)" }}>Reply %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perStep.map((s) => (
+                    <tr key={s.stepNumber} style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+                      <td className="px-4 py-2.5" style={{ color: "var(--color-text-primary)" }}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                            style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+                          >
+                            {s.stepNumber}
+                          </div>
+                          Step {s.stepNumber}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium" style={{ color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>{s.sent}</td>
+                      <td className="px-4 py-2.5 text-right" style={{ color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{s.opened}</td>
+                      <td className="px-4 py-2.5 text-right" style={{ color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{s.clicked}</td>
+                      <td className="px-4 py-2.5 text-right" style={{ color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{s.replied}</td>
+                      <td className="px-4 py-2.5 text-right" style={{ color: s.bounced > 0 ? "var(--color-error)" : "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{s.bounced}</td>
+                      <td className="px-4 py-2.5 text-right font-medium" style={{ color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        {pct(s.openRate)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium" style={{ color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        {pct(s.clickRate)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium" style={{ color: s.replyRate > 0 ? "var(--color-success)" : "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        {pct(s.replyRate)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardBody>
+          </Card>
+
+          {/* Visual step-by-step drop-off bars */}
+          {perStep.length > 1 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
+                Drop-off between steps
+              </h3>
+              <div className="flex items-end gap-2" style={{ height: 80 }}>
+                {(() => {
+                  const maxSent = Math.max(...perStep.map((s) => s.sent), 1);
+                  return perStep.map((s) => {
+                    const heightPct = (s.sent / maxSent) * 100;
+                    return (
+                      <div key={s.stepNumber} className="flex flex-1 flex-col items-center gap-1">
+                        <span className="text-[10px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                          {s.sent}
+                        </span>
+                        <div
+                          className="w-full rounded-t"
+                          style={{
+                            height: `${Math.max(heightPct, 4)}%`,
+                            background: "var(--color-accent)",
+                            opacity: 0.6 + (s.openRate * 0.4),
+                          }}
+                        />
+                        <span className="text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
+                          S{s.stepNumber}
+                        </span>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>

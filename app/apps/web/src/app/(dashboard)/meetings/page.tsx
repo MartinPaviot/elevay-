@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Loader2, Mic, CheckCircle2, AlertCircle, Play, Upload } from "lucide-react";
+import { Calendar, FileText, ExternalLink, Clock, Users, ChevronDown, ChevronRight, Loader2, Mic, CheckCircle2, AlertCircle, Play, Upload, Timer, AlertTriangle, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -22,11 +22,41 @@ interface Meeting {
   meetingLink: string | null;
   status: string;
   isPast: boolean;
+  isAllDay?: boolean;
+  organizer?: { email: string; displayName: string | null } | null;
+  isRecurring?: boolean;
   hasTranscript: boolean;
   hasNotes: boolean;
   notes: { summary: string } | null;
   recordingUrl: string | null;
   activityId: string | null;
+}
+
+interface NextMeetingInfo {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  attendeeCount: number;
+  meetingLink: string | null;
+  minutesUntil: number;
+}
+
+interface ConflictInfo {
+  meetingA: string;
+  meetingB: string;
+  overlapMinutes: number;
+}
+
+function formatCountdown(minutesUntil: number): string {
+  if (minutesUntil <= 0) return "Starting now";
+  if (minutesUntil < 60) return `in ${minutesUntil}m`;
+  const hours = Math.floor(minutesUntil / 60);
+  const mins = minutesUntil % 60;
+  if (hours < 24) return mins > 0 ? `in ${hours}h ${mins}m` : `in ${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remainHours = hours % 24;
+  return remainHours > 0 ? `in ${days}d ${remainHours}h` : `in ${days}d`;
 }
 
 export default function MeetingsPage() {
@@ -36,6 +66,9 @@ export default function MeetingsPage() {
   const [expandedMeeting, setExpandedMeeting] = useState<string | null>(null);
   const [prepDocs, setPrepDocs] = useState<Record<string, string>>({});
   const [prepLoading, setPrepLoading] = useState<Record<string, boolean>>({});
+  const [nextMeeting, setNextMeeting] = useState<NextMeetingInfo | null>(null);
+  const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
+  const [countdownStr, setCountdownStr] = useState<string>("");
   const router = useRouter();
 
   useEffect(() => {
@@ -46,6 +79,8 @@ export default function MeetingsPage() {
           const data = await res.json();
           setMeetings(data.meetings || []);
           setCalendarConnected(data.calendarConnected !== false);
+          setNextMeeting(data.nextMeeting || null);
+          setConflicts(data.conflicts || []);
         }
       } catch (e) {
         console.warn("meetings: list fetch failed", e);
@@ -53,6 +88,22 @@ export default function MeetingsPage() {
       setLoading(false);
     })();
   }, []);
+
+  // Live countdown ticker for next meeting
+  useEffect(() => {
+    if (!nextMeeting) {
+      setCountdownStr("");
+      return;
+    }
+    function tick() {
+      if (!nextMeeting) return;
+      const minutesUntil = Math.max(0, Math.round((new Date(nextMeeting.startTime).getTime() - Date.now()) / 60000));
+      setCountdownStr(formatCountdown(minutesUntil));
+    }
+    tick();
+    const interval = setInterval(tick, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
+  }, [nextMeeting]);
 
   const generatePrep = useCallback(async (meetingId: string) => {
     if (prepDocs[meetingId]) {
@@ -77,7 +128,8 @@ export default function MeetingsPage() {
     setPrepLoading((prev) => ({ ...prev, [meetingId]: false }));
   }, [prepDocs, expandedMeeting]);
 
-  const upcoming = meetings.filter((m) => !m.isPast);
+  const upcoming = meetings.filter((m) => !m.isPast && !m.isAllDay);
+  const allDayUpcoming = meetings.filter((m) => !m.isPast && m.isAllDay);
   const past = meetings.filter((m) => m.isPast);
 
   if (loading) {
@@ -120,6 +172,97 @@ export default function MeetingsPage() {
           />
         ) : (
           <div className="mx-auto max-w-3xl space-y-8">
+            {/* Next meeting countdown */}
+            {nextMeeting && countdownStr && (
+              <Card>
+                <CardBody>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "rgba(var(--color-accent-rgb, 99,102,241), 0.1)" }}>
+                        <Timer size={18} style={{ color: "var(--color-accent)" }} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Next meeting</p>
+                        <p className="text-[14px] font-semibold" style={{ color: "var(--color-text-primary)" }}>{nextMeeting.title}</p>
+                        <p className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+                          {new Date(nextMeeting.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {" - "}
+                          {new Date(nextMeeting.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {nextMeeting.attendeeCount > 0 && (
+                            <span className="ml-2">
+                              <Users size={10} className="inline mr-0.5" />
+                              {nextMeeting.attendeeCount}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-[20px] font-bold" style={{ color: "var(--color-accent)" }}>{countdownStr}</p>
+                      </div>
+                      {nextMeeting.meetingLink && (
+                        <a
+                          href={nextMeeting.meetingLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-lg px-3 py-2 text-[12px] font-medium"
+                          style={{ background: "var(--color-accent)", color: "white" }}
+                        >
+                          Join
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+
+            {/* Scheduling conflicts */}
+            {conflicts.length > 0 && (
+              <div className="space-y-2">
+                {conflicts.map((c, i) => (
+                  <div key={i} className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
+                    <p className="text-[12px] text-amber-300">
+                      Scheduling conflict: <strong>{c.meetingA}</strong> and <strong>{c.meetingB}</strong> overlap by {c.overlapMinutes} minute{c.overlapMinutes !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* All-day events */}
+            {allDayUpcoming.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+                  All-day ({allDayUpcoming.length})
+                </h2>
+                <div className="space-y-1.5">
+                  {allDayUpcoming.map((m) => (
+                    <Card key={m.id}>
+                      <div className="flex items-center gap-3 px-4 py-2.5">
+                        <Sun size={13} style={{ color: "var(--color-text-muted)" }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium truncate" style={{ color: "var(--color-text-primary)" }}>{m.title}</p>
+                          <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                            {new Date(m.startTime).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                            {m.attendees.length > 0 && (
+                              <span className="ml-2">
+                                <Users size={10} className="inline mr-0.5" />
+                                {m.attendees.length}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <Badge variant="info" size="sm">All day</Badge>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Upcoming */}
             {upcoming.length > 0 && (
               <section>

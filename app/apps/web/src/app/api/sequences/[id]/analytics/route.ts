@@ -12,11 +12,18 @@ import { logger } from "@/lib/logger";
 /**
  * GET /api/sequences/:id/analytics — funnel metrics for one sequence.
  *
- * v1 aggregate (all-time):
+ * v2 includes per-step breakdown (sent / opened / clicked / replied /
+ * bounced per step_number) so the UI can show drop-off between steps.
+ *
+ * Aggregate (all-time):
  *   - enrolled / active / paused / completed / replied (from enrollments)
  *   - drafts / sent / delivered / opened / clicked / bounced / replied
  *     (from outbound_emails tagged with sequenceId)
  *   - reply_rate (replied/sent), open_rate, click_rate, bounce_rate
+ *
+ * Per-step:
+ *   - stepNumber, sent, opened, clicked, bounced, replied
+ *   - openRate, clickRate, replyRate
  *
  * Returns zeros rather than null so the UI card doesn't have to branch.
  */
@@ -122,11 +129,60 @@ export async function GET(_req: Request, { params }: RouteCtx) {
       replyRate: sentOrLater > 0 ? (enrollment.replied || 0) / sentOrLater : 0,
     };
 
+    // ── Per-step breakdown ──
+    // Group outbound_emails by step_number, counting sent, opened,
+    // clicked, bounced, and replied. "replied" is determined by
+    // `replied_at IS NOT NULL` on the email row.
+    const perStepRows = enrollmentIds.length
+      ? await db
+          .select({
+            stepNumber: outboundEmails.stepNumber,
+            sent: sql<number>`count(*) filter (where ${outboundEmails.status} in ('sent', 'delivered'))`,
+            opened: sql<number>`count(*) filter (where ${outboundEmails.openedAt} is not null)`,
+            clicked: sql<number>`count(*) filter (where ${outboundEmails.clickedAt} is not null)`,
+            bounced: sql<number>`count(*) filter (where ${outboundEmails.status} = 'bounced')`,
+            replied: sql<number>`count(*) filter (where ${outboundEmails.repliedAt} is not null)`,
+            total: sql<number>`count(*)`,
+          })
+          .from(outboundEmails)
+          .where(
+            and(
+              eq(outboundEmails.tenantId, authCtx.tenantId),
+              inArray(outboundEmails.enrollmentId, enrollmentIds)
+            )
+          )
+          .groupBy(outboundEmails.stepNumber)
+      : [];
+
+    const perStep = perStepRows
+      .filter((r) => r.stepNumber != null)
+      .map((r) => {
+        const sent = Number(r.sent) || 0;
+        const opened = Number(r.opened) || 0;
+        const clicked = Number(r.clicked) || 0;
+        const bounced = Number(r.bounced) || 0;
+        const replied = Number(r.replied) || 0;
+        return {
+          stepNumber: r.stepNumber!,
+          sent,
+          opened,
+          clicked,
+          bounced,
+          replied,
+          total: Number(r.total) || 0,
+          openRate: sent > 0 ? opened / sent : 0,
+          clickRate: sent > 0 ? clicked / sent : 0,
+          replyRate: sent > 0 ? replied / sent : 0,
+        };
+      })
+      .sort((a, b) => a.stepNumber - b.stepNumber);
+
     return NextResponse.json({
       sequenceId: id,
       enrollment,
       emails,
       rates,
+      perStep,
     });
   } catch (err) {
     logger.error("sequences: analytics failed", { err, sequenceId: id });

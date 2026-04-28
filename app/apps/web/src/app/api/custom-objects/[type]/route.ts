@@ -7,6 +7,8 @@ function getSql() {
   return postgres(process.env.DATABASE_URL!);
 }
 
+type TypeRouteParams = { params: Promise<{ type: string }> };
+
 /**
  * GET /api/custom-objects/[type]
  * List all records of a given custom object type.
@@ -113,5 +115,67 @@ export async function POST(
   } catch (error) {
     console.error("Failed to create custom record:", error);
     return Response.json({ error: "Failed to create record" }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/custom-objects/[type]
+ * Bulk-delete records of a given custom object type.
+ * Body: { ids: string[] }
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: TypeRouteParams
+) {
+  const authCtx = await getAuthContext();
+  if (!authCtx) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { type } = await params;
+
+  // Verify the object type exists
+  const settings = await getTenantSettings(authCtx.tenantId);
+  const objectType = (settings.customObjectTypes || []).find((t) => t.id === type);
+  if (!objectType) {
+    return Response.json({ error: "Object type not found" }, { status: 404 });
+  }
+
+  try {
+    const body = await req.json();
+    const { ids } = body as { ids: string[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return Response.json({ error: "ids array is required" }, { status: 400 });
+    }
+
+    // Cap at 100 deletions per request for safety
+    if (ids.length > 100) {
+      return Response.json(
+        { error: "Cannot delete more than 100 records at once" },
+        { status: 400 }
+      );
+    }
+
+    const sql = getSql();
+    try {
+      const result = await sql`
+        DELETE FROM custom_records
+        WHERE tenant_id = ${authCtx.tenantId}
+          AND object_type = ${type}
+          AND id = ANY(${ids})
+        RETURNING id
+      `;
+
+      return Response.json({
+        ok: true,
+        deleted: result.length,
+      });
+    } finally {
+      await sql.end();
+    }
+  } catch (error) {
+    console.error("Failed to bulk delete custom records:", error);
+    return Response.json({ error: "Failed to delete records" }, { status: 500 });
   }
 }

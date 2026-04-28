@@ -176,6 +176,9 @@ export async function GET(req: Request) {
         meetingLink: m.meetingLink,
         status: m.status,
         isPast,
+        isAllDay: m.isAllDay,
+        organizer: m.organizer || null,
+        isRecurring: !!m.recurrence && m.recurrence.length > 0,
         hasTranscript: !!meta.hasTranscript,
         hasNotes: !!meta.structuredNotes,
         notes: meta.structuredNotes || null,
@@ -185,15 +188,55 @@ export async function GET(req: Request) {
       });
     }
 
+    // Compute next meeting countdown and conflict detection
+    const upcomingMeetings = enriched.filter((m) => !m.isPast && !m.isAllDay);
+    const nextMeeting = upcomingMeetings.length > 0 ? upcomingMeetings[0] : null;
+
+    // Detect scheduling conflicts: overlapping non-all-day meetings
+    const conflicts: Array<{ meetingA: string; meetingB: string; overlapMinutes: number }> = [];
+    for (let i = 0; i < upcomingMeetings.length; i++) {
+      for (let j = i + 1; j < upcomingMeetings.length; j++) {
+        const a = upcomingMeetings[i];
+        const b = upcomingMeetings[j];
+        const aStart = new Date(a.startTime).getTime();
+        const aEnd = new Date(a.endTime).getTime();
+        const bStart = new Date(b.startTime).getTime();
+        const bEnd = new Date(b.endTime).getTime();
+        // Check overlap
+        if (aStart < bEnd && bStart < aEnd) {
+          const overlapStart = Math.max(aStart, bStart);
+          const overlapEnd = Math.min(aEnd, bEnd);
+          const overlapMinutes = Math.round((overlapEnd - overlapStart) / 60000);
+          if (overlapMinutes > 0) {
+            conflicts.push({
+              meetingA: a.title,
+              meetingB: b.title,
+              overlapMinutes,
+            });
+          }
+        }
+      }
+    }
+
     return Response.json({
       meetings: enriched,
-      upcoming: enriched.filter((m) => !m.isPast).length,
+      upcoming: upcomingMeetings.length,
       past: enriched.filter((m) => m.isPast).length,
       calendarConnected: hasGoogle || hasMicrosoft,
       // M3 — so the UI can render a "Microsoft Calendar feed coming
       // soon" affordance for MS-only users instead of an empty state.
       provider: hasGoogle ? "google" : hasMicrosoft ? "microsoft" : null,
       microsoftFeedPending: !hasGoogle && hasMicrosoft,
+      nextMeeting: nextMeeting ? {
+        id: nextMeeting.id,
+        title: nextMeeting.title,
+        startTime: nextMeeting.startTime,
+        endTime: nextMeeting.endTime,
+        attendeeCount: nextMeeting.attendees.length,
+        meetingLink: nextMeeting.meetingLink,
+        minutesUntil: Math.max(0, Math.round((new Date(nextMeeting.startTime).getTime() - now.getTime()) / 60000)),
+      } : null,
+      conflicts,
     });
   } catch (err: any) {
     if (err.message?.includes("not connected")) {

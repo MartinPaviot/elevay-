@@ -120,6 +120,56 @@ async function handleDeliverability(req: Request) {
       .from(connectedMailboxes)
       .where(eq(connectedMailboxes.tenantId, authCtx.tenantId));
 
+    // Week-over-week comparison: emails sent 7-14 days ago
+    const prevWeekStart = new Date();
+    prevWeekStart.setDate(prevWeekStart.getDate() - 14);
+    const prevWeekEnd = new Date();
+    prevWeekEnd.setDate(prevWeekEnd.getDate() - 7);
+
+    const prevWhereClause = sequenceId
+      ? and(
+          eq(outboundEmails.tenantId, authCtx.tenantId),
+          eq(outboundEmails.enrollmentId, sequenceId),
+          sql`${outboundEmails.sentAt} >= ${prevWeekStart.toISOString()}`,
+          sql`${outboundEmails.sentAt} < ${prevWeekEnd.toISOString()}`
+        )
+      : and(
+          eq(outboundEmails.tenantId, authCtx.tenantId),
+          sql`${outboundEmails.sentAt} >= ${prevWeekStart.toISOString()}`,
+          sql`${outboundEmails.sentAt} < ${prevWeekEnd.toISOString()}`
+        );
+
+    const [prevMetrics] = await db
+      .select({
+        totalSent: count(),
+        totalOpened: sql<number>`count(*) filter (where ${outboundEmails.openedAt} is not null)`,
+        totalReplied: sql<number>`count(*) filter (where ${outboundEmails.repliedAt} is not null)`,
+        totalBounced: sql<number>`count(*) filter (where ${outboundEmails.status} = 'bounced')`,
+      })
+      .from(outboundEmails)
+      .where(and(prevWhereClause, isNotNull(outboundEmails.sentAt)));
+
+    const prevTotalSent = Number(prevMetrics?.totalSent || 0);
+    const prevTotalOpened = Number(prevMetrics?.totalOpened || 0);
+    const prevTotalReplied = Number(prevMetrics?.totalReplied || 0);
+    const prevTotalBounced = Number(prevMetrics?.totalBounced || 0);
+
+    const [prevSpamMetrics] = await db
+      .select({ spamCount: count() })
+      .from(outboundEmails)
+      .where(and(prevWhereClause, eq(outboundEmails.bounceType, "complaint")));
+    const prevSpamCount = Number(prevSpamMetrics?.spamCount || 0);
+
+    const prevWeek = prevTotalSent > 0
+      ? {
+          openRate: Math.round((prevTotalOpened / prevTotalSent) * 100),
+          replyRate: Math.round((prevTotalReplied / prevTotalSent) * 100),
+          bounceRate: Math.round((prevTotalBounced / prevTotalSent) * 100),
+          spamRate: Math.round((prevSpamCount / prevTotalSent) * 10000) / 100,
+          totalSent: prevTotalSent,
+        }
+      : undefined;
+
     // Health score
     let healthScore = 100;
     if (bounceRate > 10) healthScore -= 40;
@@ -162,6 +212,7 @@ async function handleDeliverability(req: Request) {
       enrollmentsByStatus,
       stepMetrics,
       mailboxHealth,
+      prevWeek,
     });
   } catch (error) {
     console.error("Deliverability check failed:", error);
