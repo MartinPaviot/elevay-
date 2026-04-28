@@ -75,8 +75,10 @@ export interface TenantSettings {
    * O7 — default visibility for newly captured records (emails, meetings,
    * notes, contacts).
    * - "everyone": all tenant members can see (current behavior).
-   * - "team": shared with the user's team only — placeholder for future
-   *   team scoping; today behaves like "everyone".
+   * - "team": NOT IMPLEMENTED — exists in the type for forward compat
+   *   but no team scoping logic exists. The onboarding wizard (BUG-WS0-002)
+   *   no longer offers this option. If a tenant already has "team" stored
+   *   it behaves identically to "everyone" at runtime.
    * - "private": only the creating user can see — used by founders who
    *   demo or share screens publicly and don't want a teammate's leads
    *   to leak in.
@@ -200,6 +202,10 @@ export interface TenantSettings {
    *  See lib/guardrails/trust-score.ts. Never write directly — use the
    *  helpers so the audit trail in `trust_events` stays in sync. */
   trustScore?: number;
+  /** ISO timestamp of the last positive trust event (approved_no_edit or
+   *  approved_with_edit). Used by applyTrustDecay() to reduce stale scores
+   *  when a tenant stops interacting with the agent. */
+  lastPositiveTrustEventAt?: string;
   /** Tracks whether each progressive-autonomy nudge has been offered
    *  and whether the user accepted or dismissed it. */
   autonomyNudgeState?: {
@@ -244,6 +250,12 @@ export interface McpApiKeyEntry {
   keyPrefix: string;
   createdAt: string;
   lastUsedAt?: string;
+  /** ISO timestamp of when the key was created (mirrors createdAt for
+   *  explicit audit trail semantics). */
+  keyCreatedAt?: string;
+  /** The user ID of the admin who created this key. Used for audit
+   *  trail attribution — who issued the credential. */
+  keyOwnerId?: string;
 }
 
 export interface CustomFieldDef {
@@ -448,9 +460,29 @@ export function parseSizeRange(settings: TenantSettings): [number, number] | nul
   return [Math.min(...nums), Math.max(...nums)];
 }
 
+/**
+ * BUG-WS0-008: Derive targetRoles at read time from targetSeniorities +
+ * targetDepartments. This replaces the stale-persisted value and ensures
+ * every downstream consumer (scoring, TAM, chat prompts) always gets the
+ * current seniority/department combination.
+ *
+ * If the tenant has a manually-edited targetRoles string (from the ICP
+ * settings page text field) AND no structured seniorities/departments,
+ * we fall back to the stored value for backward compat.
+ */
+export function deriveTargetRoles(settings: TenantSettings): string {
+  const seniorities = settings.targetSeniorities || [];
+  const departments = settings.targetDepartments || [];
+  if (seniorities.length > 0 || departments.length > 0) {
+    return [...seniorities, ...departments].join(", ");
+  }
+  // Fall back to stored value for legacy tenants or manual edits
+  return settings.targetRoles || "";
+}
+
 /** Parse targetRoles free text into lowercase keywords for matching. */
 export function parseRoleKeywords(settings: TenantSettings): string[] {
-  const raw = settings.targetRoles || "";
+  const raw = deriveTargetRoles(settings);
   return raw
     .split(/[,;]/)
     .map((r) => r.trim().toLowerCase())

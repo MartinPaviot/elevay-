@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/apollo-client";
 import {
   getTenantSettings,
+  deriveTargetRoles,
   parseSizeRange,
   parseRoleKeywords,
 } from "@/lib/tenant-settings";
@@ -426,7 +427,8 @@ async function planStrategies(args: {
       `Target company sizes: ${settings.targetCompanySizes.join(", ")}`,
     settings.targetGeographies?.length &&
       `Target geographies: ${settings.targetGeographies.join(", ")}`,
-    settings.targetRoles && `Buyer personas: ${settings.targetRoles}`,
+    // BUG-WS0-008: derive targetRoles at read time
+    deriveTargetRoles(settings) && `Buyer personas: ${deriveTargetRoles(settings)}`,
     settings.knowledge?.length &&
       `Knowledge base:\n${settings.knowledge.map((k) => `- ${k.topic}: ${k.content}`).join("\n")}`,
   ]
@@ -471,6 +473,9 @@ STRATEGY DESIGN:
 (add more angles only if they're genuinely distinct)
 
 Generate ${strategyCount} strategies now.`,
+    providerOptions: {
+      anthropic: { cacheControl: { type: "ephemeral" } },
+    },
     _trace: {
       agentId: "tam-stream-planner",
       tenantId,

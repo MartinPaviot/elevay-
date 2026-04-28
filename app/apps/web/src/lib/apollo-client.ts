@@ -3,6 +3,8 @@
  * Docs: https://apolloio.github.io/apollo-api-docs/
  */
 
+import { withCircuitBreaker, APOLLO_CIRCUIT } from "./circuit-breaker";
+
 const APOLLO_BASE = "https://api.apollo.io";
 
 function getApiKey(): string {
@@ -15,29 +17,34 @@ async function apolloFetch<T>(
   path: string,
   options: { method?: string; body?: unknown } = {}
 ): Promise<T> {
-  const { method = "GET", body } = options;
-  const init: RequestInit = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Api-Key": getApiKey(),
-    },
-  };
-  if (body) {
-    init.body = JSON.stringify(body);
-  }
-  const res = await fetch(`${APOLLO_BASE}${path}`, init);
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    if (res.status === 403) {
-      // Free plan doesn't include this endpoint — expected, will fall back to LLM
-      console.info(`[apollo] ${path}: not available on current plan (403)`);
+  return withCircuitBreaker(APOLLO_CIRCUIT, async () => {
+    const { method = "GET", body } = options;
+    const init: RequestInit = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": getApiKey(),
+      },
+    };
+    if (body) {
+      init.body = JSON.stringify(body);
     }
-    throw new Error(`Apollo API ${path} failed: ${res.status} ${text}`);
-  }
+    const res = await fetch(`${APOLLO_BASE}${path}`, init);
 
-  return res.json();
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      if (res.status === 403) {
+        // Free plan doesn't include this endpoint — expected, will fall back to LLM.
+        // 403s are plan-level, not transient — don't count toward circuit breaker.
+        // We still throw so the caller gets the error, but we reset the failure
+        // outside this callback by re-throwing a non-circuit error.
+        console.info(`[apollo] ${path}: not available on current plan (403)`);
+      }
+      throw new Error(`Apollo API ${path} failed: ${res.status} ${text}`);
+    }
+
+    return res.json();
+  });
 }
 
 // ── Organization Enrich ──

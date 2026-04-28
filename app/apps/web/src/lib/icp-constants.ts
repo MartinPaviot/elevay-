@@ -117,6 +117,32 @@ export const GEOGRAPHIES = [
 ] as const;
 
 
+/**
+ * BUG-WS0-007: Convert UI seniority labels (JOB_SENIORITIES) to Apollo API
+ * format. Apollo expects lowercase snake_case: "c_suite", "vp", "director",
+ * "manager", "senior", "entry", "owner", "founder", "partner", "head".
+ * Returns fallback defaults if the input is empty.
+ */
+const SENIORITY_TO_APOLLO: Record<string, string> = {
+  "Owner": "owner",
+  "Founder": "founder",
+  "C-Suite": "c_suite",
+  "Partner": "partner",
+  "VP": "vp",
+  "Head": "head",
+  "Director": "director",
+  "Manager": "manager",
+  "Senior": "senior",
+  "Entry": "entry",
+};
+
+export function senioritiesToApollo(uiSeniorities: string[]): string[] {
+  const mapped = uiSeniorities
+    .map((s) => SENIORITY_TO_APOLLO[s] || s.toLowerCase().replace(/[- ]/g, "_"))
+    .filter(Boolean);
+  return mapped.length > 0 ? mapped : ["c_suite", "vp", "director"];
+}
+
 /** Convert UI size labels to Apollo API format: "501-1,000" → "501,1000" */
 export function sizesToApolloRanges(sizes: string[]): string[] {
   return sizes.map((s) => {

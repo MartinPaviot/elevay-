@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -159,6 +159,9 @@ ${apolloSizeExamples ? `- The user selected these sizes: ${apolloSizeExamples} â
 - Revenue range is in USD (integers)
 
 Generate strategies that maximize COVERAGE while maintaining RELEVANCE. Each strategy should return meaningful, distinct results.`,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "build-tam", tenantId: authCtx.tenantId, inputPreview: "Generate TAM search strategies from business context" },
     });
 

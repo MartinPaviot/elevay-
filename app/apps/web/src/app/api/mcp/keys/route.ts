@@ -2,6 +2,7 @@ import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
 import { getTenantSettings, updateTenantSettings } from "@/lib/tenant-settings";
 import type { McpApiKeyEntry } from "@/lib/tenant-settings";
 import { hash } from "bcryptjs";
+import logger from "@/lib/logger";
 
 /**
  * Generate a cryptographically random MCP API key.
@@ -74,16 +75,28 @@ export async function POST(req: Request) {
     const keyHash = await hash(rawKey, 10);
     const keyPrefix = rawKey.slice(0, 8) + "...";
 
+    const now = new Date().toISOString();
     const entry: McpApiKeyEntry = {
       id: crypto.randomUUID(),
       name,
       keyHash,
       keyPrefix,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      keyCreatedAt: now,
+      keyOwnerId: authCtx.userId,
     };
 
     await updateTenantSettings(authCtx.tenantId, {
       mcpApiKeys: [...existingKeys, entry],
+    });
+
+    logger.info("mcp: api key created", {
+      tenantId: authCtx.tenantId,
+      keyId: entry.id,
+      keyName: entry.name,
+      keyPrefix: entry.keyPrefix,
+      keyOwnerId: authCtx.userId,
+      createdAt: now,
     });
 
     // Return the raw key ONCE — it cannot be retrieved again
@@ -133,8 +146,19 @@ export async function DELETE(req: Request) {
       return Response.json({ error: "Key not found" }, { status: 404 });
     }
 
+    const revokedKey = existingKeys.find((k) => k.id === keyId);
+
     await updateTenantSettings(authCtx.tenantId, {
       mcpApiKeys: filtered,
+    });
+
+    logger.info("mcp: api key revoked", {
+      tenantId: authCtx.tenantId,
+      keyId,
+      keyName: revokedKey?.name,
+      keyPrefix: revokedKey?.keyPrefix,
+      revokedBy: authCtx.userId,
+      revokedAt: new Date().toISOString(),
     });
 
     return Response.json({ success: true });

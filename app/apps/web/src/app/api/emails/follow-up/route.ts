@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { contacts, companies } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -93,6 +93,9 @@ RULES:
       model,
       schema: followUpSchema,
       prompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "follow-up-email", tenantId: authCtx.tenantId },
     });
     const result = object as any;

@@ -3,7 +3,7 @@ import { deals, companies, contacts, activities } from "@/db/schema";
 import { eq, and, sql, gte, desc } from "drizzle-orm";
 import { predictDealVelocity } from "@/lib/deal-velocity";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { SkillRunOptions } from "@/skills/types";

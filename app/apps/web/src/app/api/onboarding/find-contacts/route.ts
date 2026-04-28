@@ -5,7 +5,8 @@ import { eq, desc } from "drizzle-orm";
 import { runSkill } from "@/skills/runner";
 import { companyContactFinderSkill } from "@/skills/enrichment/company-contact-finder";
 import { leadQualificationSkill } from "@/skills/scoring/lead-qualification";
-import { getTenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles } from "@/lib/tenant-settings";
+import { senioritiesToApollo } from "@/lib/icp-constants";
 
 /**
  * Find decision-makers at top TAM companies during onboarding.
@@ -19,8 +20,14 @@ export async function POST(req: Request) {
   }
 
   const settings = await getTenantSettings(authCtx.tenantId);
-  const targetRoles = settings.targetRoles || "";
+  // BUG-WS0-008: derive targetRoles at read time instead of using stale persisted value
+  const targetRoles = deriveTargetRoles(settings);
   const roleTitles = targetRoles.split(/[,;]/).map((r) => r.trim()).filter(Boolean);
+
+  // BUG-WS0-007: Use the user's actual seniority selection (stored as UI
+  // labels like "C-Suite", "VP", "Founder") converted to Apollo API format.
+  // Falls back to ["c_suite", "vp", "director"] when no selection exists.
+  const apolloSeniorities = senioritiesToApollo(settings.targetSeniorities || []);
 
   // Get top 10 scored companies
   const topCompanies = await db
@@ -43,7 +50,7 @@ export async function POST(req: Request) {
     const result = await runSkill(companyContactFinderSkill, {
       companyDomain: company.domain,
       targetTitles: roleTitles.length > 0 ? roleTitles : undefined,
-      targetSeniorities: ["c_suite", "vp", "director"],
+      targetSeniorities: apolloSeniorities,
       maxResults: 3,
     }, { tenantId: authCtx.tenantId, dryRun: false });
 

@@ -1,0 +1,22 @@
+# Elevay CODEOWNERS — require review for critical paths
+
+# Agent prompts — prompt changes must be reviewed
+apps/web/src/lib/prompts/ @MartinPaviot
+
+# Agent orchestration
+apps/web/src/lib/agents/ @MartinPaviot
+
+# Guardrails (trust-score, approval-mode, sending-identity)
+apps/web/src/lib/guardrails/ @MartinPaviot
+
+# Eval framework
+apps/web/src/lib/evals/ @MartinPaviot
+
+# Database schema
+apps/web/src/db/schema.ts @MartinPaviot
+
+# MCP server
+apps/web/src/app/api/mcp/ @MartinPaviot
+
+# Chat route (core agent entrypoint)
+apps/web/src/app/api/chat/route.ts @MartinPaviot

@@ -23,7 +23,7 @@ import {
 } from "@/db/schema";
 import { and, desc, eq, notInArray, or, inArray } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { ageInStage } from "./deal-helpers";
 import { dealBriefSchema, type DealBrief } from "./deal-briefing-schema";

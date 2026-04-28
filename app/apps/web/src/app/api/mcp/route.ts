@@ -11,6 +11,7 @@ import { eq, and, desc, ilike, or, sql } from "drizzle-orm";
 import { searchSimilar } from "@/lib/embeddings";
 import type { TenantSettings, McpApiKeyEntry } from "@/lib/tenant-settings";
 import { compare } from "bcryptjs";
+import logger from "@/lib/logger";
 
 // ── MCP Tool Definitions ──
 
@@ -265,6 +266,16 @@ async function authenticateMcpRequest(
           .where(eq(tenants.id, tenant.id))
           .then(() => {})
           .catch((e) => console.warn("mcp: lastUsedAt update failed (non-blocking)", e));
+
+        // Audit trail: log every successful MCP API key authentication
+        logger.info("mcp: api key authenticated", {
+          tenantId: tenant.id,
+          keyId: key.id,
+          keyName: key.name,
+          keyPrefix: key.keyPrefix,
+          keyOwnerId: key.keyOwnerId ?? null,
+          authenticatedAt: new Date().toISOString(),
+        });
 
         return { tenantId: tenant.id, keyId: key.id };
       }

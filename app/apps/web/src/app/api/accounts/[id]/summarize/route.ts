@@ -3,7 +3,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { companies, contacts, activities } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateText } from "@/lib/traced-ai";
 

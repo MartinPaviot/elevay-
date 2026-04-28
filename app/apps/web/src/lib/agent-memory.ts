@@ -45,6 +45,68 @@ export interface MemoryEntry {
   updatedAt?: string;
 }
 
+// ── FINDING-010 fix: priority + TTL ─────────────────────────────────
+//
+// Priority order (highest → lowest). When two memory entries share the
+// same `id`, the entry whose category appears earlier in this list wins.
+//
+//   1. explicit-setting         — user explicitly toggled this
+//   2. user-provided-knowledge  — user typed it in
+//   3. learned-preference       — derived from user behaviour
+//   4. inferred-from-inbox      — inbox-derived facts
+//   5. inferred-from-website    — most likely to be stale / wrong
+//   6. past-conversation-summary — informational, never conflicts
+//
+// TTL: inferred categories (inferred-from-website, inferred-from-inbox)
+// expire after 12 months. Other categories never expire.
+// If an entry has no `createdAt` it is assumed still-valid (settings
+// fields don't carry per-field timestamps today).
+
+const CATEGORY_PRIORITY: Record<MemoryCategory, number> = {
+  "explicit-setting": 0,
+  "user-provided-knowledge": 1,
+  "learned-preference": 2,
+  "inferred-from-inbox": 3,
+  "inferred-from-website": 4,
+  "past-conversation-summary": 5,
+};
+
+const INFERRED_CATEGORIES: Set<MemoryCategory> = new Set([
+  "inferred-from-website",
+  "inferred-from-inbox",
+]);
+
+const TTL_MS = 12 * 30 * 24 * 60 * 60 * 1000; // ~12 months
+
+/** Remove inferred entries older than 12 months (by `createdAt`). */
+function applyTtlFilter(entries: MemoryEntry[], now: Date): MemoryEntry[] {
+  const cutoff = now.getTime() - TTL_MS;
+  return entries.filter((e) => {
+    if (!INFERRED_CATEGORIES.has(e.category)) return true;
+    if (!e.createdAt) return true; // no timestamp → keep (cannot determine age)
+    return new Date(e.createdAt).getTime() >= cutoff;
+  });
+}
+
+/**
+ * Deduplicate entries by `id`: when multiple entries share the same id
+ * (e.g., a user override and a website inference for the same fact),
+ * keep only the one with the highest-priority category.
+ */
+function applyPriorityResolution(entries: MemoryEntry[]): MemoryEntry[] {
+  const best = new Map<string, MemoryEntry>();
+  for (const entry of entries) {
+    const existing = best.get(entry.id);
+    if (
+      !existing ||
+      CATEGORY_PRIORITY[entry.category] < CATEGORY_PRIORITY[existing.category]
+    ) {
+      best.set(entry.id, entry);
+    }
+  }
+  return Array.from(best.values());
+}
+
 export interface MemorySnapshot {
   tenantId: string;
   generatedAt: string;
@@ -58,6 +120,9 @@ export interface MemorySnapshot {
     reason: string | null;
     createdAt: string;
   }>;
+  /** Documents the priority order used when resolving conflicts between
+   *  categories, and the TTL policy for inferred entries. */
+  priorityNote: string;
 }
 
 export async function buildMemorySnapshot(
@@ -256,10 +321,20 @@ export async function buildMemorySnapshot(
     editable: false,
   });
 
+  // ── FINDING-010: TTL + priority resolution ──
+  const now = new Date();
+  const filtered = applyTtlFilter(entries, now);
+  const resolved = applyPriorityResolution(filtered);
+
+  // Sort by priority (highest-priority category first)
+  resolved.sort(
+    (a, b) => CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category],
+  );
+
   return {
     tenantId,
-    generatedAt: new Date().toISOString(),
-    entries,
+    generatedAt: now.toISOString(),
+    entries: resolved,
     trustScore: settings.trustScore ?? 0,
     trustEventLog: trustEventLog.map((e) => ({
       id: e.id,
@@ -269,5 +344,11 @@ export async function buildMemorySnapshot(
       reason: e.reason,
       createdAt: (e.createdAt ?? new Date()).toISOString(),
     })),
+    priorityNote:
+      "Priority (highest first): explicit-setting > user-provided-knowledge > " +
+      "learned-preference > inferred-from-inbox > inferred-from-website. " +
+      "Inferred entries (inferred-from-website, inferred-from-inbox) expire " +
+      "after 12 months when createdAt is present. " +
+      "If two entries share the same id, the higher-priority category wins.",
   };
 }

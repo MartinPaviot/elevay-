@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { activities, tasks, deals, contacts, companies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { tracedGenerateText } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 
 export async function POST(
@@ -216,6 +216,9 @@ RULES:
 - Start with "Hi [first name]," — use actual names
 - End with a forward-looking close, never "let me know if you have questions"
 - Output ONLY the email body — no subject line, no "Subject:" prefix`,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
         _trace: { agentId: "process-transcript", tenantId: authCtx.tenantId, inputPreview: `Follow-up email for meeting: ${activity.summary}` },
       });
 

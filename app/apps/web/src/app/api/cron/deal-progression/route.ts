@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { activities, deals, notifications, tenants, users } from "@/db/schema";
 import { eq, and, desc, sql, ne, gte } from "drizzle-orm";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
 import { getTenantSettings, type PipelineStageDef } from "@/lib/tenant-settings";

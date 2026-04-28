@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth-utils";
+import { withAuthRLS } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { deals, contacts, companies, activities, sequences, sequenceEnrollments } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -13,12 +13,8 @@ interface Insight {
 }
 
 export async function GET() {
-  const authCtx = await getAuthContext();
-  if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
+  return withAuthRLS(async (authCtx) => {
+    try {
     const [allDeals, allContacts, allCompanies, allEnrollments] = await Promise.all([
       db.select().from(deals).where(eq(deals.tenantId, authCtx.tenantId)),
       db.select().from(contacts).where(eq(contacts.tenantId, authCtx.tenantId)),
@@ -217,4 +213,5 @@ export async function GET() {
     console.error("Insights generation failed:", error);
     return Response.json({ error: "Failed to generate insights" }, { status: 500 });
   }
+  });
 }

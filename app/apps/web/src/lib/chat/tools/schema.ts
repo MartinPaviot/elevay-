@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getTenantSettings } from "@/lib/tenant-settings";
+import { getTenantSettings, deriveTargetRoles } from "@/lib/tenant-settings";
 import { makeTool, type ToolContext } from "./context";
 
 const STANDARD_ATTRIBUTES: Record<string, Array<{ name: string; type: string; description?: string }>> = {
@@ -124,7 +124,8 @@ export function buildSchemaTools(ctx: ToolContext) {
             salesMotion: settings.salesMotion,
             targetIndustries: settings.targetIndustries,
             targetCompanySizes: settings.targetCompanySizes,
-            targetRoles: settings.targetRoles,
+            // BUG-WS0-008: derive targetRoles at read time
+            targetRoles: deriveTargetRoles(settings),
             targetGeographies: settings.targetGeographies,
           },
         };

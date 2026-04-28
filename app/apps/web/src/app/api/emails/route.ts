@@ -5,7 +5,7 @@ import { contacts, companies } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getTenantSettings } from "@/lib/tenant-settings";
 import { getWritingSamples, buildWritingStylePrompt } from "@/lib/writing-profile";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -155,6 +155,9 @@ RULES:
       model,
       schema: emailSchema,
       prompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "draft-email", tenantId: authCtx.tenantId, inputPreview: `Draft email for ${contactName} at ${company?.name || "unknown"}` },
     });
     const result = object as any;

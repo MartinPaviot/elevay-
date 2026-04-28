@@ -1,5 +1,5 @@
 import { getAuthContext, requireAdmin } from "@/lib/auth-utils";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { generateText, stepCountIs } from "ai";
 import {
@@ -244,10 +244,12 @@ async function runSingleCase(evalCase: EvalCase, config: AgentEvalConfig): Promi
     const latencyMs = Date.now() - start;
     const output = result.text;
 
-    // Run deterministic graders
-    const graderResults = evalCase.graders
-      .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
-      .map((g) => runGrader(g, output, [], latencyMs));
+    // Run deterministic graders (runGrader is async but these types resolve synchronously)
+    const graderResults = await Promise.all(
+      evalCase.graders
+        .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
+        .map((g) => runGrader(g, output, [], latencyMs)),
+    );
 
     // FIX 3: Run isolated dimension judges instead of monolithic LLM-as-judge
     let dimensionScores: Array<{ dimension: string; score: number; reasoning: string }> | null = null;
@@ -335,10 +337,12 @@ async function runChatCase(evalCase: EvalCase, config: AgentEvalConfig, start: n
     .flatMap((s) => s.toolCalls || [])
     .map((tc) => tc.toolName);
 
-  // Run deterministic graders
-  const graderResults = evalCase.graders
-    .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
-    .map((g) => runGrader(g, text, toolsUsed, latencyMs));
+  // Run deterministic graders (runGrader is async but these types resolve synchronously)
+  const graderResults = await Promise.all(
+    evalCase.graders
+      .filter((g) => g.type !== "llm_judge" && g.type !== "faithfulness")
+      .map((g) => runGrader(g, text, toolsUsed, latencyMs)),
+  );
 
   // FIX 3: Isolated dimension judges for chat agent
   let dimensionScores: Array<{ dimension: string; score: number; reasoning: string }> | null = null;

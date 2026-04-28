@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { companies, contacts, deals, activities, tenants } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { tracedGenerateText } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import type { CustomFieldDef } from "@/lib/custom-fields";
 

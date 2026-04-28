@@ -1,6 +1,6 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
@@ -75,6 +75,9 @@ RULES:
       model,
       schema: suggestReplySchema,
       prompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
       _trace: { agentId: "suggest-reply", tenantId: authCtx.tenantId },
     });
     const result = object as any;

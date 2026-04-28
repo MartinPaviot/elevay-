@@ -3,7 +3,7 @@ import { companies, contacts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { searchPeople } from "@/lib/apollo-client";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import type { SkillRunOptions } from "@/skills/types";

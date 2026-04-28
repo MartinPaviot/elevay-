@@ -23,7 +23,7 @@ vi.mock("ai", () => ({
   generateObject: vi.fn(),
 }));
 
-vi.mock("@ai-sdk/anthropic", () => ({
+vi.mock("@/lib/ai-provider", () => ({
   anthropic: vi.fn(() => "mock-anthropic-model"),
 }));
 

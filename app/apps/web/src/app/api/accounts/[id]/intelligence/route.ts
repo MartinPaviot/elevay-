@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { companies, contacts, activities, deals } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { exploreGraphAroundEntity } from "@/lib/context-graph";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
 

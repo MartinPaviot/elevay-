@@ -100,9 +100,9 @@ describe("recordAutonomyEvent", () => {
     expect(result!.previousScore).toBe(0.3);
     expect(result!.delta).toBe(TRUST_SCORE_DELTAS.approved_no_edit);
     expect(result!.newScore).toBeCloseTo(0.32, 5);
-    expect(updateSettingsMock).toHaveBeenCalledWith("t1", {
+    expect(updateSettingsMock).toHaveBeenCalledWith("t1", expect.objectContaining({
       trustScore: expect.closeTo(0.32, 5),
-    });
+    }));
   });
 
   it("clamps score at 1.0 on overflow", async () => {

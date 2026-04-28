@@ -15,7 +15,7 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/traced-ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { EMAIL_RULES, ANTI_HALLUCINATION_RULES } from "@/lib/prompts/shared-rules";

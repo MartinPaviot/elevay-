@@ -4,8 +4,22 @@ vi.mock("@/auth", () => ({
   auth: vi.fn(),
 }));
 
+vi.mock("@/db/rls", () => ({
+  setTenantId: vi.fn().mockResolvedValue(undefined),
+  clearTenantId: vi.fn().mockResolvedValue(undefined),
+}));
+
+const { mockGetAuthContext } = vi.hoisted(() => ({
+  mockGetAuthContext: vi.fn(),
+}));
+
 vi.mock("@/lib/auth-utils", () => ({
-  getAuthContext: vi.fn(),
+  getAuthContext: mockGetAuthContext,
+  withAuthRLS: vi.fn(async (handler: (ctx: any) => Promise<Response>) => {
+    const ctx = await mockGetAuthContext();
+    if (!ctx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return handler(ctx);
+  }),
 }));
 
 vi.mock("@/db", () => ({

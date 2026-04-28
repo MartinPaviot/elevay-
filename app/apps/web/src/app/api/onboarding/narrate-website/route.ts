@@ -1,6 +1,6 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedStreamText } from "@/lib/traced-ai";
 import { assertPublicUrl } from "@/lib/ssrf-guard";
@@ -89,6 +89,9 @@ Write the narrative now.`;
     model,
     prompt,
     temperature: 0.3,
+    providerOptions: {
+      anthropic: { cacheControl: { type: "ephemeral" } },
+    },
     _trace: {
       agentId: "onboarding-narrator",
       tenantId: authCtx.tenantId,

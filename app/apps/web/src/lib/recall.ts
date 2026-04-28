@@ -3,6 +3,8 @@
  * Docs: https://docs.recall.ai
  */
 
+import { withCircuitBreaker, RECALL_CIRCUIT } from "./circuit-breaker";
+
 const RECALL_BASE = "https://us-east-1.recall.ai/api/v1";
 
 function getApiKey(): string {
@@ -91,53 +93,57 @@ export async function createBot(
     webhookUrl?: string;
   }
 ): Promise<RecallBot> {
-  const webhookUrl = options?.webhookUrl || `${process.env.AUTH_URL || process.env.NEXTAUTH_URL}/api/webhooks/recall`;
+  return withCircuitBreaker(RECALL_CIRCUIT, async () => {
+    const webhookUrl = options?.webhookUrl || `${process.env.AUTH_URL || process.env.NEXTAUTH_URL}/api/webhooks/recall`;
 
-  const body: Record<string, unknown> = {
-    meeting_url: meetingUrl,
-    bot_name: options?.botName || "Elevay",
-    recording_config: {
-      transcript: {
-        provider: {
-          meeting_captions: {},
+    const body: Record<string, unknown> = {
+      meeting_url: meetingUrl,
+      bot_name: options?.botName || "Elevay",
+      recording_config: {
+        transcript: {
+          provider: {
+            meeting_captions: {},
+          },
         },
       },
-    },
-  };
+    };
 
-  // If we have a webhook URL, add status change webhook
-  if (webhookUrl) {
-    body.metadata = { webhook_url: webhookUrl };
-  }
+    // If we have a webhook URL, add status change webhook
+    if (webhookUrl) {
+      body.metadata = { webhook_url: webhookUrl };
+    }
 
-  const res = await fetch(`${RECALL_BASE}/bot/`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify(body),
+    const res = await fetch(`${RECALL_BASE}/bot/`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Recall.ai createBot failed (${res.status}): ${text}`);
+    }
+
+    return res.json();
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Recall.ai createBot failed (${res.status}): ${text}`);
-  }
-
-  return res.json();
 }
 
 /**
  * Get bot details including status and recordings.
  */
 export async function getBotStatus(botId: string): Promise<RecallBot> {
-  const res = await fetch(`${RECALL_BASE}/bot/${botId}/`, {
-    headers: headers(),
+  return withCircuitBreaker(RECALL_CIRCUIT, async () => {
+    const res = await fetch(`${RECALL_BASE}/bot/${botId}/`, {
+      headers: headers(),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Recall.ai getBotStatus failed (${res.status}): ${text}`);
+    }
+
+    return res.json();
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Recall.ai getBotStatus failed (${res.status}): ${text}`);
-  }
-
-  return res.json();
 }
 
 /**
@@ -216,15 +222,17 @@ export function transcriptToText(segments: TranscriptSegment[]): string {
  * Delete a bot (stops recording if in progress).
  */
 export async function deleteBot(botId: string): Promise<void> {
-  const res = await fetch(`${RECALL_BASE}/bot/${botId}/`, {
-    method: "DELETE",
-    headers: headers(),
-  });
+  return withCircuitBreaker(RECALL_CIRCUIT, async () => {
+    const res = await fetch(`${RECALL_BASE}/bot/${botId}/`, {
+      method: "DELETE",
+      headers: headers(),
+    });
 
-  if (!res.ok && res.status !== 404) {
-    const text = await res.text();
-    throw new Error(`Recall.ai deleteBot failed (${res.status}): ${text}`);
-  }
+    if (!res.ok && res.status !== 404) {
+      const text = await res.text();
+      throw new Error(`Recall.ai deleteBot failed (${res.status}): ${text}`);
+    }
+  });
 }
 
 /**
