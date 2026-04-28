@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { FileText, Plus } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { FileText, Plus, Search, ArrowUpDown, Building2, User, Briefcase } from "lucide-react";
+import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardBody } from "@/components/ui/card";
 
 interface Note {
   id: string;
@@ -14,7 +14,55 @@ interface Note {
   content: string;
   entityType: string | null;
   entityId: string | null;
+  entityName?: string | null;
   createdAt: string;
+}
+
+type SortOrder = "newest" | "oldest";
+
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+function entityIcon(entityType: string | null) {
+  switch (entityType) {
+    case "company":
+      return <Building2 size={11} />;
+    case "contact":
+      return <User size={11} />;
+    case "deal":
+      return <Briefcase size={11} />;
+    default:
+      return null;
+  }
+}
+
+function truncateContent(content: string, maxLen: number = 200): string {
+  if (content.length <= maxLen) return content;
+  return content.slice(0, maxLen).trimEnd() + "...";
 }
 
 export default function NotesPage() {
@@ -22,6 +70,8 @@ export default function NotesPage() {
   const [newNote, setNewNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
 
   const fetchNotes = useCallback(async () => {
     try {
@@ -52,6 +102,29 @@ export default function NotesPage() {
     } finally { setSaving(false); }
   }
 
+  // Filter by search query
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return notes;
+    const q = searchQuery.toLowerCase();
+    return notes.filter((note) => {
+      const content = (note.content || "").toLowerCase();
+      const title = (note.title || "").toLowerCase();
+      const entityName = (note.entityName || "").toLowerCase();
+      return content.includes(q) || title.includes(q) || entityName.includes(q);
+    });
+  }, [notes, searchQuery]);
+
+  // Sort
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const da = new Date(a.createdAt).getTime();
+      const db = new Date(b.createdAt).getTime();
+      return sortOrder === "newest" ? db - da : da - db;
+    });
+    return arr;
+  }, [filtered, sortOrder]);
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader icon={<FileText size={15} />} title="Notes" subtitle={`${notes.length}`}>
@@ -64,6 +137,42 @@ export default function NotesPage() {
           Create note
         </Button>
       </PageHeader>
+
+      {/* Filter bar */}
+      <FilterBar>
+        <div className="relative flex items-center">
+          <Search size={13} className="absolute left-2.5" style={{ color: "var(--color-text-muted)" }} />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search notes..."
+            className="h-7 w-52 rounded-md pl-8 pr-3 text-[12px] outline-none transition-colors"
+            style={{
+              background: "var(--color-bg-page)",
+              border: "1px solid var(--color-border-default)",
+              color: "var(--color-text-primary)",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-border-focus)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--color-border-default)"; }}
+          />
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {searchQuery.trim() && (
+            <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+              {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <button
+            onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors"
+            style={{ color: "var(--color-text-tertiary)" }}
+            title={`Sort: ${sortOrder === "newest" ? "newest first" : "oldest first"}`}
+          >
+            <ArrowUpDown size={12} />
+            {sortOrder === "newest" ? "Newest" : "Oldest"}
+          </button>
+        </div>
+      </FilterBar>
 
       {/* Note input */}
       <div
@@ -104,9 +213,15 @@ export default function NotesPage() {
             title="No notes yet"
             description="Capture meeting notes, observations, and insights here."
           />
+        ) : sorted.length === 0 ? (
+          <EmptyState
+            icon={<Search size={24} />}
+            title="No matching notes"
+            description="Try a different search term."
+          />
         ) : (
           <div>
-            {notes.map((note) => (
+            {sorted.map((note) => (
               <div
                 key={note.id}
                 className="px-4 py-3 transition-colors"
@@ -114,11 +229,32 @@ export default function NotesPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
-                <p className="whitespace-pre-wrap text-[13px]" style={{ color: "var(--color-text-primary)" }}>
-                  {note.content}
-                </p>
-                <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  {new Date(note.createdAt).toLocaleString()}
+                {/* Header: title + entity badge + timestamp */}
+                <div className="mb-1 flex items-center gap-2">
+                  {note.title && (
+                    <span className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                      {note.title}
+                    </span>
+                  )}
+                  {note.entityType && (
+                    <Badge variant="neutral" size="sm">
+                      <span className="flex items-center gap-1">
+                        {entityIcon(note.entityType)}
+                        {note.entityName || note.entityType}
+                      </span>
+                    </Badge>
+                  )}
+                  <span className="ml-auto shrink-0 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                    {relativeTime(note.createdAt)}
+                  </span>
+                </div>
+
+                {/* Content preview */}
+                <p
+                  className="whitespace-pre-wrap text-[13px]"
+                  style={{ color: "var(--color-text-secondary)" }}
+                >
+                  {truncateContent(note.content)}
                 </p>
               </div>
             ))}

@@ -1,5 +1,6 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { apiError } from "@/lib/api-errors";
 import { db } from "@/db";
 import { deals, activities, companies } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
@@ -8,6 +9,10 @@ import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/traced-ai";
 import { z } from "zod";
+
+const analyzeDealsInputSchema = z.object({
+  dealIds: z.array(z.string().uuid()).min(1, "dealIds array required").max(10),
+});
 
 const dealAnalysisSchema = z.object({
   suggestedStage: z.string().describe("Suggested pipeline stage based on activity"),
@@ -21,7 +26,7 @@ const dealAnalysisSchema = z.object({
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   const rlResponse = await checkRateLimit("llm", authCtx.userId);
@@ -34,16 +39,18 @@ export async function POST(req: Request) {
       : null;
 
   if (!model) {
-    return Response.json({ error: "No LLM API key configured" }, { status: 500 });
+    return apiError("PROVIDER_UNAVAILABLE", "No LLM API key configured");
   }
 
   try {
-    const body = await req.json();
-    const { dealIds } = body;
-
-    if (!dealIds || !Array.isArray(dealIds) || dealIds.length === 0) {
-      return Response.json({ error: "dealIds array required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = analyzeDealsInputSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid request", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { dealIds } = parsed.data;
 
     // Load tenant pipeline stages
     const settings = await getTenantSettings(authCtx.tenantId);
@@ -146,6 +153,6 @@ Be realistic — don't assume progress without evidence.`,
     return Response.json({ success: true, analyzed: results.length, results });
   } catch (error) {
     console.error("Deal analysis failed:", error);
-    return Response.json({ error: "Deal analysis failed" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Deal analysis failed");
   }
 }

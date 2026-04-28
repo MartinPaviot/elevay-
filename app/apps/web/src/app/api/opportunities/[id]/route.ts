@@ -1,7 +1,22 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { deals, companies, activities } from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const VALID_STAGES = ["lead", "qualification", "demo", "trial", "proposal", "negotiation", "won", "lost"] as const;
+
+const updateDealSchema = z.object({
+  name: z.string().min(1).max(500).optional(),
+  stage: z.enum(VALID_STAGES).optional(),
+  value: z.union([z.number(), z.string(), z.null()]).optional(),
+  summary: z.string().max(5000).optional().nullable(),
+  expectedCloseDate: z.string().optional().nullable(),
+  closeDate: z.string().optional().nullable(),
+  companyId: z.string().uuid().optional().nullable(),
+  contactId: z.string().uuid().optional().nullable(),
+});
 
 export async function GET(
   req: Request,
@@ -17,11 +32,11 @@ export async function GET(
   const [deal] = await db
     .select()
     .from(deals)
-    .where(and(eq(deals.id, id), eq(deals.tenantId, authCtx.tenantId)))
+    .where(and(eq(deals.id, id), eq(deals.tenantId, authCtx.tenantId), isNull(deals.deletedAt)))
     .limit(1);
 
   if (!deal) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return apiError("NOT_FOUND", "Deal not found");
   }
 
   // Get company name
@@ -85,22 +100,29 @@ export async function PUT(
   }
 
   const { id } = await params;
-  const body = await req.json();
+  const raw = await req.json();
+  const parsed = updateDealSchema.safeParse(raw);
+  if (!parsed.success) {
+    return apiError("VALIDATION_ERROR", "Invalid deal update", {
+      issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+    });
+  }
+  const body = parsed.data;
 
   const [existing] = await db
     .select()
     .from(deals)
-    .where(and(eq(deals.id, id), eq(deals.tenantId, authCtx.tenantId)))
+    .where(and(eq(deals.id, id), eq(deals.tenantId, authCtx.tenantId), isNull(deals.deletedAt)))
     .limit(1);
 
   if (!existing) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return apiError("NOT_FOUND", "Deal not found");
   }
 
   const updates: Record<string, unknown> = {};
   if (body.name !== undefined) updates.name = body.name;
   if (body.stage !== undefined) updates.stage = body.stage;
-  if (body.value !== undefined) updates.value = body.value ? parseInt(body.value) : null;
+  if (body.value !== undefined) updates.value = body.value ? parseInt(String(body.value)) : null;
   if (body.summary !== undefined) updates.summary = body.summary;
   if (body.expectedCloseDate !== undefined || body.closeDate !== undefined) {
     const dateStr = body.expectedCloseDate || body.closeDate;
@@ -110,7 +132,7 @@ export async function PUT(
   if (body.contactId !== undefined) updates.contactId = body.contactId;
 
   if (Object.keys(updates).length === 0) {
-    return Response.json({ error: "No fields to update" }, { status: 400 });
+    return apiError("VALIDATION_ERROR", "No fields to update");
   }
 
   const [updated] = await db

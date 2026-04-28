@@ -37,6 +37,9 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   and: vi.fn(),
   sql: vi.fn(),
+  isNull: vi.fn(),
+  desc: vi.fn(),
+  inArray: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -68,7 +71,7 @@ describe("POST /api/deals/analyze", () => {
     const req = new Request("http://localhost/api/deals/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dealIds: ["d1"] }),
+      body: JSON.stringify({ dealIds: ["d1000000-0000-4000-a000-000000000001"] }),
     });
 
     const res = await analyzeModule.POST(req);
@@ -92,7 +95,7 @@ describe("POST /api/deals/analyze", () => {
     vi.mocked(getAuthContext).mockResolvedValue({ userId: "u1", tenantId: "t1", appUserId: "u1", role: "admin" });
 
     const mockDeal = {
-      id: "d1",
+      id: "d1000000-0000-4000-a000-000000000001",
       name: "Acme Partnership",
       stage: "qualification",
       value: 50000,
@@ -132,7 +135,7 @@ describe("POST /api/deals/analyze", () => {
     const req = new Request("http://localhost/api/deals/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dealIds: ["d1"] }),
+      body: JSON.stringify({ dealIds: ["d1000000-0000-4000-a000-000000000001"] }),
     });
 
     const res = await analyzeModule.POST(req);

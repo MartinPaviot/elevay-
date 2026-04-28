@@ -2,6 +2,13 @@ import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, outboundEmails } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const createSequenceSchema = z.object({
+  name: z.string().min(1, "Name is required").max(200),
+  description: z.string().max(2000).optional(),
+});
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -63,16 +70,18 @@ export async function GET() {
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { name, description } = body;
-
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return Response.json({ error: "Name is required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = createSequenceSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid sequence data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { name, description } = parsed.data;
 
     const [sequence] = await db
       .insert(sequences)
@@ -86,6 +95,6 @@ export async function POST(req: Request) {
     return Response.json({ sequence }, { status: 201 });
   } catch (error) {
     console.error("Failed to create sequence:", error);
-    return Response.json({ error: "Failed to create sequence" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to create sequence");
   }
 }

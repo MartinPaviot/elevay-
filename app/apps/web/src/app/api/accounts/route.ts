@@ -1,8 +1,21 @@
 import { db } from "@/db";
 import { companies, activities, users } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
-import { and, eq, sql, desc } from "drizzle-orm";
+import { and, eq, sql, desc, isNull } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const createAccountSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(500),
+  domain: z.string().max(253).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+});
+
+const patchAccountSchema = z.object({
+  id: z.string().uuid(),
+  customFields: z.record(z.string(), z.unknown()),
+});
 
 export async function GET(req: Request) {
   const authCtx = await getAuthContext();
@@ -38,13 +51,13 @@ export async function GET(req: Request) {
         })
         .from(companies)
         .leftJoin(users, eq(companies.ownerId, users.id))
-        .where(eq(companies.tenantId, authCtx.tenantId))
+        .where(and(eq(companies.tenantId, authCtx.tenantId), isNull(companies.deletedAt)))
         .limit(pageSize)
         .offset(offset),
       db
         .select({ count: sql<number>`count(*)::int` })
         .from(companies)
-        .where(eq(companies.tenantId, authCtx.tenantId)),
+        .where(and(eq(companies.tenantId, authCtx.tenantId), isNull(companies.deletedAt))),
     ]);
 
     const total = countResult[0]?.count ?? 0;
@@ -107,16 +120,18 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { name, domain, properties: customProperties } = body;
-
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return Response.json({ error: "Name is required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = createAccountSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid account data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { name, domain, properties: customProperties } = parsed.data;
 
     const [account] = await db
       .insert(companies)
@@ -137,7 +152,7 @@ export async function POST(req: Request) {
     return Response.json({ account }, { status: 201 });
   } catch (error) {
     console.error("Failed to create account:", error);
-    return Response.json({ error: "Failed to create account" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to create account");
   }
 }
 
@@ -145,24 +160,26 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { id, customFields } = body;
-
-    if (!id || !customFields || typeof customFields !== "object") {
-      return Response.json({ error: "id and customFields required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = patchAccountSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "id and customFields required", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { id, customFields } = parsed.data;
 
     // Get current properties
     const [existing] = await db.select().from(companies)
-      .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId)))
+      .where(and(eq(companies.id, id), eq(companies.tenantId, authCtx.tenantId), isNull(companies.deletedAt)))
       .limit(1);
 
     if (!existing) {
-      return Response.json({ error: "Account not found" }, { status: 404 });
+      return apiError("NOT_FOUND", "Account not found");
     }
 
     const currentProps = (existing.properties || {}) as Record<string, unknown>;
@@ -180,6 +197,6 @@ export async function PATCH(req: Request) {
     return Response.json({ account: updated });
   } catch (error) {
     console.error("Failed to update custom fields:", error);
-    return Response.json({ error: "Failed to update" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to update");
   }
 }

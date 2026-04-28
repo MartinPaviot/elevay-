@@ -1,8 +1,9 @@
 import { db } from "@/db";
 import { contacts, activities, sequenceEnrollments } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { logAudit } from "@/lib/audit-log";
+import { softDelete } from "@/lib/soft-delete";
 
 export async function GET(
   req: Request,
@@ -19,7 +20,7 @@ export async function GET(
     const [contact] = await db
       .select()
       .from(contacts)
-      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId)))
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt)))
       .limit(1);
 
     if (!contact) {
@@ -45,11 +46,11 @@ export async function PUT(
   const { id } = await params;
 
   try {
-    // Verify the contact belongs to this tenant
+    // Verify the contact belongs to this tenant and is not soft-deleted
     const [existing] = await db
       .select()
       .from(contacts)
-      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId)))
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt)))
       .limit(1);
 
     if (!existing) {
@@ -128,11 +129,11 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    // Verify the contact exists and belongs to this tenant
+    // Verify the contact exists, belongs to this tenant, and is not already deleted
     const [existing] = await db
       .select({ id: contacts.id, email: contacts.email, firstName: contacts.firstName, lastName: contacts.lastName })
       .from(contacts)
-      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId)))
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt)))
       .limit(1);
 
     if (!existing) {
@@ -158,22 +159,8 @@ export async function DELETE(
       );
     }
 
-    // Clean up dependent activities (soft — nullify entityId references)
-    await db
-      .update(activities)
-      .set({ entityId: `deleted:${id}` })
-      .where(
-        and(
-          eq(activities.tenantId, authCtx.tenantId),
-          eq(activities.entityType, "contact"),
-          eq(activities.entityId, id),
-        ),
-      );
-
-    // Delete the contact
-    await db
-      .delete(contacts)
-      .where(and(eq(contacts.id, id), eq(contacts.tenantId, authCtx.tenantId)));
+    // Soft-delete the contact (sets deleted_at = now() instead of hard delete)
+    await softDelete("contacts", id, authCtx.tenantId);
 
     await logAudit({
       tenantId: authCtx.tenantId,
@@ -184,6 +171,7 @@ export async function DELETE(
       metadata: {
         email: existing.email,
         name: [existing.firstName, existing.lastName].filter(Boolean).join(" "),
+        softDeleted: true,
       },
     });
 

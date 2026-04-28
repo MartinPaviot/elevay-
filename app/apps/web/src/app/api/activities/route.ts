@@ -1,7 +1,19 @@
 import { db } from "@/db";
 import { activities } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNull } from "drizzle-orm";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const createActivitySchema = z.object({
+  entityType: z.string().min(1, "entityType is required").max(50),
+  entityId: z.string().min(1, "entityId is required").max(200),
+  activityType: z.string().min(1, "activityType is required").max(50),
+  channel: z.string().max(50).optional(),
+  direction: z.string().max(50).optional(),
+  summary: z.string().max(5000).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
 export async function GET(req: Request) {
   const authCtx = await getAuthContext();
@@ -16,7 +28,7 @@ export async function GET(req: Request) {
   const limit = parseInt(url.searchParams.get("limit") || "50");
 
   try {
-    const filters = [eq(activities.tenantId, authCtx.tenantId)];
+    const filters = [eq(activities.tenantId, authCtx.tenantId), isNull(activities.deletedAt)];
     if (entityType) filters.push(eq(activities.entityType, entityType));
     if (entityId) filters.push(eq(activities.entityId, entityId));
     if (activityType) filters.push(eq(activities.activityType, activityType as any));
@@ -39,19 +51,18 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { entityType, entityId, activityType, channel, direction, summary, metadata } = body;
-
-    if (!entityType || !entityId || !activityType) {
-      return Response.json(
-        { error: "entityType, entityId, and activityType are required" },
-        { status: 400 }
-      );
+    const raw = await req.json();
+    const parsed = createActivitySchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid activity data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { entityType, entityId, activityType, channel, direction, summary, metadata } = parsed.data;
 
     const [activity] = await db
       .insert(activities)
@@ -61,9 +72,9 @@ export async function POST(req: Request) {
         actorId: authCtx.appUserId,
         entityType,
         entityId,
-        activityType,
-        channel: channel || "manual",
-        direction: direction || "internal",
+        activityType: activityType as any,
+        channel: (channel || "manual") as any,
+        direction: (direction || "internal") as any,
         summary: summary || null,
         metadata: metadata || {},
       })
@@ -72,6 +83,6 @@ export async function POST(req: Request) {
     return Response.json({ activity }, { status: 201 });
   } catch (error) {
     console.error("Failed to create activity:", error);
-    return Response.json({ error: "Failed to create activity" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to create activity");
   }
 }

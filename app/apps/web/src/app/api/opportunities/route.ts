@@ -1,8 +1,23 @@
 import { db } from "@/db";
 import { deals, companies, users } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
-import { and, eq, gte, lte, sql, desc, asc, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, sql, desc, asc, inArray, isNull } from "drizzle-orm";
 import { logAudit } from "@/lib/audit-log";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const VALID_STAGES = ["lead", "qualification", "demo", "trial", "proposal", "negotiation", "won", "lost"] as const;
+
+const createDealSchema = z.object({
+  name: z.string().min(1, "Name is required").max(500),
+  stage: z.enum(VALID_STAGES).optional().default("lead"),
+  companyId: z.string().uuid().optional(),
+  contactId: z.string().uuid().optional(),
+  ownerId: z.string().uuid().optional(),
+  value: z.union([z.number(), z.string()]).optional(),
+  expectedCloseDate: z.string().optional(),
+  closeDate: z.string().optional(),
+});
 
 export async function GET(req: Request) {
   const authCtx = await getAuthContext();
@@ -23,7 +38,7 @@ export async function GET(req: Request) {
     const sortBy = url.searchParams.get("sortBy") || "updatedAt"; // updatedAt, value, name, createdAt
     const sortDirection = url.searchParams.get("sortDir") === "asc" ? "asc" : "desc";
 
-    const conditions = [eq(deals.tenantId, authCtx.tenantId)];
+    const conditions = [eq(deals.tenantId, authCtx.tenantId), isNull(deals.deletedAt)];
 
     if (stageFilter) {
       const validStages = ["lead", "qualification", "demo", "trial", "proposal", "negotiation", "won", "lost"] as const;
@@ -111,16 +126,18 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { name, stage, companyId, contactId, value, expectedCloseDate, closeDate, ownerId } = body;
-
-    if (!name || typeof name !== "string") {
-      return Response.json({ error: "Name is required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = createDealSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid deal data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { name, stage, companyId, contactId, value, expectedCloseDate, closeDate, ownerId } = parsed.data;
 
     const [deal] = await db
       .insert(deals)
@@ -130,8 +147,8 @@ export async function POST(req: Request) {
         companyId: companyId || null,
         contactId: contactId || null,
         ownerId: ownerId || authCtx.appUserId || null,
-        value: value ? parseInt(value) : null,
-        expectedCloseDate: (expectedCloseDate || closeDate) ? new Date(expectedCloseDate || closeDate) : null,
+        value: value ? parseInt(String(value)) : null,
+        expectedCloseDate: (expectedCloseDate || closeDate) ? new Date((expectedCloseDate || closeDate)!) : null,
         tenantId: authCtx.tenantId,
       })
       .returning();
@@ -152,6 +169,6 @@ export async function POST(req: Request) {
     return Response.json({ deal }, { status: 201 });
   } catch (error) {
     console.error("Failed to create deal:", error);
-    return Response.json({ error: "Failed to create deal" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to create deal");
   }
 }

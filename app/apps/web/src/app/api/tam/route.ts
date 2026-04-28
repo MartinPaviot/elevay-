@@ -1,5 +1,6 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { apiError } from "@/lib/api-errors";
 import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -66,14 +67,14 @@ const searchStrategySchema = z.object({
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   const rlResponse = await checkRateLimit("enrich", authCtx.userId);
   if (rlResponse) return rlResponse;
 
   if (!isApolloAvailable()) {
-    return Response.json({ error: "Apollo API key not configured" }, { status: 500 });
+    return apiError("PROVIDER_UNAVAILABLE", "Apollo API key not configured");
   }
 
   const model = process.env.ANTHROPIC_API_KEY
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
       : null;
 
   if (!model) {
-    return Response.json({ error: "No LLM API key configured" }, { status: 500 });
+    return apiError("PROVIDER_UNAVAILABLE", "No LLM API key configured");
   }
 
   try {
@@ -91,10 +92,7 @@ export async function POST(req: Request) {
     const { industries, companySizes, targetRoles, geographies, productDescription } = body;
 
     if (!industries?.length && !companySizes?.length && !productDescription) {
-      return Response.json(
-        { error: "At least industries, company sizes, or product description required" },
-        { status: 400 }
-      );
+      return apiError("VALIDATION_ERROR", "At least industries, company sizes, or product description required");
     }
 
     // Load tenant settings for context
@@ -280,16 +278,12 @@ Generate strategies that maximize COVERAGE while maintaining RELEVANCE. Each str
     const msg = error?.message || "";
     // Surface Apollo plan errors clearly
     if (msg.includes("API_INACCESSIBLE") || msg.includes("free plan")) {
-      return Response.json(
-        {
-          error: "Apollo organization search requires a paid plan. Please upgrade at https://app.apollo.io/",
-          code: "APOLLO_PLAN_UPGRADE_REQUIRED",
-        },
-        { status: 402 }
+      return apiError("BUDGET_EXCEEDED",
+        "Apollo organization search requires a paid plan. Please upgrade at https://app.apollo.io/",
       );
     }
     console.error("TAM generation failed:", error?.message, error?.stack?.slice(0, 500));
-    return Response.json({ error: error?.message || "TAM generation failed" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", error?.message || "TAM generation failed");
   }
 }
 
@@ -326,7 +320,7 @@ function extractDomain(org: OrgSearchOrganization): string | null {
 export async function GET() {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   const result = await db

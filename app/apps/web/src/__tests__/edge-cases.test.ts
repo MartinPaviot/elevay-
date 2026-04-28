@@ -27,6 +27,10 @@ vi.mock("drizzle-orm", () => ({
   and: vi.fn(),
   sql: vi.fn(),
   inArray: vi.fn(),
+  isNull: vi.fn(),
+  desc: vi.fn(),
+  or: vi.fn(),
+  ilike: vi.fn(),
 }));
 
 vi.mock("@/inngest/client", () => ({

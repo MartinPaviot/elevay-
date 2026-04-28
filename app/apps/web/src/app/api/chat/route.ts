@@ -2,6 +2,7 @@ import { getAuthContext } from "@/lib/auth-utils";
 import { clearTenantId } from "@/db/rls";
 import { checkPlanLimit } from "@/lib/plan-limits";
 import { trackUsage } from "@/lib/billing";
+import { apiError } from "@/lib/api-errors";
 import { anthropic } from "@/lib/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { isCircuitClosed, ANTHROPIC_CIRCUIT } from "@/lib/circuit-breaker";
@@ -30,16 +31,48 @@ function inferSurface(contextType?: string, contextId?: string): SurfaceContext 
   return { type: "global" };
 }
 
+// ── Token estimation ────────────────────────────────────────────
+/** Rough token count: ~4 chars per token for English text (conservative). */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length * 0.25);
+}
+
+function estimateMessagesTokens(messages: UIMessage[]): number {
+  return messages.reduce((sum, m) => {
+    const text = m.parts
+      ?.filter((p) => p.type === "text")
+      .map((p) => ("text" in p ? p.text : ""))
+      .join("") || "";
+    return sum + estimateTokens(text) + 4; // +4 for message overhead (role, separators)
+  }, 0);
+}
+
 // ── Context Management: compact long conversations ──────────────
-function compactMessages(messages: UIMessage[], maxMessages: number = 30): UIMessage[] {
-  if (messages.length <= maxMessages) return messages;
+const TOKEN_BUDGET = 8000;
+
+/**
+ * Compact a conversation when it exceeds the token budget or message count.
+ *
+ * Strategy:
+ * - When messages > 20 OR estimated tokens > TOKEN_BUDGET, compact.
+ * - Uses LLM (Haiku, cheap) to produce a concise summary of older messages.
+ * - Falls back to text concatenation if LLM call fails or is unavailable.
+ * - Keeps the first message (original context) + most recent 80% of maxMessages.
+ */
+async function compactMessages(messages: UIMessage[], maxMessages: number = 30): Promise<UIMessage[]> {
+  const totalTokens = estimateMessagesTokens(messages);
+  const needsCompaction = messages.length > Math.min(maxMessages, 20) || totalTokens > TOKEN_BUDGET;
+
+  if (!needsCompaction) return messages;
 
   // Keep the first message (for context) and the most recent messages
   const keepRecent = Math.floor(maxMessages * 0.8);
   const older = messages.slice(1, messages.length - keepRecent);
   const recent = messages.slice(messages.length - keepRecent);
 
-  // Summarize older messages into a single system-like user message
+  if (older.length === 0) return messages;
+
+  // Build text from older messages for summarization
   const olderTexts = older
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
@@ -47,16 +80,47 @@ function compactMessages(messages: UIMessage[], maxMessages: number = 30): UIMes
         ?.filter((p) => p.type === "text")
         .map((p) => ("text" in p ? p.text : ""))
         .join("") || "";
-      return `[${m.role}]: ${text.slice(0, 200)}`;
+      return `[${m.role}]: ${text.slice(0, 300)}`;
     })
     .join("\n");
+
+  // Attempt LLM-based summarization (Haiku = fast + cheap, ~$0.001 per call)
+  let summaryText: string;
+  try {
+    const haiku = process.env.ANTHROPIC_API_KEY
+      ? anthropic("claude-haiku-4-5-20251001")
+      : null;
+    const fallbackModel = process.env.OPENAI_API_KEY
+      ? openai("gpt-4o-mini")
+      : null;
+    const summaryModel = haiku || fallbackModel;
+
+    if (summaryModel && older.length >= 4) {
+      const { generateText } = await import("ai");
+      const result = await generateText({
+        model: summaryModel,
+        prompt: `Summarize this conversation history into a concise paragraph (max 150 words). Preserve key facts: entity names, numbers, decisions made, and open questions. Do not add commentary.
+
+${olderTexts}`,
+        // @ts-expect-error maxTokens exists in AI SDK but type definition may lag
+        maxTokens: 250,
+      });
+      summaryText = result.text.trim();
+    } else {
+      // Fallback: concatenate truncated messages
+      summaryText = olderTexts;
+    }
+  } catch {
+    // LLM unavailable — fall back to text concatenation
+    summaryText = olderTexts;
+  }
 
   const summaryMessage: UIMessage = {
     id: "context-summary",
     role: "user" as const,
     parts: [{
       type: "text" as const,
-      text: `[CONTEXT SUMMARY - Earlier in this conversation, we discussed:\n${olderTexts}\n...End of summary. Continue from here.]`,
+      text: `[CONTEXT SUMMARY - Earlier in this conversation:\n${summaryText}\n...End of summary. Continue from here.]`,
     }],
   };
 
@@ -298,7 +362,7 @@ Summary: ${deal.summary || "none"}`;
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   // Rate limit: 30 messages per minute per user
@@ -309,15 +373,9 @@ export async function POST(req: Request) {
   // Plan limit enforcement: AI queries
   const planCheck = await checkPlanLimit(authCtx.tenantId, "aiQueries");
   if (!planCheck.allowed) {
-    return Response.json(
-      {
-        error: `AI query limit reached (${planCheck.current}/${planCheck.limit}). Upgrade your plan for more AI queries.`,
-        code: "PLAN_LIMIT_EXCEEDED",
-        current: planCheck.current,
-        limit: planCheck.limit,
-        plan: planCheck.plan,
-      },
-      { status: 403 },
+    return apiError("PLAN_LIMIT_EXCEEDED",
+      `AI query limit reached (${planCheck.current}/${planCheck.limit}). Upgrade your plan for more AI queries.`,
+      { current: planCheck.current, limit: planCheck.limit, plan: planCheck.plan },
     );
   }
 
@@ -356,10 +414,7 @@ export async function POST(req: Request) {
   );
 
   if (!model) {
-    return new Response(
-      "Connect an LLM API key in .env.local for AI capabilities.",
-      { headers: { "Content-Type": "text/plain; charset=utf-8" } }
-    );
+    return apiError("PROVIDER_UNAVAILABLE", "Connect an LLM API key in .env.local for AI capabilities.");
   }
 
   // Extract last user message for RAG
@@ -377,20 +432,29 @@ export async function POST(req: Request) {
     (async () => {
       if (!lastUserText) return "";
       try {
-        // Try context graph first (hybrid: vector + graph traversal)
-        const graphResult = await searchContextGraph(lastUserText, authCtx.tenantId, 8);
-        if (graphResult.formattedContext) return graphResult.formattedContext;
+        // Run context graph AND flat vector search in parallel, then merge.
+        // The graph provides relationship edges (who works where, deal history);
+        // the vector search provides semantically similar content (email snippets,
+        // meeting notes). Both contribute to a richer context window.
+        const [graphResult, vectorResults] = await Promise.all([
+          searchContextGraph(lastUserText, authCtx.tenantId, 8).catch(() => null),
+          (async () => {
+            if (!process.env.OPENAI_API_KEY) return [];
+            try {
+              const results = await searchSimilar(lastUserText, 8, authCtx.tenantId);
+              return results.filter((r) => r.similarity > 0.5);
+            } catch { return []; }
+          })(),
+        ]);
 
-        // Fallback to flat vector search if graph is empty
-        if (process.env.OPENAI_API_KEY) {
-          const results = await searchSimilar(lastUserText, 8, authCtx.tenantId);
-          if (results.length > 0) {
-            const relevant = results.filter((r) => r.similarity > 0.5);
-            if (relevant.length > 0) {
-              return formatCitedSources(relevant);
-            }
-          }
+        const graphContext = graphResult?.formattedContext || "";
+        const vectorContext = vectorResults.length > 0 ? formatCitedSources(vectorResults) : "";
+
+        // Merge both sources: graph edges + semantic search results
+        if (graphContext && vectorContext) {
+          return graphContext + vectorContext;
         }
+        return graphContext || vectorContext;
       } catch (err) {
         console.warn("Context search failed:", err);
       }
@@ -477,7 +541,7 @@ export async function POST(req: Request) {
       }) + resolved.surfacePromptAddendum;
 
     // ── Context Management: compact long conversations ──
-    const compactedMessages = compactMessages(messages);
+    const compactedMessages = await compactMessages(messages);
     const convertedMessages = await convertToModelMessages(compactedMessages);
 
     // CHAT-07: fire auto-extract every ~20 turns on a thread. Fire-and-
@@ -545,9 +609,7 @@ export async function POST(req: Request) {
         });
         return result.toTextStreamResponse();
       }
-      return Response.json(
-        { error: "AI service temporarily unavailable. Please try again." },
-        { status: 503 }
+      return apiError("PROVIDER_UNAVAILABLE", "AI service temporarily unavailable. Please try again."
       );
     }
   } finally {

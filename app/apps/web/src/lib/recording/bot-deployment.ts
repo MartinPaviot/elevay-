@@ -10,15 +10,16 @@
  */
 
 import { db } from "@/db";
-import { activities, tenants, users, contacts, notetakerExposures } from "@/db/schema";
+import { activities, tenants, users, contacts, notetakerExposures, meetingOptOuts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { createBot, type RecallBot } from "@/lib/recall";
 import { decideBrandingMode, type BrandingDecision } from "@/lib/recording/branding";
 import { sendNotification } from "@/lib/notifications";
+import { generateOptOutToken } from "@/lib/recording/opt-out-token";
 
 export type DeploymentOutcome =
   | { status: "created"; bot: RecallBot; decision: BrandingDecision }
-  | { status: "skipped"; reason: "opted_out" | "missing_link" | "missing_activity" | "already_scheduled"; decision: BrandingDecision | null };
+  | { status: "skipped"; reason: "opted_out" | "attendee_opted_out" | "missing_link" | "missing_activity" | "already_scheduled"; decision: BrandingDecision | null };
 
 export async function createBotForActivity(
   activityId: string,
@@ -80,6 +81,59 @@ export async function createBotForActivity(
 
   if (decision.mode === "opted_out") {
     return { status: "skipped", reason: "opted_out", decision };
+  }
+
+  // Check if any attendee has opted out of recording for this meeting
+  try {
+    const attendeeEmails = attendees
+      .filter((a) => a.email)
+      .map((a) => a.email.toLowerCase().trim());
+
+    if (attendeeEmails.length > 0) {
+      const optOuts = await db
+        .select({ attendeeEmail: meetingOptOuts.attendeeEmail })
+        .from(meetingOptOuts)
+        .where(
+          and(
+            eq(meetingOptOuts.activityId, activityId),
+            inArray(meetingOptOuts.attendeeEmail, attendeeEmails)
+          )
+        );
+
+      if (optOuts.length > 0) {
+        const optedOutEmails = optOuts.map((o) => o.attendeeEmail).join(", ");
+        console.info(
+          `[WS-1] Bot creation skipped for activity ${activityId}: attendee opt-out by ${optedOutEmails}`
+        );
+
+        // Record the skip reason in the activity metadata for observability
+        await db
+          .update(activities)
+          .set({
+            metadata: {
+              ...meta,
+              recordingSkipped: {
+                reason: "attendee_opted_out",
+                optedOutEmails: optOuts.map((o) => o.attendeeEmail),
+                skippedAt: new Date().toISOString(),
+              },
+              brandingDecision: {
+                mode: decision.mode,
+                reason: decision.reason,
+                botDisplayName: decision.botDisplayName,
+                externalCount: decision.externalAttendees.length,
+                decidedAt: new Date().toISOString(),
+              },
+            },
+          })
+          .where(eq(activities.id, activityId));
+
+        return { status: "skipped", reason: "attendee_opted_out", decision };
+      }
+    }
+  } catch (err) {
+    // Never block bot deployment because of opt-out check failures
+    console.warn(`[WS-1] Opt-out check failed for activity ${activityId} (proceeding with bot):`, err);
   }
 
   // FINDING-009: Send consent notification to known contacts before bot joins.
@@ -210,6 +264,20 @@ async function notifyAttendeesBeforeBotJoins(
     )
     .join(", ");
 
+  // Build opt-out links for each external attendee
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://app.elevay.com";
+  const optOutLinks = attendees
+    .filter((a) => !a.self && a.email)
+    .map((a) => {
+      const token = generateOptOutToken(activityId, a.email);
+      const link = `${appUrl}/api/meetings/opt-out?token=${encodeURIComponent(token)}&meetingId=${encodeURIComponent(activityId)}&email=${encodeURIComponent(a.email.toLowerCase().trim())}`;
+      return { email: a.email, link };
+    });
+
+  const optOutNote = optOutLinks.length > 0
+    ? ` Attendees can opt out of recording at: ${optOutLinks[0].link}`
+    : "";
+
   // Send notification to each relevant user
   for (const userId of ownerIds) {
     await sendNotification({
@@ -217,7 +285,7 @@ async function notifyAttendeesBeforeBotJoins(
       userId,
       type: "meeting_upcoming",
       title: `Meeting assistant will join: ${meetingName}`,
-      body: `Elevay's meeting assistant will join "${meetingName}" to take notes. Known contacts attending: ${contactNames}. The assistant will be visible to all participants.`,
+      body: `Elevay's meeting assistant will join "${meetingName}" to take notes. Known contacts attending: ${contactNames}. The assistant will be visible to all participants.${optOutNote}`,
       entityType: "activity",
       entityId: activityId,
     });

@@ -1,16 +1,31 @@
 import { db } from "@/db";
 import { contacts, companies, activities } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth-utils";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, isNull } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 import { embedEntity, contactToText } from "@/lib/embeddings";
 import { extractDomain } from "@/lib/util/email";
 import { checkPlanLimit } from "@/lib/plan-limits";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const createContactSchema = z.object({
+  firstName: z.string().max(200).optional(),
+  lastName: z.string().max(200).optional(),
+  name: z.string().max(400).optional(),
+  email: z.string().email().max(320).optional(),
+  title: z.string().max(200).optional(),
+  phone: z.string().max(50).optional(),
+  companyId: z.string().uuid().optional(),
+  linkedinUrl: z.string().url().max(500).optional(),
+  additionalEmails: z.array(z.string().email()).max(10).optional(),
+  additionalCompanyIds: z.array(z.string().uuid()).max(10).optional(),
+});
 
 export async function GET(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
@@ -21,7 +36,8 @@ export async function GET(req: Request) {
     const emailSearch = url.searchParams.get("email")?.trim().toLowerCase();
 
     // Build where clause — optionally filter by email (primary OR additionalEmails)
-    const baseWhere = eq(contacts.tenantId, authCtx.tenantId);
+    // Always exclude soft-deleted records
+    const baseWhere = and(eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt))!;
     const whereClause = emailSearch
       ? sql`${baseWhere} AND (
           lower(${contacts.email}) = ${emailSearch}
@@ -115,44 +131,44 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("Failed to fetch contacts:", error);
-    return Response.json({ error: "Failed to fetch contacts" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to fetch contacts");
   }
 }
 
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   // Plan limit enforcement: contacts
   const planCheck = await checkPlanLimit(authCtx.tenantId, "contacts");
   if (!planCheck.allowed) {
-    return Response.json(
-      {
-        error: `Contact limit reached (${planCheck.current}/${planCheck.limit}). Upgrade your plan to add more contacts.`,
-        code: "PLAN_LIMIT_EXCEEDED",
-        current: planCheck.current,
-        limit: planCheck.limit,
-        plan: planCheck.plan,
-      },
-      { status: 403 },
+    return apiError("PLAN_LIMIT_EXCEEDED",
+      `Contact limit reached (${planCheck.current}/${planCheck.limit}). Upgrade your plan to add more contacts.`,
+      { current: planCheck.current, limit: planCheck.limit, plan: planCheck.plan },
     );
   }
 
   try {
-    const body = await req.json();
-    let { firstName, lastName, email, title, phone, companyId, additionalEmails, additionalCompanyIds } = body;
+    const raw = await req.json();
+    const parsed = createContactSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid contact data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
+    }
+    let { firstName, lastName, email, title, phone, companyId, additionalEmails, additionalCompanyIds } = parsed.data;
 
     // Parse `name` into firstName/lastName as fallback
-    if (!firstName && !lastName && body.name) {
-      const parts = String(body.name).trim().split(/\s+/);
-      firstName = parts[0] || null;
-      lastName = parts.slice(1).join(" ") || null;
+    if (!firstName && !lastName && parsed.data.name) {
+      const parts = String(parsed.data.name).trim().split(/\s+/);
+      firstName = parts[0] || undefined;
+      lastName = parts.slice(1).join(" ") || undefined;
     }
 
     if (!email && !firstName && !lastName) {
-      return Response.json({ error: "At least email or name required" }, { status: 400 });
+      return apiError("VALIDATION_ERROR", "At least email or name required");
     }
 
     // K12 — auto-match contact → account by email domain when the
@@ -236,6 +252,6 @@ export async function POST(req: Request) {
     return Response.json({ contact }, { status: 201 });
   } catch (error) {
     console.error("Failed to create contact:", error);
-    return Response.json({ error: "Failed to create contact" }, { status: 500 });
+    return apiError("INTERNAL_ERROR", "Failed to create contact");
   }
 }

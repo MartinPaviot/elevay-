@@ -335,6 +335,7 @@ export const companies = pgTable(
     resolvedLogoTier: integer("resolved_logo_tier"),
     logoResolvedAt: timestamp("logo_resolved_at", { withTimezone: true }),
     userUploadedLogoUrl: text("user_uploaded_logo_url"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -361,6 +362,7 @@ export const contacts = pgTable(
     score: real("score"),
     scoreReasons: jsonb("score_reasons").default([]),
     ownerId: text("owner_id").references(() => users.id),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -388,6 +390,7 @@ export const deals = pgTable(
     score: real("score"),
     scoreReasons: jsonb("score_reasons").default([]),
     summary: text("summary"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -417,6 +420,7 @@ export const activities = pgTable(
     sentiment: sentimentEnum("sentiment"),
     threadId: text("thread_id"),
     intent: text("intent").array(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
@@ -438,6 +442,7 @@ export const notes = pgTable(
     entityId: text("entity_id").notNull(),
     title: text("title"),
     content: text("content"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -460,6 +465,7 @@ export const tasks = pgTable(
     dueDate: timestamp("due_date", { withTimezone: true }),
     status: text("status").default("pending"), // "pending" | "completed" | "cancelled"
     priority: text("priority").default("medium"), // "low" | "medium" | "high"
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -744,6 +750,22 @@ export const emailOptouts = pgTable(
   },
   (table) => [
     uniqueIndex("optout_tenant_email_idx").on(table.tenantId, table.emailAddress),
+  ]
+);
+
+export const meetingOptOuts = pgTable(
+  "meeting_opt_outs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    activityId: text("activity_id").notNull(),
+    attendeeEmail: text("attendee_email").notNull(),
+    optedOutAt: timestamp("opted_out_at", { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("meeting_optout_activity_email_idx").on(table.activityId, table.attendeeEmail),
+    index("meeting_optout_tenant_idx").on(table.tenantId),
+    index("meeting_optout_email_idx").on(table.attendeeEmail),
   ]
 );
 

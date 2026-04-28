@@ -7,11 +7,12 @@ import {
   activities,
   notes,
 } from "@/db/schema";
-import { eq, and, desc, ilike, or, sql } from "drizzle-orm";
+import { eq, and, desc, ilike, or, sql, isNull } from "drizzle-orm";
 import { searchSimilar } from "@/lib/embeddings";
 import type { TenantSettings, McpApiKeyEntry } from "@/lib/tenant-settings";
 import { compare } from "bcryptjs";
 import logger from "@/lib/logger";
+import { apiError } from "@/lib/api-errors";
 
 // ── MCP Tool Definitions ──
 
@@ -350,6 +351,7 @@ async function handleSearchRecords(params: ToolParams, tenantId: string) {
       .where(
         and(
           eq(contacts.tenantId, tenantId),
+          isNull(contacts.deletedAt),
           or(
             ilike(contacts.firstName, pattern),
             ilike(contacts.lastName, pattern),
@@ -381,6 +383,7 @@ async function handleSearchRecords(params: ToolParams, tenantId: string) {
       .where(
         and(
           eq(companies.tenantId, tenantId),
+          isNull(companies.deletedAt),
           or(ilike(companies.name, pattern), ilike(companies.domain, pattern))
         )
       )
@@ -404,7 +407,7 @@ async function handleSearchRecords(params: ToolParams, tenantId: string) {
     const rows = await db
       .select()
       .from(deals)
-      .where(and(eq(deals.tenantId, tenantId), ilike(deals.name, pattern)))
+      .where(and(eq(deals.tenantId, tenantId), isNull(deals.deletedAt), ilike(deals.name, pattern)))
       .limit(limit);
     for (const r of rows) {
       results.push({
@@ -567,7 +570,7 @@ async function handleListContacts(params: ToolParams, tenantId: string) {
   const limit = Math.min(Number(params.limit) || 50, 200);
   const offset = Number(params.offset) || 0;
 
-  const filters = [eq(contacts.tenantId, tenantId)];
+  const filters = [eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt)];
   if (search) {
     const pattern = `%${search}%`;
     filters.push(
@@ -611,7 +614,7 @@ async function handleListCompanies(params: ToolParams, tenantId: string) {
   const limit = Math.min(Number(params.limit) || 50, 200);
   const offset = Number(params.offset) || 0;
 
-  const filters = [eq(companies.tenantId, tenantId)];
+  const filters = [eq(companies.tenantId, tenantId), isNull(companies.deletedAt)];
   if (search) {
     const pattern = `%${search}%`;
     filters.push(
@@ -649,7 +652,7 @@ async function handleListDeals(params: ToolParams, tenantId: string) {
   const limit = Math.min(Number(params.limit) || 50, 200);
   const offset = Number(params.offset) || 0;
 
-  const filters = [eq(deals.tenantId, tenantId)];
+  const filters = [eq(deals.tenantId, tenantId), isNull(deals.deletedAt)];
   if (stage) {
     filters.push(eq(deals.stage, stage as any));
   }
@@ -890,17 +893,7 @@ export async function POST(req: Request) {
   // ── Auth ──
   const authResult = await authenticateMcpRequest(req);
   if (!authResult) {
-    return Response.json(
-      {
-        jsonrpc: "2.0",
-        id: null,
-        error: {
-          code: -32000,
-          message: "Unauthorized. Provide a valid MCP API key as Bearer token.",
-        },
-      },
-      { status: 401 }
-    );
+    return apiError("UNAUTHORIZED", "Provide a valid MCP API key as Bearer token.");
   }
 
   const { tenantId } = authResult;

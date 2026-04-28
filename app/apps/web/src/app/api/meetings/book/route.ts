@@ -1,32 +1,43 @@
 import { getAuthContext } from "@/lib/auth-utils";
 import { db } from "@/db";
 import { contacts, activities } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { createCalendarEvent } from "@/lib/meeting-booking";
+import { apiError } from "@/lib/api-errors";
+import { z } from "zod";
+
+const bookMeetingSchema = z.object({
+  contactId: z.string().min(1, "contactId is required"),
+  startTime: z.string().min(1, "startTime is required"),
+  durationMinutes: z.number().int().min(5).max(480).optional().default(30),
+  title: z.string().max(500).optional(),
+});
 
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
   if (!authCtx) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("UNAUTHORIZED", "Authentication required");
   }
 
   try {
-    const body = await req.json();
-    const { contactId, startTime, durationMinutes, title } = body;
-
-    if (!contactId || !startTime) {
-      return Response.json({ error: "contactId and startTime required" }, { status: 400 });
+    const raw = await req.json();
+    const parsed = bookMeetingSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError("VALIDATION_ERROR", "Invalid meeting data", {
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      });
     }
+    const { contactId, startTime, durationMinutes, title } = parsed.data;
 
-    // Fetch contact
+    // Fetch contact (exclude soft-deleted)
     const [contact] = await db
       .select()
       .from(contacts)
-      .where(and(eq(contacts.id, contactId), eq(contacts.tenantId, authCtx.tenantId)))
+      .where(and(eq(contacts.id, contactId), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt)))
       .limit(1);
 
     if (!contact || !contact.email) {
-      return Response.json({ error: "Contact not found or has no email" }, { status: 404 });
+      return apiError("NOT_FOUND", "Contact not found or has no email");
     }
 
     const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "Prospect";
