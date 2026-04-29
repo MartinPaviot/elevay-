@@ -7,7 +7,7 @@ import {
   Search, X, Building2, User, Calendar, DollarSign, Clock,
   LayoutGrid, List, SlidersHorizontal, Filter, ArrowUpDown, ArrowUp, ArrowDown,
   ClipboardCheck, MonitorPlay, FlaskConical, FileText, Handshake, Trophy, XCircle,
-  AlertTriangle, Zap,
+  AlertTriangle, Zap, TrendingUp,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { STAGE_COLORS as STAGE_DOT_COLORS_IMPORTED, RISK_STYLES } from "@/lib/ui-utils";
@@ -157,6 +157,17 @@ export default function OpportunitiesPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(true);
 
+  // Forecast
+  const [showForecast, setShowForecast] = useState(false);
+  const [forecast, setForecast] = useState<{
+    scenarios: Array<{ period: string; p10: number; p50: number; p90: number; mean: number; dealCount: number }>;
+    topDeals: Array<{ id: string; name: string; value: number; winProbability: number; expectedCloseWeek: string }>;
+    riskFactors: string[];
+    simulationCount: number;
+    computedAt: string;
+  } | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+
   // View, display, filters
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("board");
@@ -205,6 +216,18 @@ export default function OpportunitiesPage() {
   const fetchContacts = useCallback(async () => {
     try { const r = await fetch("/api/contacts?pageSize=200"); if (r.ok) { const d = await r.json(); setContacts(d.contacts || []); } }
     catch (e) { console.warn("opportunities: contacts fetch failed", e); }
+  }, []);
+
+  const fetchForecast = useCallback(async () => {
+    setForecastLoading(true);
+    try {
+      const r = await fetch("/api/forecast?granularity=month&horizon=3");
+      if (r.ok) setForecast(await r.json());
+    } catch (e) {
+      console.warn("opportunities: forecast fetch failed", e);
+    } finally {
+      setForecastLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchDeals(); fetchAnalytics(); }, [fetchDeals, fetchAnalytics]);
@@ -591,6 +614,18 @@ export default function OpportunitiesPage() {
         title="Opportunities"
         subtitle={`${deals.length} deal${deals.length !== 1 ? "s" : ""}${totalValue > 0 ? ` \u00b7 $${totalValue.toLocaleString()} pipeline` : ""}`}
       >
+        <Button
+          variant={showForecast ? "gradient" : "outline"}
+          size="sm"
+          icon={<TrendingUp size={12} />}
+          onClick={() => {
+            const next = !showForecast;
+            setShowForecast(next);
+            if (next && !forecast) fetchForecast();
+          }}
+        >
+          Forecast {showForecast ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        </Button>
         {analytics && (
           <Button variant="outline" size="sm" icon={<BarChart3 size={12} />} onClick={() => setShowAnalytics(!showAnalytics)}>
             Analytics {showAnalytics ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
@@ -726,6 +761,167 @@ export default function OpportunitiesPage() {
             </div>
           </form>
         </Modal>
+
+        {/* (e) Revenue Forecast Panel */}
+        {showForecast && (
+          <div className="mb-3">
+            {forecastLoading ? (
+              <Card><CardBody className="py-6 text-center">
+                <p className="text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>Computing forecast (10,000 simulations)...</p>
+              </CardBody></Card>
+            ) : forecast ? (
+              <Card>
+                <CardBody>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp size={14} style={{ color: "var(--color-accent)" }} />
+                      <span className="text-[13px] font-semibold" style={{ color: "var(--color-text-primary)" }}>Revenue Forecast</span>
+                      <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                        {forecast.simulationCount.toLocaleString()} Monte Carlo simulations
+                      </span>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={fetchForecast} disabled={forecastLoading}>
+                      Refresh
+                    </Button>
+                  </div>
+
+                  {/* Range bar chart */}
+                  {forecast.scenarios.length > 0 ? (
+                    <div className="space-y-2 mb-4">
+                      {forecast.scenarios.map((s) => {
+                        const maxP90 = Math.max(...forecast.scenarios.map((sc) => sc.p90), 1);
+                        return (
+                          <div key={s.period} className="flex items-center gap-3">
+                            <span className="w-16 text-right text-[12px] font-medium tabular-nums shrink-0" style={{ color: "var(--color-text-secondary)" }}>
+                              {s.period}
+                            </span>
+                            <div className="flex-1 h-6 relative rounded" style={{ background: "var(--color-bg-page)" }}>
+                              {/* p10-p90 range bar */}
+                              <div
+                                className="absolute top-0.5 bottom-0.5 rounded"
+                                style={{
+                                  left: `${(s.p10 / maxP90) * 100}%`,
+                                  width: `${((s.p90 - s.p10) / maxP90) * 100}%`,
+                                  background: "var(--color-accent-soft, rgba(37,99,235,0.15))",
+                                  border: "1px solid var(--color-accent)",
+                                  minWidth: 4,
+                                }}
+                              />
+                              {/* p50 marker */}
+                              <div
+                                className="absolute top-0 bottom-0 w-0.5"
+                                style={{
+                                  left: `${(s.p50 / maxP90) * 100}%`,
+                                  background: "var(--color-accent)",
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>
+                                ${(s.p10 / 1000).toFixed(0)}K
+                              </span>
+                              <span className="text-[12px] font-semibold tabular-nums" style={{ color: "var(--color-accent)" }}>
+                                ${(s.p50 / 1000).toFixed(0)}K
+                              </span>
+                              <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>
+                                ${(s.p90 / 1000).toFixed(0)}K
+                              </span>
+                            </div>
+                            <span className="text-[10px] shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
+                              {s.dealCount} deals
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center gap-2 ml-[76px] mt-1">
+                        <span className="text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>Pessimistic (p10)</span>
+                        <span className="h-px flex-1" style={{ background: "var(--color-border-default)" }} />
+                        <span className="text-[10px] font-medium" style={{ color: "var(--color-accent)" }}>Likely (p50)</span>
+                        <span className="h-px flex-1" style={{ background: "var(--color-border-default)" }} />
+                        <span className="text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>Optimistic (p90)</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mb-4 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>No forecast scenarios to display.</p>
+                  )}
+
+                  {/* Top deals table */}
+                  {forecast.topDeals.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1.5">Top Deals by Expected Revenue</p>
+                      <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--color-border-default)" }}>
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr style={{ background: "var(--color-bg-hover)" }}>
+                              <th className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Deal</th>
+                              <th className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Value</th>
+                              <th className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Win Prob</th>
+                              <th className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Close</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {forecast.topDeals.slice(0, 5).map((d) => {
+                              const probPct = Math.round(d.winProbability * 100);
+                              return (
+                                <tr
+                                  key={d.id}
+                                  className="cursor-pointer transition-colors"
+                                  style={{ borderTop: "1px solid var(--color-border-default)" }}
+                                  onClick={() => router.push(`/opportunities/${d.id}`)}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                                >
+                                  <td className="px-2 py-1.5 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>{d.name}</td>
+                                  <td className="px-2 py-1.5 text-right text-[12px] font-medium tabular-nums" style={{ color: "var(--color-success)" }}>${d.value.toLocaleString()}</td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    <span
+                                      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+                                      style={{
+                                        background: probPct >= 70 ? "var(--color-success-soft)" : probPct >= 40 ? "var(--color-warning-soft)" : "var(--color-error-soft)",
+                                        color: probPct >= 70 ? "var(--color-success)" : probPct >= 40 ? "var(--color-warning)" : "var(--color-error)",
+                                      }}
+                                    >
+                                      {probPct}%
+                                    </span>
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right text-[11px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>{d.expectedCloseWeek}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Risk factors */}
+                  {forecast.riskFactors.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1.5">Risk Factors</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {forecast.riskFactors.map((rf, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{ background: "var(--color-warning-soft)", color: "var(--color-warning)" }}
+                            title={rf}
+                          >
+                            <AlertTriangle size={9} />
+                            {rf.length > 60 ? rf.slice(0, 57) + "..." : rf}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            ) : (
+              <Card><CardBody className="py-4 text-center">
+                <p className="text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>No forecast data available. Add deals to your pipeline first.</p>
+              </CardBody></Card>
+            )}
+          </div>
+        )}
 
         {/* KPI Row — compact */}
         {analytics && showAnalytics && (

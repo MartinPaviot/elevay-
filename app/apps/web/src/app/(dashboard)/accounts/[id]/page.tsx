@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Users, DollarSign, ClipboardList, Swords } from "lucide-react";
 import { ScopedChat } from "@/components/scoped-chat";
 import { IntelligenceBrief } from "@/components/intelligence-brief";
+import { CompanyDossier } from "@/components/company-dossier";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -144,6 +145,15 @@ export default function AccountDetailPage() {
             </div>
           );
         })()}
+
+        {/* Research Dossier */}
+        <div className="mt-4">
+          <CompanyDossier
+            accountId={accountId}
+            accountDomain={account.domain}
+            accountName={account.name}
+          />
+        </div>
 
         {account.description && (
           <div className="mt-4">

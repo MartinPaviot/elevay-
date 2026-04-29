@@ -3,12 +3,28 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Check, X, Pencil } from "lucide-react";
+import { Check, X, Pencil, TrendingUp, TrendingDown, Minus, Gauge } from "lucide-react";
 import { ScopedChat } from "@/components/scoped-chat";
 import { EmailComposer } from "@/components/email-composer";
 import { Card, CardBody } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { useToast } from "@/components/ui/toast";
+
+interface BuyerIntentSignal {
+  type: string;
+  value: number;
+  weight: number;
+  evidence: string;
+}
+
+interface BuyerIntentScore {
+  contactId: string;
+  score: number;
+  signals: BuyerIntentSignal[];
+  trend: "heating" | "stable" | "cooling";
+  lastUpdated: string;
+}
 
 interface Company {
   id: string;
@@ -46,6 +62,7 @@ export default function ContactDetailPage() {
   const [companies, setCompanies] = useState<Map<string, Company>>(new Map());
   const [loading, setLoading] = useState(true);
   const [emailComposer, setEmailComposer] = useState<{ to: string; subject: string; body: string } | null>(null);
+  const [buyerIntent, setBuyerIntent] = useState<BuyerIntentScore | null>(null);
   const { toast } = useToast();
 
   // K8 — PATCH a single field on the contact. Optimistic update with
@@ -106,6 +123,17 @@ export default function ContactDetailPage() {
         if (actRes.ok) {
           const data = await actRes.json();
           setActivities(data.activities || []);
+        }
+
+        // Fetch buyer intent score
+        try {
+          const intentRes = await fetch(`/api/contacts/${contactId}/buyer-intent`);
+          if (intentRes.ok) {
+            const intentData = await intentRes.json();
+            setBuyerIntent(intentData.score || null);
+          }
+        } catch {
+          // Non-critical
         }
 
         // Fetch company names for all associated companies
@@ -246,8 +274,11 @@ export default function ContactDetailPage() {
       </div>
 
       {/* Right panel — details */}
-      <div className="w-full shrink-0 border-t p-6 lg:w-[300px] lg:border-t-0 lg:border-l" style={{ borderColor: "var(--color-border-default)" }}>
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+      <div className="w-full shrink-0 border-t p-6 lg:w-[300px] lg:border-t-0 lg:border-l overflow-auto" style={{ borderColor: "var(--color-border-default)" }}>
+        {/* Buyer Intent Score */}
+        {buyerIntent && <BuyerIntentCard data={buyerIntent} />}
+
+        <h3 className={`text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]${buyerIntent ? " mt-6" : ""}`}>
           Contact details
         </h3>
         <div className="mt-4 space-y-3">
@@ -349,6 +380,109 @@ export default function ContactDetailPage() {
           onClose={() => setEmailComposer(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Buyer Intent Card — shows intent score as a gauge, trend arrow, and top signals.
+ */
+function BuyerIntentCard({ data }: { data: BuyerIntentScore }) {
+  const score = data.score;
+  const color =
+    score >= 70
+      ? "var(--color-success)"
+      : score >= 40
+        ? "var(--color-warning)"
+        : "var(--color-error)";
+
+  const trendIcon =
+    data.trend === "heating" ? (
+      <TrendingUp size={12} style={{ color: "var(--color-success)" }} />
+    ) : data.trend === "cooling" ? (
+      <TrendingDown size={12} style={{ color: "var(--color-error)" }} />
+    ) : (
+      <Minus size={12} style={{ color: "var(--color-text-tertiary)" }} />
+    );
+
+  const trendLabel =
+    data.trend === "heating"
+      ? "Heating up"
+      : data.trend === "cooling"
+        ? "Cooling down"
+        : "Stable";
+
+  // Top contributing signals (non-zero, sorted by weighted contribution)
+  const topSignals = [...data.signals]
+    .filter((s) => s.value > 0)
+    .sort((a, b) => b.value * b.weight - a.value * a.weight)
+    .slice(0, 4);
+
+  return (
+    <div>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+        <Gauge size={13} /> Buyer Intent
+      </h3>
+      <div
+        className="mt-3 rounded-lg p-3"
+        style={{ background: "var(--color-bg-card)", border: `1px solid ${color}` }}
+      >
+        {/* Score gauge */}
+        <div className="flex items-center gap-3 mb-3">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[16px] font-bold text-white"
+            style={{ background: color }}
+          >
+            {score}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold" style={{ color }}>
+              {score >= 70 ? "High intent" : score >= 40 ? "Moderate" : "Low intent"}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              {trendIcon}
+              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                {trendLabel}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Signal gauge bar */}
+        <div className="h-2 w-full rounded-full mb-3" style={{ background: "var(--color-bg-page)" }}>
+          <div
+            className="h-2 rounded-full transition-all duration-500"
+            style={{ width: `${score}%`, background: color }}
+          />
+        </div>
+
+        {/* Top signals as pills */}
+        {topSignals.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {topSignals.map((signal) => {
+              const signalColor =
+                signal.value >= 0.7
+                  ? "var(--color-success)"
+                  : signal.value >= 0.4
+                    ? "var(--color-warning)"
+                    : "var(--color-text-secondary)";
+              return (
+                <span
+                  key={signal.type}
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    background: signal.value >= 0.7 ? "var(--color-success-soft)" : signal.value >= 0.4 ? "var(--color-warning-soft)" : "var(--color-bg-hover)",
+                    color: signalColor,
+                  }}
+                  title={signal.evidence}
+                >
+                  {signal.type.replace(/_/g, " ")}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

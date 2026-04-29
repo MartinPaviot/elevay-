@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Play, Pause, ChevronUp, ChevronDown, Pencil } from "lucide-react";
+import { Plus, Trash2, Play, Pause, ChevronUp, ChevronDown, Pencil, Sparkles, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Modal } from "@/components/ui/modal";
 
 interface ActionDraft {
   id: string;
@@ -114,6 +115,19 @@ function draftToWorkflow(draft: Draft, existing?: WorkflowDef): WorkflowDef {
   };
 }
 
+interface NlParsedResult {
+  name: string;
+  trigger: { type: string; conditions?: Record<string, string> };
+  actions: Array<{ type: string; params: Record<string, string> }>;
+}
+
+const NL_EXAMPLES = [
+  "Every time a deal reaches proposal stage, create a task to send a case study within 2 days",
+  "When a new contact is created, send a welcome notification and assign to the sales team",
+  "When a deal is won, send a congratulations notification and create an onboarding task",
+  "If an email is received, create a follow-up task and send a notification",
+];
+
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +135,14 @@ export default function WorkflowsPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // NL Builder state
+  const [showNlModal, setShowNlModal] = useState(false);
+  const [nlInput, setNlInput] = useState("");
+  const [nlParsing, setNlParsing] = useState(false);
+  const [nlResult, setNlResult] = useState<NlParsedResult | null>(null);
+  const [nlError, setNlError] = useState("");
+  const [nlConfirming, setNlConfirming] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/settings/workflows")
@@ -247,6 +269,88 @@ export default function WorkflowsPage() {
     persist(updated);
   }
 
+  async function parseNl() {
+    if (!nlInput.trim()) { setNlError("Describe your workflow first"); return; }
+    setNlParsing(true);
+    setNlError("");
+    setNlResult(null);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `Parse this workflow description into a structured workflow definition. Return ONLY valid JSON with this exact shape: { "name": "short name", "trigger": { "type": "one of: deal_stage_changed, deal_won, deal_lost, contact_created, account_created, email_received, task_due, score_changed, enrichment_completed, sequence_reply_received, meeting_completed", "conditions": {} }, "actions": [{ "type": "one of: send_notification, create_task, send_email, enroll_sequence, assign_owner, add_tag, update_field, call_webhook, ai_action", "params": {} }] }. Description: "${nlInput}"`,
+          }],
+        }),
+      });
+      if (!res.ok) throw new Error("Parse failed");
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content || data.content || data.text || "";
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as NlParsedResult;
+        setNlResult(parsed);
+      } else {
+        // Fallback: build a basic workflow from the description
+        setNlResult({
+          name: nlInput.slice(0, 40),
+          trigger: { type: "deal_stage_changed" },
+          actions: [{ type: "send_notification", params: { title: nlInput } }],
+        });
+      }
+    } catch {
+      // Fallback: create a sensible default
+      setNlResult({
+        name: nlInput.slice(0, 40),
+        trigger: { type: "deal_stage_changed" },
+        actions: [{ type: "send_notification", params: { title: nlInput } }],
+      });
+    } finally {
+      setNlParsing(false);
+    }
+  }
+
+  async function confirmNlWorkflow() {
+    if (!nlResult) return;
+    setNlConfirming(true);
+    const wf: WorkflowDef = {
+      id: crypto.randomUUID(),
+      name: nlResult.name,
+      enabled: true,
+      trigger: nlResult.trigger,
+      actions: nlResult.actions,
+      createdAt: new Date().toISOString(),
+      runCount: 0,
+    };
+    const updated = [...workflows, wf];
+    setWorkflows(updated);
+    await persist(updated);
+    setShowNlModal(false);
+    setNlInput("");
+    setNlResult(null);
+    setNlConfirming(false);
+  }
+
+  function cancelNlModal() {
+    setShowNlModal(false);
+    setNlInput("");
+    setNlResult(null);
+    setNlError("");
+  }
+
+  function confirmDelete(id: string) {
+    setDeleteConfirmId(id);
+  }
+
+  function executeDelete() {
+    if (!deleteConfirmId) return;
+    deleteWorkflow(deleteConfirmId);
+    setDeleteConfirmId(null);
+  }
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -263,6 +367,15 @@ export default function WorkflowsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="warning" size="md">Beta</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Sparkles size={13} />}
+            onClick={() => setShowNlModal(true)}
+            disabled={showEditor}
+          >
+            Build with AI
+          </Button>
           <Button
             variant="gradient"
             size="sm"
@@ -495,7 +608,7 @@ export default function WorkflowsPage() {
                 .map((a) => ACTION_TYPES.find((at) => at.value === a.type)?.label || a.type)
                 .join(" → ");
               return (
-                <Card key={wf.id} style={{ opacity: wf.enabled ? 1 : 0.5 }}>
+                <Card key={wf.id} style={{ opacity: wf.enabled ? 1 : 0.65 }}>
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Button
                       variant="icon"
@@ -506,44 +619,61 @@ export default function WorkflowsPage() {
                           ? "var(--color-success)"
                           : "var(--color-text-muted)",
                       }}
+                      title={wf.enabled ? "Disable workflow" : "Enable workflow"}
                     >
                       {wf.enabled ? <Play size={14} /> : <Pause size={14} />}
                     </Button>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className="text-[13px] font-medium truncate"
+                          style={{ color: "var(--color-text-primary)" }}
+                        >
+                          {wf.name}
+                        </p>
+                        <Badge variant={wf.enabled ? "success" : "neutral"} size="sm">
+                          {wf.enabled ? "Active" : "Paused"}
+                        </Badge>
+                        <Badge variant="info" size="sm">
+                          {triggerLabel}
+                        </Badge>
+                      </div>
                       <p
-                        className="text-[13px] font-medium"
-                        style={{ color: "var(--color-text-primary)" }}
-                      >
-                        {wf.name}
-                      </p>
-                      <p
-                        className="text-[11px]"
+                        className="text-[11px] mt-0.5 truncate"
                         style={{ color: "var(--color-text-tertiary)" }}
                       >
                         When {triggerLabel}
                         {conditionStr} → {actionChain}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p
-                        className="text-[11px]"
-                        style={{ color: "var(--color-text-tertiary)" }}
-                      >
-                        {wf.runCount} run{wf.runCount !== 1 ? "s" : ""}
-                      </p>
-                      {wf.lastRunAt && (
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="flex items-center gap-1" title="Steps">
+                        <Hash size={10} style={{ color: "var(--color-text-muted)" }} />
+                        <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>
+                          {wf.actions.length} step{wf.actions.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className="text-[11px] tabular-nums"
+                          style={{ color: "var(--color-text-tertiary)" }}
+                        >
+                          {wf.runCount} run{wf.runCount !== 1 ? "s" : ""}
+                        </p>
                         <p
                           className="text-[10px]"
                           style={{ color: "var(--color-text-muted)" }}
                         >
-                          Last: {new Date(wf.lastRunAt).toLocaleDateString()}
+                          {wf.lastRunAt
+                            ? `Last: ${new Date(wf.lastRunAt).toLocaleDateString()}`
+                            : `Created ${new Date(wf.createdAt).toLocaleDateString()}`}
                         </p>
-                      )}
+                      </div>
                     </div>
-                    <Button variant="icon" size="sm" onClick={() => startEdit(wf)}>
+                    <Button variant="icon" size="sm" onClick={() => startEdit(wf)} title="Edit">
                       <Pencil size={13} />
                     </Button>
-                    <Button variant="icon" size="sm" onClick={() => deleteWorkflow(wf.id)}>
+                    <Button variant="icon" size="sm" onClick={() => confirmDelete(wf.id)} title="Delete">
                       <Trash2 size={13} />
                     </Button>
                   </div>
@@ -553,6 +683,168 @@ export default function WorkflowsPage() {
           </div>
         )}
       </div>
+
+      {/* NL Builder Modal */}
+      <Modal
+        open={showNlModal}
+        onClose={cancelNlModal}
+        title="Build workflow with AI"
+        size="lg"
+        footer={
+          nlResult ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => { setNlResult(null); setNlInput(""); }}>
+                Start over
+              </Button>
+              <Button
+                variant="gradient"
+                size="sm"
+                onClick={confirmNlWorkflow}
+                disabled={nlConfirming}
+                loading={nlConfirming}
+              >
+                {nlConfirming ? "Saving..." : "Confirm & save"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={cancelNlModal}>
+                Cancel
+              </Button>
+              <Button
+                variant="gradient"
+                size="sm"
+                onClick={parseNl}
+                disabled={nlParsing || !nlInput.trim()}
+                loading={nlParsing}
+                icon={nlParsing ? undefined : <Sparkles size={12} />}
+              >
+                {nlParsing ? "Parsing..." : "Build"}
+              </Button>
+            </>
+          )
+        }
+      >
+        {!nlResult ? (
+          <div className="space-y-4">
+            <Textarea
+              label="Describe your workflow in plain English"
+              value={nlInput}
+              onChange={(e) => setNlInput(e.target.value)}
+              placeholder="e.g. Every time a deal reaches proposal stage, create a check-in task for 5 days later and send the case study email."
+              style={{ minHeight: 120 }}
+              autoFocus
+            />
+            {nlError && (
+              <p className="text-[12px]" style={{ color: "var(--color-error)" }}>{nlError}</p>
+            )}
+            <div>
+              <p className="text-[11px] font-medium mb-2" style={{ color: "var(--color-text-tertiary)" }}>
+                Try an example:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {NL_EXAMPLES.map((ex, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setNlInput(ex)}
+                    className="rounded-full px-2.5 py-1 text-[11px] text-left transition-colors"
+                    style={{
+                      background: "var(--color-bg-hover)",
+                      color: "var(--color-text-secondary)",
+                      border: "1px solid var(--color-border-default)",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--color-accent)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-border-default)"; }}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div
+              className="rounded-lg p-3"
+              style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-accent)" }}>
+                Parsed Workflow
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Name</p>
+                  <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{nlResult.name}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Trigger</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="info" size="sm">
+                      {TRIGGER_TYPES.find(t => t.value === nlResult.trigger.type)?.label || nlResult.trigger.type}
+                    </Badge>
+                    {nlResult.trigger.conditions && Object.keys(nlResult.trigger.conditions).length > 0 && (
+                      <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+                        {Object.entries(nlResult.trigger.conditions).map(([k, v]) => `${k} = ${v}`).join(", ")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: "var(--color-text-tertiary)" }}>
+                    Actions ({nlResult.actions.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {nlResult.actions.map((action, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-md p-2"
+                        style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+                      >
+                        <span className="text-[10px] font-bold" style={{ color: "var(--color-text-tertiary)" }}>
+                          #{i + 1}
+                        </span>
+                        <Badge variant="neutral" size="sm">
+                          {ACTION_TYPES.find(a => a.value === action.type)?.label || action.type}
+                        </Badge>
+                        {Object.keys(action.params).length > 0 && (
+                          <span className="text-[11px] truncate" style={{ color: "var(--color-text-secondary)" }}>
+                            {Object.values(action.params).filter(Boolean).join(", ")}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+              Review the parsed workflow above. Click &ldquo;Confirm & save&rdquo; to create it, or &ldquo;Start over&rdquo; to try a different description.
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal
+        open={deleteConfirmId !== null}
+        onClose={() => setDeleteConfirmId(null)}
+        title="Delete workflow"
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" onClick={executeDelete}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
+          Are you sure you want to delete this workflow? This action cannot be undone.
+        </p>
+      </Modal>
     </>
   );
 }

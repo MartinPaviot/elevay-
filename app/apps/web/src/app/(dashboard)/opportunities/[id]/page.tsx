@@ -1,15 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, Gauge, Sparkles } from "lucide-react";
+import {
+  ArrowRight, Gauge, Sparkles, TrendingUp, TrendingDown, Minus,
+  AlertTriangle, Calendar, Send, Users, Shield, ShieldAlert, ShieldCheck,
+  Target, Trophy, XCircle, CheckCircle2, CircleAlert, Lightbulb, BarChart3,
+  ThumbsUp, ThumbsDown, Clock,
+} from "lucide-react";
 import { ScopedChat } from "@/components/scoped-chat";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { useToast } from "@/components/ui/toast";
+import { EmailComposer } from "@/components/email-composer";
 
 interface Deal {
   id: string;
@@ -47,8 +53,77 @@ interface StageSuggestion {
   confidence: "low" | "medium" | "high";
 }
 
+// ── Deal Intelligence types ──────────────────────────────────
+
+interface WinProbData {
+  probability: number;
+  topFactors: string[];
+  modelSource: string;
+  trainedAt: string | null;
+  sampleSize: number;
+}
+
+interface StallIndicator {
+  type: string;
+  severity: "high" | "medium" | "low";
+  detail: string;
+}
+
+interface SuggestedIntervention {
+  action: string;
+  priority: number;
+  reasoning: string;
+}
+
+interface StallPrediction {
+  dealId: string;
+  dealName: string;
+  stallProbability: number;
+  daysUntilLikelyStall: number;
+  indicators: StallIndicator[];
+  suggestedInterventions: SuggestedIntervention[];
+}
+
+interface WinLossAnalysis {
+  dealId: string;
+  outcome: "won" | "lost";
+  keyFactors: Array<{
+    factor: string;
+    impact: "positive" | "negative" | "neutral";
+    evidence: string;
+  }>;
+  engagementVelocity: {
+    avgDaysBetweenTouches: number;
+    benchmark: number;
+    verdict: "faster" | "slower" | "normal";
+  };
+  championTimeline: {
+    identified: boolean;
+    when?: string;
+    who?: string;
+  };
+  competitorPresence: {
+    mentioned: boolean;
+    names: string[];
+    impactOnOutcome: string;
+  };
+  objectionHandling: Array<{
+    objection: string;
+    wasAddressed: boolean;
+    outcome: string;
+  }>;
+  comparisonToSimilar: {
+    similarDeals: number;
+    avgOutcomeRate: number;
+    thisDealsPosition: string;
+  };
+  lessonsLearned: string[];
+  recommendedChanges: string[];
+}
+
 export default function DealDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const { toast } = useToast();
   const dealId = params.id as string;
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -62,6 +137,12 @@ export default function DealDetailPage() {
   const [currentStageFromSuggestion, setCurrentStageFromSuggestion] = useState<string | null>(null);
   const [applyingStage, setApplyingStage] = useState(false);
   const [intelLoaded, setIntelLoaded] = useState(false);
+
+  // Deal intelligence state
+  const [winProb, setWinProb] = useState<WinProbData | null>(null);
+  const [stallRisk, setStallRisk] = useState<StallPrediction | null>(null);
+  const [winLoss, setWinLoss] = useState<WinLossAnalysis | null>(null);
+  const [emailComposer, setEmailComposer] = useState<{ to: string; subject: string; body: string } | null>(null);
 
   const fetchIntel = useCallback(async () => {
     try {
@@ -93,6 +174,46 @@ export default function DealDetailPage() {
     }
   }, [dealId]);
 
+  // Fetch deal intelligence (win probability, stall risk, win/loss)
+  const fetchDealIntel = useCallback(async (currentDeal: Deal) => {
+    // Win probability — always fetch for open deals
+    if (currentDeal.stage !== "won" && currentDeal.stage !== "lost") {
+      try {
+        const scoreRes = await fetch(`/api/deals/${dealId}/score`);
+        if (scoreRes.ok) setWinProb(await scoreRes.json());
+      } catch (e) {
+        console.warn("opps-detail: score fetch failed", e);
+      }
+
+      // Stall risk — fetch all at-risk and filter for this deal
+      try {
+        const riskRes = await fetch("/api/deals/at-risk");
+        if (riskRes.ok) {
+          const data = await riskRes.json();
+          const thisRisk = (data.predictions || []).find(
+            (p: StallPrediction) => p.dealId === dealId
+          );
+          if (thisRisk) setStallRisk(thisRisk);
+        }
+      } catch (e) {
+        console.warn("opps-detail: stall risk fetch failed", e);
+      }
+    }
+
+    // Win/loss analysis — only for closed deals
+    if (currentDeal.stage === "won" || currentDeal.stage === "lost") {
+      try {
+        const wlRes = await fetch(`/api/deals/${dealId}/win-loss`);
+        if (wlRes.ok) {
+          const data = await wlRes.json();
+          setWinLoss(data.analysis || null);
+        }
+      } catch (e) {
+        console.warn("opps-detail: win-loss fetch failed", e);
+      }
+    }
+  }, [dealId]);
+
   useEffect(() => {
     async function load() {
       try {
@@ -101,6 +222,8 @@ export default function DealDetailPage() {
           const data = await res.json();
           setDeal(data.deal);
           setTimeline(data.timeline || []);
+          // Trigger deal intelligence fetch after we know the deal stage
+          fetchDealIntel(data.deal);
         }
       } catch {
         console.error("Failed to load deal");
@@ -110,7 +233,7 @@ export default function DealDetailPage() {
     }
     load();
     fetchIntel();
-  }, [dealId, fetchIntel]);
+  }, [dealId, fetchIntel, fetchDealIntel]);
 
   async function applySuggestion() {
     if (!suggestion) return;
@@ -138,6 +261,29 @@ export default function DealDetailPage() {
     }
   }
 
+  async function createFollowUpTask(intervention: SuggestedIntervention) {
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: intervention.action,
+          priority: intervention.priority <= 1 ? "high" : "medium",
+          dueDate: new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0],
+          relatedEntityType: "deal",
+          relatedEntityId: dealId,
+        }),
+      });
+      if (res.ok) {
+        toast("Task created.", "success");
+      } else {
+        toast("Failed to create task.", "error");
+      }
+    } catch {
+      toast("Failed to create task.", "error");
+    }
+  }
+
   if (loading) return <p className="p-6 text-sm text-[var(--color-text-tertiary)]">Loading...</p>;
   if (!deal) return <p className="p-6 text-sm text-red-400">Deal not found</p>;
 
@@ -151,6 +297,8 @@ export default function DealDetailPage() {
     won: "success",
     lost: "error",
   };
+
+  const isClosed = deal.stage === "won" || deal.stage === "lost";
 
   return (
     <div className="flex h-full">
@@ -212,6 +360,104 @@ export default function DealDetailPage() {
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{deal.companyName}</p>
         )}
 
+        {/* (b) Stall Risk Warning — amber banner when stallProbability > 0.5 */}
+        {stallRisk && stallRisk.stallProbability > 0.5 && (
+          <div
+            className="mt-4 rounded-lg p-4"
+            style={{
+              background: "var(--color-warning-soft)",
+              border: "1px solid var(--color-warning)",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={16} style={{ color: "var(--color-warning)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                Stall Risk Detected
+              </span>
+              <Badge variant={stallRisk.stallProbability >= 0.7 ? "error" : "warning"} size="sm">
+                {Math.round(stallRisk.stallProbability * 100)}% probability
+              </Badge>
+              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                · est. {stallRisk.daysUntilLikelyStall}d until stall
+              </span>
+            </div>
+
+            {stallRisk.indicators.length > 0 && (
+              <div className="mb-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {stallRisk.indicators.map((ind, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        background: ind.severity === "high"
+                          ? "var(--color-error-soft)"
+                          : ind.severity === "medium"
+                            ? "var(--color-warning-soft)"
+                            : "var(--color-bg-hover)",
+                        color: ind.severity === "high"
+                          ? "var(--color-error)"
+                          : ind.severity === "medium"
+                            ? "var(--color-warning)"
+                            : "var(--color-text-secondary)",
+                      }}
+                      title={ind.detail}
+                    >
+                      {ind.type.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {stallRisk.suggestedInterventions.length > 0 && (
+              <div className="space-y-1.5">
+                {stallRisk.suggestedInterventions.map((intervention, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-[12px] flex-1" style={{ color: "var(--color-text-secondary)" }}>
+                      {intervention.action}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => createFollowUpTask(intervention)}
+                        className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                        style={{
+                          background: "var(--color-bg-card)",
+                          color: "var(--color-accent)",
+                          border: "1px solid var(--color-border-default)",
+                        }}
+                        title="Create a task for this intervention"
+                      >
+                        <Calendar size={11} className="inline mr-1" style={{ verticalAlign: "-1px" }} />
+                        Schedule
+                      </button>
+                      <button
+                        onClick={() =>
+                          setEmailComposer({
+                            to: "",
+                            subject: `Following up: ${deal.name}`,
+                            body: `Hi,\n\n${intervention.action}\n\n${intervention.reasoning}\n\nBest regards`,
+                          })
+                        }
+                        className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                        style={{
+                          background: "var(--color-bg-card)",
+                          color: "var(--color-accent)",
+                          border: "1px solid var(--color-border-default)",
+                        }}
+                        title="Open email composer for re-engagement"
+                      >
+                        <Send size={11} className="inline mr-1" style={{ verticalAlign: "-1px" }} />
+                        Email
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {deal.summary && (
           <Card className="mt-4">
             <CardBody>
@@ -238,6 +484,9 @@ export default function DealDetailPage() {
             </Card>
           );
         })()}
+
+        {/* (c) Stakeholder Map — from deal properties */}
+        <StakeholderMap deal={deal} />
 
         {/* Deal Coaching Card — proactive coaching for at-risk or stalled deals */}
         {(() => {
@@ -304,6 +553,9 @@ export default function DealDetailPage() {
             </Card>
           );
         })()}
+
+        {/* (d) Win/Loss Post-Mortem — only for closed deals */}
+        {isClosed && winLoss && <WinLossCard analysis={winLoss} />}
 
         {/* Y1 — timeline narrative: human sentences distilled from raw activity rows */}
         {narrative && narrative.length > 0 && (
@@ -376,7 +628,10 @@ export default function DealDetailPage() {
       </div>
 
       {/* Right panel */}
-      <div className="w-[280px] flex-shrink-0 p-6" style={{ borderLeft: "1px solid var(--color-border-default)" }}>
+      <div className="w-[300px] flex-shrink-0 overflow-auto p-6" style={{ borderLeft: "1px solid var(--color-border-default)" }}>
+        {/* (a) Win Probability Card */}
+        {winProb && !isClosed && <WinProbabilityCard data={winProb} />}
+
         {/* Y2 — health score card */}
         {health && <HealthCard data={health} />}
 
@@ -404,11 +659,85 @@ export default function DealDetailPage() {
           </div>
         </div>
       </div>
+
+      {emailComposer && (
+        <EmailComposer
+          to={emailComposer.to}
+          subject={emailComposer.subject}
+          body={emailComposer.body}
+          onClose={() => setEmailComposer(null)}
+        />
+      )}
     </div>
   );
 }
 
-// Y2 — health score card rendered in the right-hand panel.
+// ── (a) Win Probability Card ─────────────────────────────────
+
+function WinProbabilityCard({ data }: { data: WinProbData }) {
+  const pct = Math.round(data.probability * 100);
+  const color =
+    pct >= 70
+      ? "var(--color-success)"
+      : pct >= 40
+        ? "var(--color-warning)"
+        : "var(--color-error)";
+
+  return (
+    <div className="mb-6">
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+        <Target size={13} /> Win Probability
+      </h3>
+      <div
+        className="mt-3 rounded-lg p-4"
+        style={{ background: "var(--color-bg-card)", border: `1px solid ${color}` }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-[18px] font-bold text-white"
+            style={{ background: color }}
+          >
+            {pct}%
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold" style={{ color }}>
+              {pct >= 70 ? "Strong" : pct >= 40 ? "Moderate" : "Weak"}
+            </p>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">
+              {data.modelSource === "naive_bayes"
+                ? `Based on ${data.sampleSize} similar deals`
+                : "Stage-based estimate"}
+            </p>
+          </div>
+        </div>
+
+        {data.topFactors.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {data.topFactors.slice(0, 3).map((factor, i) => {
+              const isPositive = !factor.toLowerCase().includes("no ") && !factor.toLowerCase().includes("negative") && !factor.toLowerCase().includes("slow");
+              return (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    background: isPositive ? "var(--color-success-soft)" : "var(--color-error-soft)",
+                    color: isPositive ? "var(--color-success)" : "var(--color-error)",
+                  }}
+                >
+                  {isPositive ? <TrendingUp size={9} /> : <TrendingDown size={9} />}
+                  {factor.length > 40 ? factor.slice(0, 37) + "..." : factor}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Y2 — Health Score Card ───────────────────────────────────
+
 function HealthCard({ data }: { data: HealthData }) {
   const bandColor: Record<string, string> = {
     strong: "var(--color-success, #059669)",
@@ -459,6 +788,252 @@ function HealthCard({ data }: { data: HealthData }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// ── (c) Stakeholder Map ──────────────────────────────────────
+
+function StakeholderMap({ deal }: { deal: Deal }) {
+  const props = deal.properties as Record<string, unknown> | null;
+  if (!props) return null;
+
+  // Pull stakeholders from deal properties. These are typically set by
+  // the deal analyzer or extracted from email intelligence.
+  const stakeholders = (props.stakeholders as Array<{
+    name: string;
+    title?: string;
+    role?: string;
+    engagementScore?: number;
+    lastInteraction?: string;
+  }>) || [];
+
+  // Also check for champion / blocker signals from other properties
+  const championSignals = (props.championSignals as string[]) || [];
+  const decisionMaker = props.extractedDecisionMaker as string | undefined;
+
+  // If no stakeholder data at all, don't render the section
+  if (stakeholders.length === 0 && championSignals.length === 0 && !decisionMaker) return null;
+
+  const roleColors: Record<string, { bg: string; color: string; icon: typeof ShieldCheck }> = {
+    champion: { bg: "var(--color-success-soft)", color: "var(--color-success)", icon: ShieldCheck },
+    economic_buyer: { bg: "var(--color-accent-soft, rgba(37,99,235,0.08))", color: "var(--color-accent)", icon: Target },
+    technical_evaluator: { bg: "var(--color-info-soft)", color: "var(--color-info)", icon: Shield },
+    blocker: { bg: "var(--color-error-soft)", color: "var(--color-error)", icon: ShieldAlert },
+    influencer: { bg: "var(--color-warning-soft)", color: "var(--color-warning)", icon: Users },
+    user: { bg: "var(--color-bg-hover)", color: "var(--color-text-secondary)", icon: Users },
+  };
+
+  // Determine coverage
+  const roles = new Set(stakeholders.map((s) => s.role?.toLowerCase() || "unknown"));
+  const hasChampion = roles.has("champion") || championSignals.length > 0;
+  const hasEconomicBuyer = roles.has("economic_buyer") || !!decisionMaker;
+  const hasTechnicalEval = roles.has("technical_evaluator");
+
+  const coverageItems = [
+    { label: "Champion", met: hasChampion },
+    { label: "Economic buyer", met: hasEconomicBuyer },
+    { label: "Technical evaluator", met: hasTechnicalEval },
+  ];
+
+  const strategy = props.stakeholderStrategy as string | undefined;
+
+  return (
+    <Card className="mt-4">
+      <CardBody>
+        <div className="flex items-center gap-2 mb-3">
+          <Users size={14} style={{ color: "var(--color-text-tertiary)" }} />
+          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)]">Stakeholder Map</p>
+        </div>
+
+        {/* Stakeholder cards */}
+        {stakeholders.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {stakeholders.map((s, i) => {
+              const roleKey = s.role?.toLowerCase() || "user";
+              const rc = roleColors[roleKey] || roleColors.user;
+              const RoleIcon = rc.icon;
+              return (
+                <div
+                  key={i}
+                  className="rounded-lg p-2.5"
+                  style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                      {s.name}
+                    </span>
+                  </div>
+                  {s.title && (
+                    <p className="text-[11px] mb-1" style={{ color: "var(--color-text-tertiary)" }}>{s.title}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                      style={{ background: rc.bg, color: rc.color }}
+                    >
+                      <RoleIcon size={9} />
+                      {(s.role || "unknown").replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  {typeof s.engagementScore === "number" && (
+                    <div className="mt-1">
+                      <div className="flex items-center justify-between text-[10px] mb-0.5">
+                        <span style={{ color: "var(--color-text-tertiary)" }}>Engagement</span>
+                        <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>{s.engagementScore}/10</span>
+                      </div>
+                      <div className="h-1 w-full rounded-full" style={{ background: "var(--color-bg-hover)" }}>
+                        <div
+                          className="h-1 rounded-full"
+                          style={{
+                            width: `${(s.engagementScore / 10) * 100}%`,
+                            background: s.engagementScore >= 7 ? "var(--color-success)" : s.engagementScore >= 4 ? "var(--color-warning)" : "var(--color-error)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {s.lastInteraction && (
+                    <p className="mt-1 text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
+                      Last: {new Date(s.lastInteraction).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Coverage checklist */}
+        <div className="mb-2">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1.5">Coverage</p>
+          <div className="flex items-center gap-3">
+            {coverageItems.map((item) => (
+              <div key={item.label} className="flex items-center gap-1">
+                {item.met ? (
+                  <CheckCircle2 size={12} style={{ color: "var(--color-success)" }} />
+                ) : (
+                  <CircleAlert size={12} style={{ color: "var(--color-error)" }} />
+                )}
+                <span
+                  className="text-[11px] font-medium"
+                  style={{ color: item.met ? "var(--color-text-secondary)" : "var(--color-error)" }}
+                >
+                  {item.label}
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* Highlight gaps */}
+          {coverageItems.filter((c) => !c.met).length > 0 && (
+            <p className="mt-1.5 text-[11px] font-medium" style={{ color: "var(--color-error)" }}>
+              {coverageItems.filter((c) => !c.met).map((c) => `No ${c.label.toLowerCase()} identified`).join(". ")}
+            </p>
+          )}
+        </div>
+
+        {strategy && (
+          <div className="mt-2 rounded-md p-2" style={{ background: "var(--color-bg-page)" }}>
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1">Strategy</p>
+            <p className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{strategy}</p>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+// ── (d) Win/Loss Post-Mortem Card ────────────────────────────
+
+function WinLossCard({ analysis }: { analysis: WinLossAnalysis }) {
+  const isWon = analysis.outcome === "won";
+
+  return (
+    <Card className="mt-6" style={{
+      borderLeft: isWon ? "3px solid var(--color-success)" : "3px solid var(--color-error)",
+    }}>
+      <CardBody>
+        <div className="flex items-center gap-2 mb-3">
+          {isWon ? <Trophy size={16} style={{ color: "var(--color-success)" }} /> : <XCircle size={16} style={{ color: "var(--color-error)" }} />}
+          <p className="text-[13px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+            {isWon ? "Win Analysis" : "Loss Analysis"}
+          </p>
+        </div>
+
+        {/* Key Factors */}
+        {analysis.keyFactors.length > 0 && (
+          <div className="mb-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1.5">Key Factors</p>
+            <div className="space-y-1.5">
+              {analysis.keyFactors.map((f, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  {f.impact === "positive" ? (
+                    <ThumbsUp size={12} className="mt-0.5 shrink-0" style={{ color: "var(--color-success)" }} />
+                  ) : f.impact === "negative" ? (
+                    <ThumbsDown size={12} className="mt-0.5 shrink-0" style={{ color: "var(--color-error)" }} />
+                  ) : (
+                    <Minus size={12} className="mt-0.5 shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>{f.factor}</p>
+                    <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{f.evidence}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Engagement Velocity */}
+        <div className="mb-3 flex items-center gap-4 rounded-md p-2" style={{ background: "var(--color-bg-page)" }}>
+          <div className="flex items-center gap-1.5">
+            <Clock size={12} style={{ color: "var(--color-text-tertiary)" }} />
+            <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Velocity</span>
+          </div>
+          <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+            {analysis.engagementVelocity.avgDaysBetweenTouches >= 0
+              ? `${analysis.engagementVelocity.avgDaysBetweenTouches}d`
+              : "N/A"}
+            {" "}between touches
+          </span>
+          <Badge
+            variant={analysis.engagementVelocity.verdict === "faster" ? "success" : analysis.engagementVelocity.verdict === "slower" ? "error" : "neutral"}
+            size="sm"
+          >
+            {analysis.engagementVelocity.verdict} vs benchmark ({analysis.engagementVelocity.benchmark}d)
+          </Badge>
+        </div>
+
+        {/* Lessons Learned */}
+        {analysis.lessonsLearned.length > 0 && (
+          <div className="mb-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] mb-1.5">Lessons Learned</p>
+            <div className="space-y-1">
+              {analysis.lessonsLearned.map((lesson, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 rounded-md p-2"
+                  style={{ background: "var(--color-bg-page)" }}
+                >
+                  <Lightbulb size={12} className="mt-0.5 shrink-0" style={{ color: "var(--color-warning)" }} />
+                  <p className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{lesson}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Comparison */}
+        {analysis.comparisonToSimilar.similarDeals > 0 && (
+          <div className="flex items-center gap-2 rounded-md p-2" style={{ background: "var(--color-bg-page)" }}>
+            <BarChart3 size={12} style={{ color: "var(--color-text-tertiary)" }} />
+            <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+              {analysis.comparisonToSimilar.thisDealsPosition}
+              {" "}({analysis.comparisonToSimilar.similarDeals} similar deals, {analysis.comparisonToSimilar.avgOutcomeRate}% win rate)
+            </p>
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 

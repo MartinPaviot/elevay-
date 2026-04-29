@@ -458,49 +458,11 @@ export default function DashboardPage() {
           );
         })()}
 
-        {/* Deals at Risk — kept hidden when empty (it's a warning section,
-            "no risks" doesn't deserve real estate). */}
-        {summary?.founderMetrics?.dealsAtRisk && summary.founderMetrics.dealsAtRisk.length > 0 && (
-          <div className="mt-3">
-            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wider flex items-center justify-between" style={{ color: "var(--color-text-tertiary)" }}>
-              <span><AlertTriangle size={12} className="mr-1 inline" /> Deals at risk</span>
-              {summary.founderMetrics.dealsAtRisk.length > 3 && (
-                <button
-                  type="button"
-                  onClick={() => router.push("/opportunities")}
-                  className="text-[11px] font-medium normal-case tracking-normal hover:underline"
-                  style={{ color: "var(--color-accent)" }}
-                >
-                  3 of {summary.founderMetrics.dealsAtRisk.length} · View all
-                </button>
-              )}
-            </h2>
-            <div className="space-y-1.5">
-              {summary.founderMetrics.dealsAtRisk.slice(0, 3).map((deal) => (
-                <Card key={deal.id} interactive onClick={() => { router.push(`/opportunities/${deal.id}`); }}>
-                  <CardBody className="!py-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{deal.name}</span>
-                      <div className="flex items-center gap-2">
-                        {deal.value != null && deal.value > 0 && (
-                          <span className="text-[11px] font-medium" style={{ color: "var(--color-success)" }}>
-                            ${deal.value.toLocaleString()}
-                          </span>
-                        )}
-                        <Badge
-                          variant={deal.daysSilent >= 30 ? "error" : deal.daysSilent >= 14 ? "warning" : "neutral"}
-                          size="sm"
-                        >
-                          Silent {deal.daysSilent}d
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Deals at Risk — augmented with stall prediction data from /api/deals/at-risk */}
+        <DealsAtRiskSection
+          founderDeals={summary?.founderMetrics?.dealsAtRisk || []}
+          onNavigate={(path) => router.push(path)}
+        />
 
         {/* Two Column Layout */}
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
@@ -986,6 +948,136 @@ export default function DashboardPage() {
           />
         )
       )}
+    </div>
+  );
+}
+
+// ── Deals at Risk Section (augmented with stall predictions) ─
+
+interface StallPrediction {
+  dealId: string;
+  dealName: string;
+  stallProbability: number;
+  daysUntilLikelyStall: number;
+  indicators: Array<{ type: string; severity: string; detail: string }>;
+  suggestedInterventions: Array<{ action: string; priority: number; reasoning: string }>;
+}
+
+function DealsAtRiskSection({
+  founderDeals,
+  onNavigate,
+}: {
+  founderDeals: Array<{
+    id: string;
+    name: string;
+    stage: string;
+    value: number | null;
+    daysSilent: number;
+  }>;
+  onNavigate: (path: string) => void;
+}) {
+  const [predictions, setPredictions] = useState<StallPrediction[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/deals/at-risk")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setPredictions(data.predictions || []);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Merge: use stall predictions when available, fall back to founder metrics
+  const mergedDeals = loaded && predictions.length > 0
+    ? predictions.slice(0, 5).map((p) => {
+        const founderDeal = founderDeals.find((d) => d.id === p.dealId);
+        return {
+          id: p.dealId,
+          name: p.dealName,
+          value: founderDeal?.value ?? null,
+          daysSilent: founderDeal?.daysSilent ?? 0,
+          stallProbability: p.stallProbability,
+          daysUntilStall: p.daysUntilLikelyStall,
+          topIntervention: p.suggestedInterventions[0]?.action || null,
+        };
+      })
+    : founderDeals.slice(0, 3).map((d) => ({
+        id: d.id,
+        name: d.name,
+        value: d.value,
+        daysSilent: d.daysSilent,
+        stallProbability: null as number | null,
+        daysUntilStall: null as number | null,
+        topIntervention: null as string | null,
+      }));
+
+  if (mergedDeals.length === 0) return null;
+
+  const totalCount = loaded && predictions.length > 0 ? predictions.length : founderDeals.length;
+
+  return (
+    <div className="mt-3">
+      <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wider flex items-center justify-between" style={{ color: "var(--color-text-tertiary)" }}>
+        <span><AlertTriangle size={12} className="mr-1 inline" /> Deals at risk</span>
+        {totalCount > 3 && (
+          <button
+            type="button"
+            onClick={() => onNavigate("/opportunities")}
+            className="text-[11px] font-medium normal-case tracking-normal hover:underline"
+            style={{ color: "var(--color-accent)" }}
+          >
+            {Math.min(mergedDeals.length, 3)} of {totalCount} · View all
+          </button>
+        )}
+      </h2>
+      <div className="space-y-1.5">
+        {mergedDeals.slice(0, 3).map((deal) => (
+          <Card key={deal.id} interactive onClick={() => onNavigate(`/opportunities/${deal.id}`)}>
+            <CardBody className="!py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{deal.name}</span>
+                <div className="flex items-center gap-2">
+                  {deal.value != null && deal.value > 0 && (
+                    <span className="text-[11px] font-medium" style={{ color: "var(--color-success)" }}>
+                      ${deal.value.toLocaleString()}
+                    </span>
+                  )}
+                  {deal.stallProbability !== null ? (
+                    <Badge
+                      variant={deal.stallProbability >= 0.7 ? "error" : deal.stallProbability >= 0.4 ? "warning" : "neutral"}
+                      size="sm"
+                    >
+                      {Math.round(deal.stallProbability * 100)}% stall risk
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant={deal.daysSilent >= 30 ? "error" : deal.daysSilent >= 14 ? "warning" : "neutral"}
+                      size="sm"
+                    >
+                      Silent {deal.daysSilent}d
+                    </Badge>
+                  )}
+                  {deal.daysUntilStall !== null && (
+                    <span className="text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
+                      ~{deal.daysUntilStall}d until stall
+                    </span>
+                  )}
+                </div>
+              </div>
+              {deal.topIntervention && (
+                <p className="mt-1 text-[11px]" style={{ color: "var(--color-accent)" }}>
+                  {deal.topIntervention.length > 80 ? deal.topIntervention.slice(0, 77) + "..." : deal.topIntervention}
+                </p>
+              )}
+            </CardBody>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
