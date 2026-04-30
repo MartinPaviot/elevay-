@@ -97,8 +97,8 @@ export default function ContactsPage() {
       const res = await fetch(`/api/contacts?page=${page}&pageSize=${pageSize}`);
       if (res.ok) {
         const data = await res.json();
-        setContacts(data.contacts || []);
-        setTotalContacts(data.pagination?.total ?? data.contacts?.length ?? 0);
+        setContacts(data.contacts || data.items || []);
+        setTotalContacts(data.pagination?.total ?? (data.contacts || data.items)?.length ?? 0);
       }
     } catch (e) {
       console.warn("contacts: list fetch failed", e);

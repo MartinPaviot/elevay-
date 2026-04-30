@@ -207,7 +207,7 @@ export default function AccountsPage() {
         const res = await fetch(`/api/accounts?pageSize=200&page=${page}`);
         if (!res.ok) break;
         const data = await res.json();
-        const batch = data.accounts || [];
+        const batch = data.accounts || data.items || [];
         allAccounts = [...allAccounts, ...batch];
         hasMore = batch.length === 200 && allAccounts.length < (data.pagination?.total || Infinity);
         page++;
