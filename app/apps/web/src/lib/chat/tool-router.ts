@@ -164,6 +164,13 @@ const TOOL_GROUPS: Record<string, string> = {
   draftProposal: "skills",
   handleObjection: "skills",
   reEngageStalledDeal: "skills",
+  runCustomSkill: "skills",
+  listCustomSkills: "skills",
+  forkSkill: "skills",
+
+  // import (import.ts)
+  analyzeCSVForImport: "action",
+  executeImport: "action",
 
   // memory (memory.ts)
   exploreGraph: "memory",

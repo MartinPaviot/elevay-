@@ -1,71 +1,74 @@
-# Agentic Import — Requirements
+# Agentic Import — Requirements v2
 
 ## User Story
 
-**As a** founder switching to Elevay from another CRM or spreadsheet,
-**I want to** upload my CSV files to the chat and have the AI agent handle the entire import,
-**so that** I get a structured, deduplicated, relationship-aware CRM without manually mapping columns or cleaning data.
+**As a** founder switching to Elevay,
+**I want to** upload CSV files in chat and have the agent handle the entire import — mapping, dedup, relationship wiring, custom fields — with progress tracking,
+**so that** I get a structured CRM without manual data work.
 
 ## Context
 
-Lightfield's agentic import processes 90K records/hour, handles dedup, multi-file stitching, and relationship wiring — all through chat. Elevay has a basic smart import API (`/api/import/smart/`) with LLM column mapping but it lacks: chat integration, deduplication, relationship wiring, multi-file support, progress tracking, and retry-safety.
+**Current state**: Smart import at `/api/import/smart/` does LLM column mapping + heuristic fallback, preview/commit 2-step. BUT: no chat integration, no dedup (just onConflictDoNothing), no relationship wiring (contacts not linked to companies), no custom field creation, no progress tracking, row-by-row inserts (slow).
+
+**Lightfield's standard**: Upload in chat, agent maps/deduplicates/wires relationships/proposes custom fields, 90K records/hour, retry-safe, multi-file stitching.
 
 ## Acceptance Criteria
 
-### AC-1: Upload CSV via chat
-**GIVEN** the user is in the chat interface
-**WHEN** they upload a CSV file (drag-and-drop or file picker)
-**THEN** the agent acknowledges the file and begins analyzing its structure
-**AND** displays a summary: detected entity type, column count, row count, sample data
+### AC-1: CSV upload triggers agent import flow in chat
+**GIVEN** the user uploads a CSV in chat (drag-drop or file picker)
+**WHEN** the agent receives the file
+**THEN** it analyzes structure, proposes entity type + column mapping, shows preview of 5 rows
+**AND** asks for confirmation before importing
 
-### AC-2: Agent proposes mapping with confirmation
-**GIVEN** the agent has analyzed a CSV
-**WHEN** it presents the proposed mapping (CSV columns → CRM fields)
-**THEN** the user can approve, modify, or reject the mapping in natural language
-**AND** the agent adjusts based on feedback ("Map 'Company' to account name instead")
+### AC-2: User can modify mapping via natural language
+**GIVEN** the agent proposed mapping "Company → name"
+**WHEN** the user says "Map 'Company' to account domain instead"
+**THEN** the agent updates the mapping and shows the new preview
 
-### AC-3: Deduplication
-**GIVEN** the CSV contains records that already exist in the CRM (matched by email for contacts, domain for accounts)
-**WHEN** the import executes
-**THEN** existing records are updated (merge) instead of creating duplicates
-**AND** the agent reports: X created, Y updated, Z skipped
+### AC-3: Fuzzy deduplication
+**GIVEN** the CSV contains "Acme Corp" and the CRM has "Acme Corporation"
+**WHEN** the import runs
+**THEN** the agent detects the fuzzy match (using entity resolver with embedding similarity > 0.85)
+**AND** merges instead of creating a duplicate
+**AND** reports "450 created, 23 merged with existing records, 5 skipped"
 
 ### AC-4: Relationship wiring
-**GIVEN** a CSV with contact data that includes company names/domains
-**WHEN** the import executes
-**THEN** contacts are automatically associated with existing or newly created companies
-**AND** deals are associated with their contacts and companies
+**GIVEN** a contacts CSV with a "Company" or "Company Domain" column
+**WHEN** the import runs
+**THEN** contacts are automatically linked to matching companies (by domain or name)
+**AND** if no matching company exists and enough data is present, a new company is created
 
-### AC-5: Multi-file import
-**GIVEN** the user uploads multiple CSVs (companies.csv, contacts.csv, deals.csv)
-**WHEN** the agent processes them
-**THEN** it stitches the files together using common fields (company name, email domain)
-**AND** creates records in dependency order (companies first, then contacts, then deals)
+### AC-5: Custom field proposal
+**GIVEN** the CSV has columns not in the CRM schema (e.g., "ARR", "Tech Stack")
+**WHEN** the agent analyzes the file
+**THEN** it proposes creating custom attributes for unmapped columns
+**AND** the user can approve/reject each proposed field
 
-### AC-6: Progress tracking for large imports
-**GIVEN** the user uploads a CSV with 10,000+ records
-**WHEN** the import is running
-**THEN** the chat shows a progress indicator (X/Y records processed)
-**AND** the user can continue using the app while the import runs in the background
-**AND** a notification appears when the import completes
+### AC-6: Progress tracking via long-running tasks
+**GIVEN** a CSV with 5000+ records
+**WHEN** the import starts
+**THEN** a task is created via the agent_tasks system
+**AND** the chat shows a TaskProgressCard with real-time SSE updates
+**AND** the user can cancel mid-import
 
-### AC-7: Retry-safe imports
-**GIVEN** an import was interrupted (browser closed, network error)
-**WHEN** the user re-uploads the same file or resumes
-**THEN** already-imported records are not duplicated
-**AND** the import continues from where it left off
+### AC-7: Batch INSERT for performance
+**GIVEN** a CSV with 10K records
+**WHEN** the import runs
+**THEN** records are inserted in batches of 200 (not row-by-row)
+**AND** the import completes within 2 minutes (>80 records/second)
 
-### AC-8: Post-import enrichment suggestion
-**GIVEN** an import has completed successfully
-**WHEN** the results are displayed
-**THEN** the agent suggests running enrichment on the imported records ("I can enrich these 150 contacts with LinkedIn data and company info")
+### AC-8: Retry-safe with import_job_id tagging
+**GIVEN** an import was interrupted at row 3000
+**WHEN** the user re-uploads or retries
+**THEN** already-imported records are detected via content hash
+**AND** import resumes from row 3001
+**AND** every imported record is tagged with importJobId in properties for rollback
 
 ## Edge Cases
 
-- CSV with mixed entity types (contacts + companies in one file) → agent splits and imports separately
-- CSV with non-English headers → LLM handles French/Spanish/German column names
-- Empty rows → skip silently
-- Malformed CSV (mismatched columns) → agent reports errors per row, imports valid rows
-- Very large file (>5MB) → process in streaming chunks via Inngest background job
-- CSV with custom fields not in schema → agent proposes creating custom attributes
-- File encoding issues (UTF-8 BOM, Latin-1) → auto-detect and handle
+- CSV with non-English headers (French, German) → LLM handles natively
+- Malformed rows (wrong column count) → skip and log, continue importing valid rows
+- File > 10MB → reject with message "Split your file into smaller chunks"
+- CSV with mixed entity types → agent asks to clarify or splits automatically
+- Duplicate column names in CSV → disambiguate with column index
+- CSV delimiter detection (comma, semicolon, tab) → auto-detect from first line
