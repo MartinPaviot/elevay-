@@ -1,25 +1,23 @@
+import { HeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
+
 export default function DashboardLoading() {
   return (
     <div className="flex h-full flex-col">
-      {/* Header skeleton */}
-      <div
-        className="flex items-center gap-3 px-6"
-        style={{
-          height: "var(--header-height)",
-          borderBottom: "0.5px solid var(--color-border-default)",
-        }}
-      >
-        <div className="skeleton h-4 w-4 rounded" />
-        <div className="skeleton h-4 w-24 rounded" />
-      </div>
-
-      {/* Content skeleton */}
-      <div className="flex-1 space-y-3 p-6">
-        <div className="skeleton h-10 w-full rounded-md" />
-        <div className="skeleton h-10 w-full rounded-md" />
-        <div className="skeleton h-10 w-full rounded-md" />
-        <div className="skeleton h-10 w-full rounded-md" />
-        <div className="skeleton h-10 w-full rounded-md" />
+      <HeaderSkeleton />
+      <div className="flex-1 p-6 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="skeleton-row rounded-lg p-4"
+            style={{
+              background: "var(--color-bg-card)",
+              border: "1px solid var(--color-border-default)",
+            }}
+          >
+            <Skeleton className="h-4 rounded" style={{ width: `${50 + (i * 13) % 40}%` }} />
+            <Skeleton className="mt-2 h-3 w-1/3 rounded" />
+          </div>
+        ))}
       </div>
     </div>
   );
