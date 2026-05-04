@@ -107,6 +107,9 @@ export interface ApprovalDecisionInput {
   /** Tenant trust score, 0-1. Currently only used in audit logging;
    *  future thresholds may couple the two. Optional. */
   trustScore?: number;
+  /** F005: Learned thresholds from outcome/approval data. When provided,
+   *  override the static HIGH_CONFIDENCE_THRESHOLDS for auto-high-confidence mode. */
+  learnedThresholds?: Record<string, number>;
 }
 
 export type ApprovalQueueBucket =
@@ -157,8 +160,8 @@ export function enforceAgentApprovalMode(
     };
   }
 
-  // auto-high-confidence
-  const threshold = HIGH_CONFIDENCE_THRESHOLDS[action];
+  // auto-high-confidence — use learned thresholds if available (F005)
+  const threshold = input.learnedThresholds?.[action] ?? HIGH_CONFIDENCE_THRESHOLDS[action];
   const confidenceValue = confidence ?? 0;
   if (confidenceValue >= threshold) {
     return {
