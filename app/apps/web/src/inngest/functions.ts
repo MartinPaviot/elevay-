@@ -639,6 +639,20 @@ export const sendSequenceStep = inngest.createFunction(
       return email;
     });
 
+    await step.run("track-email-queued", async () => {
+      await trackPipeline({
+        traceId: enrollmentId,
+        tenantId,
+        companyId: contact.companyId,
+        contactId: enrollment.contactId,
+        enrollmentId,
+        outboundEmailId: outboundEmail.id,
+        stage: "email_queued",
+        sourceSystem: "inngest",
+        metadata: { step: enrollment.currentStep, subject },
+      });
+    });
+
     // Log activity
     await step.run("log-send", async () => {
       await db.insert(activities).values({

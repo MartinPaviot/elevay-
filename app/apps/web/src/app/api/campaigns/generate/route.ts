@@ -4,6 +4,8 @@ import { sequences, sequenceSteps, contacts, companies } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { buildProspectContext } from "@/lib/prospect-context";
 import { generateSequence } from "@/lib/sequence-generator";
+import { buildIntelligenceBrief } from "@/lib/campaign-engine/build-intelligence-brief";
+import { selectStrategy } from "@/lib/campaign-engine/select-strategy";
 
 /**
  * POST /api/campaigns/generate
@@ -59,7 +61,28 @@ export async function POST(req: Request) {
     }
 
     // Build context — either from contact or from company
+    // Kick off intelligence brief in background (non-blocking enrichment for future use)
+    const contactForBrief = resolvedContactId;
+    const companyForBrief = companyId || (resolvedContactId ? (await db.select({ companyId: contacts.companyId }).from(contacts).where(eq(contacts.id, resolvedContactId)).limit(1))[0]?.companyId : null);
+    if (companyForBrief) {
+      buildIntelligenceBrief(companyForBrief, authCtx.tenantId, contactForBrief || undefined).catch(() => {});
+    }
+
     let generated;
+    let strategyUsed: string | null = null;
+
+    // Try strategy selection if brief already exists
+    if (companyForBrief) {
+      try {
+        const candidates = await selectStrategy(companyForBrief, authCtx.tenantId, contactForBrief || undefined);
+        if (candidates.length > 0) {
+          strategyUsed = candidates[0].strategyId;
+        }
+      } catch {
+        // Brief might not exist yet — fall through to default generation
+      }
+    }
+
     if (resolvedContactId) {
       const ctx = await buildProspectContext(resolvedContactId, authCtx.tenantId);
       if (!ctx) return Response.json({ error: "Contact not found" }, { status: 404 });
@@ -166,6 +189,7 @@ export async function POST(req: Request) {
         signalUsed: null,
         signalTitle: null,
       },
+      strategyUsed,
     }, { status: 201 });
   } catch (error) {
     // Log the detail server-side; return a generic message so ORM /

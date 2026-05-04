@@ -40,6 +40,15 @@ import { analyzeClosedDeal } from "@/inngest/win-loss-analysis";
 import { dailyStallPrediction, onDemandStallPrediction } from "@/inngest/stall-prediction-cron";
 import { evaluateRealtimeSignals } from "@/inngest/realtime-signal-handler";
 import { agentTaskExecute, agentTaskCleanup } from "@/inngest/agent-task-runner";
+import { agentReactor, agentDailySweep } from "@/inngest/agent-reactor";
+import { outcomeDetectorCron } from "@/inngest/outcome-detector";
+import { weeklyTrustRecalculation } from "@/inngest/trust-recalculator";
+// Campaign Engine 1000x
+import { replyAgent } from "@/inngest/reply-agent";
+import { campaignDecisionEngine, bridgeTrackingEvents } from "@/inngest/campaign-decision-engine";
+import { signalMonitorCron, signalTriggeredOutreach } from "@/inngest/signal-monitor";
+import { deliverabilityHealthCron } from "@/inngest/deliverability-monitor";
+import { campaignWeeklyReport } from "@/inngest/campaign-weekly-report";
 
 // Register task executors so Inngest runner can dispatch by type
 import("@/lib/import/agentic-executor").then((m) => m.registerImportExecutor()).catch(() => {});
@@ -143,5 +152,20 @@ export const { GET, POST, PUT } = serve({
     // Agent tasks: long-running background operations with progress tracking
     agentTaskExecute,
     agentTaskCleanup,
+    // F001: Agent event loop — real-time autonomous decision reactor
+    agentReactor,
+    agentDailySweep,
+    // F003: Outcome tracking — feedback loop for agent actions
+    outcomeDetectorCron,
+    // F005: Learned trust — weekly threshold recalculation from outcomes
+    weeklyTrustRecalculation,
+    // Campaign Engine 1000x
+    replyAgent,
+    campaignDecisionEngine,
+    bridgeTrackingEvents,
+    signalMonitorCron,
+    signalTriggeredOutreach,
+    deliverabilityHealthCron,
+    campaignWeeklyReport,
   ],
 });

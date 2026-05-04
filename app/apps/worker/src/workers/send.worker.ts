@@ -116,6 +116,22 @@ export function createSendWorker() {
           `;
         }
 
+        await sql`
+          INSERT INTO pipeline_events (id, trace_id, tenant_id, contact_id, enrollment_id, outbound_email_id, stage, source_system, metadata, created_at)
+          VALUES (
+            gen_random_uuid(),
+            COALESCE(${email.enrollment_id}, ${outboundEmailId}),
+            ${email.tenant_id},
+            ${email.contact_id},
+            ${email.enrollment_id},
+            ${outboundEmailId},
+            'email_sent',
+            'bullmq',
+            ${JSON.stringify({ via: "emailengine", mailbox: mailbox.email_address })}::jsonb,
+            NOW()
+          )
+        `.catch(() => {});
+
         console.log(`[send] Sent email ${outboundEmailId} via ${mailbox.email_address} to ${email.to_address}`);
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
