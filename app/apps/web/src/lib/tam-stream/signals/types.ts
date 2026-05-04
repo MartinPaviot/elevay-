@@ -22,6 +22,7 @@ export interface SignalContext {
   /** Frozen at the start of the run so all signals use the same
    * reference "now" — makes funding_recent deterministic within a build. */
   now: Date;
+  companyModel?: import("@/lib/scoring/company-model-trainer").CompanyScoringModel | null;
 }
 
 /** Union of what a signal might see. Search results are always

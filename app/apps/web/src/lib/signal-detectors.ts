@@ -15,6 +15,7 @@
 
 export type SignalType =
   | "funding"
+  | "funding_crunchbase"
   | "hiring"
   | "tech_stack_change"
   | "leadership_change"
@@ -28,6 +29,15 @@ export const SIGNAL_DETECTORS: Record<SignalType, Detector> = {
     const checkedAt = props.fundingLastCheckedAt;
     if (typeof stage === "string" && stage.length > 0 && typeof checkedAt === "string") {
       return new Date(checkedAt);
+    }
+    return null;
+  },
+  funding_crunchbase: (props) => {
+    const tamSignals = props.tamSignals as Record<string, unknown> | undefined;
+    if (!tamSignals) return null;
+    const cbSignal = tamSignals.funding_crunchbase as { value?: boolean; computedAt?: string } | undefined;
+    if (cbSignal?.value && typeof cbSignal.computedAt === "string") {
+      return new Date(cbSignal.computedAt);
     }
     return null;
   },

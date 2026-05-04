@@ -235,6 +235,9 @@ export async function POST(req: Request) {
             .filter(Boolean),
         );
 
+        const companyModel = (settings as Record<string, unknown>).companyModel as
+          import("@/lib/scoring/company-model-trainer").CompanyScoringModel | null | undefined;
+
         const signalCtx: SignalContext = {
           tenantId: authCtx.tenantId,
           tenantInvestors,
@@ -244,6 +247,7 @@ export async function POST(req: Request) {
             geographies: settings.targetGeographies,
           },
           now: new Date(),
+          companyModel: companyModel ?? null,
         };
 
         const targetTitles = parseRoleKeywords(settings);
