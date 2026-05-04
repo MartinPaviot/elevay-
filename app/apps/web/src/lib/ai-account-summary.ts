@@ -8,7 +8,8 @@
  * Uses Haiku for cost efficiency since this runs for every company.
  */
 
-import { anthropic, getModelForTask } from "@/lib/ai-provider";
+import { anthropic } from "@/lib/ai-provider";
+import { openai } from "@ai-sdk/openai";
 import { tracedGenerateText } from "@/lib/traced-ai";
 
 export interface AccountSummaryInput {
@@ -39,7 +40,12 @@ export async function generateAccountSummary(
   const hasAnyData = company.domain || company.industry || company.description;
   if (!hasAnyData) return null;
 
-  const model = getModelForTask("lightweight");
+  // Use Haiku for cost efficiency — this runs for every enriched company
+  const model = process.env.ANTHROPIC_API_KEY
+    ? anthropic("claude-haiku-4-5-20251001")
+    : process.env.OPENAI_API_KEY
+      ? openai("gpt-4o-mini")
+      : null;
   if (!model) return null;
 
   const props = (company.properties || {}) as Record<string, unknown>;
