@@ -138,8 +138,11 @@ export function createDebouncer<TArgs extends unknown[]>(
     clearTimeout?: (handle: unknown) => void;
   } = {},
 ): DebouncedFn<TArgs> {
-  const setT = scheduler.setTimeout ?? setTimeout;
-  const clearT = scheduler.clearTimeout ?? clearTimeout;
+  const setT: (cb: () => void, ms: number) => unknown =
+    scheduler.setTimeout ?? ((cb, ms) => setTimeout(cb, ms));
+  const clearT: (handle: unknown) => void =
+    scheduler.clearTimeout ??
+    ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
   let handle: unknown = null;
   let lastArgs: TArgs | null = null;
 

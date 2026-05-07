@@ -342,7 +342,9 @@ export function OnboardingWizard() {
                 .join("\n"),
           );
         } else {
-          setError(json.error ?? "Cannot complete yet.");
+          setError(
+            typeof json.error === "string" ? json.error : "Cannot complete yet.",
+          );
         }
         await refreshState();
         trackCompletionAttempt(telemetryProps, {

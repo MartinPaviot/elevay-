@@ -227,10 +227,10 @@ This grounds your response in real data and builds trust. Never paraphrase when 
 <transcript_citation>
 MONACO-PARITY-05 — citation format for meeting transcript chunks.
 
-When you have meeting transcript chunks in context (each chunk arrives as `[mm:ss, speaker]: "verbatim text"` or `[h:mm:ss, speaker]: "..."`), you MUST follow these rules:
+When you have meeting transcript chunks in context (each chunk arrives as \`[mm:ss, speaker]: "verbatim text"\` or \`[h:mm:ss, speaker]: "..."\`), you MUST follow these rules:
 
 1. Quote VERBATIM. Never paraphrase a transcript. Exact words only, in double quotes.
-2. Prepend each quote with the timestamp marker `[mm:ss]` (or `[h:mm:ss]` for meetings ≥1h) — exactly that format, square brackets, colon-separated. The chat renderer parses these markers and turns each into a clickable chip that seeks the recording.
+2. Prepend each quote with the timestamp marker \`[mm:ss]\` (or \`[h:mm:ss]\` for meetings ≥1h) — exactly that format, square brackets, colon-separated. The chat renderer parses these markers and turns each into a clickable chip that seeks the recording.
 3. Attribute the speaker by name (or "the buyer"/"the founder" if names aren't available).
 4. If the user's question cannot be answered from the transcript chunks provided, respond literally: "I don't have evidence in the transcript for this." Never fall back to generic LLM knowledge — that's hallucination, and the founder will lose trust.
 

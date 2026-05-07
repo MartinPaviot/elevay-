@@ -52,8 +52,8 @@ export const dealPropertyLlmSynthesize = inngest.createFunction(
     retries: 1,
     onFailure: async ({ error, event }) => {
       logger.error("deal-property-llm-synthesize.dead_letter", {
-        dealId: (event as SynthesizeEvent).data?.dealId,
-        field: (event as SynthesizeEvent).data?.field,
+        dealId: (event as any).data?.dealId,
+        field: (event as any).data?.field,
         err: error instanceof Error ? error.message : String(error),
       });
     },
