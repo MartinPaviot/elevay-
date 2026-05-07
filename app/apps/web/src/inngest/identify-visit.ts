@@ -23,6 +23,13 @@ import {
   loadSpendDecision,
   startOfUtcMonth,
 } from "@/lib/visitor-id/spend-cap";
+import {
+  checkDedup,
+  hashSubnet,
+  type DedupCandidate,
+  type PriorIdentification,
+} from "@/lib/visitor-id/dedup";
+import { desc } from "drizzle-orm";
 
 interface IdentifyEvent {
   data: { visitId: string; tenantId: string; ip?: string };
@@ -129,6 +136,85 @@ export const identifyVisit = inngest.createFunction(
         .set({ identifiedAt: new Date(), identifiedBy: provider.name })
         .where(eq(visits.id, visitId));
       return { skipped: true, reason: "no_raw_ip" };
+    }
+
+    // P0-2 task 2.2 — dedup against recent identifications. Re-using
+    // a prior result for the same IP / /24 subnet within the
+    // tenant's window saves a paid lookup AND keeps the latency low.
+    const candidate: DedupCandidate = {
+      ipHash: row.ipHash,
+      subnetHash: hashSubnet(ip),
+    };
+    const dedup = await step.run("check-dedup", () =>
+      checkDedup({
+        tenantId,
+        candidate,
+        deps: {
+          findRecentIdentification: async ({ tenantId: tid, candidate: cand, cutoff }) => {
+            // The schema currently stores ipHash on `visits` ; subnet
+            // hashing is opt-in via a follow-up migration. Until then
+            // the ipHash exact-match is the active dedup path. The
+            // `cand.subnetHash` branch will plug in once the column
+            // ships without changing this signature.
+            const [hit] = await db
+              .select({
+                companyDomain: visits.companyDomain,
+                companyId: visits.companyId,
+                identifiedAt: visits.identifiedAt,
+              })
+              .from(visits)
+              .where(
+                and(
+                  eq(visits.tenantId, tid),
+                  isNotNull(visits.companyDomain),
+                  gte(visits.identifiedAt, cutoff),
+                  eq(visits.ipHash, cand.ipHash),
+                ),
+              )
+              .orderBy(desc(visits.identifiedAt))
+              .limit(1);
+            if (!hit?.companyDomain || !hit.identifiedAt) return null;
+            const prior: PriorIdentification = {
+              companyDomain: hit.companyDomain,
+              companyId: hit.companyId ?? "",
+              identifiedAt: hit.identifiedAt,
+              matchedBy: "ip_hash",
+            };
+            return prior;
+          },
+          loadTenantSettings: async (tid) => {
+            const [t] = await db
+              .select({ settings: tenants.settings })
+              .from(tenants)
+              .where(eq(tenants.id, tid))
+              .limit(1);
+            return (t?.settings as Record<string, unknown> | null) ?? null;
+          },
+        },
+      }),
+    );
+    if (dedup.cached) {
+      await db
+        .update(visits)
+        .set({
+          companyDomain: dedup.cached.companyDomain,
+          companyId: dedup.cached.companyId || null,
+          identifiedAt: new Date(),
+          identifiedBy: `${provider.name}_cached`,
+        })
+        .where(eq(visits.id, visitId));
+      logger.info("identify-visit: dedup cache hit", {
+        visitId,
+        tenantId,
+        companyDomain: dedup.cached.companyDomain,
+        windowDays: dedup.windowDays,
+      });
+      return {
+        matched: true,
+        cached: true,
+        companyDomain: dedup.cached.companyDomain,
+        companyId: dedup.cached.companyId,
+      };
     }
 
     const result = await provider.identify({
