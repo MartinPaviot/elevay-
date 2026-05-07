@@ -20,8 +20,37 @@
  */
 
 import { db } from "@/db";
-import { evalRuns } from "@/db/schema";
+import { evalRuns, evalCaseRuns } from "@/db/schema";
 import { logger } from "@/lib/observability/logger";
+
+/** Cap on the per-case output snippet — long enough to recognise a
+ *  failure mode, short enough that 4 weeks of weekly history doesn't
+ *  blow up the row size. */
+const OUTPUT_SNIPPET_MAX = 500;
+const ERROR_MESSAGE_MAX = 500;
+
+function snippetOf(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  let str: string;
+  if (typeof value === "string") {
+    str = value;
+  } else {
+    try {
+      str = JSON.stringify(value);
+    } catch {
+      str = String(value);
+    }
+  }
+  if (str.length === 0) return null;
+  return str.length > OUTPUT_SNIPPET_MAX
+    ? str.slice(0, OUTPUT_SNIPPET_MAX)
+    : str;
+}
+
+function truncateError(err: string | undefined): string | null {
+  if (!err) return null;
+  return err.length > ERROR_MESSAGE_MAX ? err.slice(0, ERROR_MESSAGE_MAX) : err;
+}
 
 export interface EvalCase<TOut> {
   /** Stable id within the suite — used for case-level diffing
@@ -71,10 +100,14 @@ export interface EvalRunSummary {
 }
 
 /**
- * Run a suite and persist the aggregate. The per-case detail is
- * returned to the caller (useful for the eval dashboard) but only
- * the aggregate lands in the DB — case-level history would balloon
- * the table without much marginal value.
+ * Run a suite and persist the aggregate + per-case detail. The
+ * aggregate row in `eval_runs` is the long-lived analytics
+ * surface ; the `eval_case_runs` rows let the dashboard drill
+ * into "which 5 cases of 8 failed?" without re-running the suite
+ * locally.
+ *
+ * Both writes are best-effort : if the DB is down, the run still
+ * produced the in-memory summary the caller wanted.
  */
 export async function runEvalSuite<TOut>(
   suite: EvalSuite<TOut>,
@@ -82,6 +115,10 @@ export async function runEvalSuite<TOut>(
   const startedAt = Date.now();
   const perCase: EvalRunSummary["perCase"] = [];
   const successOutputs: Array<{ caseId: string; output: TOut; passed: boolean }> = [];
+  // Hold each case's output (snippet form) so we can persist it
+  // alongside the case row. Indexed by caseId — case ids are unique
+  // within a suite by contract.
+  const caseOutputs = new Map<string, unknown>();
 
   for (const c of suite.cases) {
     const caseStart = Date.now();
@@ -94,6 +131,7 @@ export async function runEvalSuite<TOut>(
         passed = false;
       }
       successOutputs.push({ caseId: c.id, output, passed });
+      caseOutputs.set(c.id, output);
       perCase.push({
         caseId: c.id,
         passed,
@@ -118,24 +156,55 @@ export async function runEvalSuite<TOut>(
     : {};
   const totalLatencyMs = Date.now() - startedAt;
 
-  // Persist aggregate. Fire-and-forget : if the DB is down, the
-  // run still produced the in-memory summary the caller wanted.
+  // Persist aggregate FIRST, capture the run id for the per-case
+  // FK. Fire-and-forget : if the DB is down, the run still produced
+  // the in-memory summary the caller wanted.
+  let runId: string | null = null;
   try {
-    await db.insert(evalRuns).values({
-      surfaceId: suite.surfaceId,
-      promptId: suite.promptId,
-      casesTotal: suite.cases.length,
-      casesPassed,
-      casesErrored,
-      metrics,
-      totalLatencyMs,
-    });
+    const [inserted] = await db
+      .insert(evalRuns)
+      .values({
+        surfaceId: suite.surfaceId,
+        promptId: suite.promptId,
+        casesTotal: suite.cases.length,
+        casesPassed,
+        casesErrored,
+        metrics,
+        totalLatencyMs,
+      })
+      .returning({ id: evalRuns.id });
+    runId = inserted?.id ?? null;
   } catch (err) {
-    logger.warn("eval-harness: persist failed (non-blocking)", {
+    logger.warn("eval-harness: persist aggregate failed (non-blocking)", {
       surfaceId: suite.surfaceId,
       promptId: suite.promptId,
       err: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  // Persist per-case rows. Skipped when the aggregate write failed —
+  // without a runId the FK constraint blocks. One bulk insert keeps
+  // the round-trip count flat regardless of suite size.
+  if (runId && perCase.length > 0) {
+    try {
+      await db.insert(evalCaseRuns).values(
+        perCase.map((c) => ({
+          runId,
+          caseId: c.caseId,
+          passed: c.passed,
+          errored: c.errored,
+          latencyMs: c.latencyMs,
+          errorMessage: truncateError(c.error),
+          outputSnippet: snippetOf(caseOutputs.get(c.caseId)),
+        })),
+      );
+    } catch (err) {
+      logger.warn("eval-harness: persist per-case failed (non-blocking)", {
+        surfaceId: suite.surfaceId,
+        runId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   return {
