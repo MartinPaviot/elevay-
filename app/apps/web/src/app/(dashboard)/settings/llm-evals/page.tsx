@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, TrendingDown, TrendingUp, Activity } from "lucide-react";
 import { AIThinking, ConfidenceState } from "@/components/ai-ui";
+import { OnboardingVelocityTile } from "@/components/onboarding-velocity-tile";
 
 /**
  * Sprint-1 audit follow-up — admin dashboard surface for the
@@ -162,6 +163,11 @@ export default function LlmEvalsDashboardPage() {
           </button>
         </div>
       </header>
+
+      {/* P0-3 follow-up : onboarding-velocity admin tile. Renders
+          itself when the caller is admin AND there's at least one
+          started onboarding row ; hides silently otherwise. */}
+      <OnboardingVelocityTile />
 
       {loading && <AIThinking step="Loading observability snapshot…" />}
 
