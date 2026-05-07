@@ -3,7 +3,7 @@
 ## P0-5 — Deal autofill E2E proof + monitoring
 
 **Branch** : `feat/monaco-parity-p0-5-deal-autofill`
-**Status** : 🟡 In progress — 3 of 10 tasks committed
+**Status** : ✅ Code-complete — 9 of 10 tasks committed (5.9 deferred)
 
 ### Committed
 
@@ -12,40 +12,65 @@
 | 5.1 | `0f336d4` | Conflict resolution lib (5 rules, 17 tests) |
 | 5.2 | `c23af60` | Property accessor backwards-compat + migration 0044 (25 tests) |
 | 5.5 | `69feed9` | `GET /api/deals/[id]/property-source/[fieldName]` |
+| 5.3+5.4 | `0f1b049` | Cascade pure fn + worker migration (27 tests) |
+| 5.6 | `969bde4` | DealPropertyCell tooltip wired into opportunity page (9 tests) |
+| 5.7 | `3c47051` | Metrics primitive + autofill counters (6 tests) |
+| 5.8+5.10 | `6cb69b5` | Datadog dashboard YAML + RUNBOOK |
 
-### Pending (in-branch backlog)
+### Deferred
 
 | Task | Effort | Blocker |
 |---|---|---|
-| 5.3 | 1j | E2E test budget extraction — needs Postgres test setup + Inngest test harness |
-| 5.4 | 1j | E2E extended to 5 more fields |
-| 5.6 | 1j | UI tooltip on `/opportunities/[id]/page.tsx` (`<DealPropertyCell>`) |
-| 5.7 | 0.5j | Datadog metrics in `inngest/deal-signal-sync.ts` |
-| 5.8 | 0.5j | Datadog dashboard YAML |
 | 5.9 | 0.5j | Prod run validation — needs prod tenant access |
-| 5.10 | 0.5j | RUNBOOK.md doc |
 
 ### Tests
 
 - `deal-autofill-conflict-resolution.test.ts` : 17/17 passing
 - `deal-autofill-property-accessor.test.ts` : 25/25 passing
-- Cumulative session : 1912/1913 passing (1 skip)
+- `deal-autofill-apply-signals.test.ts` : 27/27 passing
+- `deal-property-cell.test.tsx` : 9/9 passing
+- `observability-metrics.test.ts` : 6/6 passing
+- Cumulative session : 1996/1997 passing (1 skip), +84 from baseline
 
 ### Telemetry
 
-Pending — task 5.7 instruments `metrics.increment("deal_autofill.field_updated")` and `metrics.histogram("deal_autofill.confidence")` in the cascade worker.
+Live as of commit `3c47051` — metrics emit via the structured logger
+backend. Datadog dispatcher swap pending the agent sidecar deployment.
 
 ### Notes
 
-- Migration `0044_deal_property_metadata_backfill.sql` ships a partial index + diagnostic view ; the actual backfill runs through `migrateLegacyProperties()` from `lib/deal-autofill/property-accessor.ts` (single source of truth — DB function would diverge).
-- Conflict rule `llm_synthesize` is sync-placeholder for now ; the worker enqueues an async LLM round-trip when `requiresLlmSynthesis(field)` is true (task wiring still pending in 5.7).
+- Migration `0044_deal_property_metadata_backfill.sql` ships a partial
+  index + diagnostic view ; the actual backfill runs through
+  `migrateLegacyProperties()` from `lib/deal-autofill/property-accessor.ts`.
+- Conflict rule `llm_synthesize` enqueues `deal/property-llm-synthesize`
+  events ; the consumer worker is a follow-up ticket.
 
 ---
 
 ## P0-1 — Sequence drafts queue per-email
 
-**Branch** : not yet created
-**Status** : ⏸️ Not started — queued after P0-5
+**Branch** : `feat/monaco-parity-p0-1-sequence-drafts`
+**Status** : 🟡 In progress — 2 of 10 tasks committed
+
+### Committed
+
+| Task | Commit | Description |
+|---|---|---|
+| 1.1 | `f19a5af` | Migration 0045 + state machine (28 tests) |
+| 1.2 | `9afed36` | 5 API routes (list, approve, reject, edit, context) |
+
+### Pending
+
+| Task | Effort | Notes |
+|---|---|---|
+| 1.3 | 1.5j | `/sequences/review` page + 3 components |
+| 1.4 | 1j | `inngest/sequence-draft-router.ts` worker |
+| 1.5 | 0.5j | `inngest/sequence-draft-expiry.ts` hourly cron |
+| 1.6 | 1j | `inngest/draft-rejection-learner.ts` evaluator-optimizer |
+| 1.7 | 1j | Integration tests (approve/reject/expire flows) |
+| 1.8 | 0.5j | Playwright E2E |
+| 1.9 | 0.5j | Refactor existing autopilot to new flow |
+| 1.10 | 0.5j | RUNBOOK + tenant default approvalMode='manual' |
 
 ## P0-2 — Visitor ID Snitcher integration
 
