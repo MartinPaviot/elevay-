@@ -780,6 +780,66 @@ function Phase1({ priorData, tenantId, onSubmit, submitting }: PhaseProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydratedFrom, hydratedDraft]);
 
+  // P0-3 task 3.8 — ICP pre-fill from the founder's email domain.
+  // Fires once on mount when the form is empty AND we haven't
+  // already hydrated from localStorage. The endpoint is best-effort
+  // — failures fall through to the existing blank-form path.
+  const prefillRef = useRef(false);
+  const [prefillSuggestion, setPrefillSuggestion] = useState<{
+    derivedFromCompany: boolean;
+    domain: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (prefillRef.current) return;
+    if (hydratedFrom !== "none") {
+      // Either the user has prior data on the server or a local
+      // draft — don't pre-fill on top of either.
+      prefillRef.current = true;
+      return;
+    }
+    if (industry || sizeRange || buyer || raw) {
+      // Form already non-empty (e.g. user typed). Don't overwrite.
+      prefillRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/onboarding/icp-prefill");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const sug = data.suggestion as
+          | {
+              industry: string;
+              sizeRange: string;
+              buyerPersona: string;
+              raw: string;
+            }
+          | undefined;
+        if (!sug) return;
+        // Only fill empty fields ; never overwrite anything the
+        // user might have started typing during the round-trip.
+        setIndustry((cur) => cur || sug.industry);
+        setSizeRange((cur) => cur || sug.sizeRange);
+        setBuyer((cur) => cur || sug.buyerPersona);
+        setRaw((cur) => cur || sug.raw);
+        setPrefillSuggestion({
+          derivedFromCompany: !!data.derivedFromCompany,
+          domain: data.derivedFromDomain ?? null,
+        });
+      } catch {
+        // Best-effort ; quietly fall back to blank form.
+      } finally {
+        prefillRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydratedFrom]);
+
   return (
     <form
       onSubmit={async (e) => {
@@ -803,6 +863,15 @@ function Phase1({ priorData, tenantId, onSubmit, submitting }: PhaseProps) {
           style={{ color: "var(--color-text-tertiary)" }}
         >
           Draft restored from your last session.
+        </p>
+      )}
+      {prefillSuggestion?.derivedFromCompany && prefillSuggestion.domain && (
+        <p
+          className="text-[11px]"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Pre-filled from your company on file ({prefillSuggestion.domain}). Edit
+          freely — the suggestion is a starting point, not the final answer.
         </p>
       )}
       <Field label="Situation">
