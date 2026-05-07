@@ -325,6 +325,55 @@ export async function runGroundedCoachingEval(runLlm: RunLlmFn) {
   return runEvalSuite(buildGroundedCoachingSuite({ runLlm }));
 }
 
+/**
+ * Production runner — wires the real LLM via the traced-ai
+ * wrapper. Gated on ANTHROPIC_API_KEY (preferred) or OPENAI_API_KEY ;
+ * when neither is set, the suite reports every case as errored
+ * (caller treats as "no signal this week" rather than "failing").
+ *
+ * Imported by the weekly eval cron (`weeklyEvalHarness`). Pulling
+ * this out keeps the suite file framework-agnostic — tests still
+ * inject deterministic stubs without spinning up the AI SDK.
+ */
+export async function runGroundedCoachingEvalProd() {
+  const { tracedGenerateText } = await import("@/lib/ai/traced-ai");
+  const { anthropic } = await import("@/lib/ai/ai-provider");
+  const { openai } = await import("@ai-sdk/openai");
+
+  const model = process.env.ANTHROPIC_API_KEY
+    ? anthropic("claude-sonnet-4-6")
+    : process.env.OPENAI_API_KEY
+      ? openai("gpt-4o-mini")
+      : null;
+
+  if (!model) {
+    // No key configured — return a stub runner that always throws,
+    // so the harness counts every case as errored. The eval-runs row
+    // still lands with cases_total + cases_errored, surfacing the
+    // gap in the dashboard.
+    const noKeyRunner: RunLlmFn = async () => {
+      throw new Error("LLM_KEY_MISSING");
+    };
+    return runEvalSuite(buildGroundedCoachingSuite({ runLlm: noKeyRunner }));
+  }
+
+  const runLlm: RunLlmFn = async (question, formattedChunks) => {
+    const result = await tracedGenerateText({
+      model,
+      system: GROUNDED_SYSTEM_PROMPT,
+      prompt: `${formattedChunks}\n\nQuestion: ${question}`,
+      _trace: {
+        agentId: "transcript-coaching-grounded-eval",
+        tenantId: "eval-harness",
+        metadata: { suite: "transcript-coaching-grounded.v1" },
+      },
+    } as never);
+    return (result as { text: string }).text;
+  };
+
+  return runEvalSuite(buildGroundedCoachingSuite({ runLlm }));
+}
+
 export const __testCases = {
   groundingCases,
   refusalCases,

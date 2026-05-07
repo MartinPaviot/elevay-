@@ -19,6 +19,7 @@ import { runDealBriefingEval } from "@/lib/evals/suites/deal-briefing.eval";
 import { runChurnRiskEval } from "@/lib/evals/suites/churn-risk.eval";
 import { runInboundQualificationEval } from "@/lib/evals/suites/inbound-qualification.eval";
 import { runTranscriptCoachingEval } from "@/lib/evals/suites/transcript-coaching.eval";
+import { runGroundedCoachingEvalProd } from "@/lib/evals/suites/transcript-coaching-grounded.eval";
 import { logger } from "@/lib/observability/logger";
 
 export const weeklyEvalHarness = inngest.createFunction(
@@ -76,6 +77,17 @@ export const weeklyEvalHarness = inngest.createFunction(
       return { surfaceId: s.surfaceId, passed: s.casesPassed, total: s.casesTotal };
     });
     summaries.push(out6);
+
+    // P0-4 task 4.5 — grounded LLM eval. Hits the real LLM (gated
+    // on ANTHROPIC_API_KEY / OPENAI_API_KEY) and validates citation
+    // accuracy + verbatim quoting + refusal behaviour against
+    // synthetic fixtures. Wraps in step.run so a transient LLM
+    // outage doesn't kill the other suites.
+    const out7 = await step.run("transcript-coaching-grounded-eval", async () => {
+      const s = await runGroundedCoachingEvalProd();
+      return { surfaceId: s.surfaceId, passed: s.casesPassed, total: s.casesTotal };
+    });
+    summaries.push(out7);
 
     logger.info("weekly-eval-harness: complete", { summaries });
     return { suitesRun: summaries.length, summaries };
