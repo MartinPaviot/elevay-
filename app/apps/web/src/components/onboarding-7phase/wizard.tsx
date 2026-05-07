@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  trackPhaseSubmitted,
+  trackWizardOpened,
+  trackCompletionAttempt,
+  isFreshStart,
+  recordPhaseEntry,
+  type PhaseTransitionRecord,
+} from "@/lib/analytics/onboarding-telemetry";
 import {
   ArrowRight,
   Check,
@@ -69,6 +77,11 @@ interface OnboardingState {
     allHardPassed: boolean;
     failingHard: string[];
   };
+  /** Surfaced from the API for client telemetry (P0-3 task 3.1).
+   *  Optional so prior callers don't break ; null/undefined disables
+   *  telemetry without throwing. */
+  userId?: string | null;
+  tenantId?: string | null;
 }
 
 const PHASE_META: Array<{
@@ -94,6 +107,15 @@ export function OnboardingWizard() {
   const [error, setError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
 
+  // P0-3 task 3.1 — telemetry bookkeeping. We track three things :
+  //  1. The wizard mount event (started or resumed) — fires once.
+  //  2. The current phase entry timestamp — used for per-phase
+  //     duration when the user submits.
+  //  3. A "did we already fire mount?" guard so re-renders don't
+  //     spam events.
+  const mountedRef = useRef(false);
+  const phaseEntryRef = useRef<PhaseTransitionRecord | null>(null);
+
   const refreshState = useCallback(async () => {
     try {
       const res = await fetch("/api/onboarding/state");
@@ -101,6 +123,22 @@ export function OnboardingWizard() {
       const data = (await res.json()) as OnboardingState;
       setState(data);
       setActivePhase((p) => (p === 1 ? data.currentPhase : p));
+
+      // First successful state load → emit started/resumed once.
+      if (!mountedRef.current) {
+        mountedRef.current = true;
+        const fresh = isFreshStart({
+          completedPhases: data.completedPhases ?? [],
+          currentPhase: data.currentPhase,
+        });
+        trackWizardOpened(
+          { userId: data.userId ?? null, tenantId: data.tenantId ?? null },
+          { isFresh: fresh, resumeAtPhase: data.currentPhase },
+        );
+        // Stamp the entry timestamp for whichever phase the user
+        // is now sitting on so the first submit reports duration.
+        phaseEntryRef.current = recordPhaseEntry(data.currentPhase);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     }
@@ -110,10 +148,25 @@ export function OnboardingWizard() {
     refreshState();
   }, [refreshState]);
 
+  // Re-stamp phase entry whenever the user navigates between phases —
+  // duration is "time spent on the visible phase", not "time since
+  // wizard mount", so mid-phase nav resets the clock.
+  useEffect(() => {
+    phaseEntryRef.current = recordPhaseEntry(activePhase);
+  }, [activePhase]);
+
   const submitPhase = useCallback(
     async (n: number, payload: unknown): Promise<boolean> => {
       setSubmitting(true);
       setError(null);
+      const enteredAt = phaseEntryRef.current?.enteredAt ?? Date.now();
+      const startedAt = state?.startedAt
+        ? new Date(state.startedAt).getTime()
+        : null;
+      const telemetryProps = {
+        userId: state?.userId ?? null,
+        tenantId: state?.tenantId ?? null,
+      };
       try {
         const res = await fetch(`/api/onboarding/phase/${n}`, {
           method: "POST",
@@ -128,25 +181,58 @@ export function OnboardingWizard() {
               )
             : [json.error ?? "Unknown error"];
           setError(msgs.join("\n"));
+          trackPhaseSubmitted(
+            telemetryProps,
+            n,
+            {
+              success: false,
+              validationErrors: Array.isArray(json.issues)
+                ? json.issues.length
+                : undefined,
+            },
+            enteredAt,
+            startedAt,
+          );
           return false;
         }
         await refreshState();
         const next = Math.min(7, n + 1);
         setActivePhase(next);
+        trackPhaseSubmitted(
+          telemetryProps,
+          n,
+          { success: true },
+          enteredAt,
+          startedAt,
+        );
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
+        trackPhaseSubmitted(
+          telemetryProps,
+          n,
+          { success: false },
+          enteredAt,
+          startedAt,
+        );
         return false;
       } finally {
         setSubmitting(false);
       }
     },
-    [refreshState],
+    [refreshState, state],
   );
 
   const completeOnboarding = useCallback(async () => {
     setCompleting(true);
     setError(null);
+    const startedAt = state?.startedAt
+      ? new Date(state.startedAt).getTime()
+      : Date.now();
+    const telemetryProps = {
+      userId: state?.userId ?? null,
+      tenantId: state?.tenantId ?? null,
+    };
     try {
       const res = await fetch("/api/onboarding/complete", { method: "POST" });
       const json = await res.json();
@@ -162,16 +248,31 @@ export function OnboardingWizard() {
           setError(json.error ?? "Cannot complete yet.");
         }
         await refreshState();
+        trackCompletionAttempt(telemetryProps, {
+          success: false,
+          failingGatesCount: Array.isArray(json.failingGates)
+            ? json.failingGates.length
+            : undefined,
+          durationMs: Date.now() - startedAt,
+        });
         return;
       }
+      trackCompletionAttempt(telemetryProps, {
+        success: true,
+        durationMs: Date.now() - startedAt,
+      });
       // Success — bounce to home.
       router.replace("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
+      trackCompletionAttempt(telemetryProps, {
+        success: false,
+        durationMs: Date.now() - startedAt,
+      });
     } finally {
       setCompleting(false);
     }
-  }, [router, refreshState]);
+  }, [router, refreshState, state]);
 
   const completedSet = useMemo(
     () => new Set(state?.completedPhases ?? []),

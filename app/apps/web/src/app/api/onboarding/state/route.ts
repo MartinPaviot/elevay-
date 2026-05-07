@@ -47,5 +47,10 @@ export async function GET() {
       allHardPassed: checklist.allHardPassed,
       failingHard: checklist.failingHard.map((g) => g.key),
     },
+    // P0-3 task 3.1 — surfaced for the client telemetry helper. Sent
+    // here rather than via a separate /me endpoint because the wizard
+    // already polls this on mount and on every phase submit.
+    userId: authCtx.userId,
+    tenantId: authCtx.tenantId,
   });
 }
