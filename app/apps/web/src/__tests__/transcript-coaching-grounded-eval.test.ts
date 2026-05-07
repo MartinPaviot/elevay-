@@ -134,6 +134,66 @@ describe("buildGroundedCoachingSuite — fails with badLlm", () => {
   });
 });
 
+describe("buildGroundedCoachingSuite — tenant fixture overlay", () => {
+  it("appends tenant fixtures with 'tenant:' id prefix", () => {
+    const suite = buildGroundedCoachingSuite({
+      runLlm: goodLlm,
+      tenantFixtures: [
+        {
+          id: "hipaa-budget",
+          description: "tenant-specific",
+          question: "Did Sarah confirm the HIPAA budget?",
+          chunks: [],
+          expectsRefusal: true,
+        },
+      ],
+    });
+    expect(suite.cases.length).toBe(9);
+    const ids = suite.cases.map((c) => c.id);
+    expect(ids).toContain("tenant:hipaa-budget");
+  });
+
+  it("respects tenant: prefix when caller already prefixed", () => {
+    const suite = buildGroundedCoachingSuite({
+      runLlm: goodLlm,
+      tenantFixtures: [
+        {
+          id: "tenant:already-prefixed",
+          question: "x",
+          chunks: [],
+          expectsRefusal: true,
+        },
+      ],
+    });
+    const ids = suite.cases.map((c) => c.id);
+    expect(ids).toContain("tenant:already-prefixed");
+    // No double-prefix.
+    expect(ids).not.toContain("tenant:tenant:already-prefixed");
+  });
+
+  it("static cases still come first in declaration order", () => {
+    const suite = buildGroundedCoachingSuite({
+      runLlm: goodLlm,
+      tenantFixtures: [
+        {
+          id: "z-tenant",
+          question: "x",
+          chunks: [],
+          expectsRefusal: true,
+        },
+      ],
+    });
+    expect(suite.cases[0].id).toBe("budget-direct-quote");
+    expect(suite.cases[suite.cases.length - 1].id).toBe("tenant:z-tenant");
+  });
+
+  it("empty tenantFixtures behaves identically to omitted", () => {
+    const a = buildGroundedCoachingSuite({ runLlm: goodLlm });
+    const b = buildGroundedCoachingSuite({ runLlm: goodLlm, tenantFixtures: [] });
+    expect(a.cases.length).toBe(b.cases.length);
+  });
+});
+
 describe("buildGroundedCoachingSuite — predicate threshold", () => {
   it("custom defaultMinScore tightens / loosens the pass bar", async () => {
     // With a permissive bar, even badLlm's grounding outputs should

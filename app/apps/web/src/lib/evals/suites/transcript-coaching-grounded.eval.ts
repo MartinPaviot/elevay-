@@ -207,6 +207,12 @@ interface BuildSuiteArgs {
   runLlm: RunLlmFn;
   /** Override pass threshold. Defaults to 0.7. */
   defaultMinScore?: number;
+  /** Tenant-scoped fixture overlay (P0-4 follow-up). When provided,
+   *  validated entries append to the static cases under the
+   *  `tenant:` id prefix so the dashboard groups them. The shape
+   *  must match `GroundedCase` ; invalid entries are silently
+   *  dropped (caller logs them via `validateTenantFixtures`). */
+  tenantFixtures?: ReadonlyArray<GroundedCase>;
 }
 
 export function buildGroundedCoachingSuite(
@@ -217,9 +223,17 @@ export function buildGroundedCoachingSuite(
   score: GroundingScore | null;
   refusalOk: boolean | null;
 }> {
-  const { runLlm, defaultMinScore = 0.7 } = args;
+  const { runLlm, defaultMinScore = 0.7, tenantFixtures = [] } = args;
 
-  const allCases = [...groundingCases, ...refusalCases];
+  // Tenant-supplied cases get a `tenant:` id prefix so they can't
+  // collide with static fixture ids and the dashboard can group
+  // them visually.
+  const tenantCases = tenantFixtures.map((f) => ({
+    ...f,
+    id: f.id.startsWith("tenant:") ? f.id : `tenant:${f.id}`,
+  }));
+
+  const allCases = [...groundingCases, ...refusalCases, ...tenantCases];
 
   return {
     surfaceId: "transcript-coaching-grounded",
