@@ -15,10 +15,14 @@
 
 import { inngest } from "./client";
 import { db } from "@/db";
-import { visits, companies } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { visits, companies, tenants } from "@/db/schema";
+import { eq, and, gte, isNotNull, sql } from "drizzle-orm";
 import { getVisitorIdProvider } from "@/lib/visitor-id/snitcher";
 import { logger } from "@/lib/observability/logger";
+import {
+  loadSpendDecision,
+  startOfUtcMonth,
+} from "@/lib/visitor-id/spend-cap";
 
 interface IdentifyEvent {
   data: { visitId: string; tenantId: string; ip?: string };
@@ -56,6 +60,64 @@ export const identifyVisit = inngest.createFunction(
     if (row.companyDomain) {
       // Already identified — don't double-charge.
       return { skipped: true, reason: "already_identified" };
+    }
+
+    // P0-2 task 2.1 — per-tenant monthly spend cap. Stop calling
+    // the provider once the tenant's identifications this month
+    // would push spend past their cap (default $50). The visit
+    // row is left unmatched ; next month's reset re-enables it.
+    const spendDecision = await step.run("check-spend-cap", () =>
+      loadSpendDecision({
+        tenantId,
+        deps: {
+          countIdentificationsThisMonth: async (tid, now) => {
+            const since = startOfUtcMonth(now);
+            const [{ c }] = await db
+              .select({ c: sql<number>`count(*)::int` })
+              .from(visits)
+              .where(
+                and(
+                  eq(visits.tenantId, tid),
+                  isNotNull(visits.identifiedAt),
+                  isNotNull(visits.companyDomain),
+                  gte(visits.identifiedAt, since),
+                ),
+              );
+            return c;
+          },
+          loadTenantSettings: async (tid) => {
+            const [t] = await db
+              .select({ settings: tenants.settings })
+              .from(tenants)
+              .where(eq(tenants.id, tid))
+              .limit(1);
+            return (t?.settings as Record<string, unknown> | null) ?? null;
+          },
+        },
+      }),
+    );
+    if (spendDecision.reached) {
+      logger.warn("identify-visit: monthly cap reached, skipping", {
+        tenantId,
+        spendUsd: spendDecision.spendUsd,
+        capUsd: spendDecision.capUsd,
+      });
+      return {
+        skipped: true,
+        reason: "cap_reached",
+        spendUsd: spendDecision.spendUsd,
+        capUsd: spendDecision.capUsd,
+      };
+    }
+    if (spendDecision.warning) {
+      // Surface the near-cap signal so the dashboard can render the
+      // warning banner ; we still proceed with the identification.
+      logger.info("identify-visit: spend approaching cap", {
+        tenantId,
+        spendUsd: spendDecision.spendUsd,
+        capUsd: spendDecision.capUsd,
+        remainingUsd: spendDecision.remainingUsd,
+      });
     }
 
     const ip = event.data.ip;
