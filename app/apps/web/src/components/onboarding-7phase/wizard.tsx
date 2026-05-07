@@ -10,6 +10,25 @@ import {
   recordPhaseEntry,
   type PhaseTransitionRecord,
 } from "@/lib/analytics/onboarding-telemetry";
+import { executeWithRetry } from "@/lib/onboarding/retry";
+
+async function fetchWithStatus(
+  url: string,
+  init?: RequestInit,
+): Promise<{ status: number | null; body: unknown }> {
+  try {
+    const res = await fetch(url, init);
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    return { status: res.status, body };
+  } catch {
+    return { status: null, body: null };
+  }
+}
 import {
   ArrowRight,
   Check,
@@ -118,9 +137,22 @@ export function OnboardingWizard() {
 
   const refreshState = useCallback(async () => {
     try {
-      const res = await fetch("/api/onboarding/state");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as OnboardingState;
+      const result = await executeWithRetry(() =>
+        fetchWithStatus("/api/onboarding/state"),
+      );
+      if (
+        result.status === null ||
+        result.status < 200 ||
+        result.status >= 300 ||
+        !result.body
+      ) {
+        throw new Error(
+          result.status === null
+            ? "Network error"
+            : `HTTP ${result.status} after ${result.attempts} attempt(s)`,
+        );
+      }
+      const data = result.body as OnboardingState;
       setState(data);
       setActivePhase((p) => (p === 1 ? data.currentPhase : p));
 
@@ -168,12 +200,15 @@ export function OnboardingWizard() {
         tenantId: state?.tenantId ?? null,
       };
       try {
-        const res = await fetch(`/api/onboarding/phase/${n}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json();
+        const result = await executeWithRetry(() =>
+          fetchWithStatus(`/api/onboarding/phase/${n}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }),
+        );
+        const res = { ok: result.status !== null && result.status >= 200 && result.status < 300, status: result.status ?? 0 };
+        const json = (result.body ?? {}) as Record<string, unknown>;
         if (!res.ok) {
           const msgs = Array.isArray(json.issues)
             ? json.issues.map((i: { path: string; message: string }) =>
@@ -234,8 +269,11 @@ export function OnboardingWizard() {
       tenantId: state?.tenantId ?? null,
     };
     try {
-      const res = await fetch("/api/onboarding/complete", { method: "POST" });
-      const json = await res.json();
+      const result = await executeWithRetry(() =>
+        fetchWithStatus("/api/onboarding/complete", { method: "POST" }),
+      );
+      const res = { ok: result.status !== null && result.status >= 200 && result.status < 300, status: result.status ?? 0 };
+      const json = (result.body ?? {}) as Record<string, unknown>;
       if (!res.ok) {
         if (Array.isArray(json.failingGates)) {
           setError(
