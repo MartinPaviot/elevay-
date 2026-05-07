@@ -193,6 +193,11 @@ export function OnboardingWizard() {
         );
       }
       const data = result.body as OnboardingState;
+      // Capture isFirstLoad BEFORE flipping the ref — both
+      // setActivePhase and the telemetry block consult it. Setting
+      // mountedRef.current = true mid-callback would race the state
+      // updater and the resume snap would be silently disabled.
+      const isFirstLoad = !mountedRef.current;
       setState(data);
       // P0-3 task 3.5 — pure resume policy decides where to land.
       // First mount snaps to server's currentPhase ; subsequent
@@ -204,13 +209,13 @@ export function OnboardingWizard() {
             completedPhases: data.completedPhases ?? [],
             completedAt: data.completedAt,
           },
-          { currentlyActive: p, isFirstLoad: !mountedRef.current },
+          { currentlyActive: p, isFirstLoad },
         );
         return decision.phase;
       });
 
       // First successful state load → emit started/resumed once.
-      if (!mountedRef.current) {
+      if (isFirstLoad) {
         mountedRef.current = true;
         const fresh = isFreshStart({
           completedPhases: data.completedPhases ?? [],
@@ -371,9 +376,55 @@ export function OnboardingWizard() {
   );
 
   if (!state) {
+    // First-load failure path — without state we can't render the
+    // wizard, so surface the error explicitly. Without this branch
+    // a 401 / network outage left the spinner running indefinitely.
+    if (error) {
+      return (
+        <div
+          className="mx-auto max-w-lg p-6 mt-12 rounded-xl"
+          role="alert"
+          style={{
+            background: "var(--color-bg-card)",
+            border: "1px solid rgba(220,38,38,0.25)",
+            color: "var(--color-error, #b91c1c)",
+          }}
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[13px] font-semibold">
+                Could not load onboarding state
+              </p>
+              <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+                {error}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  refreshState();
+                }}
+                className="mt-3 rounded-md px-3 py-1.5 text-[12px] font-medium"
+                style={{
+                  background: "var(--color-accent)",
+                  color: "white",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex h-screen items-center justify-center">
-        <Loader2 className="animate-spin" size={20} style={{ color: "var(--color-text-tertiary)" }} />
+        <Loader2
+          className="animate-spin"
+          size={20}
+          style={{ color: "var(--color-text-tertiary)" }}
+        />
       </div>
     );
   }
