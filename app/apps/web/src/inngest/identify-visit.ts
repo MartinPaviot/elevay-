@@ -15,7 +15,7 @@
 
 import { inngest } from "./client";
 import { db } from "@/db";
-import { visits, companies, tenants } from "@/db/schema";
+import { visits, companies, tenants, visitorIdCharges } from "@/db/schema";
 import { eq, and, gte, isNotNull, sql } from "drizzle-orm";
 import { getVisitorIdProvider } from "@/lib/visitor-id/snitcher";
 import { logger } from "@/lib/observability/logger";
@@ -32,6 +32,7 @@ import {
 import { desc } from "drizzle-orm";
 import { planFanout } from "@/lib/visitor-id/fanout";
 import { metrics } from "@/lib/observability/metrics";
+import { buildChargeRow } from "@/lib/visitor-id/charges";
 
 interface IdentifyEvent {
   data: { visitId: string; tenantId: string; ip?: string };
@@ -101,6 +102,29 @@ export const identifyVisit = inngest.createFunction(
               .where(eq(tenants.id, tid))
               .limit(1);
             return (t?.settings as Record<string, unknown> | null) ?? null;
+          },
+          // P0-2 follow-up : ledger-first spend. When the charge
+          // ledger has rows for this tenant in the month, the
+          // sum is authoritative ; otherwise loadSpendDecision
+          // falls back to identifications × rate.
+          sumChargesThisMonth: async (tid, now) => {
+            const since = startOfUtcMonth(now);
+            const [row] = await db
+              .select({
+                totalUsd: sql<number>`COALESCE(SUM(${visitorIdCharges.costUsd}), 0)::float8`,
+                rowCount: sql<number>`count(*)::int`,
+              })
+              .from(visitorIdCharges)
+              .where(
+                and(
+                  eq(visitorIdCharges.tenantId, tid),
+                  gte(visitorIdCharges.chargedAt, since),
+                ),
+              );
+            return {
+              totalUsd: Number(row?.totalUsd ?? 0),
+              rowCount: Number(row?.rowCount ?? 0),
+            };
           },
         },
       }),
@@ -259,6 +283,36 @@ export const identifyVisit = inngest.createFunction(
       ip,
       userAgent: row.userAgent,
       url: row.url,
+    });
+
+    // P0-2 follow-up — charge ledger row per paid lookup. Snitcher
+    // bills per request whether or not a match landed, so we
+    // record both branches. Best-effort : a ledger insert failure
+    // doesn't unwind the identification (the visit row update
+    // still happens ; the spend tally would fall back to the
+    // count-based estimate next month-eval).
+    await step.run("record-charge", async () => {
+      try {
+        const charge = buildChargeRow({
+          tenantId,
+          visitId,
+          provider: provider.name,
+          matched: result !== null,
+          responseMeta: result
+            ? {
+                companyDomain: result.companyDomain,
+                confidence: result.confidence,
+              }
+            : { matched: false },
+        });
+        await db.insert(visitorIdCharges).values(charge);
+      } catch (err) {
+        logger.warn("identify-visit: charge ledger insert failed (non-blocking)", {
+          tenantId,
+          visitId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     });
 
     if (!result) {

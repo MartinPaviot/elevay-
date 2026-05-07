@@ -96,6 +96,15 @@ export interface SpendDeps {
   loadTenantSettings: (
     tenantId: string,
   ) => Promise<Record<string, unknown> | null>;
+  /** P0-2 follow-up : ledger-first spend computation. When the
+   *  charge ledger has rows for the tenant in the month, sum
+   *  cost_usd directly — exact spend, survives provider rate
+   *  changes. When 0 rows (legacy tenant pre-ledger), caller
+   *  falls back to count × rate estimation. */
+  sumChargesThisMonth?: (
+    tenantId: string,
+    now: Date,
+  ) => Promise<{ totalUsd: number; rowCount: number }>;
 }
 
 export async function loadSpendDecision(args: {
@@ -105,14 +114,22 @@ export async function loadSpendDecision(args: {
   ratePerMatchUsd?: number;
 }): Promise<SpendDecision> {
   const now = args.now ?? new Date();
-  const [count, settings] = await Promise.all([
+  const [count, settings, ledger] = await Promise.all([
     args.deps.countIdentificationsThisMonth(args.tenantId, now),
     args.deps.loadTenantSettings(args.tenantId),
+    args.deps.sumChargesThisMonth
+      ? args.deps.sumChargesThisMonth(args.tenantId, now)
+      : Promise.resolve(null),
   ]);
-  const spend = computeMonthlySpendUsd({
-    identifications: count,
-    ratePerMatchUsd: args.ratePerMatchUsd,
-  });
+  // Ledger-first : when the ledger has rows, use sum(cost_usd) as
+  // the authoritative spend. Otherwise fall back to count × rate.
+  const spend =
+    ledger && ledger.rowCount > 0
+      ? Math.round(ledger.totalUsd * 100) / 100
+      : computeMonthlySpendUsd({
+          identifications: count,
+          ratePerMatchUsd: args.ratePerMatchUsd,
+        });
   const cap = resolveCapUsd(settings);
   return evaluateSpend(spend, cap);
 }
