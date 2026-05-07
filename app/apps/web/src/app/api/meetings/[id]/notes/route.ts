@@ -73,6 +73,12 @@ export async function GET(
       // hard-coded "google" fallback pretending every meeting came
       // from Gmail.
       calendarSource: meta.calendarSource || "unknown",
+      // P0-4 follow-up — the recording URL surfaced by the Recall.ai
+      // webhook (or manual paste). Consumed by the
+      // <TranscriptVideoPlayer> on the meeting detail page so
+      // citation chips can deep-link to the right offset.
+      recordingUrl: typeof meta.recordingUrl === "string" ? meta.recordingUrl : null,
+      recordingStatus: typeof meta.recordingStatus === "string" ? meta.recordingStatus : null,
     },
     hasTranscript: !!meta.hasTranscript || !!meta.structuredNotes,
     transcriptSource: meta.transcriptSource,

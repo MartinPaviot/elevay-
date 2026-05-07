@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatSecondsAsTimestamp } from "@/lib/coaching/citation-parser";
 import { TranscriptChunks } from "@/components/coaching/transcript-chunks";
+import { TranscriptVideoPlayer } from "@/components/coaching/transcript-video-player";
 import {
   ArrowLeft, Calendar, Clock, MapPin, Users, ExternalLink,
   FileText, Upload, CheckCircle2, AlertTriangle,
@@ -44,6 +45,10 @@ interface MeetingData {
     location: string | null;
     meetingLink: string | null;
     calendarSource: string;
+    /** P0-4 follow-up — surfaced from activity.metadata so the
+     *  TranscriptVideoPlayer can render the recording inline. */
+    recordingUrl?: string | null;
+    recordingStatus?: string | null;
   };
   hasTranscript: boolean;
   transcriptSource: string | null;
@@ -406,6 +411,16 @@ export default function MeetingDetailPage() {
           </button>
         </div>
       )}
+
+      {/* P0-4 follow-up — embedded recording player. Renders the
+          right shape per provider (loom / zoom / recall / youtube /
+          vimeo / direct mp4) ; falls back to "no recording yet"
+          when the URL is missing. Citation deep-links seek
+          automatically via the seekSeconds prop. */}
+      <TranscriptVideoPlayer
+        recordingUrl={data.meeting.recordingUrl ?? null}
+        seekToSec={seekSeconds ?? 0}
+      />
 
       {/* Transcript chunks always visible (when indexed). Even
           without a `?t=` deep-link, founders can read the verbatim
