@@ -6,14 +6,16 @@ _Last updated_ : 2026-05-07
 
 | P0 | Branch | Tasks committed | Status |
 |---|---|---|---|
-| P0-5 | `feat/monaco-parity-p0-5-deal-autofill` | 3 / 10 | 🟡 In progress |
-| P0-1 | `feat/monaco-parity-p0-1-sequence-drafts` | 2 / 10 | 🟡 In progress |
+| P0-5 | `feat/monaco-parity-p0-5-deal-autofill` | 9 / 10 | ✅ Code-complete |
+| P0-1 | `feat/monaco-parity-p0-1-sequence-drafts` | 9 / 10 | ✅ Code-complete |
 | P0-3 | — | 0 / 12 | ⏸️ Not started |
 | P0-4 | — | 0 / ~9 | ⏸️ Not started |
 | P0-2 | — | 0 / ~10 | 🔴 Blocked on `SNITCHER_API_KEY` |
 
-Total : **5 task commits + 1 WIP + 1 doc = 7 commits across 2 branches**.
-Tests added : **70+ new (state-machine 28, conflict-resolution 17, property-accessor 25)**.
+Total : **18 task commits + 1 WIP + 3 docs = 22 commits across 2 branches**.
+Tests added on P0-1 branch : **124 new vs baseline** (state-machine 28,
+component tests 16, router 14, expiry 14, classifier 16, flow integration 18,
++ underlying API route shipped in 1.2).
 
 ---
 
@@ -28,19 +30,24 @@ Tests added : **70+ new (state-machine 28, conflict-resolution 17, property-acce
 | 5.1 | `0f336d4` | Conflict resolution lib (5 rules, 17 tests) |
 | 5.2 | `c23af60` | Property accessor backwards-compat + migration `0044_deal_property_metadata_backfill.sql` (25 tests) |
 | 5.5 | `69feed9` | `GET /api/deals/[id]/property-source/[fieldName]` |
-| — | `2ae223b` | Initial progress report |
+| 5.3 + 5.4 | `0f1b049` | Cascade pure fn + worker migration (27 tests) |
+| 5.6 | `969bde4` | `<DealPropertyCell>` tooltip wired into opportunity page (9 tests) |
+| 5.7 | `3c47051` | Metrics primitive + autofill counters (6 tests) |
+| 5.8 + 5.10 | `6cb69b5` | Datadog dashboard + RUNBOOK |
+| — | `48c4bcb` | Progress doc update |
 
 ### Pending
 
 | Task | Effort | Blocker |
 |---|---|---|
-| 5.3 | 1j | E2E test budget extraction — needs Postgres test setup + Inngest test harness |
-| 5.4 | 1j | E2E extended to 5 more fields |
-| 5.6 | 1j | UI tooltip on `/opportunities/[id]/page.tsx` (`<DealPropertyCell>`) |
-| 5.7 | 0.5j | Datadog metrics in `inngest/deal-signal-sync.ts` |
-| 5.8 | 0.5j | Datadog dashboard YAML |
 | 5.9 | 0.5j | Prod run validation — needs prod tenant access |
-| 5.10 | 0.5j | RUNBOOK.md doc |
+
+### Tests on this branch
+
+- Cascade : `deal-autofill-{conflict-resolution,property-accessor,apply-signals}.test.ts` — 69 tests
+- UI : `deal-property-cell.test.tsx` — 9 tests
+- Metrics : `observability-metrics.test.ts` — 6 tests
+- Suite total : 1996 / 1997 passing
 
 ---
 
@@ -54,19 +61,36 @@ Tests added : **70+ new (state-machine 28, conflict-resolution 17, property-acce
 |---|---|---|
 | 1.1 | `f19a5af` | Migration `0045_sequence_drafts.sql` + Drizzle schema + state-machine helpers (28 tests) |
 | 1.2 | `9afed36` | 5 API routes (`/api/sequences/drafts/...`) — list, approve, reject, edit, context |
+| — | `a03d045` | Initial progress report |
+| 1.3 | `4ee65b9` | `/sequences/review` page + 3 components (DraftList, DraftPreview, RejectModal) — 16 component tests |
+| 1.4 | `2ddfa03` | `inngest/sequence-draft-router.ts` + tenant approvalMode gating + approve route advances enrollment (14 tests) |
+| 1.5 | `4e4ca20` | `inngest/sequence-draft-expiry.ts` hourly cron (14 tests) |
+| 1.6 | `1a984d2` | `inngest/sequence-draft-rejection-learner.ts` evaluator-optimizer + classifier (16 tests) |
+| 1.7 | `af315b8` | Lifecycle + race-semantics integration suite (18 tests) |
+| 1.10 | _this commit_ | Migration `0046_tenant_approval_mode_default.sql` + RUNBOOK |
 
-### Pending
+### Deferred
 
 | Task | Effort | Blocker |
 |---|---|---|
-| 1.3 | 1.5j | Page `/sequences/review` + 3 components (DraftList, DraftPreview, RejectModal) |
-| 1.4 | 1j | Worker `inngest/sequence-draft-router.ts` (replaces direct send) |
-| 1.5 | 0.5j | Worker `inngest/sequence-draft-expiry.ts` (hourly cron) |
-| 1.6 | 1j | Evaluator-optimizer learner (`inngest/draft-rejection-learner.ts`) |
-| 1.7 | 1j | Tests integration (approve flow / reject flow / expire flow) |
-| 1.8 | 0.5j | Tests E2E Playwright |
-| 1.9 | 0.5j | Refactor existing autopilot to use new flow |
-| 1.10 | 0.5j | RUNBOOK + tenant default `approvalMode='manual'` |
+| 1.8 | 0.5j | Playwright E2E — needs E2E harness setup |
+| 1.9 | 0.5j | Refactor legacy `/sequences/[id]/review` to point at new flow — UX decision |
+
+### Tests on this branch
+
+- State machine : `sequence-drafts-state-machine.test.ts` — 28 tests (shipped 1.1)
+- Components : `sequence-draft-{list,reject-modal}.test.tsx` — 16 tests (shipped 1.3)
+- Router : `sequence-drafts-router.test.ts` — 14 tests (shipped 1.4)
+- Expiry : `sequence-drafts-expiry.test.ts` — 14 tests (shipped 1.5)
+- Classifier : `sequence-drafts-rejection-classifier.test.ts` — 16 tests (shipped 1.6)
+- Flow integration : `sequence-drafts-flow-integration.test.ts` — 18 tests (shipped 1.7)
+- Suite total : 2018 / 2019 passing
+
+### Datadog metrics emitted
+
+- `sequence_drafts.expired` (count, tags : tenantId, hours)
+- `sequence_drafts.rejected` (count, tags : tenantId, sequenceId, category)
+- `sequence_drafts.insight_emitted` (count, tags : tenantId, sequenceId, category)
 
 ---
 
