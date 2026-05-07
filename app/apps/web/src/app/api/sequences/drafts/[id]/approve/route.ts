@@ -17,8 +17,8 @@
 
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { sequenceDrafts } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { sequenceDrafts, sequenceEnrollments, sequenceSteps } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { canTransition } from "@/lib/sequence-drafts/state-machine";
 import { inngest } from "@/inngest/client";
 import { logger } from "@/lib/observability/logger";
@@ -117,6 +117,44 @@ export async function POST(
       },
       { status: 409 },
     );
+  }
+
+  // P0-1 task 1.4 — advance the enrollment so the next step is
+  // scheduled. The router parked `nextStepAt = NULL` when it created
+  // this draft to stop the cron from re-firing the same step ; we
+  // restore it here using the CURRENT step's delayDays as the
+  // interval. Best-effort : a failure here doesn't un-approve the
+  // draft, the founder can manually un-pause from the sequence page.
+  try {
+    const [stepRow] = await db
+      .select({
+        delayDays: sequenceSteps.delayDays,
+        sequenceId: sequenceSteps.sequenceId,
+      })
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.id, draft.stepId))
+      .limit(1);
+    if (stepRow) {
+      const delayMs = (stepRow.delayDays ?? 2) * 24 * 60 * 60 * 1000;
+      const nextStepAt = new Date(scheduledSendAt.getTime() + delayMs);
+      await db
+        .update(sequenceEnrollments)
+        .set({
+          currentStep: sql`${sequenceEnrollments.currentStep} + 1` as never,
+          lastStepAt: scheduledSendAt,
+          nextStepAt,
+        })
+        .where(eq(sequenceEnrollments.id, draft.enrollmentId));
+      // Tenant scope is already enforced upstream by the draft fetch ;
+      // sequence_enrollments has no tenant_id column so we rely on
+      // the FK chain enrollment → sequence (tenant_id) for isolation.
+    }
+  } catch (err) {
+    logger.warn("approve-draft: enrollment advance failed (non-blocking)", {
+      draftId: id,
+      enrollmentId: draft.enrollmentId,
+      err: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Hand off to send worker. Fire-and-forget : a failure here doesn't

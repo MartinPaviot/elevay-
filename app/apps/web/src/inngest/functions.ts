@@ -16,6 +16,8 @@ import { personalizeStepEmail } from "@/lib/agents/sequence-generator";
 import { STEP_STRATEGIES } from "@/lib/scoring/outbound-methodologies";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { logger } from "@/lib/observability/logger";
+import { decideRouteMode } from "@/lib/sequence-drafts/router";
+import { tenants } from "@/db/schema";
 import {
   enrichOrganization,
   enrichPerson,
@@ -494,6 +496,34 @@ export const sendSequenceStep = inngest.createFunction(
 
     if (!enrollment || enrollment.status !== "active") {
       return { enrollmentId, sent: false, reason: "Not active" };
+    }
+
+    // P0-1 task 1.4 : when the tenant is on manual approval mode,
+    // `routeSequenceStepToDraft` (in `sequence-draft-router.ts`)
+    // handles this event and writes a `sequence_drafts` row instead.
+    // We bail here so the same event isn't double-processed.
+    //
+    // The contact has the tenantId ; we resolve via a single fetch.
+    const tenantSettings = await step.run("fetch-tenant-mode", async () => {
+      const [c] = await db
+        .select({ tenantId: contacts.tenantId })
+        .from(contacts)
+        .where(eq(contacts.id, enrollment.contactId))
+        .limit(1);
+      if (!c) return null;
+      const [t] = await db
+        .select({ settings: tenants.settings })
+        .from(tenants)
+        .where(eq(tenants.id, c.tenantId))
+        .limit(1);
+      return (t?.settings as Record<string, unknown> | null) ?? {};
+    });
+    if (decideRouteMode(tenantSettings) === "manual") {
+      return {
+        enrollmentId,
+        sent: false,
+        reason: "Tenant on manual approval — routed to draft queue",
+      };
     }
 
     // Fetch the step template

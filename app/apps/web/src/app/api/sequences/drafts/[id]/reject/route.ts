@@ -115,15 +115,13 @@ export async function POST(
   let enrollmentPaused = false;
   if (pauseEnrollment) {
     try {
+      // Tenant scope is enforced upstream by the draft fetch.
+      // sequence_enrollments has no tenant_id column ; the chain
+      // enrollment → sequence (tenant_id) is the source of isolation.
       const updateResult = await db
         .update(sequenceEnrollments)
         .set({ status: "paused" })
-        .where(
-          and(
-            eq(sequenceEnrollments.id, draft.enrollmentId),
-            eq(sequenceEnrollments.tenantId, authCtx.tenantId),
-          ),
-        );
+        .where(eq(sequenceEnrollments.id, draft.enrollmentId));
       enrollmentPaused = (updateResult as { rowCount?: number }).rowCount !== 0;
     } catch (err) {
       logger.warn("reject-draft: enrollment pause failed (non-blocking)", {
