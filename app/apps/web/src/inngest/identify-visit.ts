@@ -31,6 +31,7 @@ import {
 } from "@/lib/visitor-id/dedup";
 import { desc } from "drizzle-orm";
 import { planFanout } from "@/lib/visitor-id/fanout";
+import { metrics } from "@/lib/observability/metrics";
 
 interface IdentifyEvent {
   data: { visitId: string; tenantId: string; ip?: string };
@@ -110,6 +111,7 @@ export const identifyVisit = inngest.createFunction(
         spendUsd: spendDecision.spendUsd,
         capUsd: spendDecision.capUsd,
       });
+      metrics.increment("visitor_id.cap_reached", { provider: provider.name });
       return {
         skipped: true,
         reason: "cap_reached",
@@ -126,7 +128,11 @@ export const identifyVisit = inngest.createFunction(
         capUsd: spendDecision.capUsd,
         remainingUsd: spendDecision.remainingUsd,
       });
+      metrics.increment("visitor_id.cap_warning", { provider: provider.name });
     }
+    metrics.histogram("visitor_id.monthly_spend_usd", spendDecision.spendUsd, {
+      provider: provider.name,
+    });
 
     const ip = event.data.ip;
     if (!ip || ip === "0.0.0.0") {
@@ -210,6 +216,10 @@ export const identifyVisit = inngest.createFunction(
         companyDomain: dedup.cached.companyDomain,
         windowDays: dedup.windowDays,
       });
+      metrics.increment("visitor_id.dedup_hit", {
+        provider: provider.name,
+        matched_by: dedup.cached.matchedBy,
+      });
       return {
         matched: true,
         cached: true,
@@ -230,7 +240,14 @@ export const identifyVisit = inngest.createFunction(
         .update(visits)
         .set({ identifiedAt: new Date(), identifiedBy: provider.name })
         .where(eq(visits.id, visitId));
+      metrics.increment("visitor_id.no_match", { provider: provider.name });
       return { matched: false };
+    }
+    metrics.increment("visitor_id.matched", { provider: provider.name });
+    if (typeof result.confidence === "number") {
+      metrics.histogram("visitor_id.confidence", result.confidence, {
+        provider: provider.name,
+      });
     }
 
     // Upsert company by (tenant, domain). Returns companyId AND
