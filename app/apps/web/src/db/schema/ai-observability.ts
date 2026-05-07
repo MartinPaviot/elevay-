@@ -109,3 +109,51 @@ export const evalRuns = pgTable(
     index("eval_runs_created_at_idx").on(table.createdAt),
   ],
 );
+
+/**
+ * Per-case eval results — one row per `EvalCase` invocation within
+ * an `eval_runs` aggregate. The aggregate row tells you "5 of 8
+ * cases failed" ; this table lets the dashboard drill into WHICH 5.
+ *
+ * Sprint-3 audit follow-up. Without per-case persistence, an alarm
+ * on `mean_citation_accuracy < 0.8` is blind — on-call has to re-
+ * run the suite locally to see which case broke. With it, the
+ * "explain this regression" path is a single SQL query.
+ *
+ * The `outputSnippet` is capped at 500 chars on insert by the
+ * harness — long enough to recognise the failure mode, short
+ * enough that retaining 4 weeks of weekly history doesn't blow up
+ * row size.
+ */
+export const evalCaseRuns = pgTable(
+  "eval_case_runs",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    /** FK to the parent `eval_runs.id`. Cascade delete : when a run
+     *  is purged from history, its cases go with it. */
+    runId: text("run_id").notNull(),
+    /** Stable case id within the suite — used for case-level diffing
+     *  across runs. Same value as `EvalCase.id` in the suite source. */
+    caseId: text("case_id").notNull(),
+    passed: boolean("passed").notNull(),
+    errored: boolean("errored").notNull().default(false),
+    /** Wall-clock ms for this single case. */
+    latencyMs: integer("latency_ms").notNull(),
+    /** Truncated error message when errored=true. */
+    errorMessage: text("error_message"),
+    /** First 500 chars of the case output (or its JSON serialisation
+     *  for non-string outputs). Lets the dashboard show why the
+     *  predicate failed without the full trace. */
+    outputSnippet: text("output_snippet"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("eval_case_runs_run_idx").on(table.runId),
+    index("eval_case_runs_case_idx").on(table.caseId),
+    index("eval_case_runs_created_at_idx").on(table.createdAt),
+  ],
+);
