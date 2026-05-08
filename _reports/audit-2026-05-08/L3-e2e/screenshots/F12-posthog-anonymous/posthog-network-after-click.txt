@@ -1,0 +1,8 @@
+2. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248813761&ver=1.372.10&compression=gzip-js&beacon=1 => [FAILED] net::ERR_ABORTED
+3. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248813761&ver=1.372.10&compression=gzip-js&beacon=1 => [FAILED] net::ERR_ABORTED
+33. [POST] https://eu.i.posthog.com/e/?ip=0&_=1778248817263&ver=1.372.10&compression=gzip-js => [200] 
+34. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248822292&ver=1.372.10&compression=gzip-js => [200] 
+35. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248832282&ver=1.372.10&compression=gzip-js => [200] 
+37. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248836631&ver=1.372.10&compression=gzip-js => [200] 
+
+Note: 30 static requests not shown, run with "static" option to see them.

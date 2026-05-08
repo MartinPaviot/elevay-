@@ -1,0 +1,4 @@
+31. [POST] https://eu.i.posthog.com/e/?ip=0&_=1778248715264&ver=1.372.10&compression=gzip-js => [200] 
+32. [POST] https://eu.i.posthog.com/i/v0/e/?ip=0&_=1778248720409&ver=1.372.10&compression=gzip-js => [200] 
+
+Note: 30 static requests not shown, run with "static" option to see them.
