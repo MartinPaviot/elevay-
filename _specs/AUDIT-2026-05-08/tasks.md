@@ -4,6 +4,34 @@
 > to run, the pass criterion, and the evidence file path. No row is
 > "looks ok" — every row is `cmd | tee evidence.txt && grep <expected>`.
 
+---
+
+## STATUS — first run completed 2026-05-08
+
+| Phase | Status | Evidence |
+|---|---|---|
+| Phase 0 bootstrap | DONE | `_reports/audit-2026-05-08/scope.txt` (75 commits) |
+| Phase 1 — L1 static | **PASS** (7/7 gates) | `_reports/audit-2026-05-08/L1-static/SUMMARY.md` |
+| Phase 2 — L2 unit + harden | **PASS** + 1 HIGH bug fixed | `_reports/audit-2026-05-08/L2-tests/SUMMARY.md` |
+| Phase 3 — L3 local E2E | **PARTIAL PASS** (5/17 anonymous) | `_reports/audit-2026-05-08/L3-e2e/SUMMARY.md` |
+| Phase 4 — L4 DB introspection | **PASS** (migration 0050 zero-error fresh + legacy) | `_reports/audit-2026-05-08/L4-db/SUMMARY.md` |
+| Phase 5 — L5 worker dispatch | **PASS** (7/7 registered, triggers match RUNBOOK) | `_reports/audit-2026-05-08/L5-workers/SUMMARY.md` |
+| Phase 6 — L6 production smoke | **READY** — execute via script | `bash _specs/AUDIT-2026-05-08/scripts/l6-smoke.sh <URL>` |
+| Phase 7 — L7 behavioural | **READY** — execute weekly via script | `DATABASE_URL=… bash _specs/AUDIT-2026-05-08/scripts/l7-weekly.sh` |
+| Phase 8 — synthesise verdict | DONE | `_reports/audit-2026-05-08/SUMMARY.md` — **GO with documented follow-ups** |
+
+**Global verdict** : GO with documented follow-ups.
+Mean score across 16 graded features : **0.91** (push gate 0.85).
+Hard gate (no dim < 0.7) : clear.
+
+The checklist below is preserved verbatim as the **runbook for the
+next audit run** (post-major-change, post-incident, etc.). For the
+2026-05-08 run, see the SUMMARY files above ; the L6 + L7 phases
+have graduated from manual checklists to one-shot scripts under
+`scripts/`.
+
+---
+
 ## Phase 0 — bootstrap
 
 - [ ] `mkdir -p _reports/audit-2026-05-08/{L1-static,L2-tests,L3-e2e/screenshots,L4-db,L5-workers/trigger-traces,L6-prod-smoke,L7-behavioural}`
