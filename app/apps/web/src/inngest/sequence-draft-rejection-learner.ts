@@ -40,6 +40,13 @@ export const draftRejectionLearner = inngest.createFunction(
     id: "sequence-draft-rejection-learner",
     name: "Sequence Draft Rejection Learner",
     retries: 1,
+    // Serialise per-sequence so two concurrent rejections don't read
+    // the same campaignConfig and write off-by-one insight counts.
+    // The read-then-write is non-atomic ; without this, the second
+    // writer overwrites the first writer's increment with its stale
+    // pre-increment value. Limit of 1 per sequenceId means rejections
+    // queue rather than race.
+    concurrency: { limit: 1, key: "event.data.sequenceId" },
     onFailure: async ({ error, event }) => {
       logger.error("draft-rejection-learner.dead_letter", {
         sequenceId: (event as { data?: { sequenceId?: string } }).data

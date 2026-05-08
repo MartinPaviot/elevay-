@@ -29,8 +29,17 @@ if [ -z "${DATABASE_URL:-}" ]; then
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
-  echo "psql not found in PATH" >&2
-  exit 2
+  if command -v docker >/dev/null 2>&1; then
+    # Fallback : invoke psql via the official postgres image. Slower
+    # by ~200ms per call (image cached) but works on machines that
+    # don't have the pg client installed.
+    PSQL="docker run --rm -i postgres:16 psql"
+  else
+    echo "psql not found in PATH (and docker not available either)" >&2
+    exit 2
+  fi
+else
+  PSQL="psql"
 fi
 
 DATE_TAG="$(date -u +%Y-%m-%d)"
@@ -45,7 +54,7 @@ FAIL=0
 
 q() {
   # Single-row scalar SELECT. Returns trimmed result.
-  psql "$DATABASE_URL" -tA -c "$1" 2>&1
+  $PSQL "$DATABASE_URL" -tA -c "$1" 2>&1
 }
 
 assert_min() {
@@ -79,9 +88,21 @@ echo
 # ── F4 weeklyEvalHarness fired Monday ──────────────────────
 # Cron : TZ=UTC 0 2 * * 1 → every Monday 02:00 UTC.
 # Threshold : at least one llm_eval_runs row from the last Monday.
+#
+# Grace period : on the first run after deploy, the table may have
+# been created but no Monday has fired yet. We detect that by
+# checking if the table has *any* rows at all — if zero ever, we
+# emit INFO instead of FAIL so the founder isn't paged for a
+# pre-cron audit run.
 echo "== F4 weeklyEvalHarness — last Monday llm_eval_runs"
 EVAL_ROWS="$(q "SELECT count(*) FROM llm_eval_runs WHERE created_at >= date_trunc('week', now()) ;")"
-assert_min "weeklyEvalHarness landed rows in llm_eval_runs this week" "$EVAL_ROWS" 1
+EVAL_TOTAL="$(q "SELECT count(*) FROM llm_eval_runs ;")"
+if [ "$EVAL_TOTAL" = "0" ]; then
+  echo "  INFO : llm_eval_runs has zero rows ever — first cron tick hasn't fired yet, grace period."
+  echo "- INFO : F4 weeklyEvalHarness in grace — no rows yet (post-deploy ramp)" >> "$LOG"
+else
+  assert_min "weeklyEvalHarness landed rows in llm_eval_runs this week" "$EVAL_ROWS" 1
+fi
 
 # ── F2 dailyTranscriptFreshnessAlert fired today ──────────
 # Cron : TZ=UTC 0 6 * * * → every day 06:00 UTC.
@@ -131,23 +152,27 @@ fi
 
 # ── F8 visitor-id monthly cap roll-over ───────────────────
 # On the 1st of each month, last month's spend should be visible but
-# this month's spend starts fresh.
+# this month's spend starts fresh. Note : the timestamp column on
+# visitor_id_charges is `charged_at`, not `created_at`.
 echo "== F8 visitor_id_charges — monthly window"
-CHARGES_THIS_MONTH="$(q "SELECT count(*) FROM visitor_id_charges WHERE created_at >= date_trunc('month', now()) ;")"
-CHARGES_LAST_MONTH="$(q "SELECT count(*) FROM visitor_id_charges WHERE created_at >= date_trunc('month', now() - interval '1 month') AND created_at < date_trunc('month', now()) ;")"
+CHARGES_THIS_MONTH="$(q "SELECT count(*) FROM visitor_id_charges WHERE charged_at >= date_trunc('month', now()) ;")"
+CHARGES_LAST_MONTH="$(q "SELECT count(*) FROM visitor_id_charges WHERE charged_at >= date_trunc('month', now() - interval '1 month') AND charged_at < date_trunc('month', now()) ;")"
 echo "  INFO : charges this month  : $CHARGES_THIS_MONTH"
 echo "  INFO : charges last month  : $CHARGES_LAST_MONTH"
 echo "- INFO : visitor_id charges — this_month=$CHARGES_THIS_MONTH last_month=$CHARGES_LAST_MONTH" >> "$LOG"
 
 # ── F8 dedup hit rate (rough) ─────────────────────────────
-# If dedup is working, the count of identifications should be much
-# lower than the count of visits.
+# Identification info lives on the visits row itself
+# (visits.company_id + visits.identified_at) — there is no separate
+# visit_identifications table. Dedup signal : if the worker is
+# matching, identified_at should be set on a non-trivial fraction of
+# recent visits.
 echo "== F8 visitor-id dedup ratio"
 TOTAL_VISITS="$(q "SELECT count(*) FROM visits WHERE created_at >= now() - interval '7 days' ;")"
-IDENTIFICATIONS="$(q "SELECT count(DISTINCT visitor_id) FROM visit_identifications WHERE created_at >= now() - interval '7 days' ;" 2>/dev/null || echo "0")"
+IDENTIFICATIONS="$(q "SELECT count(*) FROM visits WHERE created_at >= now() - interval '7 days' AND identified_at IS NOT NULL ;")"
 echo "  INFO : visits 7d           : $TOTAL_VISITS"
-echo "  INFO : unique identified   : $IDENTIFICATIONS"
-echo "- INFO : visits_7d=$TOTAL_VISITS unique_identified=$IDENTIFICATIONS" >> "$LOG"
+echo "  INFO : identified 7d       : $IDENTIFICATIONS"
+echo "- INFO : visits_7d=$TOTAL_VISITS identified_7d=$IDENTIFICATIONS" >> "$LOG"
 
 # ── F4 eval-per-case rows present for last weekly run ─────
 echo "== F4 eval per-case persistence"

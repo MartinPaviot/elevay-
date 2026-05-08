@@ -14,7 +14,8 @@
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install chromium",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "echo '[ERROR] drizzle-kit journal stops at idx 12. Use db:migrate:apply (custom runner) instead.' && exit 1",
+    "db:migrate:apply": "tsx scripts/apply-migrations.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
