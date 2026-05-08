@@ -30,7 +30,18 @@ import { scoreBuyerIntent } from "@/lib/scoring/buyer-intent";
 export interface StallIndicator {
   type: string;
   severity: "high" | "medium" | "low";
+  /** One-line summary suitable for a chip / badge label. */
   detail: string;
+  /** Optional concrete evidence the indicator relies on. Empty when
+   *  the indicator is purely structural (e.g. "no upcoming meeting"
+   *  has no underlying source row to cite). The founder uses this to
+   *  decide what to do — mètis : the machine reveals the *why*, the
+   *  human acts on it.
+   *
+   *  Each entry is a single self-contained sentence that a non-
+   *  technical reader can act on. Capped at 5 entries when emitted
+   *  so the UI can render them inline without truncation. */
+  evidence?: string[];
 }
 
 export interface SuggestedIntervention {
@@ -169,7 +180,18 @@ function isOneSidedEmail(
     direction: string | null;
     occurredAt: Date | null;
   }>,
-): { oneSided: boolean; daysSinceOutbound: number } {
+): {
+  oneSided: boolean;
+  daysSinceOutbound: number;
+  /** Date of the unanswered outbound email, when one-sided. Used as
+   *  evidence on the indicator so the founder sees *what* to follow
+   *  up on, not just that something is stuck. */
+  lastOutboundDate: Date | null;
+  /** Count of outbound vs inbound emails seen in the recent window —
+   *  the asymmetry is the headline number. */
+  outboundCount: number;
+  inboundCount: number;
+} {
   // Find the most recent email activity
   const lastOutbound = recentActivities.find(
     (a) =>
@@ -184,8 +206,30 @@ function isOneSidedEmail(
       a.direction === "inbound",
   );
 
+  // Counts feed the indicator's evidence — the asymmetry between
+  // outbound and inbound is what the founder needs to see at a glance
+  // ("3 sent, 0 received" tells the story faster than the chip label).
+  const outboundCount = recentActivities.filter(
+    (a) =>
+      (a.activityType === "email_sent" ||
+        a.activityType === "sequence_step_sent") &&
+      a.direction === "outbound",
+  ).length;
+  const inboundCount = recentActivities.filter(
+    (a) =>
+      (a.activityType === "email_received" ||
+        a.activityType === "email_replied") &&
+      a.direction === "inbound",
+  ).length;
+
   if (!lastOutbound?.occurredAt) {
-    return { oneSided: false, daysSinceOutbound: 0 };
+    return {
+      oneSided: false,
+      daysSinceOutbound: 0,
+      lastOutboundDate: null,
+      outboundCount,
+      inboundCount,
+    };
   }
 
   const daysSinceOutbound = Math.round(
@@ -194,7 +238,13 @@ function isOneSidedEmail(
 
   if (!lastInbound?.occurredAt) {
     // All outbound, zero inbound
-    return { oneSided: true, daysSinceOutbound };
+    return {
+      oneSided: true,
+      daysSinceOutbound,
+      lastOutboundDate: lastOutbound.occurredAt,
+      outboundCount,
+      inboundCount,
+    };
   }
 
   // One-sided if last outbound is more recent than last inbound AND
@@ -205,6 +255,9 @@ function isOneSidedEmail(
   return {
     oneSided: outboundIsMoreRecent && daysSinceOutbound >= 3,
     daysSinceOutbound,
+    lastOutboundDate: lastOutbound.occurredAt,
+    outboundCount,
+    inboundCount,
   };
 }
 
@@ -457,10 +510,21 @@ export async function predictStalls(
     if (daysInStage > p75ForStage) {
       const severity: StallIndicator["severity"] =
         daysInStage > p75ForStage * 2 ? "high" : "medium";
+      const enteredOn = lastStageChange
+        ? new Date(lastStageChange).toISOString().slice(0, 10)
+        : null;
+      const evidence: string[] = [];
+      if (enteredOn) {
+        evidence.push(`Stage entered on ${enteredOn} (${daysInStage}d ago).`);
+      }
+      evidence.push(
+        `Tenant benchmark for "${stageKey}" at p75 is ${p75ForStage}d — this deal is at ${daysInStage}d.`,
+      );
       indicators.push({
         type: "time_in_stage",
         severity,
         detail: `${daysInStage} days in "${stageKey}" stage (75th percentile: ${p75ForStage} days)`,
+        evidence,
       });
     }
 
@@ -475,26 +539,67 @@ export async function predictStalls(
         type: "activity_drop",
         severity: dropPercent > 0.75 ? "high" : "medium",
         detail: `Activity dropped ${Math.round(dropPercent * 100)}%: ${previousCount} activities (14-28d ago) to ${recentCount} (last 14d)`,
+        evidence: [
+          `Last 14 days: ${recentCount} touch${recentCount === 1 ? "" : "es"}.`,
+          `Prior 14 days (14–28d ago): ${previousCount} touch${previousCount === 1 ? "" : "es"}.`,
+          `Net change: ${Math.round(dropPercent * 100)}% drop.`,
+        ],
       });
     }
 
     // -- Indicator 3: One-sided email conversation --
-    const { oneSided, daysSinceOutbound } = isOneSidedEmail(dealActivities);
+    const {
+      oneSided,
+      daysSinceOutbound,
+      lastOutboundDate,
+      outboundCount,
+      inboundCount,
+    } = isOneSidedEmail(dealActivities);
     if (oneSided && daysSinceOutbound >= 3) {
+      const evidence: string[] = [];
+      if (lastOutboundDate) {
+        evidence.push(
+          `Last outbound on ${lastOutboundDate.toISOString().slice(0, 10)} (${daysSinceOutbound}d ago) — no reply since.`,
+        );
+      }
+      evidence.push(
+        `Recent email split: ${outboundCount} sent vs ${inboundCount} received.`,
+      );
       indicators.push({
         type: "one_sided_email",
         severity: daysSinceOutbound >= 7 ? "high" : "medium",
         detail: `Last outbound email ${daysSinceOutbound} days ago with no reply`,
+        evidence,
       });
     }
 
     // -- Indicator 4: No upcoming meeting --
     const hasMeeting = await hasUpcomingMeeting(tenantId, entityIds, now);
     if (!hasMeeting && daysInStage > 7) {
+      // Pull the last past meeting date from the recent activities so
+      // the evidence line is concrete ("nothing booked since YYYY-MM-DD")
+      // rather than just stating the absence.
+      const lastMeeting = dealActivities.find(
+        (a) =>
+          a.activityType === "meeting_completed" ||
+          a.activityType === "meeting_scheduled",
+      );
+      const evidence: string[] = ["No future meeting on the deal calendar."];
+      if (lastMeeting?.occurredAt) {
+        const lastDate = lastMeeting.occurredAt.toISOString().slice(0, 10);
+        const days = Math.round(
+          (now.getTime() - lastMeeting.occurredAt.getTime()) /
+            (24 * 60 * 60 * 1000),
+        );
+        evidence.push(`Last meeting was on ${lastDate} (${days}d ago).`);
+      } else {
+        evidence.push("No prior meeting recorded on this deal.");
+      }
       indicators.push({
         type: "no_upcoming_meeting",
         severity: "low",
         detail: "No meeting scheduled in the next 14 days",
+        evidence,
       });
     }
 
@@ -503,10 +608,20 @@ export async function predictStalls(
       try {
         const intentScore = await scoreBuyerIntent(deal.contactId, tenantId);
         if (intentScore.trend === "cooling") {
+          // Surface up to the 3 strongest contributing signals so the
+          // founder reads *why* intent is cooling, not just *that* it
+          // is. Each signal already carries its own human-readable
+          // `evidence` string from the scorer.
+          const topSignals = [...intentScore.signals]
+            .sort((a, b) => Math.abs(b.value * b.weight) - Math.abs(a.value * a.weight))
+            .slice(0, 3)
+            .map((s) => s.evidence)
+            .filter((s) => s && s.trim().length > 0);
           indicators.push({
             type: "intent_cooling",
             severity: intentScore.score < 30 ? "high" : "medium",
             detail: `Buyer intent score is cooling (${intentScore.score}/100, trend: ${intentScore.trend})`,
+            evidence: topSignals,
           });
         }
       } catch {
@@ -526,10 +641,25 @@ export async function predictStalls(
           : daysInStage;
 
       if (daysSinceAny > 14) {
+        const lastActivity = dealActivities[0];
+        const evidence: string[] = [];
+        if (lastActivity?.occurredAt) {
+          const lastType = (lastActivity.activityType || "activity").replace(
+            /_/g,
+            " ",
+          );
+          evidence.push(
+            `Last activity: ${lastType} on ${lastActivity.occurredAt.toISOString().slice(0, 10)} (${daysSinceAny}d ago).`,
+          );
+        }
+        evidence.push(
+          `Nothing logged on this deal in the last ${daysSinceAny} days.`,
+        );
         indicators.push({
           type: "no_recent_activity",
           severity: daysSinceAny > 30 ? "high" : "medium",
           detail: `No activity in ${daysSinceAny} days`,
+          evidence,
         });
       }
     }

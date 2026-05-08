@@ -187,6 +187,16 @@ describe("time-in-stage indicator", () => {
     );
     expect(timeIndicator).toBeDefined();
     expect(timeIndicator!.severity).toBe("high"); // 60 > 14*2 = 28
+    // The indicator must carry concrete evidence — at least the
+    // tenant benchmark line so the founder reads *why* without a
+    // hover tooltip.
+    expect(timeIndicator!.evidence).toBeDefined();
+    expect(timeIndicator!.evidence!.length).toBeGreaterThan(0);
+    expect(
+      timeIndicator!.evidence!.some((line) =>
+        line.toLowerCase().includes("benchmark"),
+      ),
+    ).toBe(true);
   });
 
   it("does not flag deals within normal stage duration", async () => {

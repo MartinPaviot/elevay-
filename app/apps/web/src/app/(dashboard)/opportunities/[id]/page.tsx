@@ -70,6 +70,10 @@ interface StallIndicator {
   type: string;
   severity: "high" | "medium" | "low";
   detail: string;
+  /** Concrete evidence rows the API now ships alongside each
+   *  indicator. Render inline so the *why* is visible at first
+   *  glance — not buried behind a hover tooltip. */
+  evidence?: string[];
 }
 
 interface SuggestedIntervention {
@@ -403,31 +407,51 @@ export default function DealDetailPage() {
             </div>
 
             {stallRisk.indicators.length > 0 && (
-              <div className="mb-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {stallRisk.indicators.map((ind, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-                      style={{
-                        background: ind.severity === "high"
-                          ? "var(--color-error-soft)"
-                          : ind.severity === "medium"
-                            ? "var(--color-warning-soft)"
-                            : "var(--color-bg-hover)",
-                        color: ind.severity === "high"
-                          ? "var(--color-error)"
-                          : ind.severity === "medium"
-                            ? "var(--color-warning)"
-                            : "var(--color-text-secondary)",
-                      }}
-                      title={ind.detail}
-                    >
-                      {ind.type.replace(/_/g, " ")}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <ul className="mb-3 space-y-2">
+                {stallRisk.indicators.map((ind, i) => (
+                  <li key={i} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                        style={{
+                          background: ind.severity === "high"
+                            ? "var(--color-error-soft)"
+                            : ind.severity === "medium"
+                              ? "var(--color-warning-soft)"
+                              : "var(--color-bg-hover)",
+                          color: ind.severity === "high"
+                            ? "var(--color-error)"
+                            : ind.severity === "medium"
+                              ? "var(--color-warning)"
+                              : "var(--color-text-secondary)",
+                        }}
+                      >
+                        {ind.type.replace(/_/g, " ")}
+                      </span>
+                      <span
+                        className="text-[12px]"
+                        style={{ color: "var(--color-text-secondary)" }}
+                      >
+                        {ind.detail}
+                      </span>
+                    </div>
+                    {/* Mètis : the *why* lives next to the alert, not
+                        behind a tooltip. The founder reads the
+                        evidence first, decides second — no hover
+                        required. */}
+                    {ind.evidence && ind.evidence.length > 0 && (
+                      <ul
+                        className="ml-2 list-disc space-y-0.5 pl-4 text-[11px]"
+                        style={{ color: "var(--color-text-tertiary)" }}
+                      >
+                        {ind.evidence.map((line, j) => (
+                          <li key={j}>{line}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
 
             {stallRisk.suggestedInterventions.length > 0 && (
