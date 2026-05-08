@@ -1,0 +1,52 @@
+================ 0044_deal_property_metadata_backfill.sql ================
+DO
+CREATE VIEW
+================ 0045_sequence_drafts.sql ================
+DO
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+================ 0046_tenant_approval_mode_default.sql ================
+ERROR:  cannot set path in scalar
+CREATE VIEW
+================ 0046_tenant_approval_mode_default.sql (retry) ================
+UPDATE 0
+CREATE VIEW
+================ 0047_eval_case_runs.sql (retry) ================
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE VIEW
+================ 0048_visits_subnet_hash.sql (retry) ================
+ALTER TABLE
+CREATE INDEX
+================ 0049_visitor_id_charges.sql (retry) ================
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE VIEW
+================ 0050_llm_eval_namespace_split.sql ================
+DROP VIEW
+NOTICE:  view "llm_eval_runs_latest_with_failures" does not exist, skipping
+DROP VIEW
+ALTER TABLE
+ALTER TABLE
+ALTER INDEX
+ALTER INDEX
+ALTER INDEX
+CREATE TABLE
+NOTICE:  relation "llm_eval_case_runs" already exists, skipping
+CREATE INDEX
+NOTICE:  relation "llm_eval_case_runs_run_idx" already exists, skipping
+NOTICE:  relation "llm_eval_case_runs_case_idx" already exists, skipping
+CREATE INDEX
+NOTICE:  relation "llm_eval_case_runs_created_at_idx" already exists, skipping
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+DO
+CREATE VIEW

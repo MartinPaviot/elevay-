@@ -30,7 +30,15 @@ SET settings = jsonb_set(
 WHERE
   -- Only touch rows that don't already have the key — keeps the
   -- migration trivially re-runnable.
-  (settings ->> 'approvalMode') IS NULL;
+  (settings ->> 'approvalMode') IS NULL
+  -- Defensive guard : `jsonb_set` errors with 'cannot set path in
+  -- scalar' if `settings` is a non-object jsonb value (e.g. a bare
+  -- string or number — which can happen on legacy rows that wrote
+  -- the column directly as a scalar). Skip those rows so the
+  -- migration doesn't abort ; they're invisible to the new code
+  -- path anyway (router defaults to 'manual' when the key is
+  -- absent).
+  AND (settings IS NULL OR jsonb_typeof(settings) = 'object');
 
 -- Diagnostic view for ops : how many tenants on each mode ?
 -- Lets the team see "47 tenants on manual, 3 on auto" at a glance.
