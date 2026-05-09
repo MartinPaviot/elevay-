@@ -42,24 +42,31 @@ dominates.
       (deal property write, signal extracted, transcript
       indexed).
 
-## Phase 3 — surfaces (NOT in this commit)
+## Phase 3 — surfaces
 
-- [ ] Brain page UI at `/accounts/[id]/brain` consuming
-      the read API : 5 collapsible blocks (deals state,
-      activities, signals, dossier, transcript citations).
-- [ ] Chat tool `getCompanyBrainTool` registered in the
-      chat tool registry. When the LLM detects "tell me
-      about X" / "what do we know about X", it calls the
-      tool instead of composing ad-hoc context.
-- [ ] Meeting prep auto-briefing trigger consumes the
-      brain instead of separate dossier+activity+signals
-      composition.
+- [x] **3a** Chat tool `getCompanyBrain` registered in the
+      chat tool registry + tool-router + orchestrator.
+      Triggered by "tell me about X" / "what do we know
+      about X" / "brain on Y" / "summarise our
+      relationship with Z" / "full picture on W".
+- [x] **3b** Meeting prep (`generateMeetingPrep` Inngest
+      function) consumes the brain via
+      `composeMeetingPrepContext` instead of per-attendee
+      contact + company + 5-row activities composition.
+- [x] **3c** Brain page UI at `/accounts/[id]/brain`
+      consuming the API : overview card + 7 collapsible
+      sections (contacts, deals, activities, meetings,
+      knowledge, graph facts, memories) with per-layer
+      freshness ; "View brain" link added in account
+      header.
 
 ## Status (2026-05-09)
 
-- Phase 1 : **DONE** (this commit)
-- Phase 2 : open, not blocking — wait for measured latency
-  pressure before committing.
-- Phase 3 : open — Phase 1's API is consumable from any
-  chat tool / page route, so adoption can start ad-hoc
-  before Phase 3's structured rollout.
+- Phase 1 : **DONE** — read API + endpoint shipped (commit
+  691fbce).
+- Phase 2 : **open**, not blocking — wait for measured
+  latency pressure before committing to materialised
+  cache.
+- Phase 3 : **DONE** — chat tool (3a, f8753ec), meeting
+  prep migration (3b, d486637), brain UI page (3c, this
+  commit).

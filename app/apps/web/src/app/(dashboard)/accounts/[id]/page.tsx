@@ -90,12 +90,23 @@ export default function AccountDetailPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg font-bold text-white">
             {initial}
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-semibold">{account.name}</h1>
             <p className="text-sm text-[var(--color-text-secondary)]">
               {account.domain || "No domain"} {account.industry ? `· ${account.industry}` : ""}
             </p>
           </div>
+          <Link
+            href={`/accounts/${accountId}/brain`}
+            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              background: "var(--color-bg-card)",
+              border: "1px solid var(--color-border-default)",
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            View brain
+          </Link>
         </div>
 
         {/* AI Intelligence Brief */}
