@@ -41,6 +41,7 @@ export async function GET(
       let lastConnected: Date | null = null;
       let lastEndedAt: Date | null = null;
       let lastProcessing: string | null = null;
+      let lastTranscriptCount = 0;
       let closed = false;
 
       const send = (event: string, data: unknown) => {
@@ -71,6 +72,14 @@ export async function GET(
         endedAt: initial.endedAt,
         processingState: initial.processingState,
       });
+      // Seed transcript cursor with what's already on disk so we don't
+      // re-emit chunks the client never saw if it (re)connects mid-call.
+      {
+        const existing = Array.isArray(initial.transcript)
+          ? (initial.transcript as unknown[])
+          : [];
+        lastTranscriptCount = existing.length;
+      }
 
       const interval = setInterval(async () => {
         if (closed || Date.now() - startedAt > MAX_DURATION_MS) {
@@ -89,6 +98,7 @@ export async function GET(
               endedAt: calls.endedAt,
               outcome: calls.outcome,
               processingState: calls.processingState,
+              transcript: calls.transcript,
             })
             .from(calls)
             .where(and(eq(calls.id, id), eq(calls.tenantId, authCtx.tenantId)))
@@ -99,6 +109,24 @@ export async function GET(
             lastConnected = row.connectedAt;
             send("connected", { connectedAt: row.connectedAt });
           }
+
+          // Stream new transcript chunks as the bridge appends them.
+          // We only emit suffix slices — clients reconnecting after a
+          // tab refresh get the seeded count from the snapshot above.
+          const chunks = Array.isArray(row.transcript)
+            ? (row.transcript as Array<{
+                speaker: string;
+                text: string;
+                tsMs?: number;
+              }>)
+            : [];
+          if (chunks.length > lastTranscriptCount) {
+            for (let i = lastTranscriptCount; i < chunks.length; i++) {
+              send("transcript", chunks[i]);
+            }
+            lastTranscriptCount = chunks.length;
+          }
+
           if (row.endedAt && !lastEndedAt) {
             lastEndedAt = row.endedAt;
             send("ended", {

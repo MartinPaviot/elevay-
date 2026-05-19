@@ -63,9 +63,16 @@ export async function POST(req: Request) {
     return new Response("Call not found", { status: 404 });
   }
 
-  const streamUrl = `${(publicBase.startsWith("https://")
-    ? "wss://"
-    : "ws://")}${publicBase.replace(/^https?:\/\//, "")}/api/calls/stream?callId=${callId}`;
+  // The streaming bridge runs as a separate Node process (Twilio Media
+  // Streams + Deepgram). VOICE_STREAM_PUBLIC_URL is the wss:// URL of
+  // that bridge (e.g. ngrok tunnel in dev, dedicated host in prod).
+  // Fall back to the main app's wss:// path so a missing env still
+  // returns valid TwiML — Twilio will fail-open without a stream and
+  // the call still places.
+  const streamHost = process.env.VOICE_STREAM_PUBLIC_URL;
+  const streamUrl = streamHost
+    ? `${streamHost.replace(/\/+$/, "")}?callId=${callId}`
+    : `${publicBase.startsWith("https://") ? "wss://" : "ws://"}${publicBase.replace(/^https?:\/\//, "")}/api/calls/stream?callId=${callId}`;
 
   const disclosureUrl = url.searchParams.get("disclosureUrl") ?? undefined;
   const recordingStatusUrl = `${publicBase}/api/calls/recording-status`;

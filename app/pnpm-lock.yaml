@@ -129,7 +129,7 @@ importers:
         version: 5.0.0-beta.30(next@15.5.15(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
       openai:
         specifier: ^6.33.0
-        version: 6.33.0(ws@8.20.0)(zod@4.3.6)
+        version: 6.33.0(ws@8.20.1)(zod@4.3.6)
       papaparse:
         specifier: ^5.5.3
         version: 5.5.3
@@ -160,6 +160,9 @@ importers:
       twilio:
         specifier: ^5.4.0
         version: 5.13.1
+      ws:
+        specifier: ^8.20.1
+        version: 8.20.1
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -191,6 +194,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@vitejs/plugin-react':
         specifier: ^6.0.1
         version: 6.0.1(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.4)(jiti@2.6.1)(terser@5.46.1)(tsx@4.21.0)(yaml@2.8.3))
@@ -5427,8 +5433,8 @@ packages:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
     engines: {node: '>=10'}
 
-  ws@8.20.0:
-    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -5655,7 +5661,7 @@ snapshots:
 
   '@deepgram/sdk@5.3.0':
     dependencies:
-      ws: 8.20.0
+      ws: 8.20.1
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -9065,7 +9071,7 @@ snapshots:
       '@types/ws': 8.18.1
       entities: 7.0.1
       whatwg-mimetype: 3.0.0
-      ws: 8.20.0
+      ws: 8.20.1
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -10123,9 +10129,9 @@ snapshots:
 
   obug@2.1.1: {}
 
-  openai@6.33.0(ws@8.20.0)(zod@4.3.6):
+  openai@6.33.0(ws@8.20.1)(zod@4.3.6):
     optionalDependencies:
-      ws: 8.20.0
+      ws: 8.20.1
       zod: 4.3.6
 
   optionator@0.9.4:
@@ -11187,7 +11193,7 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
 
-  ws@8.20.0: {}
+  ws@8.20.1: {}
 
   xmlbuilder@13.0.2: {}
 

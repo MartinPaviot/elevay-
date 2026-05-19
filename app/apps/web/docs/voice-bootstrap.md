@@ -88,6 +88,29 @@ If any step fails, the most common causes are:
 - Phone number not bound to the TwiML App in the Incoming Numbers config
 - `VOICE_PUBLIC_BASE_URL` not matching what Twilio actually called us at — the signature validation will reject
 
+## 7.5 Live transcription bridge (Phase 1.5)
+
+The Twilio Media Streams ↔ Deepgram bridge runs as a separate Node process. In dev:
+
+1. Open a **second ngrok tunnel** for the bridge port:
+   ```bash
+   ngrok http 3001
+   ```
+   Copy the `wss://` URL into `VOICE_STREAM_PUBLIC_URL` in `.env.local`. (ngrok serves both http+wss on the same tunnel — just swap the scheme to `wss://`.)
+2. Start the bridge:
+   ```bash
+   pnpm voice:stream
+   ```
+   It logs `WebSocket bridge listening on ws://0.0.0.0:3001`.
+3. Place a test call. The bridge logs the call id when it accepts a connection; the transcript should appear in `/call-mode` within ~600ms of speech.
+4. If you see nothing, set `VOICE_STREAM_DEBUG=1` in `.env.local` and restart — the bridge will log byte counts and Deepgram event traces.
+
+Production deployment options for the bridge:
+- **Fly.io** — simplest; `fly launch` from `apps/web` with a `Dockerfile` that runs `pnpm voice:stream`. Cost: ~$5/mo for 256 MB shared-cpu-1x.
+- **Railway** — similar; one service with the `voice:stream` start command.
+- **Google Cloud Run** — works if you can keep the container warm (cold starts kill the WS handshake).
+- Do NOT run on Vercel — their serverless functions cap at 60s for WS and break long-lived streams.
+
 ## 8. Production
 
 When you cut over to a real domain (e.g. `elevay.ai`):
