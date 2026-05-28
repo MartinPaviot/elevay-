@@ -1,7 +1,14 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { sequenceEnrollments, sequenceSteps, sequences, contacts } from "@/db/schema";
+import {
+  sequenceEnrollments,
+  sequenceSteps,
+  sequences,
+  contacts,
+  companies,
+} from "@/db/schema";
 import { eq, and, sql, isNull } from "drizzle-orm";
+import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 
 export async function POST(
   req: Request,
@@ -56,14 +63,37 @@ export async function POST(
     const firstStepDelay = steps[0]?.delayDays || 0;
 
     for (const contactId of contactIds.slice(0, 100)) {
-      // Check contact exists, belongs to tenant, and has email
+      // Check contact exists, belongs to tenant. Anti-ICP exclusion
+      // (B1) is enforced via leftJoin on companies — a flagged company
+      // skips here even if the caller passed its contact explicitly.
       const [contact] = await db
-        .select()
+        .select({
+          id: contacts.id,
+          email: contacts.email,
+          deletedAt: contacts.deletedAt,
+          companyExcludedReason: companies.excludedReason,
+        })
         .from(contacts)
-        .where(and(eq(contacts.id, contactId), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt)))
+        .leftJoin(companies, eq(contacts.companyId, companies.id))
+        .where(
+          and(
+            eq(contacts.id, contactId),
+            eq(contacts.tenantId, authCtx.tenantId),
+          ),
+        )
         .limit(1);
 
-      if (!contact || !contact.email) {
+      if (!contact) {
+        skipped++;
+        continue;
+      }
+
+      const eligibility = checkContactEligibility({
+        email: contact.email,
+        deletedAt: contact.deletedAt,
+        companyExcludedReason: contact.companyExcludedReason,
+      });
+      if (!eligibility.eligible) {
         skipped++;
         continue;
       }

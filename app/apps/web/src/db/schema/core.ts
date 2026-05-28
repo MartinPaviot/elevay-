@@ -64,6 +64,13 @@ export const companies = pgTable(
     resolvedLogoTier: integer("resolved_logo_tier"),
     logoResolvedAt: timestamp("logo_resolved_at", { withTimezone: true }),
     userUploadedLogoUrl: text("user_uploaded_logo_url"),
+    // Anti-ICP exclusion (B1, _specs/pilae-machine). When set, the
+    // company matched the tenant's anti-ICP rules and must NOT be
+    // enrolled into outbound sequences. NULL means eligible. Reason
+    // is a free-form tag (e.g. "anti_icp_industry", "anti_icp_size",
+    // "do_not_contact_request").
+    excludedReason: text("excluded_reason"),
+    excludedAt: timestamp("excluded_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -72,6 +79,7 @@ export const companies = pgTable(
     index("companies_tenant_id_idx").on(table.tenantId),
     index("companies_domain_idx").on(table.domain),
     index("companies_logo_resolved_at_idx").on(table.logoResolvedAt),
+    index("companies_excluded_at_idx").on(table.excludedAt),
   ]
 );
 
