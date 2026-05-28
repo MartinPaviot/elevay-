@@ -32,6 +32,7 @@ import { dailyFounderBrief } from "@/inngest/founder-coach";
 import { serviceHealthCheck } from "@/inngest/health-checks";
 import { signalAutoEnroll } from "@/inngest/signal-to-sequence";
 import { signalAccelerateCadence } from "@/inngest/signal-accelerate-cadence";
+import { nurtureRecycleD30 } from "@/inngest/nurture-recycle-d30";
 import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 import { customSignalBackfill } from "@/inngest/custom-signal-backfill";
 import { dataRetentionPurge } from "@/inngest/data-retention";
@@ -137,6 +138,10 @@ export const { GET, POST, PUT } = serve({
     // active enrollments' next_step_at to NOW. Consumer ships first;
     // producer (`signals/fresh-detected` emission) is a follow-up.
     signalAccelerateCadence,
+    // Nurture recycle (B6) — daily 07:00 UTC. Completed enrollments
+    // with lastStepAt > 30d ago re-enroll into the tenant's Nurture
+    // sequence. Skips contacts already in nurture (no recycle loop).
+    nurtureRecycleD30,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
     // Relationship graph: KNOWS edges for warm-intro discovery
