@@ -34,6 +34,7 @@ import { signalAutoEnroll } from "@/inngest/signal-to-sequence";
 import { signalAccelerateCadence } from "@/inngest/signal-accelerate-cadence";
 import { nurtureRecycleD30 } from "@/inngest/nurture-recycle-d30";
 import { meetingCapacityCheck } from "@/inngest/meeting-capacity-check";
+import { playbookCapturePostCall } from "@/inngest/playbook-capture-post-call";
 import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 import { customSignalBackfill } from "@/inngest/custom-signal-backfill";
 import { dataRetentionPurge } from "@/inngest/data-retention";
@@ -147,6 +148,10 @@ export const { GET, POST, PUT } = serve({
     // this week's deep-dive meetings per tenant and persists the
     // load + level (ok/tight/saturated) on tenants.settings.deepDiveLoad.
     meetingCapacityCheck,
+    // Playbook capture (B4) — validates a batch of candidate entries
+    // (from an LLM extractor over a call/meeting/reply) and inserts
+    // the survivors into playbook_entries.
+    playbookCapturePostCall,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
     // Relationship graph: KNOWS edges for warm-intro discovery

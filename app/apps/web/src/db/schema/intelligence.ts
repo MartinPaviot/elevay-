@@ -706,6 +706,55 @@ export const customSignals = pgTable(
   ],
 );
 
+// ── Playbook entries (B4, _specs/pilae-machine) ─────────
+// Captures the operational learnings from every conversation: the
+// objections heard, the accroches that landed, the questions worth
+// asking next time. Fed by the post-call extraction Inngest fn
+// (`playbook-capture-post-call.ts`). Read by the dashboard
+// "Playbook" tab and by the message-generation prompt as exemplars.
+// `perf_score` lets the team rank what actually moves deals.
+export const playbookEntries = pgTable(
+  "playbook_entries",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    /** "objection" | "accroche" | "question". Constrained at the
+     *  helper validation layer to keep the storage column flexible
+     *  while the team explores new entry kinds. */
+    type: text("type").notNull(),
+    content: text("content").notNull(),
+    /** Source activity (a call or meeting in `activities`) the
+     *  entry was distilled from. Null when the founder typed it
+     *  in directly via the playbook UI. */
+    sourceActivityId: text("source_activity_id").references(
+      () => activities.id,
+    ),
+    /** Free-form outcome the team observed when this entry surfaced
+     *  in a conversation (e.g. "led to deep-dive", "stalled deal",
+     *  "champion reaction"). Aggregated with perf_score for ranking. */
+    outcomeLabel: text("outcome_label"),
+    /** 0..1 scalar: how well did this entry work when used?
+     *  Either set manually by the founder during review or computed
+     *  by the LLM judge from the deal outcome over time. NULL until
+     *  the entry has been seen at least once in a follow-up
+     *  conversation. */
+    perfScore: real("perf_score"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("playbook_entries_tenant_type_idx").on(table.tenantId, table.type),
+    index("playbook_entries_source_idx").on(table.sourceActivityId),
+    index("playbook_entries_perf_idx").on(table.tenantId, table.perfScore),
+  ],
+);
+
 // ── Pending Invitations ────────────────────────────────
 export const pendingInvites = pgTable(
   "pending_invites",
