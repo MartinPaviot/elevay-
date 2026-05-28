@@ -79,6 +79,10 @@ export async function POST(
           and(
             eq(contacts.id, contactId),
             eq(contacts.tenantId, authCtx.tenantId),
+            // Belt + suspenders: main's batch-5 soft-delete fix
+            // filters at SQL level; the helper below also checks
+            // deletedAt as a defensive secondary path.
+            isNull(contacts.deletedAt),
           ),
         )
         .limit(1);
