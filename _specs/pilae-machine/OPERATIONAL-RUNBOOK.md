@@ -3,7 +3,7 @@
 > Companion to `spec-v2.md`. Spec describes WHAT shipped; this runbook
 > describes how to USE it day-to-day and how to debug it when something
 > goes sideways.
-> Last updated 2026-05-28 (after PRs #33, #34, #35).
+> Last updated 2026-05-28 (after PRs #33, #34, #35, #36, #37).
 
 ## 1. Bring up a new Pilae-like tenant
 
@@ -86,7 +86,7 @@ Run on staging first, eyeball `EXPLAIN` on a 10k-row companies table
 to confirm the new indexes serve the right queries. The `signal.score.daily`
 cron will hammer the priority index every morning.
 
-## 4. The 6 Inngest fns shipped
+## 4. The 7 Inngest fns shipped
 
 | Function | Trigger | What |
 |---|---|---|
@@ -96,6 +96,7 @@ cron will hammer the priority index every morning.
 | `meetingCapacityCheck` | cron `30 0 * * 1` UTC (Mon) | Counts deep-dive activities this ISO week per tenant, persists `tenants.settings.deepDiveLoad` for the dashboard badge. |
 | `playbookCapturePostCall` | event `playbook/capture-from-activity` | Validates candidates via `validatePlaybookBatch` and inserts survivors into `playbook_entries`. Sink — security boundary. |
 | `playbookExtractFromActivity` | event `coaching/post-interaction` | Loads activity, calls Claude with `extractionResponseSchema`, emits to the sink. Falls back to gpt-4o-mini when no Anthropic key. |
+| `sequenceDraftToOutbound` | event `email.send.queued` | Bridge: translates an approved `sequence_drafts` row into an `outbound_emails` row (status=queued) so the existing `processOutboundEmails` cron sends it. Closes the loop on the single + bulk approve flow (PR #37). |
 
 Check the Inngest dashboard at `/api/inngest` — each fn shows last 100
 runs with their return shape.
@@ -121,7 +122,6 @@ Run before any release: `npm test`.
 | Tenant config admin UI | All seeding is currently SQL. | A `/settings/tenant-config` page that edits `tenants.settings` — substantial, ~3 days. |
 | `phone_task` handler | The `voice cold call` branch (feat/voice-cold-call) ships the Twilio + Deepgram dialer. Until then `phone_task` drafts are inert. | Wire in `sequence-draft-router` once voice merges (~1 day). See spec §C. |
 | ICP scorer feeding `companies.score` | The priority score formula uses `fitScore = companies.score`. If the score isn't populated the formula falls back to `NEUTRAL_FIT_SCORE = 0.5`. Acceptable but lossy. | The existing scoring infra (`lib/scoring/`) populates it for some tenants; a Pilae-specific scorer or a manual import via the TAM builder is needed for full signal. |
-| Email send for approved drafts | The approve / bulk-approve route emits `email.send.queued`. No Inngest fn currently consumes that event — drafts sit in `approved` state until the existing `processOutboundEmails` worker writes a row into `outboundEmails`. | Pre-existing limitation, not introduced by this work. Fixed properly when the founder-to-send flow is consolidated. |
 
 ## 7. Rolling back
 
