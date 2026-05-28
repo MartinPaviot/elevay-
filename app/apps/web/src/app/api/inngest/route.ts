@@ -35,6 +35,7 @@ import { signalAccelerateCadence } from "@/inngest/signal-accelerate-cadence";
 import { nurtureRecycleD30 } from "@/inngest/nurture-recycle-d30";
 import { meetingCapacityCheck } from "@/inngest/meeting-capacity-check";
 import { playbookCapturePostCall } from "@/inngest/playbook-capture-post-call";
+import { playbookExtractFromActivity } from "@/inngest/playbook-extract-from-activity";
 import { signalScoreDaily } from "@/inngest/signal-score-daily";
 import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 import { customSignalBackfill } from "@/inngest/custom-signal-backfill";
@@ -157,6 +158,11 @@ export const { GET, POST, PUT } = serve({
     // (from an LLM extractor over a call/meeting/reply) and inserts
     // the survivors into playbook_entries.
     playbookCapturePostCall,
+    // Playbook LLM extractor (B4-extractor) — fans from
+    // coaching/post-interaction. Loads the activity content, calls
+    // Claude to extract objection/accroche/question candidates,
+    // emits playbook/capture-from-activity to the sink above.
+    playbookExtractFromActivity,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
     // Relationship graph: KNOWS edges for warm-intro discovery
