@@ -31,6 +31,14 @@ import { handleAutoPipelineDraft } from "@/inngest/auto-pipeline-email-handler";
 import { dailyFounderBrief } from "@/inngest/founder-coach";
 import { serviceHealthCheck } from "@/inngest/health-checks";
 import { signalAutoEnroll } from "@/inngest/signal-to-sequence";
+import { signalAccelerateCadence } from "@/inngest/signal-accelerate-cadence";
+import { nurtureRecycleD30 } from "@/inngest/nurture-recycle-d30";
+import { meetingCapacityCheck } from "@/inngest/meeting-capacity-check";
+import { playbookCapturePostCall } from "@/inngest/playbook-capture-post-call";
+import { playbookExtractFromActivity } from "@/inngest/playbook-extract-from-activity";
+import { sequenceDraftToOutbound } from "@/inngest/sequence-draft-to-outbound";
+import { signalScoreDaily } from "@/inngest/signal-score-daily";
+import { visitorPhoneEnrichRequest } from "@/inngest/visitor-phone-enrich-request";
 import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 import { customSignalBackfill } from "@/inngest/custom-signal-backfill";
 import { dataRetentionPurge } from "@/inngest/data-retention";
@@ -134,6 +142,40 @@ export const { GET, POST, PUT } = serve({
     dailyFounderBrief,
     // Signal → auto-enroll contacts into outbound sequences
     signalAutoEnroll,
+    // Kairos accelerator (B3) — fresh high-weight signal bumps
+    // active enrollments' next_step_at to NOW. Producer now wired
+    // into signal-monitor.ts (B3b).
+    signalAccelerateCadence,
+    // Priority score recompute (B3b) — daily 06:00 UTC. For each
+    // tenant, walks eligible companies and persists priority_score
+    // (multiplier × fit × accessibility) used by the call queue.
+    signalScoreDaily,
+    // Nurture recycle (B6) — daily 07:00 UTC. Completed enrollments
+    // with lastStepAt > 30d ago re-enroll into the tenant's Nurture
+    // sequence. Skips contacts already in nurture (no recycle loop).
+    nurtureRecycleD30,
+    // Deep-dive capacity check (B7) — weekly Monday 00:30 UTC. Counts
+    // this week's deep-dive meetings per tenant and persists the
+    // load + level (ok/tight/saturated) on tenants.settings.deepDiveLoad.
+    meetingCapacityCheck,
+    // Playbook capture (B4) — validates a batch of candidate entries
+    // (from an LLM extractor over a call/meeting/reply) and inserts
+    // the survivors into playbook_entries.
+    playbookCapturePostCall,
+    // Playbook LLM extractor (B4-extractor) — fans from
+    // coaching/post-interaction. Loads the activity content, calls
+    // Claude to extract objection/accroche/question candidates,
+    // emits playbook/capture-from-activity to the sink above.
+    playbookExtractFromActivity,
+    // Bridge: approved sequence_drafts → outbound_emails. Closes the
+    // loop on single + bulk approve — without this, drafts sat in
+    // `approved` forever and never sent. Fires on email.send.queued.
+    sequenceDraftToOutbound,
+    // Stub producer: 5-min cron that scans identified visits and
+    // emits phone/enrich-requested for callable-but-phoneless contacts.
+    // Consumer (Apollo→Kaspr→Lusha waterfall) lives on
+    // feat/voice-cold-call — drop-in when that merges.
+    visitorPhoneEnrichRequest,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
     // Relationship graph: KNOWS edges for warm-intro discovery

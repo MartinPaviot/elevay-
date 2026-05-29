@@ -29,6 +29,7 @@ import {
 } from "@/db/schema";
 import { and, eq, notInArray, inArray, desc } from "drizzle-orm";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
+import { isCompanyEligible } from "@/lib/sequences/enrollment-eligibility";
 
 export const signalAutoEnroll = inngest.createFunction(
   {
@@ -68,6 +69,32 @@ export const signalAutoEnroll = inngest.createFunction(
 
     if (existingDeal) {
       return { skipped: true, reason: "Company already has open deal", dealId: existingDeal.id };
+    }
+
+    // 1.5 Anti-ICP gate (B1, _specs/pilae-machine). A flagged company
+    //     must not auto-enrol even when a fresh signal fires — the
+    //     anti-ICP rule overrides the kairos accelerator.
+    const companyEligibility = await step.run("check-company-eligibility", async () => {
+      const [c] = await db
+        .select({
+          excludedReason: companies.excludedReason,
+          deletedAt: companies.deletedAt,
+        })
+        .from(companies)
+        .where(
+          and(eq(companies.id, companyId), eq(companies.tenantId, tenantId)),
+        )
+        .limit(1);
+      return c ?? { excludedReason: null, deletedAt: null };
+    });
+
+    if (!isCompanyEligible(companyEligibility)) {
+      return {
+        skipped: true,
+        reason: companyEligibility.excludedReason
+          ? `Company excluded (${companyEligibility.excludedReason})`
+          : "Company soft-deleted",
+      };
     }
 
     // 2. Find contacts at this company
