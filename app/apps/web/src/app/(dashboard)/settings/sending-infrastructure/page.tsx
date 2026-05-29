@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Mail, Shield, Loader2, Save, Plug } from "lucide-react";
+import { Mail, Shield, Loader2, Save, Plug, Phone } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+// (VoiceSection uses Card, Button, Input, useToast above — useCallback +
+// useEffect + useState are already imported for the parent page.)
 
 type SendingMode =
   | "primary-with-caps"
@@ -310,6 +312,9 @@ export default function SendingInfrastructurePage() {
           </CardBody>
         </Card>
 
+        {/* ── Voice (Twilio + Deepgram) — voice-cold-call Phase 1 ── */}
+        <VoiceSection />
+
         {/* ── Elevay-managed setup request ── */}
         <Card>
           <CardBody>
@@ -351,5 +356,227 @@ export default function SendingInfrastructurePage() {
         </Card>
       </div>
     </>
+  );
+}
+
+interface VoiceConfigPayload {
+  configured: boolean;
+  ready: boolean;
+  pool: Array<{ e164: string; countryCode: string; areaCode: string | null }>;
+  usage: {
+    yearMonth: string;
+    minutesUsed: number;
+    minutesIncluded: number;
+    hardCeiling: number;
+    capReached: boolean;
+    hardCeilingReached: boolean;
+  } | null;
+}
+
+function VoiceSection() {
+  const { toast } = useToast();
+  const [data, setData] = useState<VoiceConfigPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [buying, setBuying] = useState(false);
+  const [country, setCountry] = useState("FR");
+  const [areaCode, setAreaCode] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/calls/config");
+      if (!res.ok) return;
+      const json = (await res.json()) as VoiceConfigPayload;
+      setData(json);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await refresh();
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
+
+  const handleBuy = useCallback(async () => {
+    if (buying) return;
+    setBuying(true);
+    try {
+      const res = await fetch("/api/calls/numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          countryCode: country,
+          areaCode: areaCode.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const code = body?.code ?? "unknown";
+        toast(
+          code === "no_inventory"
+            ? "Aucun numéro disponible chez Twilio pour ce country/area code."
+            : code === "voice_not_configured"
+              ? "Configurez Twilio dans .env.local avant d'acheter un numéro."
+              : `Échec achat numéro (${code}).`,
+          "error",
+        );
+      } else {
+        toast("Numéro provisionné et ajouté au pool.", "success");
+        setAreaCode("");
+        await refresh();
+      }
+    } catch (err) {
+      toast(
+        `Erreur achat: ${err instanceof Error ? err.message : String(err)}`,
+        "error",
+      );
+    } finally {
+      setBuying(false);
+    }
+  }, [buying, country, areaCode, toast, refresh]);
+
+  return (
+    <Card>
+      <CardBody>
+        <div className="flex items-center gap-2">
+          <Phone size={16} style={{ color: "var(--color-text-tertiary)" }} />
+          <h2
+            className="text-[14px] font-semibold"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            Voice (Twilio)
+          </h2>
+        </div>
+        <p
+          className="mt-1 text-[12px]"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Configurez Twilio + Deepgram pour activer Call Mode (cold call
+          autonome). Les credentials sont en variables d&apos;environnement —
+          voir <code>docs/voice-bootstrap.md</code> pour la marche à suivre.
+        </p>
+
+        {loading ? (
+          <div className="mt-3 flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+            <Loader2 size={12} className="animate-spin" />
+            Lecture de la configuration…
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            <div
+              className="rounded-md p-3 text-[12px]"
+              style={{
+                background: data?.configured
+                  ? "rgba(34,197,94,.08)"
+                  : "rgba(234,179,8,.08)",
+                border: data?.configured
+                  ? "1px solid rgba(34,197,94,.3)"
+                  : "1px solid rgba(234,179,8,.3)",
+              }}
+            >
+              <div className="font-medium" style={{
+                color: data?.configured ? "rgb(21,128,61)" : "rgb(133,77,14)",
+              }}>
+                {data?.configured
+                  ? "Twilio connecté"
+                  : "Twilio non configuré"}
+              </div>
+              <div className="mt-0.5" style={{ color: "var(--color-text-tertiary)" }}>
+                {data?.configured
+                  ? data.ready
+                    ? `${data.pool.length} numéro${data.pool.length === 1 ? "" : "s"} actif${data.pool.length === 1 ? "" : "s"} dans le pool.`
+                    : "Aucun numéro sortant provisionné. Voir docs/voice-bootstrap.md pour en acheter un."
+                  : "Ajoutez TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET / TWILIO_APP_SID dans .env.local puis redémarrez."}
+              </div>
+            </div>
+
+            {data?.usage && (
+              <div
+                className="rounded-md p-3 text-[12px]"
+                style={{
+                  background: "var(--color-bg-hover)",
+                  border: "1px solid var(--color-border-default)",
+                }}
+              >
+                <div className="font-medium" style={{ color: "var(--color-text-primary)" }}>
+                  Usage {data.usage.yearMonth}
+                </div>
+                <div className="mt-1" style={{ color: "var(--color-text-tertiary)" }}>
+                  {data.usage.minutesUsed} / {data.usage.minutesIncluded} min incluses
+                  {data.usage.capReached &&
+                    !data.usage.hardCeilingReached &&
+                    " — en overage ($0.05/min)"}
+                  {data.usage.hardCeilingReached && " — plafond dur atteint, appels bloqués"}
+                </div>
+              </div>
+            )}
+
+            {data?.pool && data.pool.length > 0 && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
+                  Numéros provisionnés
+                </div>
+                <ul className="mt-1 space-y-0.5 text-[12px]" style={{ color: "var(--color-text-primary)" }}>
+                  {data.pool.map((n) => (
+                    <li key={n.e164}>
+                      {n.e164}{" "}
+                      <span style={{ color: "var(--color-text-tertiary)" }}>
+                        ({n.countryCode}{n.areaCode ? ` · ${n.areaCode}` : ""})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {data?.configured && (
+              <div className="pt-2" style={{ borderTop: "1px solid var(--color-border-default)" }}>
+                <div className="text-[11px] uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
+                  Acheter un numéro
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="h-8 rounded-md border px-2 text-[12px]"
+                    style={{
+                      background: "var(--color-bg-card)",
+                      borderColor: "var(--color-border-default)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    <option value="FR">FR · France</option>
+                    <option value="US">US · United States</option>
+                    <option value="GB">GB · United Kingdom</option>
+                    <option value="BE">BE · Belgique</option>
+                    <option value="CH">CH · Suisse</option>
+                    <option value="CA">CA · Canada</option>
+                  </select>
+                  <Input
+                    value={areaCode}
+                    onChange={(e) => setAreaCode(e.target.value)}
+                    placeholder="Area code (ex 415, optionnel)"
+                    className="h-8 max-w-[200px] text-[12px]"
+                  />
+                  <Button size="sm" onClick={() => void handleBuy()} disabled={buying}>
+                    {buying ? "Achat…" : "Acheter"}
+                  </Button>
+                </div>
+                <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  Twilio facture ~$1.15/mois par numéro. L&apos;area code laisse choisir
+                  un préfixe local pour une meilleure pickup-rate.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
