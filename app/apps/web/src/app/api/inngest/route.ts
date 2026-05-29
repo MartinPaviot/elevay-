@@ -38,6 +38,7 @@ import { playbookCapturePostCall } from "@/inngest/playbook-capture-post-call";
 import { playbookExtractFromActivity } from "@/inngest/playbook-extract-from-activity";
 import { sequenceDraftToOutbound } from "@/inngest/sequence-draft-to-outbound";
 import { signalScoreDaily } from "@/inngest/signal-score-daily";
+import { visitorPhoneEnrichRequest } from "@/inngest/visitor-phone-enrich-request";
 import { nightlyRelationshipGraphBuild, onDemandRelationshipGraphBuild } from "@/inngest/relationship-graph-builder";
 import { customSignalBackfill } from "@/inngest/custom-signal-backfill";
 import { dataRetentionPurge } from "@/inngest/data-retention";
@@ -168,6 +169,11 @@ export const { GET, POST, PUT } = serve({
     // loop on single + bulk approve — without this, drafts sat in
     // `approved` forever and never sent. Fires on email.send.queued.
     sequenceDraftToOutbound,
+    // Stub producer: 5-min cron that scans identified visits and
+    // emits phone/enrich-requested for callable-but-phoneless contacts.
+    // Consumer (Apollo→Kaspr→Lusha waterfall) lives on
+    // feat/voice-cold-call — drop-in when that merges.
+    visitorPhoneEnrichRequest,
     // Health checks: service status monitoring every 6h
     serviceHealthCheck,
     // Relationship graph: KNOWS edges for warm-intro discovery
