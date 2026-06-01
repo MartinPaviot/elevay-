@@ -1,0 +1,92 @@
+/**
+ * GET  /api/icps   — list the tenant's ICPs (+ criteria count, fit count)
+ * POST /api/icps   — create an ICP with criteria
+ *
+ * Multi-ICP CRUD (P2, _specs/multi-icp). Create routes through
+ * validateIcpInput against the resolved catalog so no incoherent
+ * criterion persists. On success, emits icp/recompute-tenant so the
+ * matrix + companies.score reflect the new ICP.
+ */
+
+import { getAuthContext, requireAdmin } from "@/lib/auth/auth-utils";
+import { db } from "@/db";
+import { icps, icpCriteria, companyIcpFit } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { validateIcpInput } from "@/lib/icp/validation";
+import { resolveCatalogForValidation } from "@/lib/icp/catalog-db";
+import { inngest } from "@/inngest/client";
+
+export async function GET() {
+  const authCtx = await getAuthContext();
+  if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const rows = await db
+    .select({
+      id: icps.id,
+      name: icps.name,
+      description: icps.description,
+      status: icps.status,
+      priority: icps.priority,
+      createdAt: icps.createdAt,
+      criteriaCount: sql<number>`(SELECT count(*)::int FROM icp_criteria WHERE icp_criteria.icp_id = ${icps.id})`,
+      fitCount: sql<number>`(SELECT count(*)::int FROM company_icp_fit WHERE company_icp_fit.icp_id = ${icps.id} AND company_icp_fit.fit_score >= 0.5)`,
+    })
+    .from(icps)
+    .where(eq(icps.tenantId, authCtx.tenantId))
+    .orderBy(icps.priority, icps.createdAt);
+
+  return Response.json({ icps: rows });
+}
+
+export async function POST(req: Request) {
+  const authCtx = await getAuthContext();
+  if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const catalog = await resolveCatalogForValidation(authCtx.tenantId);
+  const validation = validateIcpInput(body as Record<string, unknown>, catalog);
+  if (!validation.ok) {
+    return Response.json({ error: validation.error }, { status: 400 });
+  }
+  const { name, status, priority, description, criteria } = validation.value;
+
+  const icpId = crypto.randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.insert(icps).values({
+      id: icpId,
+      tenantId: authCtx.tenantId,
+      name,
+      description,
+      status,
+      priority,
+      createdByUserId: authCtx.userId,
+    });
+    if (criteria.length > 0) {
+      await tx.insert(icpCriteria).values(
+        criteria.map((c) => ({
+          icpId,
+          fieldKey: c.fieldKey,
+          operator: c.operator,
+          value: c.value as object,
+          weight: c.weight,
+          isRequired: c.isRequired,
+        })),
+      );
+    }
+  });
+
+  // Recompute the matrix for this tenant so the new ICP scores.
+  inngest
+    .send({ name: "icp/recompute-tenant", data: { tenantId: authCtx.tenantId } })
+    .catch(() => {});
+
+  return Response.json({ id: icpId, name, status, priority }, { status: 201 });
+}
