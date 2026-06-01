@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
-import { Plus, Trash2, Target } from "lucide-react";
+import { Plus, Trash2, Target, Radar } from "lucide-react";
 
 type CatalogField = {
   fieldKey: string;
@@ -72,6 +72,68 @@ export default function IcpProfilesPage() {
   const [draft, setDraft] = useState<DraftIcp | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Build TAM per ICP: maps icpId → live inserted count while streaming.
+  const [building, setBuilding] = useState<Record<string, number>>({});
+
+  const buildTam = useCallback(
+    async (icpId: string, icpName: string) => {
+      setBuilding((b) => ({ ...b, [icpId]: 0 }));
+      try {
+        const res = await fetch("/api/tam/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ icpId, targetCount: 200 }),
+        });
+        if (!res.ok || !res.body) {
+          const d = await res.json().catch(() => ({}));
+          toast(d.error ?? `Build failed (${res.status})`, "error");
+          setBuilding((b) => {
+            const next = { ...b };
+            delete next[icpId];
+            return next;
+          });
+          return;
+        }
+        // Parse the NDJSON stream for a live inserted count.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let inserted = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const ev = JSON.parse(line) as { type: string; message?: string };
+              if (ev.type === "company.inserted") {
+                inserted++;
+                setBuilding((b) => ({ ...b, [icpId]: inserted }));
+              } else if (ev.type === "error" && ev.message) {
+                toast(`Build error: ${ev.message}`, "error");
+              }
+            } catch {
+              // partial / non-JSON line — ignore
+            }
+          }
+        }
+        toast(`Sourced ${inserted} companies for "${icpName}".`, "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Network error", "error");
+      } finally {
+        setBuilding((b) => {
+          const next = { ...b };
+          delete next[icpId];
+          return next;
+        });
+        refresh();
+      }
+    },
+    [toast],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -215,9 +277,27 @@ export default function IcpProfilesPage() {
                           {icp.criteriaCount} criteria · {icp.fitCount} companies fit
                         </p>
                       </button>
-                      <button onClick={() => remove(icp.id)} aria-label="Delete ICP" className="shrink-0 rounded p-1.5" style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-border-default)" }}>
-                        <Trash2 size={13} />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          onClick={() => buildTam(icp.id, icp.name)}
+                          disabled={building[icp.id] !== undefined || icp.criteriaCount === 0}
+                          title={icp.criteriaCount === 0 ? "Add criteria first" : "Source the TAM for this ICP via Apollo"}
+                          className="flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium"
+                          style={{
+                            color: building[icp.id] !== undefined ? "var(--color-text-tertiary)" : "#fff",
+                            background: building[icp.id] !== undefined ? "var(--color-bg-card)" : "var(--color-accent)",
+                            border: "1px solid var(--color-accent)",
+                            opacity: icp.criteriaCount === 0 ? 0.5 : 1,
+                            cursor: icp.criteriaCount === 0 ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          <Radar size={12} />
+                          {building[icp.id] !== undefined ? `Sourcing… ${building[icp.id]}` : "Build TAM"}
+                        </button>
+                        <button onClick={() => remove(icp.id)} aria-label="Delete ICP" className="rounded p-1.5" style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-border-default)" }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   </CardBody>
                 </Card>
