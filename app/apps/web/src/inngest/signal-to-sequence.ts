@@ -131,6 +131,7 @@ export const signalAutoEnroll = inngest.createFunction(
         .select({
           id: sequences.id,
           name: sequences.name,
+          icpId: sequences.icpId,
           campaignConfig: sequences.campaignConfig,
         })
         .from(sequences)
@@ -141,6 +142,34 @@ export const signalAutoEnroll = inngest.createFunction(
           ),
         )
         .orderBy(desc(sequences.createdAt));
+
+      // Multi-ICP routing (Phase 3): if the company has a primary ICP
+      // and an active sequence is bound to it, that wins — the message
+      // is tuned to the segment. Falls back to the signal-trigger
+      // picker below when there's no ICP-bound sequence.
+      const [companyRow] = await db
+        .select({ properties: companies.properties })
+        .from(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenantId)))
+        .limit(1);
+      const primaryIcpId =
+        ((companyRow?.properties as Record<string, unknown> | null)?.primaryIcpId as
+          | string
+          | null
+          | undefined) ?? null;
+
+      const { pickIcpScopedSequence } = await import(
+        "@/lib/icp/enrollment-routing"
+      );
+      const icpRoute = pickIcpScopedSequence(
+        primaryIcpId,
+        candidates.map((c) => ({ id: c.id, icpId: c.icpId ?? null })),
+      );
+      if (icpRoute.reason === "primary_icp_match" && icpRoute.sequenceId) {
+        const match = candidates.find((c) => c.id === icpRoute.sequenceId);
+        if (match) return { id: match.id, name: match.name };
+      }
+
       const { pickSequenceForSignal } = await import(
         "@/lib/sequences/triggers"
       );
