@@ -18,11 +18,9 @@ import {
   BarChart3,
   Target,
 } from "lucide-react";
-import {
-  DashboardMock,
-  IntegrationsStrip,
-} from "./_components/product-mockups";
+import { IntegrationsStrip } from "./_components/product-mockups";
 import { ProcessTour } from "./_components/process-tour";
+import { HeroDemo } from "./_components/hero-demo";
 
 const CALENDLY_URL = "https://calendly.com/contact-elevay/30min";
 
@@ -320,7 +318,7 @@ export default function LandingPage() {
 
         {/* The product shot */}
         <div id="product" className="relative mx-auto mt-14 max-w-5xl px-6">
-          <Animate><DashboardMock /></Animate>
+          <Animate><HeroDemo /></Animate>
         </div>
       </Section>
 

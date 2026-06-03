@@ -48,14 +48,14 @@ import {
 
 const BRAND = "linear-gradient(90deg,#17C3B2,#2C6BED,#FF7A3D)";
 
-const PHOTO = {
+export const PHOTO = {
   julien: "https://randomuser.me/api/portraits/men/32.jpg",
   sarah: "https://randomuser.me/api/portraits/women/44.jpg",
   tom: "https://randomuser.me/api/portraits/men/75.jpg",
   martin: "https://randomuser.me/api/portraits/men/41.jpg",
 };
 // Full-colour real company logos (the brand's actual favicon).
-const clogo = (domain: string) => `https://icon.horse/icon/${domain}`;
+export const clogo = (domain: string) => `https://icon.horse/icon/${domain}`;
 
 // Smooth, muted status palette (softer than #10B981 / #EF4444 / #F59E0B).
 const C = {
@@ -71,7 +71,7 @@ const C = {
 
 /* ── photo avatar with glyph fallback ──────────────────────────── */
 
-function Avatar({ src, size = 28 }: { src: string; size?: number }) {
+export function Avatar({ src, size = 28 }: { src: string; size?: number }) {
   return (
     <span
       className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EEF1F6]"
@@ -94,7 +94,7 @@ function Avatar({ src, size = 28 }: { src: string; size?: number }) {
 
 /* ── company logo with glyph fallback ──────────────────────────── */
 
-function Logo({
+export function Logo({
   src,
   size = 26,
   rounded = "rounded-[7px]",
