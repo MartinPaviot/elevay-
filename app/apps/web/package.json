@@ -18,7 +18,7 @@
     "db:migrate:apply": "tsx scripts/apply-migrations.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "voice:stream": "node --env-file=.env.local --import tsx ./scripts/voice-stream-server.ts"
+    "voice:stream": "tsx --env-file=.env.local ./scripts/voice-stream-server.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.64",
