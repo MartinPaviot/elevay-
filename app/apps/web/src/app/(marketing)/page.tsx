@@ -522,37 +522,6 @@ export default function LandingPage() {
         </Section>
       </div>
 
-      {/* LANDSCAPE: positioning vs the three alternatives */}
-      <Section className="pt-32">
-        <div className="mx-auto max-w-[1240px] px-6">
-          <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2C6BED]">Landscape</p></Animate>
-          <Animate><h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">The alternatives weren&apos;t built for founder-led sales</h2></Animate>
-          <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-600">Each category solves one slice and leaves you holding the rest. Elevay is built to not be any of them.</p></Animate>
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
-            {[
-              { icon: Database, kind: "Legacy CRMs", examples: "Salesforce, HubSpot, Attio", headline: "You maintain them.", body: "Per-seat pricing, manual data entry, dashboards that go stale the moment you stop typing. They store what you sell; they don't help you sell it." },
-              { icon: Megaphone, kind: "AI SDRs", examples: "11x, Artisan, AiSDR", headline: "They act without you.", body: "Autonomous senders that blast generic messages under your name. The output is forgettable; the cost lands on your domain and your reputation." },
-              { icon: Layers, kind: "Tool stacks", examples: "Apollo + Instantly + Clay + a CRM", headline: "Five tools, no memory.", body: "Prospecting here, sequences there, enrichment elsewhere. Each tool forgets what the others did, and you become the integration between them." },
-            ].map((card) => { const Icon = card.icon; return (
-              <Animate key={card.kind}>
-                <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-8 transition-shadow duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
-                  <div className="mb-4 inline-flex w-fit rounded-lg border border-gray-100 bg-gray-50 p-2.5"><Icon size={20} className="text-gray-600" /></div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{card.kind}</p>
-                  <p className="mt-1 text-xs text-gray-500">{card.examples}</p>
-                  <h3 className="mt-4 text-base font-semibold text-gray-900">{card.headline}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-600">{card.body}</p>
-                </div>
-              </Animate>
-            ); })}
-          </div>
-          <Animate>
-            <p className="mt-12 max-w-2xl text-base leading-relaxed text-gray-700">
-              <span className="font-semibold text-gray-900">Elevay is the fourth option:</span> one system that builds the list, works the signals, drafts the outreach, and remembers every conversation, and never acts without you.
-            </p>
-          </Animate>
-        </div>
-      </Section>
-
       {/* HOW IT WORKS */}
       <Section id="how-it-works" className="pt-32">
         <div className="mx-auto max-w-[1240px] px-6">
@@ -609,6 +578,38 @@ export default function LandingPage() {
               ))}
             </div>
           </div>
+        </div>
+      </Section>
+
+      {/* LANDSCAPE: positioning vs the alternatives (after the product
+          story, before the conversion CTAs) */}
+      <Section className="pt-32">
+        <div className="mx-auto max-w-[1240px] px-6">
+          <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2C6BED]">Landscape</p></Animate>
+          <Animate><h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900">The alternatives weren&apos;t built for founder-led sales</h2></Animate>
+          <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-600">Each category solves one slice and leaves you holding the rest. Elevay is built to not be any of them.</p></Animate>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            {[
+              { icon: Database, kind: "Legacy CRMs", examples: "Salesforce, HubSpot, Attio", headline: "You maintain them.", body: "Per-seat pricing, manual data entry, dashboards that go stale the moment you stop typing. They store what you sell; they don't help you sell it." },
+              { icon: Megaphone, kind: "AI SDRs", examples: "11x, Artisan, AiSDR", headline: "They act without you.", body: "Autonomous senders that blast generic messages under your name. The output is forgettable; the cost lands on your domain and your reputation." },
+              { icon: Layers, kind: "Tool stacks", examples: "Apollo + Instantly + Clay + a CRM", headline: "Five tools, no memory.", body: "Prospecting here, sequences there, enrichment elsewhere. Each tool forgets what the others did, and you become the integration between them." },
+            ].map((card) => { const Icon = card.icon; return (
+              <Animate key={card.kind}>
+                <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-8 transition-shadow duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
+                  <div className="mb-4 inline-flex w-fit rounded-lg border border-gray-100 bg-gray-50 p-2.5"><Icon size={20} className="text-gray-600" /></div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{card.kind}</p>
+                  <p className="mt-1 text-xs text-gray-500">{card.examples}</p>
+                  <h3 className="mt-4 text-base font-semibold text-gray-900">{card.headline}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-600">{card.body}</p>
+                </div>
+              </Animate>
+            ); })}
+          </div>
+          <Animate>
+            <p className="mt-12 max-w-2xl text-base leading-relaxed text-gray-700">
+              <span className="font-semibold text-gray-900">Elevay is the fourth option:</span> one system that builds the list, works the signals, drafts the outreach, and remembers every conversation, and never acts without you.
+            </p>
+          </Animate>
         </div>
       </Section>
 

@@ -574,12 +574,12 @@ function ProductCard({ children }: { children: React.ReactNode }) {
 export function IntegrationsStrip() {
   // Real full-colour brand logos (favicons), highest-res source per brand.
   const items = [
-    { src: "https://icon.horse/icon/gmail.com", l: "Gmail" },
+    { src: "https://icon.horse/icon/mail.google.com", l: "Gmail" },
     { src: "https://icon.horse/icon/outlook.com", l: "Outlook" },
     { src: "https://www.google.com/s2/favicons?domain=meet.google.com&sz=128", l: "Google Meet" },
     { src: "https://icon.horse/icon/zoom.us", l: "Zoom" },
     { src: "https://icon.horse/icon/teams.microsoft.com", l: "Teams" },
-    { src: "https://icon.horse/icon/calendar.google.com", l: "Calendar" },
+    { src: "https://cdn.simpleicons.org/googlecalendar", l: "Calendar" },
   ];
   return (
     <div aria-hidden="true" className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
