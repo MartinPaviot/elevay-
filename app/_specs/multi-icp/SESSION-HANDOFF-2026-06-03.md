@@ -18,7 +18,7 @@ errors across the branch, 181 affected-suite tests green.
 |---|---|
 | 1. Target identification (multi-ICP, TAM) | **Working.** 2 ICPs, criteria→Apollo, fit matrix. Count-subquery bug fixed → Build TAM enabled. |
 | 2. Enrichment — company | **Working.** Apollo→Datagma(EU)→Firmable(AU)→Crunchbase→Hunter→LLM waterfall. |
-| 2. Enrichment — contact mobile/email | **CH/FR waterfall built** (Apollo→Kaspr→Lusha, geo-routed, mobile-first, `phoneType`→call priority). **Needs `KASPR_API_KEY`/`LUSHA_API_KEY`** + a payload-mapping verification pass (clients can't be validated without a live key). Degrades to Apollo-only without keys. |
+| 2. Enrichment — contact mobile/email | **CH/FR waterfall built** (sync Apollo→Kaspr→Lusha, geo-routed, mobile-first, `phoneType`→call priority). PLUS **Zeliq** (async, 40+ EU/FR sources) as a deep-enrichment path — see below. All key-gated; degrades to Apollo-only without keys. |
 | 3. Prioritisation (priority_score, call queue) | **Working** (pre-existing). |
 | 4. The call (Twilio + Call Mode) | **Working** (pre-existing). CH added to two-party recording consent. |
 | 4b. Live transcription/coaching | **Code complete + verified-loadable** (`scripts/voice-stream-server.ts` + Deepgram v5 + coaching tap). **Needs `DEEPGRAM_API_KEY`** + hosting the server where Twilio can reach it over wss (deploy decision). Run: `pnpm voice:stream`. |
@@ -48,10 +48,29 @@ errors across the branch, 181 affected-suite tests green.
   to queue captured email/meeting/call activities; review at
   **/settings/capture-approvals**. Default `auto` = unchanged.
 
+## Zeliq (your question — yes, and it's wired)
+
+Zeliq (Paris, GDPR-native, aggregates 40+ data sources) is a strong fit for
+the FR/CH mobile gap — likely better single-call coverage than Kaspr/Lusha.
+Its enrich API is **asynchronous** (you pass a `callback_url`, Zeliq POSTs the
+result back), so it's NOT a sync-waterfall adapter; it's a fire-and-webhook
+path:
+- `POST /api/contacts/[id]/zeliq-enrich` fires email+phone enrichment.
+- `POST /api/webhooks/zeliq?contactId=…&token=…` receives the callback and
+  updates the contact (mobile → `phoneType=mobile` → call-queue priority).
+- Key-gated (`ZELIQ_API_KEY`); auth scheme + async payload shape are
+  defensive best-effort — **verify against a live key** (the parser scans
+  common field names; a real callback will confirm them).
+- Set `ZELIQ_WEBHOOK_SECRET` (callback token) and, in dev, `ZELIQ_CALLBACK_BASE_URL`
+  (a tunnel) so Zeliq can reach the webhook.
+
+Recommended shape: keep the sync waterfall for instant fill, use Zeliq as the
+async deep pass for contacts still missing a mobile.
+
 ## Needs you (5h-away checklist)
 
-1. **Keys**: `KASPR_API_KEY`, `LUSHA_API_KEY` (FR/CH mobiles), `DEEPGRAM_API_KEY`
-   (live transcription). Add to `.env.local` / prod env.
+1. **Keys**: `KASPR_API_KEY`, `LUSHA_API_KEY`, `ZELIQ_API_KEY` (FR/CH mobiles),
+   `DEEPGRAM_API_KEY` (live transcription). Add to `.env.local` / prod env.
 2. **Verify** the Kaspr/Lusha response mapping once a key is in (clients are
    defensive but unverified against a live response).
 3. **Deploy** `voice:stream` on a long-running host with a public wss tunnel;
