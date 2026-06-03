@@ -17,6 +17,9 @@ import {
   MessageSquare,
   BarChart3,
   Target,
+  Lock,
+  Key,
+  RotateCcw,
 } from "lucide-react";
 import { IntegrationsStrip } from "./_components/product-mockups";
 import { ProcessTour } from "./_components/process-tour";
@@ -309,11 +312,11 @@ export default function LandingPage() {
           <Animate><p className="mx-auto mt-6 max-w-[620px] text-lg leading-relaxed text-gray-600">It builds your target list, tells you who to reach and when, drafts your outreach across email and calls, and captures every meeting in your CRM. You review and close.</p></Animate>
           <Animate>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link href="/sign-up" className="cursor-pointer rounded-lg px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Try for free</Link>
+              <Link href="/sign-up" className="cursor-pointer rounded-lg px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Build my target list</Link>
               <a href={CALENDLY_URL} target="_blank" rel="noopener noreferrer" className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-6 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400">Book a demo <ArrowRight size={14} className="text-gray-400" /></a>
             </div>
           </Animate>
-          <Animate><p className="mt-4 text-xs text-gray-500">14-day free trial on your own data. No credit card.</p></Animate>
+          <Animate><p className="mt-4 text-xs text-gray-500">Free 14-day trial on your own data · No credit card · Cancel anytime</p></Animate>
         </div>
 
         {/* The product shot */}
@@ -327,6 +330,21 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1240px] px-6">
           <Animate><p className="text-center text-xs font-medium uppercase tracking-wider text-gray-400">Works with the tools you already use</p></Animate>
           <Animate><div className="mt-7"><IntegrationsStrip /></div></Animate>
+          {/* Trust / control band — honest anxiety-reducers (MECLABS A).
+              Every claim is true today: see the FAQ (encryption, OAuth,
+              revoke) and the human-in-the-loop principle. */}
+          <Animate>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5">
+              {[
+                { icon: Lock, t: "Encrypted in transit and at rest" },
+                { icon: Key, t: "OAuth login, never your password" },
+                { icon: RotateCcw, t: "Revoke access anytime" },
+                { icon: UserCheck, t: "Nothing sends without you" },
+              ].map((c) => { const Icon = c.icon; return (
+                <span key={c.t} className="inline-flex items-center gap-1.5 text-[12px] text-gray-500"><Icon size={13} className="text-gray-400" /> {c.t}</span>
+              ); })}
+            </div>
+          </Animate>
         </div>
       </Section>
 
@@ -501,11 +519,11 @@ export default function LandingPage() {
             <Animate><p className="mt-4 text-lg text-gray-600">Free to start. Connected in 3 minutes.</p></Animate>
             <Animate>
               <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-                <Link href="/sign-up" className="inline-block cursor-pointer rounded-lg px-8 py-4 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Get started free</Link>
+                <Link href="/sign-up" className="inline-block cursor-pointer rounded-lg px-8 py-4 text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "linear-gradient(90deg, #17C3B2, #2C6BED, #FF7A3D)", backgroundSize: "120% 100%", backgroundPosition: "center" }}>Build my target list</Link>
                 <a href={CALENDLY_URL} target="_blank" rel="noopener noreferrer" className="cursor-pointer text-sm font-semibold text-gray-600 transition-colors hover:text-gray-900">or book a demo &rarr;</a>
               </div>
             </Animate>
-            <Animate><p className="mt-4 text-xs text-gray-500">No credit card required</p></Animate>
+            <Animate><p className="mt-4 text-xs text-gray-500">No credit card · Cancel anytime · Your data stays yours</p></Animate>
           </div>
         </div>
       </Section>
