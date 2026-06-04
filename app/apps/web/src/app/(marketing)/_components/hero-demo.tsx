@@ -17,7 +17,7 @@
  * static under prefers-reduced-motion. The sidebar's active item follows.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactElement } from "react";
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useInView } from "framer-motion";
 import {
   Building2, Users, CircleDot, Inbox, Phone, Clock, BookOpen, Wand2, Zap,
@@ -77,9 +77,9 @@ function PageHeaderBar({ icon: Icon, title, count, children }: { icon: LucideIco
   );
 }
 
-function HBtn({ icon: Icon, children, gradient }: { icon?: LucideIcon; children: React.ReactNode; gradient?: boolean }) {
+function HBtn({ icon: Icon, children, gradient, act }: { icon?: LucideIcon; children: React.ReactNode; gradient?: boolean; act?: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-medium"
+    <span data-action={act} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-medium"
       style={gradient ? { background: BRAND, color: "#fff" } : { border: `1px solid ${T.border}`, color: T.sec }}>
       {Icon && <Icon size={11} />}{children}
     </span>
@@ -154,7 +154,7 @@ function AccountsPhase({ reduced }: { reduced: boolean }) {
     <div className="flex h-full flex-col">
       <PageHeaderBar icon={Building2} title="Accounts" count={<CountUp to={544} start={!reduced} />}>
         <HBtn icon={Sparkles}>Find more</HBtn>
-        <HBtn icon={Target}>Score</HBtn>
+        <HBtn icon={Target} act="score">Score</HBtn>
         <HBtn icon={Plus} gradient>Create</HBtn>
       </PageHeaderBar>
       <FilterBar>
@@ -268,7 +268,7 @@ function CampaignsPhase({ reduced }: { reduced: boolean }) {
               {sent ? (
                 <motion.span key="s" initial={reduced ? false : { scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold" style={{ background: C.greenSoft, color: C.green }}><Check size={13} /> Approved · sending to 18</motion.span>
               ) : (
-                <motion.span key="a" exit={reduced ? undefined : { opacity: 0 }} className="rounded-md px-3 py-1.5 text-[11px] font-semibold text-white" style={{ background: BRAND }}>Approve &amp; send</motion.span>
+                <motion.span key="a" data-action="approve" exit={reduced ? undefined : { opacity: 0 }} className="rounded-md px-3 py-1.5 text-[11px] font-semibold text-white" style={{ background: BRAND }}>Approve &amp; send</motion.span>
               )}
             </AnimatePresence>
             {!sent && <span className="rounded-md border px-3 py-1.5 text-[11px] font-medium" style={{ borderColor: T.border, color: T.sec }}>Edit</span>}
@@ -308,7 +308,7 @@ function MeetingsPhase({ reduced }: { reduced: boolean }) {
             </motion.div>
           </div>
           <div className="flex items-center justify-between border-t px-3.5 py-2.5" style={{ borderColor: T.soft }}>
-            <span className="rounded-md px-3 py-1.5 text-[11px] font-semibold text-white" style={{ background: BRAND }}>Review &amp; confirm</span>
+            <span data-action="confirm" className="rounded-md px-3 py-1.5 text-[11px] font-semibold text-white" style={{ background: BRAND }}>Review &amp; confirm</span>
             <span className="flex items-center gap-1 text-[10.5px]" style={{ color: T.ter }}><Mic size={11} /> Transcribed via Recall.ai</span>
           </div>
         </div>
@@ -436,13 +436,16 @@ function ChatPhase({ reduced }: { reduced: boolean }) {
   );
 }
 
-const phases = [
-  { nav: "Accounts", el: AccountsPhase },
+// `action` = the real button the agent cursor clicks mid-phase, and the ms
+// at which it clicks — tuned to land exactly as that phase's animation
+// fires (the email sends, the deal scores, the answer streams).
+const phases: { nav: string; el: (p: { reduced: boolean }) => ReactElement; action?: { key: string; at: number } }[] = [
+  { nav: "Accounts", el: AccountsPhase, action: { key: "score", at: 1500 } },
   { nav: "Up next", el: UpNextPhase },
-  { nav: "Campaigns", el: CampaignsPhase },
-  { nav: "Meetings", el: MeetingsPhase },
+  { nav: "Campaigns", el: CampaignsPhase, action: { key: "approve", at: 3850 } },
+  { nav: "Meetings", el: MeetingsPhase, action: { key: "confirm", at: 3200 } },
   { nav: "Opportunities", el: OpportunitiesPhase },
-  { nav: "Up next", el: ChatPhase },
+  { nav: "Up next", el: ChatPhase, action: { key: "send", at: 2150 } },
 ];
 
 /* ── persistent chat bar (types the query during the Chat phase) ── */
@@ -456,7 +459,7 @@ function ChatBar({ phase, reduced }: { phase: number; reduced: boolean }) {
         <div className="w-full truncate rounded-xl border py-2 pl-9 pr-9 text-[11px]" style={{ borderColor: asking ? "rgba(44,107,237,0.4)" : T.border, color: asking ? T.text : T.ter, background: T.card, boxShadow: "0 1px 2px rgba(26,26,46,0.05)" }}>
           {asking ? <Typewriter key={phase} text="What did Sarah say about budget last Thursday?" start={!reduced} speed={22} caret /> : "Show my best prospects, pipeline health, draft email…"}
         </div>
-        <div className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-white" style={{ background: T.accent }}><Send size={11} /></div>
+        <div data-action={asking ? "send" : undefined} className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-white" style={{ background: T.accent }}><Send size={11} /></div>
       </div>
     </div>
   );
@@ -480,21 +483,33 @@ export function HeroDemo() {
     return () => clearTimeout(t);
   }, [phase, paused, inView, reduced]);
 
-  // Agent cursor: glide to the active sidebar item, then "click". Makes the
-  // demo read as Elevay actually operating the app, not a slideshow.
+  // Agent cursor choreography: navigate to the section, then move to that
+  // phase's primary button and click it exactly as the action fires — so it
+  // reads as Elevay operating the app (clicks Approve, the email sends), not
+  // a slideshow.
   useEffect(() => {
     if (reduced) return;
     const frame = frameRef.current;
     if (!frame) return;
-    const item = frame.querySelector(`[data-nav="${phases[phase].nav}"]`) as HTMLElement | null;
-    if (!item) return;
-    const fr = frame.getBoundingClientRect();
-    const ir = item.getBoundingClientRect();
-    setCursor({ x: ir.left - fr.left + 12, y: ir.top - fr.top + ir.height / 2 - 1 });
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const moveTo = (el: Element | null) => {
+      if (!el) return;
+      const f = frame.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setCursor({ x: r.left - f.left + 12, y: r.top - f.top + r.height / 2 - 1 });
+    };
+    const pulse = () => { setClicking(true); timers.push(setTimeout(() => setClicking(false), 420)); };
+
     setClicking(false);
-    const t1 = setTimeout(() => setClicking(true), 540);
-    const t2 = setTimeout(() => setClicking(false), 1000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    moveTo(frame.querySelector(`[data-nav="${phases[phase].nav}"]`));
+    timers.push(setTimeout(pulse, 520));
+
+    const act = phases[phase].action;
+    if (act) {
+      timers.push(setTimeout(() => moveTo(frame.querySelector(`[data-action="${act.key}"]`)), Math.max(720, act.at - 720)));
+      timers.push(setTimeout(pulse, act.at));
+    }
+    return () => timers.forEach(clearTimeout);
   }, [phase, reduced, inView]);
 
   const PhaseEl = phases[phase].el;
