@@ -362,7 +362,9 @@ export default function LandingPage() {
         </div>
       </Section>
 
-      {/* WHY ELEVAY + comparison table */}
+      {/* WHY ELEVAY — the problem + a cited stat. The "with / without"
+          contrast it used to make is now carried, animated, by the step
+          sequence below. */}
       <Section className="pt-28">
         <div className="mx-auto max-w-[1240px] px-6">
           <div className="max-w-3xl">
@@ -378,29 +380,6 @@ export default function LandingPage() {
               </div>
             </Animate>
           </div>
-
-          <Animate>
-            <div className="mt-12 overflow-hidden rounded-xl border border-gray-200">
-              <div className="grid grid-cols-[1.2fr_1fr_1fr] gap-0 bg-gray-50 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                <div className="px-5 py-3">The work</div>
-                <div className="border-l border-gray-200 px-5 py-3">On your own</div>
-                <div className="border-l border-gray-200 px-5 py-3 text-gray-900" style={{ background: "rgba(44,107,237,0.06)" }}>With Elevay</div>
-              </div>
-              {[
-                { task: "Build a target list", old: "Import CSV, enrich, score by hand", elevay: "Auto-built from your ICP" },
-                { task: "Decide who to work today", old: "Guess, or work top-down", elevay: "Ranked by live signals" },
-                { task: "Write the outreach", old: "Template, then edit each one", elevay: "Drafted from real context" },
-                { task: "Log meeting notes", old: "15 min per call, from memory", elevay: "Recorded, transcribed, structured" },
-                { task: "Find what a buyer said", old: "Search your inbox", elevay: "Ask in chat, with citations" },
-              ].map((row, i, arr) => (
-                <div key={row.task} className={`grid grid-cols-[1.2fr_1fr_1fr] gap-0 text-[14px] ${i < arr.length - 1 ? "border-b border-gray-100" : ""}`}>
-                  <div className="px-5 py-4 font-medium text-gray-900">{row.task}</div>
-                  <div className="border-l border-gray-200 px-5 py-4 text-gray-500">{row.old}</div>
-                  <div className="border-l border-gray-200 px-5 py-4 text-gray-900">{row.elevay}</div>
-                </div>
-              ))}
-            </div>
-          </Animate>
         </div>
       </Section>
 
