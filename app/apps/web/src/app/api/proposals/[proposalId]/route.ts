@@ -29,6 +29,8 @@ export async function GET(_req: Request, { params }: Params) {
         label: proposalComponents.label,
         content: proposalComponents.content,
         order: proposalComponents.order,
+        confidence: proposalComponents.confidence,
+        source: proposalComponents.source,
       })
       .from(proposalComponents)
       .where(

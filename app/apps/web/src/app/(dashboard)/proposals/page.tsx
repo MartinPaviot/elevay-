@@ -24,6 +24,30 @@ interface TemplateDetail {
   componentMap: ComponentMap | null;
 }
 
+interface FilledCitation {
+  id: string;
+  type: string;
+  label: string;
+  snippet: string;
+  date: string | null;
+}
+interface FilledComponent {
+  componentId: string;
+  kind: string;
+  label: string;
+  content: string;
+  order: number;
+  confidence: "high" | "medium" | "low";
+  abstained: boolean;
+  citations: FilledCitation[];
+}
+
+const CONF_COLOR: Record<string, string> = {
+  high: "#16a34a",
+  medium: "#d97706",
+  low: "#dc2626",
+};
+
 const STATUS_LABEL: Record<string, string> = {
   uploaded: "Uploaded",
   detected: "Detected — review",
@@ -42,7 +66,7 @@ export default function ProposalsPage() {
   const [filling, setFilling] = useState(false);
   const [filled, setFilled] = useState<{
     proposalId: string;
-    components: Array<{ componentId: string; kind: string; label: string; content: string; order: number }>;
+    components: Array<FilledComponent>;
     unmappedSections: string[];
   } | null>(null);
 
@@ -163,7 +187,7 @@ export default function ProposalsPage() {
     });
     const d = (await res.json().catch(() => ({}))) as {
       proposalId?: string;
-      components?: Array<{ componentId: string; kind: string; label: string; content: string; order: number }>;
+      components?: FilledComponent[];
       unmappedSections?: string[];
       error?: string;
       message?: string;
@@ -404,12 +428,43 @@ export default function ProposalsPage() {
                       )}
                       {filled.components.map((c) => (
                         <div key={c.componentId} className="rounded-md p-2" style={{ border: "1px solid var(--color-border-default)" }}>
-                          <div className="text-[11px] uppercase" style={{ color: "var(--color-text-tertiary)" }}>
-                            {c.label} · {c.kind}
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="text-[11px] uppercase" style={{ color: "var(--color-text-tertiary)" }}>
+                              {c.label} · {c.kind}
+                            </span>
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase"
+                              style={{ background: CONF_COLOR[c.confidence] ?? "#6b7280", color: "#fff" }}
+                              title="Detection/grounding confidence"
+                            >
+                              {c.confidence}
+                            </span>
+                            {c.abstained && (
+                              <span
+                                className="rounded px-1.5 py-0.5 text-[10px]"
+                                style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}
+                              >
+                                needs input
+                              </span>
+                            )}
                           </div>
                           <div className="whitespace-pre-wrap text-[13px]" style={{ color: "var(--color-text-primary)" }}>
                             {c.content || "—"}
                           </div>
+                          {c.citations.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {c.citations.map((cit) => (
+                                <span
+                                  key={cit.id}
+                                  className="rounded px-1.5 py-0.5 text-[10px]"
+                                  style={{ background: "var(--color-bg-hover)", color: "var(--color-text-tertiary)" }}
+                                  title={cit.snippet}
+                                >
+                                  {cit.type === "field" ? cit.label : `${cit.label}${cit.date ? ` · ${cit.date}` : ""}`}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

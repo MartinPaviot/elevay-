@@ -1,11 +1,11 @@
 /**
- * PROPOSAL-002 fill engine (data layer).
+ * PROPOSAL-002/003 fill engine (data + trust layer).
  *
- * Turns a mapped template + a deal into per-component content:
- *  - field  -> resolved from structured data via its dataKey
- *  - section-> generated prose grounded in the deal's info base (one LLM call)
- * Persists a `proposals` row + `proposal_components` rows. Abstains cleanly
- * (FillUnavailable) rather than persisting a half-draft.
+ * Turns a mapped template + a deal into per-component content WITH a trust
+ * signal: each component carries a confidence, may abstain instead of
+ * fabricating, and (for sections) cites the exact source interactions it drew
+ * from. Persists `proposals` + `proposal_components` (content, confidence,
+ * source). Abstains cleanly (FillUnavailable) rather than persist a half-draft.
  */
 
 import { z } from "zod";
@@ -21,14 +21,21 @@ import {
 import { and, eq } from "drizzle-orm";
 import { getDealAmountDisplay, formatDealAmount } from "@/lib/deals/amount";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
-import {
-  getDeepConversationContext,
-  getSkillKnowledge,
-  getCompanyContacts,
-} from "@/skills/skill-knowledge";
+import { getSkillKnowledge } from "@/skills/skill-knowledge";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { getModelForTask } from "@/lib/ai/ai-provider";
+import { collectCitableSources, type CitableSource } from "./sources";
 import type { ComponentMap } from "./component-map";
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface Citation {
+  id: string;
+  type: string; // "activity" | "note" | "field"
+  label: string;
+  snippet: string;
+  date: string | null;
+}
 
 export class FillUnavailable extends Error {
   reason: "missing_required_data" | "template_not_mapped" | "deal_not_found";
@@ -84,11 +91,7 @@ export function resolveFieldValue(dataKey: string | null, ctx: FieldContext): st
       // Sanctioned headline total (never a manual project+platform sum).
       return formatDealAmount(getDealAmountDisplay(ctx.deal).total);
     case "date.today":
-      return ctx.now.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      return ctx.now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
     case "seller.companyName":
       return ctx.settings.onboardingCompanyName ?? "";
     case "seller.productDescription":
@@ -99,15 +102,34 @@ export function resolveFieldValue(dataKey: string | null, ctx: FieldContext): st
 }
 
 const sectionsSchema = z.object({
-  sections: z.array(z.object({ id: z.string(), content: z.string() })),
+  sections: z.array(
+    z.object({
+      id: z.string(),
+      content: z.string(),
+      confidence: z.enum(["high", "medium", "low"]),
+      citationIds: z.array(z.string()),
+      abstained: z.boolean(),
+    }),
+  ),
 });
 
-/** Generate prose for every section component in one grounded LLM call. */
+export interface GeneratedSection {
+  content: string;
+  confidence: Confidence;
+  citationIds: string[];
+  abstained: boolean;
+}
+
+/**
+ * Generate prose for every section in one grounded LLM call. The model cites
+ * the source-interaction ids it used, self-rates confidence, and ABSTAINS
+ * (empty content, low confidence) when a section has no grounding.
+ */
 export async function generateSections(
   sections: Array<{ id: string; label: string }>,
   contextBlock: string,
   tenantId: string,
-): Promise<Record<string, string>> {
+): Promise<Record<string, GeneratedSection>> {
   if (sections.length === 0) return {};
   const model = getModelForTask("chat");
   if (!model) {
@@ -118,14 +140,18 @@ export async function generateSections(
   }
 
   const sectionList = sections.map((s) => `- id "${s.id}": ${s.label}`).join("\n");
-  const prompt = `You are drafting a commercial proposal for a specific prospect. Using ONLY the grounded context below, write the prose for each requested section. Ground every claim in the context — reference real conversations, names, and numbers. No placeholders, no filler openers like "I hope this finds you well".
+  const prompt = `You are drafting a commercial proposal for a specific prospect. Use ONLY the context and the numbered SOURCE INTERACTIONS below. Ground every claim; never invent facts that are not supported by the sources.
 
 ${contextBlock}
 
-## Sections to write (return content keyed by the exact id)
+## Sections to write (return one entry per id)
 ${sectionList}
 
-Return one entry per section id with persuasive but honest prose (2-5 short paragraphs each, as appropriate to the section).`;
+For each section return:
+- content: persuasive but honest prose (2-5 short paragraphs), grounded in the sources.
+- citationIds: the exact [ids] of the SOURCE INTERACTIONS you used (e.g. ["A1","N2"]). Empty if none.
+- confidence: "high" only if well-grounded in specific sources; "medium" if partially grounded; "low" if thin.
+- abstained: true if there is NO grounding for this section in the sources — then set content to "" and confidence "low". Do NOT fabricate.`;
 
   const result = await tracedGenerateObject({
     model,
@@ -133,11 +159,22 @@ Return one entry per section id with persuasive but honest prose (2-5 short para
     prompt,
     _trace: { agentId: "skill-proposal-fill-sections", tenantId },
   });
-  const out: Record<string, string> = {};
-  for (const s of (result.object as { sections: Array<{ id: string; content: string }> }).sections) {
-    out[s.id] = s.content;
+
+  const out: Record<string, GeneratedSection> = {};
+  for (const s of (result.object as z.infer<typeof sectionsSchema>).sections) {
+    out[s.id] = {
+      content: s.content,
+      confidence: s.confidence,
+      citationIds: s.citationIds,
+      abstained: s.abstained,
+    };
   }
   return out;
+}
+
+/** Deterministic confidence for a resolved field value. */
+function fieldTrust(value: string): { confidence: Confidence; abstained: boolean } {
+  return value.trim() ? { confidence: "high", abstained: false } : { confidence: "low", abstained: true };
 }
 
 export interface FilledComponent {
@@ -146,6 +183,9 @@ export interface FilledComponent {
   label: string;
   content: string;
   order: number;
+  confidence: Confidence;
+  abstained: boolean;
+  citations: Citation[];
 }
 
 export interface FillResult {
@@ -155,6 +195,8 @@ export interface FillResult {
   components: FilledComponent[];
   unmappedSections: string[];
 }
+
+const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
 /** Fill a mapped template from a deal's info base and persist the proposal. */
 export async function buildProposalFill(
@@ -167,9 +209,7 @@ export async function buildProposalFill(
   const [tpl] = await db
     .select()
     .from(proposalTemplates)
-    .where(
-      and(eq(proposalTemplates.id, templateId), eq(proposalTemplates.tenantId, opts.tenantId)),
-    )
+    .where(and(eq(proposalTemplates.id, templateId), eq(proposalTemplates.tenantId, opts.tenantId)))
     .limit(1);
   if (!tpl) throw new FillUnavailable("template_not_mapped", `Template ${templateId} not found`);
   if (tpl.status !== "mapped" || !tpl.componentMap) {
@@ -220,24 +260,21 @@ export async function buildProposalFill(
   };
 
   const sectionComponents = map.components.filter((c) => c.kind === "section");
-  let sectionContent: Record<string, string> = {};
+  let generated: Record<string, GeneratedSection> = {};
+  let sourcesById = new Map<string, CitableSource>();
   if (sectionComponents.length > 0) {
-    const [knowledgeBlock, conversation, allContacts] = await Promise.all([
+    const [knowledgeBlock, sources] = await Promise.all([
       getSkillKnowledge(
         `commercial proposal pricing positioning ${company?.name ?? ""} ${company?.industry ?? ""}`,
         opts.tenantId,
       ),
-      getDeepConversationContext(opts.tenantId, {
+      collectCitableSources(opts.tenantId, {
         dealId,
         companyId: deal.companyId ?? undefined,
-        contactIds: deal.contactId ? [deal.contactId] : [],
-        query: `${company?.name ?? ""} ${deal.name} proposal requirements budget timeline`,
+        contactId: deal.contactId ?? undefined,
       }),
-      deal.companyId ? getCompanyContacts(deal.companyId, opts.tenantId) : Promise.resolve([]),
     ]);
-    const stakeholders = allContacts.length
-      ? allContacts.map((c) => `- ${c.name}${c.title ? ` (${c.title})` : ""}`).join("\n")
-      : "No contacts on file";
+    sourcesById = sources.byId;
     const contextBlock = `## Our Company
 - Name: ${settings.onboardingCompanyName || "our company"}
 - Product: ${settings.productDescription || "not specified"}
@@ -249,24 +286,15 @@ ${knowledgeBlock}
 - Industry: ${company?.industry || "unknown"}
 - Description: ${company?.description || "unknown"}
 
-## Stakeholders
-${stakeholders}
-
 ## Deal
 - Name: ${deal.name}
 - Stage: ${deal.stage}
 - Amount: ${formatDealAmount(getDealAmountDisplay(deal).total)}
 
-## Conversation History (emails, meetings, calls)
-${conversation.activities || "No prior interactions recorded"}
+## SOURCE INTERACTIONS (cite these by id)
+${sources.block}`;
 
-## Notes
-${conversation.notes || "No notes on file"}
-
-## Related Context (semantic search)
-${conversation.semanticResults || "None"}`;
-
-    sectionContent = await generateSections(
+    generated = await generateSections(
       sectionComponents.map((c) => ({ id: c.id, label: c.label })),
       contextBlock,
       opts.tenantId,
@@ -276,16 +304,43 @@ ${conversation.semanticResults || "None"}`;
   const filled: FilledComponent[] = map.components
     .slice()
     .sort((a, b) => a.order - b.order)
-    .map((c) => ({
-      componentId: c.id,
-      kind: c.kind,
-      label: c.label,
-      content: c.kind === "field" ? resolveFieldValue(c.dataKey, fieldCtx) : sectionContent[c.id] ?? "",
-      order: c.order,
-    }));
+    .map((c) => {
+      if (c.kind === "field") {
+        const value = resolveFieldValue(c.dataKey, fieldCtx);
+        const trust = fieldTrust(value);
+        const citations: Citation[] = trust.abstained
+          ? []
+          : [{ id: c.dataKey ?? "field", type: "field", label: c.dataKey ?? "field", snippet: value, date: null }];
+        return {
+          componentId: c.id,
+          kind: c.kind,
+          label: c.label,
+          content: value,
+          order: c.order,
+          confidence: trust.confidence,
+          abstained: trust.abstained,
+          citations,
+        };
+      }
+      const g = generated[c.id] ?? { content: "", confidence: "low" as Confidence, citationIds: [], abstained: true };
+      const citations: Citation[] = g.citationIds
+        .map((id) => sourcesById.get(id))
+        .filter((s): s is CitableSource => Boolean(s))
+        .map((s) => ({ id: s.id, type: s.type, label: s.label, snippet: s.snippet, date: s.date }));
+      return {
+        componentId: c.id,
+        kind: c.kind,
+        label: c.label,
+        content: g.content,
+        order: c.order,
+        confidence: g.confidence,
+        abstained: g.abstained,
+        citations,
+      };
+    });
 
   const unmappedSections = filled
-    .filter((f) => f.kind === "section" && !f.content.trim())
+    .filter((f) => f.kind === "section" && (f.abstained || !f.content.trim()))
     .map((f) => f.label);
 
   const proposalId = crypto.randomUUID();
@@ -312,11 +367,19 @@ ${conversation.semanticResults || "None"}`;
           placeholderToken: c?.placeholderToken ?? "",
           dataKey: c?.dataKey ?? null,
           content: f.content,
+          confidence: f.confidence,
+          source: { citations: f.citations, abstained: f.abstained },
           order: f.order,
         };
       }),
     );
   }
 
-  return { proposalId, templateId, dealId, components: filled, unmappedSections };
+  // Surface low-confidence first so the proofreader hits the risky parts first,
+  // but keep document order as the tiebreak.
+  const components = filled
+    .slice()
+    .sort((a, b) => CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] || a.order - b.order);
+
+  return { proposalId, templateId, dealId, components, unmappedSections };
 }

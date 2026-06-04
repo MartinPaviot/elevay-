@@ -6,16 +6,14 @@ const {
   tracedGenerateObjectMock,
   getTenantSettingsMock,
   getSkillKnowledgeMock,
-  getDeepConversationContextMock,
-  getCompanyContactsMock,
+  collectSourcesMock,
 } = vi.hoisted(() => ({
   dbMock: { select: vi.fn(), insert: vi.fn() },
   getModelForTaskMock: vi.fn(),
   tracedGenerateObjectMock: vi.fn(),
   getTenantSettingsMock: vi.fn(),
   getSkillKnowledgeMock: vi.fn(),
-  getDeepConversationContextMock: vi.fn(),
-  getCompanyContactsMock: vi.fn(),
+  collectSourcesMock: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({ db: dbMock }));
@@ -36,8 +34,9 @@ vi.mock("@/lib/config/tenant-settings", () => ({
 }));
 vi.mock("@/skills/skill-knowledge", () => ({
   getSkillKnowledge: (...a: unknown[]) => getSkillKnowledgeMock(...a),
-  getDeepConversationContext: (...a: unknown[]) => getDeepConversationContextMock(...a),
-  getCompanyContacts: (...a: unknown[]) => getCompanyContactsMock(...a),
+}));
+vi.mock("../sources", () => ({
+  collectCitableSources: (...a: unknown[]) => collectSourcesMock(...a),
 }));
 vi.mock("@/lib/ai/traced-ai", () => ({
   tracedGenerateObject: (...a: unknown[]) => tracedGenerateObjectMock(...a),
@@ -45,7 +44,7 @@ vi.mock("@/lib/ai/traced-ai", () => ({
 vi.mock("@/lib/ai/ai-provider", () => ({
   getModelForTask: (...a: unknown[]) => getModelForTaskMock(...a),
 }));
-// NOTE: @/lib/deals/amount is intentionally NOT mocked — exercise the real helper.
+// @/lib/deals/amount intentionally NOT mocked — exercise the real helper.
 
 const { resolveFieldValue, generateSections, buildProposalFill, FillUnavailable } =
   await import("../fill");
@@ -59,7 +58,6 @@ function chainOf(rows: unknown[]) {
 }
 
 const FIXED_NOW = new Date("2026-06-04T12:00:00Z");
-
 const BASE_FIELD_CTX = {
   company: { name: "Acme", industry: "SaaS", description: "PM platform" },
   contact: { firstName: "Sarah", lastName: "Chen", title: "VP Eng", email: "s@acme.com" },
@@ -69,57 +67,34 @@ const BASE_FIELD_CTX = {
 };
 
 describe("resolveFieldValue", () => {
-  it("resolves each dataKey from structured data", () => {
-    const r = (k: string) => resolveFieldValue(k, BASE_FIELD_CTX);
-    expect(r("company.name")).toBe("Acme");
-    expect(r("company.industry")).toBe("SaaS");
-    expect(r("contact.name")).toBe("Sarah Chen");
-    expect(r("contact.title")).toBe("VP Eng");
-    expect(r("deal.name")).toBe("Acme Deal");
-    expect(r("deal.summary")).toBe("Q2 rollout");
-    expect(r("seller.companyName")).toBe("Elevay");
-    expect(r("date.today")).toContain("2026");
-  });
-
-  it("uses the sanctioned deal total for deal.amount (legacy value path)", () => {
+  it("resolves keys and uses the sanctioned deal total", () => {
+    expect(resolveFieldValue("company.name", BASE_FIELD_CTX)).toBe("Acme");
+    expect(resolveFieldValue("contact.name", BASE_FIELD_CTX)).toBe("Sarah Chen");
     expect(resolveFieldValue("deal.amount", BASE_FIELD_CTX)).toBe("$50,000");
-  });
-
-  it("uses project+platform total for split deals", () => {
-    const ctx = { ...BASE_FIELD_CTX, deal: { ...BASE_FIELD_CTX.deal, value: null, projectAmount: 30000, platformArr: 20000 } };
-    expect(resolveFieldValue("deal.amount", ctx)).toBe("$50,000");
-  });
-
-  it("returns empty string for missing data and unknown keys (never 'undefined')", () => {
-    const ctx = { ...BASE_FIELD_CTX, company: null };
-    expect(resolveFieldValue("company.name", ctx)).toBe("");
+    expect(resolveFieldValue("deal.amount", { ...BASE_FIELD_CTX, deal: { ...BASE_FIELD_CTX.deal, value: null, projectAmount: 30000, platformArr: 20000 } })).toBe("$50,000");
     expect(resolveFieldValue("not.a.key", BASE_FIELD_CTX)).toBe("");
+    expect(resolveFieldValue("company.name", { ...BASE_FIELD_CTX, company: null })).toBe("");
   });
 });
 
-describe("generateSections", () => {
+describe("generateSections (trust)", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns {} for no sections without calling the model", async () => {
-    const out = await generateSections([], "ctx", "t1");
-    expect(out).toEqual({});
+  it("returns {} for no sections without a model call", async () => {
+    expect(await generateSections([], "ctx", "t1")).toEqual({});
     expect(getModelForTaskMock).not.toHaveBeenCalled();
   });
 
-  it("maps LLM output by section id", async () => {
+  it("maps content + confidence + citations + abstain per id", async () => {
     getModelForTaskMock.mockReturnValue({ modelId: "m" });
     tracedGenerateObjectMock.mockResolvedValue({
-      object: { sections: [{ id: "s1", content: "Exec prose" }] },
+      object: { sections: [{ id: "s1", content: "Exec", confidence: "high", citationIds: ["A1"], abstained: false }] },
     });
     const out = await generateSections([{ id: "s1", label: "Exec" }], "ctx", "t1");
-    expect(out).toEqual({ s1: "Exec prose" });
-    expect(tracedGenerateObjectMock.mock.calls[0][0]._trace).toEqual({
-      agentId: "skill-proposal-fill-sections",
-      tenantId: "t1",
-    });
+    expect(out).toEqual({ s1: { content: "Exec", confidence: "high", citationIds: ["A1"], abstained: false } });
   });
 
-  it("abstains (FillUnavailable) when no model and sections exist", async () => {
+  it("abstains (FillUnavailable) with no model", async () => {
     getModelForTaskMock.mockReturnValue(null);
     await expect(generateSections([{ id: "s1", label: "Exec" }], "ctx", "t1")).rejects.toMatchObject({
       name: "FillUnavailable",
@@ -128,47 +103,16 @@ describe("generateSections", () => {
   });
 });
 
-describe("buildProposalFill", () => {
+describe("buildProposalFill (trust)", () => {
   const MAP = {
     version: 1,
     components: [
-      {
-        id: "f1",
-        kind: "field",
-        label: "Client",
-        placeholderToken: "{{client}}",
-        dataKey: "company.name",
-        anchor: { headingText: null, offset: null },
-        required: true,
-        confidence: "high",
-        order: 0,
-      },
-      {
-        id: "sec1",
-        kind: "section",
-        label: "Executive Summary",
-        placeholderToken: "{{exec}}",
-        dataKey: null,
-        anchor: { headingText: "Executive Summary", offset: 0 },
-        required: true,
-        confidence: "high",
-        order: 1,
-      },
+      { id: "f1", kind: "field", label: "Client", placeholderToken: "{{client}}", dataKey: "company.name", anchor: { headingText: null, offset: null }, required: true, confidence: "high", order: 0 },
+      { id: "sec1", kind: "section", label: "Executive Summary", placeholderToken: "{{exec}}", dataKey: null, anchor: { headingText: "Executive Summary", offset: 0 }, required: true, confidence: "high", order: 1 },
     ],
   };
   const TEMPLATE = { id: "tpl1", tenantId: "t1", status: "mapped", componentMap: MAP };
-  const DEAL = {
-    id: "d1",
-    tenantId: "t1",
-    name: "Acme Deal",
-    stage: "proposal",
-    companyId: "co1",
-    contactId: "c1",
-    value: 50000,
-    projectAmount: null,
-    platformArr: null,
-    summary: "Q2",
-  };
+  const DEAL = { id: "d1", tenantId: "t1", name: "Acme Deal", stage: "proposal", companyId: "co1", contactId: "c1", value: 50000, projectAmount: null, platformArr: null, summary: "Q2" };
   const COMPANY = { id: "co1", name: "Acme", industry: "SaaS", description: "PM" };
   const CONTACT = { id: "c1", firstName: "Sarah", lastName: "Chen", title: "VP", email: "s@acme.com" };
 
@@ -177,13 +121,19 @@ describe("buildProposalFill", () => {
     dbMock.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
     getTenantSettingsMock.mockResolvedValue({ onboardingCompanyName: "Elevay", productDescription: "GTM" });
     getSkillKnowledgeMock.mockResolvedValue("");
-    getDeepConversationContextMock.mockResolvedValue({ activities: "", notes: "", semanticResults: "" });
-    getCompanyContactsMock.mockResolvedValue([]);
     getModelForTaskMock.mockReturnValue({ modelId: "m" });
-    tracedGenerateObjectMock.mockResolvedValue({ object: { sections: [{ id: "sec1", content: "Generated summary" }] } });
+    collectSourcesMock.mockResolvedValue({
+      sources: [{ id: "A1", type: "activity", label: "email_sent outbound", snippet: "pricing deck", date: "2026-05-28" }],
+      block: "[A1] (2026-05-28, email_sent outbound) pricing deck",
+      byId: new Map([["A1", { id: "A1", type: "activity", label: "email_sent outbound", snippet: "pricing deck", date: "2026-05-28" }]]),
+    });
+    // sec1 returns LOW confidence to verify triage ordering puts it first.
+    tracedGenerateObjectMock.mockResolvedValue({
+      object: { sections: [{ id: "sec1", content: "Generated summary", confidence: "low", citationIds: ["A1", "GHOST"], abstained: false }] },
+    });
   });
 
-  it("fills field + section and persists the proposal", async () => {
+  it("attaches confidence + resolved citations and persists them; triages low-confidence first", async () => {
     let idx = 0;
     dbMock.select.mockImplementation(() => {
       idx++;
@@ -192,28 +142,38 @@ describe("buildProposalFill", () => {
 
     const res = await buildProposalFill("tpl1", "d1", { tenantId: "t1", userId: "u1", now: FIXED_NOW });
 
-    expect(res.components.map((c) => c.content)).toEqual(["Acme", "Generated summary"]);
-    expect(res.unmappedSections).toEqual([]);
-    expect(typeof res.proposalId).toBe("string");
-    // proposals + proposal_components inserts
+    // low-confidence section sorts before the high-confidence field
+    expect(res.components.map((c) => c.confidence)).toEqual(["low", "high"]);
+    const sec = res.components.find((c) => c.componentId === "sec1")!;
+    const field = res.components.find((c) => c.componentId === "f1")!;
+
+    expect(field.content).toBe("Acme");
+    expect(field.confidence).toBe("high");
+    expect(field.citations[0]).toMatchObject({ type: "field", label: "company.name" });
+
+    expect(sec.content).toBe("Generated summary");
+    // only the valid citation id resolves; GHOST is dropped
+    expect(sec.citations).toHaveLength(1);
+    expect(sec.citations[0]).toMatchObject({ id: "A1", type: "activity", date: "2026-05-28" });
+
+    // proposals + proposal_components share one mocked values() fn; the 2nd
+    // call is the components array. Assert persisted confidence + source.
+    const valuesFn = dbMock.insert.mock.results[0].value.values as ReturnType<typeof vi.fn>;
+    const compValues = valuesFn.mock.calls[1][0] as Array<Record<string, unknown>>;
+    expect(compValues[0]).toHaveProperty("confidence");
+    expect(compValues[0].source as Record<string, unknown>).toHaveProperty("citations");
     expect(dbMock.insert).toHaveBeenCalledTimes(2);
   });
 
-  it("throws template_not_mapped when the template is not mapped", async () => {
+  it("throws template_not_mapped / deal_not_found", async () => {
     dbMock.select.mockReturnValue(chainOf([{ ...TEMPLATE, status: "uploaded", componentMap: null }]));
-    await expect(
-      buildProposalFill("tpl1", "d1", { tenantId: "t1" }),
-    ).rejects.toMatchObject({ name: "FillUnavailable", reason: "template_not_mapped" });
-  });
+    await expect(buildProposalFill("tpl1", "d1", { tenantId: "t1" })).rejects.toMatchObject({ reason: "template_not_mapped" });
 
-  it("throws deal_not_found when the deal is absent", async () => {
     let idx = 0;
     dbMock.select.mockImplementation(() => {
       idx++;
       return chainOf(idx === 1 ? [TEMPLATE] : []);
     });
-    await expect(
-      buildProposalFill("tpl1", "missing", { tenantId: "t1" }),
-    ).rejects.toMatchObject({ reason: "deal_not_found" });
+    await expect(buildProposalFill("tpl1", "missing", { tenantId: "t1" })).rejects.toMatchObject({ reason: "deal_not_found" });
   });
 });

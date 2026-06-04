@@ -18,6 +18,17 @@ export const proposalFillOutputSchema = z.object({
       label: z.string(),
       content: z.string(),
       order: z.number(),
+      confidence: z.enum(["high", "medium", "low"]),
+      abstained: z.boolean(),
+      citations: z.array(
+        z.object({
+          id: z.string(),
+          type: z.string(),
+          label: z.string(),
+          snippet: z.string(),
+          date: z.string().nullable(),
+        }),
+      ),
     }),
   ),
   unmappedSections: z.array(z.string()),
