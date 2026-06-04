@@ -153,43 +153,63 @@ describe("PATCH /api/proposals/[proposalId] (proofread edits)", () => {
 });
 
 describe("GET /api/proposals/[proposalId]/download", () => {
-  it("streams a filled .docx assembled from the original template", async () => {
-    const docXml = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:body></w:document>`;
-    const fixture = writeZip([{ name: "word/document.xml", bytes: Buffer.from(docXml, "utf8") }]);
-    const componentMap = {
-      version: 1,
-      components: [
-        {
-          id: "sec1",
-          kind: "section",
-          label: "Executive Summary",
-          placeholderToken: "{{exec}}",
-          dataKey: null,
-          anchor: { headingText: "Executive Summary", offset: 0 },
-          required: true,
-          confidence: "high",
-          order: 0,
-        },
-      ],
-    };
+  const docXml = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:body></w:document>`;
+  const componentMap = {
+    version: 1,
+    components: [
+      {
+        id: "sec1",
+        kind: "section",
+        label: "Executive Summary",
+        placeholderToken: "{{exec}}",
+        dataKey: null,
+        anchor: { headingText: "Executive Summary", offset: 0 },
+        required: true,
+        confidence: "high",
+        order: 0,
+      },
+    ],
+  };
+  const compRow = { componentId: "sec1", label: "Executive Summary", kind: "section", content: "Filled exec body", order: 0 };
+  const urlReq = (u: string): Request => ({ url: u }) as unknown as Request;
 
+  it("streams a filled .docx assembled from the original template", async () => {
+    const fixture = writeZip([{ name: "word/document.xml", bytes: Buffer.from(docXml, "utf8") }]);
     let i = 0;
     dbMock.select.mockImplementation(() => {
       i++;
       if (i === 1) return selectChain([{ id: "p1", templateId: "tpl1", dealId: "d1", status: "filled" }]);
-      if (i === 2) return selectChain([{ id: "tpl1", name: "SOW", componentMap, storageRef: "ref1" }]);
-      return selectChain([{ componentId: "sec1", content: "Filled exec body" }]);
+      if (i === 2) return selectChain([compRow]); // components
+      return selectChain([{ id: "tpl1", name: "SOW", componentMap, storageRef: "ref1" }]); // template
     });
     storageGetMock.mockResolvedValue({ bytes: fixture, contentType: "application/docx" });
 
-    const res = await downloadRoute.GET(jsonReq({}), { params: Promise.resolve({ proposalId: "p1" }) });
+    const res = await downloadRoute.GET(urlReq("http://x/api/proposals/p1/download"), {
+      params: Promise.resolve({ proposalId: "p1" }),
+    });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("wordprocessingml");
     expect(res.headers.get("Content-Disposition")).toContain("SOW-filled.docx");
     const out = Buffer.from(await res.arrayBuffer());
-    expect(out.length).toBeGreaterThan(0);
-    // output is DEFLATE-compressed now (PROPOSAL-011) — read the entry, don't grep bytes
     const doc = readZipEntry(out, "word/document.xml")!.toString("utf8");
     expect(doc).toContain("Filled exec body");
+  });
+
+  it("regenerates a PDF with ?as=pdf (no template bytes needed)", async () => {
+    let i = 0;
+    dbMock.select.mockImplementation(() => {
+      i++;
+      if (i === 1) return selectChain([{ id: "p1", templateId: "tpl1", status: "filled" }]);
+      if (i === 2) return selectChain([compRow]); // components
+      return selectChain([{ id: "tpl1", name: "SOW" }]); // template (name only)
+    });
+    const res = await downloadRoute.GET(urlReq("http://x/api/proposals/p1/download?as=pdf"), {
+      params: Promise.resolve({ proposalId: "p1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    const out = Buffer.from(await res.arrayBuffer()).toString("latin1");
+    expect(out.startsWith("%PDF")).toBe(true);
+    expect(out).toContain("Filled exec body");
   });
 });

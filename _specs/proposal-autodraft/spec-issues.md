@@ -53,3 +53,14 @@ untouched. Slide order is resolved from `presentation.xml` + rels (fallback: num
 - Components with no matching slide title are returned in `unplaced`.
 Validated deterministically via a fixture .pptx (presentation.xml + rels + slides);
 true visual fidelity needs a live open in PowerPoint.
+
+## SI-5: PDF (PROPOSAL-006) — regenerate vs fill
+PDFs do not reflow. v1 ships the **regenerate** path only: a zero-dep
+`renderProposalPdf` builds a clean PDF from the filled components (`?as=pdf`,
+"Download PDF"). It is **content-faithful, not layout-faithful** — it does NOT
+preserve a customer's PDF layout (unlike DOCX/PPTX, which are layout-faithful).
+Filling a real PDF **form** (AcroForm) or extracting text from an uploaded PDF for
+detection needs `pdf-lib`, which cannot be installed in the no-egress sandbox;
+that path (006b) is specified for Martin's env. Output validated structurally:
+`startxref` points at the xref table, valid header/trailer/%%EOF, plus a real
+sample in `_artifacts/proposal-sample.pdf`.

@@ -458,6 +458,15 @@ export default function ProposalsPage() {
                         Download
                       </a>
                     )}
+                    {filled && (
+                      <a
+                        href={`/api/proposals/${filled.proposalId}/download?as=pdf`}
+                        className="text-[13px] underline"
+                        style={{ color: "var(--color-accent)" }}
+                      >
+                        Download PDF
+                      </a>
+                    )}
                   </div>
                   {filled && (
                     <div className="mt-3 space-y-2">
