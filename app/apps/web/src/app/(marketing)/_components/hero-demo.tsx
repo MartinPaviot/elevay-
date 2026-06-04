@@ -606,12 +606,14 @@ export function HeroDemo() {
           <div className="flex" style={{ height: 460 }}>
             <Sidebar active={phases[phase].nav} />
             <div className="flex min-w-0 flex-1 flex-col" style={{ background: T.page }}>
-              <div className="flex items-center gap-1.5 px-4 pt-2.5">
+              {/* Top toolbar locked to the sidebar's Elevay-logo header
+                  height (42px) so the two top edges align across the shell. */}
+              <div className="flex h-[42px] shrink-0 items-center gap-1.5 px-4">
                 {phases.map((_, i) => (
                   <span key={i} className="h-1.5 rounded-full transition-all duration-300" style={{ width: i === phase ? 18 : 6, background: i === phase ? T.accent : "#D9DCE4" }} />
                 ))}
               </div>
-              <motion.div ref={viewportRef} className="relative min-h-0 flex-1 overflow-hidden pt-1.5"
+              <motion.div ref={viewportRef} className="relative min-h-0 flex-1 overflow-hidden"
                 animate={{ scale: zoom.on ? 1.04 : 1 }}
                 transition={{ duration: zoom.on ? 0.5 : 0.45, ease: [0.22, 0.61, 0.36, 1] }}
                 style={{ transformOrigin: `${zoom.ox}% ${zoom.oy}%` }}>
