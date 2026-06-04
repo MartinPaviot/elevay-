@@ -451,6 +451,39 @@ export default function LandingPage() {
         </div>
       </Section>
 
+      {/* FROM THE FOUNDER — honest trust to stand in for the customer proof
+          a pre-revenue product can't show yet: the mission in the founder's
+          own words, plus a real early-access commitment. No fabricated
+          metrics or customers. TODO(martin): confirm this copy is true to
+          you, and replace the "M" monogram with a real photo. */}
+      <Section className="pt-32">
+        <div className="mx-auto max-w-[1240px] px-6">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8 md:p-12">
+            <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2C6BED]">From the founder</p></Animate>
+            <Animate>
+              <blockquote className="mt-5 text-[19px] leading-relaxed text-gray-800 md:text-[21px] md:leading-[1.65]">
+                In founder-led sales, you are the pipeline. The conversations are yours to win, but everything around them, the lists, the data, the first drafts, the call notes, quietly eats your week. I&apos;m building Elevay to be the back office a founder doesn&apos;t have yet: it does that work and hands you the conversations. It&apos;s early, and I onboard every founder myself, so when you start, you&apos;re talking to me.
+              </blockquote>
+            </Animate>
+            <Animate>
+              <div className="mt-7 flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-white" style={{ background: "linear-gradient(135deg,#17C3B2,#2C6BED,#FF7A3D)" }}>M</span>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Martin Paviot</div>
+                  <div className="text-xs text-gray-500">Founder, Elevay</div>
+                </div>
+              </div>
+            </Animate>
+            <Animate>
+              <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-100 pt-6 text-[13px] text-gray-500">
+                <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full" style={{ background: "#10B981" }} /> In early access, onboarding founders one at a time</span>
+                <span className="inline-flex items-center gap-1.5"><UserCheck size={14} className="text-gray-400" /> You talk to the founder, not a sales team</span>
+              </div>
+            </Animate>
+          </div>
+        </div>
+      </Section>
+
       {/* LANDSCAPE: positioning vs the alternatives (after the product
           story, before the conversion CTAs) */}
       <Section className="pt-32">

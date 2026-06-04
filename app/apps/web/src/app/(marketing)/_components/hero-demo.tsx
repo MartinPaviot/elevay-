@@ -30,9 +30,11 @@ import { AppFrame, Avatar, Logo, PHOTO, clogo } from "./product-mockups";
 const BRAND = "linear-gradient(90deg,#17C3B2,#2C6BED,#FF7A3D)";
 const T = { text: "#1A1A2E", sec: "#64648C", ter: "#9CA3AF", border: "#E8E8F0", soft: "#EFEFF5", page: "#FAFAFA", card: "#FFFFFF", accent: "#2C6BED", accentSoft: "rgba(44,107,237,0.08)" };
 const C = { green: "#4E9E86", greenSoft: "rgba(78,158,134,0.13)", red: "#D17B76", redSoft: "rgba(209,123,118,0.13)", amber: "#CDA25C", amberSoft: "rgba(205,162,92,0.15)", blue: "#2C6BED", blueSoft: "rgba(44,107,237,0.10)" };
-// Accounts, Up next, Campaigns, Meetings, Opportunities, Chat.
-// Accounts runs longer so the list is scrollable before it advances.
-const PHASE_MS = [6000, 4600, 5800, 5400, 5600, 6600];
+// Hero TEASER: just three phases that show the agent actually working
+// (build the list -> send for you -> the CRM updates itself). The full
+// six-surface walkthrough lives in the how-it-works step sequence below,
+// so the hero no longer duplicates it. Accounts, Campaigns, Opportunities.
+const PHASE_MS = [6000, 5800, 5600];
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 
@@ -503,11 +505,8 @@ function ChatPhase({ reduced }: { reduced: boolean }) {
 // fires (the email sends, the deal scores, the answer streams).
 const phases: { nav: string; el: (p: { reduced: boolean }) => ReactElement; action?: { key: string; at: number } }[] = [
   { nav: "Accounts", el: AccountsPhase, action: { key: "score", at: 1500 } },
-  { nav: "Up next", el: UpNextPhase },
   { nav: "Campaigns", el: CampaignsPhase, action: { key: "approve", at: 3850 } },
-  { nav: "Meetings", el: MeetingsPhase, action: { key: "confirm", at: 3200 } },
   { nav: "Opportunities", el: OpportunitiesPhase },
-  { nav: "Up next", el: ChatPhase, action: { key: "send", at: 2150 } },
 ];
 
 /* ── persistent chat bar (types the query during the Chat phase) ── */
