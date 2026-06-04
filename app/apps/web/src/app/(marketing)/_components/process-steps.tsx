@@ -88,8 +88,8 @@ export function ProcessSteps() {
       {steps.map((s, i) => {
         const flip = i % 2 === 1;
         return (
-          <div key={s.headline} className="grid items-center gap-8 lg:grid-cols-2 lg:gap-16">
-            <div className={flip ? "lg:order-2" : ""}>
+          <div key={s.headline} className="grid grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-16">
+            <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
               <div className="flex items-center gap-3">
                 <span
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white text-[13px] font-bold tabular-nums"
@@ -102,7 +102,7 @@ export function ProcessSteps() {
               <h3 className="mt-3 text-[24px] font-bold leading-snug tracking-tight text-gray-900">{s.headline}</h3>
               <p className="mt-3 max-w-md text-[15px] leading-relaxed text-gray-600">{s.body}</p>
             </div>
-            <div className={flip ? "lg:order-1" : ""}>
+            <div className={`min-w-0 ${flip ? "lg:order-1" : ""}`}>
               <AnimatedSurface Phase={s.Phase} />
             </div>
           </div>
