@@ -38,6 +38,57 @@ export function isSireneAvailable(): boolean {
   return true;
 }
 
+export interface SireneDirigeant {
+  firstName: string | null;
+  lastName: string | null;
+  role: string | null; // qualité: Président, Directeur général, Gérant…
+  isPerson: boolean; // personne physique vs morale
+}
+
+export interface SireneDetail {
+  siren: string;
+  dirigeants: SireneDirigeant[];
+  ca: number | null;
+  resultatNet: number | null;
+  year: string | null;
+}
+
+/**
+ * Full record by SIREN (minimal=false) — adds dirigeants (decision-maker
+ * NAMES + roles, free, no email) + finances (CA, résultat). Keyless.
+ */
+export async function companyDetailBySiren(siren: string): Promise<SireneDetail | null> {
+  const res = await fetch(
+    `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(siren)}&minimal=false&per_page=1`,
+    { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) },
+  );
+  if (!res.ok) throw new Error(`recherche-entreprises detail ${res.status}`);
+  const j = (await res.json()) as Record<string, unknown>;
+  const r = ((Array.isArray(j.results) ? j.results : [])[0] ?? null) as Record<string, unknown> | null;
+  if (!r || String(r.siren) !== siren) return null;
+
+  const dirigeants: SireneDirigeant[] = (Array.isArray(r.dirigeants) ? r.dirigeants : [])
+    .map((d) => {
+      const o = d as Record<string, unknown>;
+      return {
+        firstName: (o.prenoms as string) ?? null,
+        lastName: (o.nom as string) ?? (o.denomination as string) ?? null,
+        role: (o.qualite as string) ?? null,
+        isPerson: o.type_dirigeant === "personne physique",
+      };
+    })
+    .filter((d) => d.lastName);
+
+  const fin = (r.finances ?? null) as Record<string, { ca?: number; resultat_net?: number }> | null;
+  let ca: number | null = null, resultatNet: number | null = null, year: string | null = null;
+  if (fin && typeof fin === "object") {
+    const years = Object.keys(fin).sort();
+    const last = years[years.length - 1];
+    if (last) { year = last; ca = fin[last]?.ca ?? null; resultatNet = fin[last]?.resultat_net ?? null; }
+  }
+  return { siren, dirigeants, ca, resultatNet, year };
+}
+
 export async function searchCompaniesSirene(params: {
   activite_principale?: string[];
   departement?: string[];
