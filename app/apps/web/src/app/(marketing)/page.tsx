@@ -433,8 +433,7 @@ export default function LandingPage() {
       {/* FROM THE FOUNDER — honest trust to stand in for the customer proof
           a pre-revenue product can't show yet: the mission in the founder's
           own words, plus a real early-access commitment. No fabricated
-          metrics or customers. TODO(martin): confirm this copy is true to
-          you, and replace the "M" monogram with a real photo. */}
+          metrics or customers. TODO(martin): confirm this copy is true to you. */}
       <Section className="pt-32">
         <div className="mx-auto max-w-[1240px] px-6">
           <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8 md:p-12">
@@ -446,7 +445,7 @@ export default function LandingPage() {
             </Animate>
             <Animate>
               <div className="mt-7 flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-white" style={{ background: "linear-gradient(135deg,#17C3B2,#2C6BED,#FF7A3D)" }}>M</span>
+                <img src="/martin_paviot.jpg" alt="Martin Paviot" width={44} height={44} className="h-11 w-11 shrink-0 rounded-full object-cover" style={{ boxShadow: "0 1px 3px rgba(26,26,46,0.18)" }} />
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Martin Paviot</div>
                   <div className="text-xs text-gray-500">Founder, Elevay</div>
