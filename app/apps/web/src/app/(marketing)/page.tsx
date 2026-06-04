@@ -362,27 +362,6 @@ export default function LandingPage() {
         </div>
       </Section>
 
-      {/* WHY ELEVAY — the problem + a cited stat. The "with / without"
-          contrast it used to make is now carried, animated, by the step
-          sequence below. */}
-      <Section className="pt-28">
-        <div className="mx-auto max-w-[1240px] px-6">
-          <div className="max-w-3xl">
-            <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2C6BED]">Why Elevay</p></Animate>
-            <Animate><h2 className="mt-4 text-3xl font-bold leading-snug tracking-tight text-gray-900 sm:text-[34px]">In founder-led sales, you are the sales team.<br />Elevay is the team behind you.</h2></Animate>
-            <Animate><p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-600">Prospecting, list-building, data entry, first drafts, call notes: the work a sales org does in the background, you do at night. Elevay takes that off your plate so your hours go to the conversations that actually close deals.</p></Animate>
-            {/* Market evidence — a cited third-party stat. Honest borrowed
-                credibility in lieu of customer proof we don't have yet. */}
-            <Animate>
-              <div className="mt-8 flex items-baseline gap-4 border-l-2 pl-5" style={{ borderColor: "#2C6BED" }}>
-                <span className="shrink-0 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">70%</span>
-                <p className="max-w-md text-[15px] leading-relaxed text-gray-600">of a sales rep&apos;s week goes to admin, CRM data entry, and research instead of selling <span className="text-gray-400">(Salesforce, State of Sales)</span>. For a founder doing it solo, that lands on you. Elevay takes it back.</p>
-              </div>
-            </Animate>
-          </div>
-        </div>
-      </Section>
-
       {/* HOW IT WORKS */}
       <Section id="how-it-works" className="pt-32">
         <div className="mx-auto max-w-[1240px] px-6">
@@ -440,7 +419,7 @@ export default function LandingPage() {
             <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2C6BED]">From the founder</p></Animate>
             <Animate>
               <blockquote className="mt-5 text-[19px] leading-relaxed text-gray-800 md:text-[21px] md:leading-[1.65]">
-                In founder-led sales, you are the pipeline. The conversations are yours to win, but everything around them, the lists, the data, the first drafts, the call notes, quietly eats your week. I&apos;m building Elevay to be the back office a founder doesn&apos;t have yet: it does that work and hands you the conversations. It&apos;s early, and I onboard every founder myself, so when you start, you&apos;re talking to me.
+                In founder-led sales, you are the pipeline. The conversations are yours to win, but everything around them, the lists, the data, the first drafts, the call notes, quietly eats your week. Salesforce puts it at <span className="font-semibold text-gray-900">70% of a rep&apos;s time</span> on admin and data entry, not selling. I&apos;m building Elevay to be the back office a founder doesn&apos;t have yet: it does that work and hands you the conversations. It&apos;s early, and I onboard every founder myself, so when you start, you&apos;re talking to me.
               </blockquote>
             </Animate>
             <Animate>
