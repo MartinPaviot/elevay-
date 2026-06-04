@@ -72,6 +72,7 @@ export default function ProposalsPage() {
     unmappedSections: string[];
   } | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [regenerating, setRegenerating] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     const res = await fetch("/api/proposals/templates");
@@ -240,6 +241,49 @@ export default function ProposalsPage() {
     );
     setEdits({});
     setNotice("Edits saved — the download reflects your changes.");
+  }
+
+  async function regenerateOne(componentId: string) {
+    if (!filled) return;
+    const guidance = window.prompt("Optional guidance for this re-draft (leave blank for a plain redo):") ?? undefined;
+    setRegenerating(componentId);
+    setNotice(null);
+    const res = await fetch(`/api/proposals/${filled.proposalId}/components/${componentId}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guidance: guidance || undefined }),
+    });
+    const d = (await res.json().catch(() => ({}))) as Partial<FilledComponent> & { error?: string; userSuggestion?: string };
+    setRegenerating(null);
+    if (!res.ok) {
+      setNotice(d.userSuggestion ?? (d.error === "deal_not_found" ? "Deal not found." : "Re-draft failed."));
+      return;
+    }
+    setFilled((f) =>
+      f
+        ? {
+            ...f,
+            components: f.components.map((c) =>
+              c.componentId === componentId
+                ? {
+                    ...c,
+                    content: d.content ?? c.content,
+                    confidence: d.confidence ?? c.confidence,
+                    abstained: d.abstained ?? c.abstained,
+                    citations: d.citations ?? c.citations,
+                    supportRatio: d.supportRatio ?? c.supportRatio,
+                    unsupported: d.unsupported ?? c.unsupported,
+                  }
+                : c,
+            ),
+          }
+        : f,
+    );
+    setEdits((m) => {
+      const next = { ...m };
+      delete next[componentId];
+      return next;
+    });
   }
 
   return (
@@ -527,6 +571,16 @@ export default function ProposalsPage() {
                               ))}
                             </div>
                           )}
+                          <div className="mt-1.5">
+                            <button
+                              onClick={() => void regenerateOne(c.componentId)}
+                              disabled={regenerating === c.componentId}
+                              className="text-[11px] underline"
+                              style={{ color: "var(--color-text-tertiary)" }}
+                            >
+                              {regenerating === c.componentId ? "Regenerating…" : "Regenerate"}
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

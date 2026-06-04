@@ -8,7 +8,7 @@ const {
   getSkillKnowledgeMock,
   collectSourcesMock,
 } = vi.hoisted(() => ({
-  dbMock: { select: vi.fn(), insert: vi.fn() },
+  dbMock: { select: vi.fn(), insert: vi.fn(), update: vi.fn() },
   getModelForTaskMock: vi.fn(),
   tracedGenerateObjectMock: vi.fn(),
   getTenantSettingsMock: vi.fn(),
@@ -28,6 +28,7 @@ vi.mock("@/db/schema", () => ({
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => ({ and: a }),
   eq: (...a: unknown[]) => ({ eq: a }),
+  isNull: (x: unknown) => ({ isNull: x }),
 }));
 vi.mock("@/lib/config/tenant-settings", () => ({
   getTenantSettings: (...a: unknown[]) => getTenantSettingsMock(...a),
@@ -46,7 +47,7 @@ vi.mock("@/lib/ai/ai-provider", () => ({
 }));
 // @/lib/deals/amount intentionally NOT mocked — exercise the real helper.
 
-const { resolveFieldValue, generateSections, buildProposalFill, FillUnavailable, toBcp47 } =
+const { resolveFieldValue, generateSections, buildProposalFill, regenerateComponent, FillUnavailable, toBcp47 } =
   await import("../fill");
 
 function chainOf(rows: unknown[]) {
@@ -195,5 +196,61 @@ describe("buildProposalFill (trust)", () => {
       return chainOf(idx === 1 ? [TEMPLATE] : []);
     });
     await expect(buildProposalFill("tpl1", "missing", { tenantId: "t1" })).rejects.toMatchObject({ reason: "deal_not_found" });
+  });
+});
+
+describe("regenerateComponent", () => {
+  const MAP = {
+    version: 1,
+    components: [
+      { id: "f1", kind: "field", label: "Client", placeholderToken: "{{c}}", dataKey: "company.name", anchor: { headingText: null, offset: null }, required: true, confidence: "high", order: 0 },
+      { id: "sec1", kind: "section", label: "Executive Summary", placeholderToken: "{{e}}", dataKey: null, anchor: { headingText: "Executive Summary", offset: 0 }, required: true, confidence: "high", order: 1 },
+    ],
+  };
+  const TEMPLATE = { id: "tpl1", tenantId: "t1", status: "mapped", componentMap: MAP };
+  const DEAL = { id: "d1", tenantId: "t1", name: "Acme Deal", stage: "proposal", companyId: "co1", contactId: "c1", value: 50000, projectAmount: null, platformArr: null, summary: "Q2" };
+  const COMPANY = { id: "co1", name: "Acme", industry: "SaaS", description: "PM" };
+  const CONTACT = { id: "c1", firstName: "Sarah", lastName: "Chen", title: "VP", email: "s@acme.com" };
+  const SRC = { id: "A1", type: "activity", label: "email", snippet: "faster proposal turnaround", date: "2026-05-28" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTenantSettingsMock.mockResolvedValue({ onboardingCompanyName: "Elevay", productDescription: "GTM" });
+    getModelForTaskMock.mockReturnValue({ modelId: "m" });
+    collectSourcesMock.mockResolvedValue({ sources: [SRC], block: "[A1] ...", byId: new Map([["A1", SRC]]) });
+    dbMock.update.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) });
+  });
+
+  function selectSeq() {
+    let idx = 0;
+    dbMock.select.mockImplementation(() => {
+      idx++;
+      return chainOf([[{ id: "p1", templateId: "tpl1", dealId: "d1" }], [TEMPLATE], [DEAL], [COMPANY], [CONTACT]][idx - 1] ?? []);
+    });
+  }
+
+  it("re-drafts a section, grades it, and persists", async () => {
+    selectSeq();
+    tracedGenerateObjectMock.mockResolvedValue({
+      object: { sections: [{ id: "sec1", content: "Faster proposal turnaround for Acme.", confidence: "high", citationIds: ["A1"], abstained: false }] },
+    });
+    const res = await regenerateComponent("p1", "sec1", { tenantId: "t1", guidance: "emphasize ROI" });
+    expect(res.componentId).toBe("sec1");
+    expect(res.content).toContain("Faster proposal turnaround");
+    expect(res.unsupported).toBe(false);
+    expect(dbMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-resolves a field deterministically", async () => {
+    selectSeq();
+    const res = await regenerateComponent("p1", "f1", { tenantId: "t1" });
+    expect(res.content).toBe("Acme");
+    expect(res.confidence).toBe("high");
+    expect(dbMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when the proposal is not found", async () => {
+    dbMock.select.mockReturnValue(chainOf([]));
+    await expect(regenerateComponent("missing", "sec1", { tenantId: "t1" })).rejects.toMatchObject({ name: "FillUnavailable" });
   });
 });

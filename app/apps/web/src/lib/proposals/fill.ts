@@ -18,7 +18,7 @@ import {
   companies,
   contacts,
 } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDealAmountDisplay, formatDealAmount } from "@/lib/deals/amount";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
@@ -217,6 +217,77 @@ export interface FillResult {
 
 const CONFIDENCE_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
+type DealRow = {
+  id: string;
+  name: string;
+  stage: string | null;
+  companyId: string | null;
+  contactId: string | null;
+  summary: string | null;
+  value: number | null;
+  projectAmount: number | null;
+  platformArr: number | null;
+};
+type CompanyRow = { name?: string | null; industry?: string | null; description?: string | null } | null;
+type SettingsRow = { onboardingCompanyName?: string | null; productDescription?: string | null };
+
+/** Shared grounding context (sources + facts) for section generation. */
+async function assembleSectionContext(
+  tenantId: string,
+  deal: DealRow,
+  company: CompanyRow,
+  settings: SettingsRow,
+): Promise<{ contextBlock: string; sourcesById: Map<string, CitableSource> }> {
+  const sources = await collectCitableSources(tenantId, {
+    dealId: deal.id,
+    companyId: deal.companyId ?? undefined,
+    contactId: deal.contactId ?? undefined,
+    knowledgeQuery: `commercial proposal pricing positioning ${company?.name ?? ""} ${company?.industry ?? ""}`,
+  });
+  const contextBlock = `## Our Company
+- Name: ${settings.onboardingCompanyName || "our company"}
+- Product: ${settings.productDescription || "not specified"}
+
+## Prospect
+- Company: ${company?.name || "unknown"}
+- Industry: ${company?.industry || "unknown"}
+- Description: ${company?.description || "unknown"}
+
+## Deal
+- Name: ${deal.name}
+- Stage: ${deal.stage}
+- Amount: ${formatDealAmount(getDealAmountDisplay(deal).total)}
+
+## SOURCE INTERACTIONS (cite these by id; [K..] entries are Elevay knowledge)
+${sources.block}`;
+  return { contextBlock, sourcesById: sources.byId };
+}
+
+function buildFieldContext(
+  deal: DealRow,
+  company: CompanyRow,
+  contact: { firstName?: string | null; lastName?: string | null; title?: string | null; email?: string | null } | null,
+  settings: SettingsRow & { locale?: unknown },
+  now: Date,
+): FieldContext {
+  return {
+    company: company ? { name: company.name, industry: company.industry, description: company.description } : null,
+    contact: contact
+      ? { firstName: contact.firstName, lastName: contact.lastName, title: contact.title, email: contact.email }
+      : null,
+    deal: {
+      name: deal.name,
+      summary: deal.summary,
+      value: deal.value,
+      projectAmount: deal.projectAmount,
+      platformArr: deal.platformArr,
+    },
+    settings: { onboardingCompanyName: settings.onboardingCompanyName, productDescription: settings.productDescription },
+    now,
+    locale: toBcp47(typeof settings.locale === "string" ? settings.locale : "en-US"),
+  };
+}
+
 /** Fill a mapped template from a deal's info base and persist the proposal. */
 export async function buildProposalFill(
   templateId: string,
@@ -257,63 +328,17 @@ export async function buildProposalFill(
         .limit(1)
     : [null];
 
-  const fieldCtx: FieldContext = {
-    company: company
-      ? { name: company.name, industry: company.industry, description: company.description }
-      : null,
-    contact: contact
-      ? { firstName: contact.firstName, lastName: contact.lastName, title: contact.title, email: contact.email }
-      : null,
-    deal: {
-      name: deal.name,
-      summary: deal.summary,
-      value: deal.value,
-      projectAmount: deal.projectAmount,
-      platformArr: deal.platformArr,
-    },
-    settings: {
-      onboardingCompanyName: settings.onboardingCompanyName,
-      productDescription: settings.productDescription,
-    },
-    now,
-    locale: toBcp47(
-      typeof (settings as Record<string, unknown>).locale === "string"
-        ? ((settings as Record<string, unknown>).locale as string)
-        : "en-US",
-    ),
-  };
+  const fieldCtx = buildFieldContext(deal, company, contact, settings, now);
 
   const sectionComponents = map.components.filter((c) => c.kind === "section");
   let generated: Record<string, GeneratedSection> = {};
   let sourcesById = new Map<string, CitableSource>();
   if (sectionComponents.length > 0) {
-    const sources = await collectCitableSources(opts.tenantId, {
-      dealId,
-      companyId: deal.companyId ?? undefined,
-      contactId: deal.contactId ?? undefined,
-      knowledgeQuery: `commercial proposal pricing positioning ${company?.name ?? ""} ${company?.industry ?? ""}`,
-    });
-    sourcesById = sources.byId;
-    const contextBlock = `## Our Company
-- Name: ${settings.onboardingCompanyName || "our company"}
-- Product: ${settings.productDescription || "not specified"}
-
-## Prospect
-- Company: ${company?.name || "unknown"}
-- Industry: ${company?.industry || "unknown"}
-- Description: ${company?.description || "unknown"}
-
-## Deal
-- Name: ${deal.name}
-- Stage: ${deal.stage}
-- Amount: ${formatDealAmount(getDealAmountDisplay(deal).total)}
-
-## SOURCE INTERACTIONS (cite these by id; [K..] entries are Elevay knowledge)
-${sources.block}`;
-
+    const ctx = await assembleSectionContext(opts.tenantId, deal, company, settings);
+    sourcesById = ctx.sourcesById;
     generated = await generateSections(
       sectionComponents.map((c) => ({ id: c.id, label: c.label })),
-      contextBlock,
+      ctx.contextBlock,
       opts.tenantId,
     );
   }
@@ -411,4 +436,131 @@ ${sources.block}`;
     .sort((a, b) => CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] || a.order - b.order);
 
   return { proposalId, templateId, dealId, components, unmappedSections };
+}
+
+export interface RegeneratedComponent {
+  componentId: string;
+  kind: string;
+  label: string;
+  content: string;
+  confidence: Confidence;
+  abstained: boolean;
+  citations: Citation[];
+  supportRatio: number;
+  unsupported: boolean;
+}
+
+/**
+ * PROPOSAL-004: re-draft a single component (with optional guidance), re-grade,
+ * and persist. Tenant-scoped. Reuses the same context + trust path as the full fill.
+ */
+export async function regenerateComponent(
+  proposalId: string,
+  componentId: string,
+  opts: { tenantId: string; guidance?: string; now?: Date },
+): Promise<RegeneratedComponent> {
+  const now = opts.now ?? new Date();
+
+  const [pr] = await db
+    .select()
+    .from(proposals)
+    .where(
+      and(eq(proposals.id, proposalId), eq(proposals.tenantId, opts.tenantId), isNull(proposals.deletedAt)),
+    )
+    .limit(1);
+  if (!pr) throw new FillUnavailable("deal_not_found", `Proposal ${proposalId} not found`);
+
+  const [tpl] = await db
+    .select()
+    .from(proposalTemplates)
+    .where(and(eq(proposalTemplates.id, pr.templateId), eq(proposalTemplates.tenantId, opts.tenantId)))
+    .limit(1);
+  if (!tpl || !tpl.componentMap) throw new FillUnavailable("template_not_mapped", "Template unavailable");
+  const map = tpl.componentMap as ComponentMap;
+  const comp = map.components.find((c) => c.id === componentId);
+  if (!comp) throw new FillUnavailable("template_not_mapped", `Component ${componentId} not in template`);
+
+  const [deal] = pr.dealId
+    ? await db.select().from(deals).where(and(eq(deals.id, pr.dealId), eq(deals.tenantId, opts.tenantId))).limit(1)
+    : [undefined];
+  if (!deal) throw new FillUnavailable("deal_not_found", "Deal not found");
+
+  const [company, settings] = await Promise.all([
+    deal.companyId
+      ? db.select().from(companies).where(eq(companies.id, deal.companyId)).then((r) => r[0] ?? null)
+      : Promise.resolve(null),
+    getTenantSettings(opts.tenantId),
+  ]);
+  const [contact] = deal.contactId
+    ? await db
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.id, deal.contactId), eq(contacts.tenantId, opts.tenantId)))
+        .limit(1)
+    : [null];
+
+  let result: RegeneratedComponent;
+  if (comp.kind === "field") {
+    const fieldCtx = buildFieldContext(deal, company, contact, settings, now);
+    const value = resolveFieldValue(comp.dataKey, fieldCtx);
+    const trust = fieldTrust(value);
+    result = {
+      componentId,
+      kind: "field",
+      label: comp.label,
+      content: value,
+      confidence: trust.confidence,
+      abstained: trust.abstained,
+      citations: trust.abstained
+        ? []
+        : [{ id: comp.dataKey ?? "field", type: "field", label: comp.dataKey ?? "field", snippet: value, date: null }],
+      supportRatio: trust.abstained ? 0 : 1,
+      unsupported: trust.abstained,
+    };
+  } else {
+    const ctx = await assembleSectionContext(opts.tenantId, deal, company, settings);
+    const prompt = opts.guidance
+      ? `${ctx.contextBlock}\n\nADDITIONAL GUIDANCE for this section: ${opts.guidance}`
+      : ctx.contextBlock;
+    const generated = await generateSections([{ id: comp.id, label: comp.label }], prompt, opts.tenantId);
+    const g = generated[comp.id] ?? { content: "", confidence: "low" as Confidence, citationIds: [], abstained: true };
+    const citations: Citation[] = g.citationIds
+      .map((id) => ctx.sourcesById.get(id))
+      .filter((s): s is CitableSource => Boolean(s))
+      .map((s) => ({ id: s.id, type: s.type, label: s.label, snippet: s.snippet, date: s.date }));
+    const grade = gradeSection(g.content, citations.map((x) => x.snippet), g.confidence);
+    result = {
+      componentId,
+      kind: "section",
+      label: comp.label,
+      content: g.content,
+      confidence: grade.confidence,
+      abstained: g.abstained,
+      citations,
+      supportRatio: grade.supportRatio,
+      unsupported: grade.unsupported,
+    };
+  }
+
+  await db
+    .update(proposalComponents)
+    .set({
+      content: result.content,
+      confidence: result.confidence,
+      source: {
+        citations: result.citations,
+        abstained: result.abstained,
+        supportRatio: result.supportRatio,
+        unsupported: result.unsupported,
+      },
+    })
+    .where(
+      and(
+        eq(proposalComponents.proposalId, proposalId),
+        eq(proposalComponents.componentId, componentId),
+        eq(proposalComponents.tenantId, opts.tenantId),
+      ),
+    );
+
+  return result;
 }
