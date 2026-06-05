@@ -43,6 +43,16 @@ export default function ChatPage() {
   const [emailComposer, setEmailComposer] = useState<EmailComposerDraft | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [firstName, setFirstName] = useState<string>("");
+  // Time-based greeting computed AFTER mount. new Date().getHours() differs
+  // between the SSR render (server timezone) and the client (local tz), so
+  // computing it inline during render produced a hydration mismatch
+  // (React #418). Deferring to useEffect keeps SSR + the first client render
+  // identical (empty), then fills the greeting in.
+  const [greeting, setGreeting] = useState<string>("");
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+  }, []);
 
   // Action card approval state: keyed by "messageId-toolIdx"
   const [cardStatuses, setCardStatuses] = useState<Record<string, "pending" | "approved" | "dismissed">>({});
@@ -337,11 +347,7 @@ export default function ChatPage() {
               className="mt-4 text-xl font-semibold"
               style={{ color: "var(--color-text-primary)" }}
             >
-              {(() => {
-                const hour = new Date().getHours();
-                const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-                return firstName ? `${greeting}, ${firstName}` : greeting;
-              })()}
+              {greeting && (firstName ? `${greeting}, ${firstName}` : greeting)}
             </h2>
             <p
               className="mt-1.5 text-[13px]"
