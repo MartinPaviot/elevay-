@@ -281,7 +281,7 @@ export default function ContactsPage() {
     title: { label: "Title", kind: "text", get: (c) => c.title },
     linkedin: { label: "LinkedIn", kind: "presence", get: (c) => c.linkedinUrl },
     phone: { label: "Phone", kind: "presence", get: (c) => c.phone },
-    score: { label: "Score", kind: "enum", get: (c) => formatScore(c.score)?.grade ?? null },
+    score: { label: "Score", kind: "enum", get: (c) => (isEnriched(c) ? formatScore(c.score)?.grade ?? null : null) },
   };
 
   const columnOptions = useMemo(() => {
@@ -656,7 +656,13 @@ export default function ContactsPage() {
                     <td>
                       {(() => {
                         const scoreInfo = formatScore(contact.score);
-                        if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        // Mirror the accounts table: a fit score is only
+                        // meaningful once the contact is enriched. Un-enriched
+                        // contacts land on the floor grade (F/Cold) which reads
+                        // as a verdict when it's really "no data yet".
+                        if (!scoreInfo || !isEnriched(contact)) {
+                          return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>Not scored</span>;
+                        }
                         return (
                           <span className="flex items-center gap-1.5" title={contact.scoreReasons?.join("; ") || ""}>
                             <span

@@ -380,34 +380,41 @@ export default function AccountDetailPage() {
               )}
             </div>
           ))}
-          {account.score != null && (
-            <div>
-              <p className="text-xs text-[var(--color-text-tertiary)]">Score</p>
-              {(() => {
-                const s = formatScore(account.score);
-                return s ? (
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    <span
-                      className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[10px] font-bold text-white"
-                      style={{ background: s.color }}
-                    >
-                      {s.grade}
-                    </span>
-                    <span style={{ color: s.color }}>{s.heat}</span>
-                  </p>
+          {(() => {
+            // A fit score is only meaningful once the account carries
+            // real firmographics. Without enrichment the score is a
+            // no-data floor (F/Cold), so show "Not scored" instead of a
+            // misleading grade — consistent with the accounts/contacts tables.
+            const enriched = !!(account.industry && account.description);
+            const s = enriched ? formatScore(account.score) : null;
+            return (
+              <div>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Score</p>
+                {s ? (
+                  <>
+                    <p className="flex items-center gap-1.5 text-sm font-medium">
+                      <span
+                        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        style={{ background: s.color }}
+                      >
+                        {s.grade}
+                      </span>
+                      <span style={{ color: s.color }}>{s.heat}</span>
+                    </p>
+                    {account.scoreReasons && account.scoreReasons.length > 0 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {account.scoreReasons.slice(0, 3).map((r, i) => (
+                          <li key={i} className="text-[10px] text-[var(--color-text-tertiary)]">• {r}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 ) : (
-                  <p className="text-sm font-medium text-[var(--color-text-primary)]">{Math.round(account.score)}</p>
-                );
-              })()}
-              {account.scoreReasons && account.scoreReasons.length > 0 && (
-                <ul className="mt-1 space-y-0.5">
-                  {account.scoreReasons.slice(0, 3).map((r, i) => (
-                    <li key={i} className="text-[10px] text-[var(--color-text-tertiary)]">• {r}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+                  <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>Not scored</p>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

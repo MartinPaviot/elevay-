@@ -284,6 +284,24 @@ export default function AccountsPage() {
     }
   }, [currentPage]);
 
+  // Enrichment alone never recomputes the fit score (the enrich route
+  // only writes firmographics). Left as-is, a freshly enriched account
+  // keeps its stale "no-data" floor score and would re-surface as
+  // F/Cold the moment `isEnriched` flips true. Re-score right after a
+  // successful enrich so the grade reflects the new data.
+  const rescoreIds = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    try {
+      await chunkedBulkCall({
+        ids,
+        endpoint: "/api/score",
+        buildPayload: (chunk) => ({ companyIds: chunk }),
+      });
+    } catch (e) {
+      console.warn("accounts: post-enrich rescore failed (non-blocking)", e);
+    }
+  }, []);
+
   const loadMoreAccounts = useCallback(() => {
     if (loadingMore || currentPage >= totalPages) return;
     fetchAccounts(currentPage + 1, true);
@@ -400,7 +418,7 @@ export default function AccountsPage() {
     try {
       const res = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: [id] }) });
       setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
-      if (res.ok) await refetchLoadedAccounts();
+      if (res.ok) { await rescoreIds([id]); await refetchLoadedAccounts(); }
     } catch { setEnrichStatus((prev) => ({ ...prev, [id]: "failed" })); }
   }
 
@@ -428,7 +446,10 @@ export default function AccountsPage() {
         for (const id of ids) next[id] = failedIds.has(id) ? "failed" : "done";
         return next;
       });
-      if (result.succeeded > 0) await refetchLoadedAccounts();
+      if (result.succeeded > 0) {
+        await rescoreIds(ids.filter((id) => !failedIds.has(id)));
+        await refetchLoadedAccounts();
+      }
       if (result.failed === 0) {
         toast(`Enriched ${result.succeeded} accounts.`, "success");
       } else if (result.succeeded > 0) {
@@ -446,7 +467,9 @@ export default function AccountsPage() {
   }
 
   async function scoreAll() {
-    const ids = accounts.filter((a) => a.score == null).map((a) => a.id);
+    // Only score accounts that are both un-scored and enriched — scoring
+    // an un-enriched account just writes the no-data floor grade.
+    const ids = accounts.filter((a) => a.score == null && isEnriched(a)).map((a) => a.id);
     if (ids.length === 0) return;
     setScoreAllRunning(true);
     try {
@@ -501,7 +524,10 @@ export default function AccountsPage() {
         for (const id of ids) next[id] = failed.has(id) ? "failed" : "done";
         return next;
       });
-      if (r.succeeded > 0) await refetchLoadedAccounts();
+      if (r.succeeded > 0) {
+        await rescoreIds(ids.filter((id) => !failed.has(id)));
+        await refetchLoadedAccounts();
+      }
       toast(
         r.failed === 0
           ? `Enriched ${r.succeeded} accounts.`
@@ -515,11 +541,23 @@ export default function AccountsPage() {
   }
 
   async function bulkScoreSelected() {
-    const targets =
+    const selected =
       selectedRows.size > 0
         ? accounts.filter((a) => selectedRows.has(a.id))
         : accounts.filter((a) => a.score == null);
-    if (targets.length === 0) return;
+    // Scoring an un-enriched account only produces the no-data floor
+    // score (F/Cold). Restrict to enriched targets and tell the user
+    // why instead of silently writing meaningless grades.
+    const targets = selected.filter(isEnriched);
+    if (targets.length === 0) {
+      toast(
+        selected.length > 0
+          ? "Enrich the selected accounts first — scoring needs firmographic data."
+          : "Nothing to score.",
+        "info",
+      );
+      return;
+    }
     const ids = targets.map((t) => t.id);
     try {
       const r = await chunkedBulkCall({
@@ -542,7 +580,12 @@ export default function AccountsPage() {
 
   async function detectSignals() {
     const ids = accounts.filter((a) => isEnriched(a)).map((a) => a.id);
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      // The header "Signals" button is always visible; without this the
+      // click was a silent no-op when no account is enriched yet.
+      toast("Enrich accounts first — signal detection needs firmographic data.", "info");
+      return;
+    }
     setDetectingSignals(true);
     try {
       const result = await chunkedBulkCall({
@@ -915,7 +958,7 @@ export default function AccountsPage() {
     size: { label: "Size", kind: "enum", get: (a) => a.size },
     revenue: { label: "Revenue", kind: "enum", get: (a) => a.revenue },
     stage: { label: "Stage", kind: "enum", get: (a) => getLifecycleStage(a) },
-    score: { label: "Score", kind: "enum", get: (a) => formatScore(a.score)?.grade ?? null },
+    score: { label: "Score", kind: "enum", get: (a) => (isEnriched(a) ? formatScore(a.score)?.grade ?? null : null) },
   };
 
   // Distinct values per enum column, computed from the loaded rows, for
@@ -991,6 +1034,32 @@ export default function AccountsPage() {
     return getSignals(account).find((s) => s.type === signalType) || null;
   }
 
+  // Prune signal/bool columns that are empty across every loaded row.
+  // `signalTypeColumns` above is already data-derived; these do the same
+  // for the always-present built-in TAM signals + legacy bool columns so
+  // an all-"—" column never widens the table. Deriving the header AND the
+  // body from these same lists also keeps them aligned — previously the
+  // header hard-coded 4 default-signal columns while the body mapped over
+  // all 5 of DEFAULT_SIGNALS, shifting every column to its right.
+  const activeDefaultSignals = useMemo(
+    () => DEFAULT_SIGNALS.filter(({ key }) =>
+      mergedAccounts.some((a) => getTamSignal(a, key).payload != null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mergedAccounts, tamStream.rows],
+  );
+  const activeCustomSignals = useMemo(
+    () => customSignals.filter((c) =>
+      mergedAccounts.some((a) => getCustomSignalPayload(a, c.id) != null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mergedAccounts, customSignals],
+  );
+  const activeCustomBoolColumns = useMemo(
+    () => customBoolColumns.filter((col) =>
+      mergedAccounts.some((a) => getCustomBool(a, col) != null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mergedAccounts, customBoolColumns],
+  );
+
   // === RENDER ===
   return (
     <div className="flex h-full flex-col animate-content-in" style={{ background: "var(--color-bg-page)" }}>
@@ -1052,7 +1121,7 @@ export default function AccountsPage() {
         >
           {detectingSignals ? "Detecting..." : "Signals"}
         </Button>
-        {accounts.some((a) => a.score == null) && (
+        {accounts.some((a) => a.score == null && isEnriched(a)) && (
           <Button
             variant="outline"
             size="sm"
@@ -1337,6 +1406,12 @@ export default function AccountsPage() {
                 <th style={{ width: 36 }}>
                   <input
                     type="checkbox"
+                    // Show the standard dash when the selection is partial
+                    // (some but not all rows) — `indeterminate` isn't a JSX
+                    // prop, so set it imperatively via a ref callback.
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedRows.size > 0 && selectedRows.size < filteredAccounts.length;
+                    }}
                     checked={selectedRows.size > 0 && selectedRows.size === filteredAccounts.length}
                     onChange={(e) => {
                       if (e.target.checked) {
@@ -1361,23 +1436,26 @@ export default function AccountsPage() {
                   { label: "Last Interaction", icon: Clock },
                   { label: "Connected to", icon: Users },
                   // TAM streaming signal columns — one per default
-                  // signal. Rendered as chips in the body via
-                  // <SignalChip>. Positioned right after Connected-to
-                  // so the trust-cluster (warm intro + signals) lives
-                  // together, before legacy/custom columns.
-                  { label: "Investor", icon: Sparkles as LucideIcon },
-                  { label: "Funding", icon: Sparkles as LucideIcon },
-                  { label: "Hiring", icon: Sparkles as LucideIcon },
-                  { label: "YC", icon: Sparkles as LucideIcon },
+                  // signal that has data on at least one loaded row.
+                  // Rendered as chips in the body via <SignalChip>.
+                  // Positioned right after Connected-to so the
+                  // trust-cluster (warm intro + signals) lives together,
+                  // before legacy/custom columns. Derived from the same
+                  // `activeDefaultSignals` the body maps over, so header
+                  // and body stay column-aligned.
+                  ...activeDefaultSignals.map(({ key }) => ({
+                    label: signalLabelForHeader(key),
+                    icon: Sparkles as LucideIcon,
+                  })),
                   // User-defined custom signals. Each appears as its
                   // own column; names truncated to 16 chars in the
                   // header to keep row widths predictable.
-                  ...customSignals.map((c) => ({
+                  ...activeCustomSignals.map((c) => ({
                     label: c.name.length > 16 ? `${c.name.slice(0, 15)}…` : c.name,
                     icon: Radio as LucideIcon,
                   })),
                   ...signalTypeColumns.map((t) => ({ label: t.replace(/_/g, " "), icon: Radio as LucideIcon })),
-                  ...customBoolColumns.map((c) => ({ label: c, icon: Target as LucideIcon })),
+                  ...activeCustomBoolColumns.map((c) => ({ label: c, icon: Target as LucideIcon })),
                   ...customFields.map((f) => ({ label: f.name, icon: null as LucideIcon | null })),
                   { label: "", icon: null },
                 ] as Array<{ label: string; icon: LucideIcon | null; filterKey?: string }>).map((col, i) => {
@@ -1586,7 +1664,14 @@ export default function AccountsPage() {
                     <td>
                       {(() => {
                         const scoreInfo = formatScore(account.score);
-                        if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        // A fit score is only meaningful once the account
+                        // has real firmographic data. Un-enriched accounts
+                        // land on the floor grade ("F / Cold") which reads
+                        // as a verdict when it's really "no data yet" — so
+                        // we surface "Not scored" instead until enriched.
+                        if (!scoreInfo || !isEnriched(account)) {
+                          return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>Not scored</span>;
+                        }
                         return (
                           <span className="flex items-center gap-1.5" title={account.scoreReasons?.join("; ") || ""}>
                             <span
@@ -1734,7 +1819,7 @@ export default function AccountsPage() {
                         One shared `openSignalChipId` selector means
                         only one popover is open across the whole
                         table at any time. */}
-                    {DEFAULT_SIGNALS.map(({ key }) => {
+                    {activeDefaultSignals.map(({ key }) => {
                       const { payload } = getTamSignal(account, key);
                       const chipId = `${account.id}::${key}`;
                       return (
@@ -1754,7 +1839,7 @@ export default function AccountsPage() {
                     {/* User-defined custom signals — one chip per
                         active signal, reads from
                         `properties.customSignals[signalId]`. */}
-                    {customSignals.map((custom) => {
+                    {activeCustomSignals.map((custom) => {
                       const payload = getCustomSignalPayload(
                         account,
                         custom.id,
@@ -1862,7 +1947,7 @@ export default function AccountsPage() {
                     })}
 
                     {/* Custom bool columns */}
-                    {customBoolColumns.map((col) => {
+                    {activeCustomBoolColumns.map((col) => {
                       const val = getCustomBool(account, col);
                       return (
                         <td key={col} className="text-[11px] font-medium">
@@ -2058,7 +2143,7 @@ export default function AccountsPage() {
                 </span>
               } />
               <PropertyRow label="Score" value={
-                scoreInfo ? (
+                scoreInfo && isEnriched(a) ? (
                   <span className="flex items-center gap-1.5">
                     <span
                       className="inline-flex h-[20px] w-[20px] items-center justify-center rounded-full text-[9px] font-bold text-white shrink-0"
@@ -2070,7 +2155,7 @@ export default function AccountsPage() {
                     <span className="text-[12px] font-medium" style={{ color: scoreInfo.color }}>{scoreInfo.heat}</span>
                     <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>({a.score})</span>
                   </span>
-                ) : "—"
+                ) : "Not scored"
               } />
               {/* Custom fields in slide-over */}
               {customFields.length > 0 && (
