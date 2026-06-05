@@ -44,6 +44,13 @@ export default auth((req) => {
   const publicPaths = [
     "/sign-in",
     "/sign-up",
+    // Password reset must be reachable WITHOUT a session — the user is
+    // logged out by definition. /forgot-password (request a link) +
+    // /reset-password (consume the emailed token). Without these the
+    // middleware bounced both to /sign-in (307), so "forgot password"
+    // looked like a dead link and the email reset link was broken.
+    "/forgot-password",
+    "/reset-password",
     "/landing",
     "/terms",
     "/privacy",
