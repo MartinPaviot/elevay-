@@ -274,18 +274,25 @@ export default function DashboardPage() {
   }, []);
 
   // H11 — locale-aware concise date ("Mon, Apr 13" pattern).
-  // Falls back to "en-US" only if the browser hasn't reported a locale
-  // yet (SSR pre-hydration). We pick the *short* weekday + month so the
-  // header stays dense — Lightfield's pattern, and the long form bled
-  // into the next line on narrow viewports.
-  const today = new Date().toLocaleDateString(
-    typeof navigator !== "undefined" ? navigator.language : "en-US",
-    {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }
-  );
+  // Computed AFTER mount only. Both `navigator.language` and the local
+  // timezone are absent/different during SSR, so formatting the date
+  // inline during render made the server HTML ("en-US" + server tz) and
+  // the client's first render (browser locale + tz) disagree — a
+  // hydration mismatch (React error #418, text content). Deferring to
+  // useEffect keeps SSR and the first client render identical (empty),
+  // then fills in the localized date. We pick the *short* weekday +
+  // month so the header stays dense (Lightfield's pattern; the long form
+  // bled into the next line on narrow viewports).
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    setToday(
+      new Date().toLocaleDateString(navigator.language, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
+    );
+  }, []);
 
   const ws = summary?.weekSummary;
 
