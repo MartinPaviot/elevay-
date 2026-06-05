@@ -20,9 +20,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 
-// Full-colour real company logos (the brand's actual favicon). When the CDN
-// is slow/blocked the <img> hides and the monogram tile shows through.
-export const clogo = (domain: string) => `https://icon.horse/icon/${domain}`;
+// Full-colour real company logos via Google's favicon service — far more
+// reliable than icon.horse (which has DNS-failed before) and it returns a
+// default instead of a hard 404, so misses don't spam the console. When the
+// network is slow/blocked the <img> hides and the monogram tile shows through.
+// (True local bundling isn't possible in this sandbox: Bash has no network and
+// the browser can't read cross-origin logo bytes (CORS) to write them to disk.)
+export const clogo = (domain: string) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 
 /* ── fallbacks: deterministic, tasteful, never a generic glyph ─── */
 
@@ -219,12 +223,11 @@ export function BuiltOnStrip() {
   // colours reads as one calm row, and colour up on hover. A monogram tile
   // sits under each logo, so a blocked logo CDN still shows a clean mark.
   const items: { src: string; l: string; w: string }[] = [
-    { src: "https://cdn.simpleicons.org/anthropic", l: "Anthropic", w: "Reasoning" },
-    // OpenAI was pulled from Simple Icons (trademark request); use favicon.
-    { src: "https://www.google.com/s2/favicons?domain=openai.com&sz=128", l: "OpenAI", w: "Drafting" },
-    { src: "https://cdn.simpleicons.org/twilio", l: "Twilio", w: "Calls" },
-    { src: "https://cdn.simpleicons.org/deepgram", l: "Deepgram", w: "Transcription" },
-    { src: "https://www.google.com/s2/favicons?domain=recall.ai&sz=128", l: "Recall.ai", w: "Capture" },
+    { src: clogo("anthropic.com"), l: "Anthropic", w: "Reasoning" },
+    { src: clogo("openai.com"), l: "OpenAI", w: "Drafting" },
+    { src: clogo("twilio.com"), l: "Twilio", w: "Calls" },
+    { src: clogo("deepgram.com"), l: "Deepgram", w: "Transcription" },
+    { src: clogo("recall.ai"), l: "Recall.ai", w: "Capture" },
   ];
   return (
     <div aria-hidden="true" className="flex flex-wrap items-center justify-center gap-x-7 gap-y-5 sm:gap-x-10">
