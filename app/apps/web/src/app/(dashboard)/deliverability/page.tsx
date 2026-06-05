@@ -243,7 +243,7 @@ export default function DeliverabilityPage() {
     <div className="flex h-full flex-col animate-content-in">
       <PageHeader title="Deliverability" subtitle="Email sending health and monitoring">
         {data.totalSent === 0 ? (
-          <Badge variant="info" size="md">No sends yet</Badge>
+          <Badge variant="info" size="md">No emails sent yet</Badge>
         ) : (
           <div className="flex items-center gap-3">
             <div className="text-right">
