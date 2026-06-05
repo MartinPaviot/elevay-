@@ -21,6 +21,17 @@ export default function IcpSettingsPage() {
   const [targetCompanySizes, setTargetCompanySizes] = useState<string[]>([]);
   const [targetRoles, setTargetRoles] = useState("");
   const [targetGeographies, setTargetGeographies] = useState<string[]>([]);
+  // Full Apollo filter surface — parity with the onboarding card.
+  const [targetKeywords, setTargetKeywords] = useState<string[]>([]);
+  const [targetRevenueMin, setTargetRevenueMin] = useState<number | null>(null);
+  const [targetRevenueMax, setTargetRevenueMax] = useState<number | null>(null);
+  const [targetTechnologies, setTargetTechnologies] = useState<string[]>([]);
+  const [excludeGeographies, setExcludeGeographies] = useState<string[]>([]);
+  const [fundingRecencyDays, setFundingRecencyDays] = useState<number | null>(null);
+  const [totalFundingMin, setTotalFundingMin] = useState<number | null>(null);
+  const [totalFundingMax, setTotalFundingMax] = useState<number | null>(null);
+  const [minJobOpenings, setMinJobOpenings] = useState<number | null>(null);
+  const [hiringTitles, setHiringTitles] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -38,6 +49,16 @@ export default function IcpSettingsPage() {
         setTargetCompanySizes(data.targetCompanySizes || []);
         setTargetRoles(data.targetRoles || "");
         setTargetGeographies(data.targetGeographies || []);
+        setTargetKeywords(data.targetKeywords || []);
+        setTargetRevenueMin(data.targetRevenueMin ?? null);
+        setTargetRevenueMax(data.targetRevenueMax ?? null);
+        setTargetTechnologies(data.targetTechnologies || []);
+        setExcludeGeographies(data.excludeGeographies || []);
+        setFundingRecencyDays(data.fundingRecencyDays ?? null);
+        setTotalFundingMin(data.totalFundingMin ?? null);
+        setTotalFundingMax(data.totalFundingMax ?? null);
+        setMinJobOpenings(data.minJobOpenings ?? null);
+        setHiringTitles(data.hiringTitles || []);
         setLoaded(true);
       })
       .catch(() => setError("Failed to load ICP settings"));
@@ -53,6 +74,9 @@ export default function IcpSettingsPage() {
         body: JSON.stringify({
           productDescription, salesMotion, primaryChallenge, aiTone,
           targetIndustries, targetCompanySizes, targetRoles, targetGeographies,
+          targetKeywords, targetRevenueMin, targetRevenueMax, targetTechnologies,
+          excludeGeographies, fundingRecencyDays, totalFundingMin, totalFundingMax,
+          minJobOpenings, hiringTitles,
         }),
       });
       if (res.ok) {
@@ -78,7 +102,7 @@ export default function IcpSettingsPage() {
   return (
     <>
       <h1
-        className="text-[24px] font-bold"
+        className="text-[24px] font-semibold"
         style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}
       >
         ICP & Product
@@ -272,6 +296,140 @@ export default function IcpSettingsPage() {
           />
         </section>
 
+        {/* Keywords */}
+        <section>
+          <h2
+            className="text-[12px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            Keywords
+          </h2>
+          <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+            Free-text tags describing the companies you target. Unioned with industries when searching.
+          </p>
+          <ChipInput
+            items={targetKeywords}
+            onChange={setTargetKeywords}
+            placeholder="Type a keyword and press Enter — e.g. developer tools"
+          />
+        </section>
+
+        {/* Firmographics */}
+        <section>
+          <h2
+            className="text-[12px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            Firmographics
+          </h2>
+
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Annual revenue (USD)
+              </label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <AmountField value={targetRevenueMin} onChange={setTargetRevenueMin} placeholder="$ Min" />
+                <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>to</span>
+                <AmountField value={targetRevenueMax} onChange={setTargetRevenueMax} placeholder="$ Max" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Technologies used
+              </label>
+              <ChipInput
+                items={targetTechnologies}
+                onChange={setTargetTechnologies}
+                placeholder="Type a technology and press Enter — e.g. Kubernetes"
+              />
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Exclude geographies
+              </label>
+              {excludeGeographies.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {excludeGeographies.map((geo) => (
+                    <Tag key={geo} onRemove={() => toggleArrayItem(excludeGeographies, geo, setExcludeGeographies)}>
+                      {geo}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+              <MultiSelectDropdown
+                options={GEOGRAPHIES}
+                selected={excludeGeographies}
+                onToggle={(item) => toggleArrayItem(excludeGeographies, item, setExcludeGeographies)}
+                placeholder="Search geographies to exclude..."
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Buying signals */}
+        <section>
+          <h2
+            className="text-[12px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            Buying signals
+          </h2>
+
+          <div className="mt-4 space-y-4">
+            <Select
+              label="Recently funded"
+              value={fundingRecencyDays === null ? "" : String(fundingRecencyDays)}
+              onChange={(e) =>
+                setFundingRecencyDays(e.target.value ? Number(e.target.value) : null)
+              }
+              options={[
+                { value: "", label: "Any time" },
+                { value: "90", label: "Last 90 days" },
+                { value: "180", label: "Last 6 months" },
+                { value: "365", label: "Last 12 months" },
+              ]}
+            />
+
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Total funding raised (USD)
+              </label>
+              <div className="mt-1.5 flex items-center gap-2">
+                <AmountField value={totalFundingMin} onChange={setTotalFundingMin} placeholder="$ Min" />
+                <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>to</span>
+                <AmountField value={totalFundingMax} onChange={setTotalFundingMax} placeholder="$ Max" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Min. active job postings
+              </label>
+              <div className="mt-1.5">
+                <AmountField
+                  value={minJobOpenings}
+                  onChange={setMinJobOpenings}
+                  placeholder="e.g. 1 — companies actively hiring"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+                Hiring for titles
+              </label>
+              <ChipInput
+                items={hiringTitles}
+                onChange={setHiringTitles}
+                placeholder="Type a title and press Enter — e.g. Account Executive"
+              />
+            </div>
+          </div>
+        </section>
+
         {/* Save */}
         <div className="flex items-center gap-3 pt-2">
           <Button variant="solid" onClick={handleSave} disabled={saving}>
@@ -347,5 +505,86 @@ function MultiSelectDropdown({
         <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
       )}
     </div>
+  );
+}
+
+/* ── Free-text chip input (no fixed taxonomy) ── */
+function ChipInput({
+  items,
+  onChange,
+  placeholder,
+}: {
+  items: string[];
+  onChange: (next: string[]) => void;
+  placeholder: string;
+}) {
+  const [input, setInput] = useState("");
+  function add(v: string) {
+    const t = v.trim();
+    if (t && !items.includes(t)) onChange([...items, t]);
+    setInput("");
+  }
+  return (
+    <div className="mt-2">
+      {items.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <Tag key={item} onRemove={() => onChange(items.filter((x) => x !== item))}>
+              {item}
+            </Tag>
+          ))}
+        </div>
+      )}
+      <Input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && input.trim()) {
+            e.preventDefault();
+            add(input);
+          }
+        }}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+/** Parse "10k"/"1.5m"/"2b" shorthand + thousands separators → number|null. */
+function parseAmount(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(/[,$\s]/g, "");
+  if (!s) return null;
+  const m = s.match(/^(\d*\.?\d+)([kmb])?$/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const mult = m[2] === "k" ? 1e3 : m[2] === "m" ? 1e6 : m[2] === "b" ? 1e9 : 1;
+  return Math.round(n * mult);
+}
+
+/* ── Numeric amount field — keeps raw text, emits parsed number ── */
+function AmountField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  placeholder: string;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  useEffect(() => {
+    setText((prev) => (parseAmount(prev) === value ? prev : value === null ? "" : String(value)));
+  }, [value]);
+  return (
+    <Input
+      value={text}
+      inputMode="numeric"
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseAmount(e.target.value));
+      }}
+      placeholder={placeholder}
+    />
   );
 }

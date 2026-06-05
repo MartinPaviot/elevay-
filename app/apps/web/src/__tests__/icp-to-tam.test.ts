@@ -20,6 +20,28 @@ describe("icpToStrategy", () => {
     expect(s?.filters.organization_locations).toEqual(["France"]);
   });
 
+  it("translates the full Apollo filter surface, incl. geography_exclude → organization_not_locations", () => {
+    const s = icpToStrategy("Full surface", [
+      crit({ fieldKey: "keywords", operator: "in", value: ["developer tools"] }),
+      crit({ fieldKey: "technologies", operator: "in", value: ["Kubernetes"] }),
+      crit({ fieldKey: "geography_exclude", operator: "in", value: ["India", "China"] }),
+      crit({ fieldKey: "revenue", operator: "between", value: { min: 1_000_000, max: 50_000_000 } }),
+      crit({ fieldKey: "total_funding", operator: "between", value: { min: 5_000_000 } }),
+      crit({ fieldKey: "num_open_jobs", operator: "gte", value: 1 }),
+      crit({ fieldKey: "hiring_job_titles", operator: "in", value: ["Account Executive"] }),
+    ]);
+    expect(s).not.toBeNull();
+    const f = s!.filters;
+    expect(f.q_organization_keyword_tags).toEqual(["developer tools"]);
+    expect(f.currently_using_any_of_technology_uids).toEqual(["kubernetes"]);
+    // The fix: geography_exclude now reaches Apollo (was silently dropped).
+    expect(f.organization_not_locations).toEqual(["India", "China"]);
+    expect(f.revenue_range).toEqual({ min: 1_000_000, max: 50_000_000 });
+    expect(f.total_funding_range).toEqual({ min: 5_000_000 });
+    expect(f.organization_num_jobs_range).toEqual({ min: 1 });
+    expect(f.q_organization_job_titles).toEqual(["Account Executive"]);
+  });
+
   it("returns null when the ICP has no apollo_search criteria (avoid unfiltered search)", () => {
     const s = icpToStrategy("Custom-only", [
       crit({ fieldKey: "founded_year", operator: "gte", value: 2018 }), // apollo_enrich

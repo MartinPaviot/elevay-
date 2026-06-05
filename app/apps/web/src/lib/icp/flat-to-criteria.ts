@@ -9,15 +9,29 @@
  * now expressed as ICP criteria instead of flat fields.
  *
  * Mapping (flat field → catalog fieldKey + operator):
- *   targetIndustries    → industry            in   [...]
- *   targetCompanySizes  → employee_count      between { min, max }   (envelope)
- *   targetGeographies   → geography           in   [...]
- *   targetSeniorities   → person_seniorities  in   [...apollo-format]
+ *   targetIndustries    → industry            in       [...]
+ *   targetKeywords      → keywords            in       [...]
+ *   targetCompanySizes  → employee_count      between  { min, max }   (envelope)
+ *   targetRevenueMin/Max→ revenue             between  { min, max }
+ *   targetTechnologies  → technologies        in       [...]
+ *   targetGeographies   → geography           in       [...]
+ *   totalFundingMin/Max → total_funding       between  { min, max }
+ *   minJobOpenings      → num_open_jobs       gte      n
+ *   hiringTitles        → hiring_job_titles   in       [...]
+ *   targetSeniorities   → person_seniorities  in       [...apollo-format]
  *
- * targetDepartments is intentionally NOT mapped: there's no
- * apollo_search department field in the catalog today (apollo-client.ts
- * doesn't push person_departments), and departments are a secondary
- * targeting axis. Carried as ICP metadata for later, not as a criterion.
+ * Three flat fields are intentionally NOT mapped here:
+ *   - targetDepartments: no apollo_search department field in the catalog
+ *     (apollo-client doesn't push person_departments).
+ *   - excludeGeographies (geography_exclude): it's a SOURCING-only
+ *     exclusion (organization_not_locations). The fit scorer
+ *     (computeIcpFit) has no negation operator, so seeding it as a soft
+ *     criterion would dilute every company's fit. Exclusion is honored at
+ *     source by /api/tam and by rule-builder-authored geography_exclude
+ *     criteria (now translated — see to-apollo-params), not frozen here.
+ *   - fundingRecencyDays: it's RELATIVE ("last 180 days"). Freezing it to
+ *     an absolute date at seed time would go stale; the build paths apply
+ *     it live instead.
  *
  * Company sizes are disjoint ranges ("11-50", "51-200"); the criteria
  * engine is AND-only, so we collapse the selection to its min-max
@@ -35,6 +49,15 @@ export type LegacyIcpSettings = {
   targetGeographies?: string[] | null;
   targetSeniorities?: string[] | null;
   targetDepartments?: string[] | null;
+  // Full Apollo filter surface (parity with the onboarding card).
+  targetKeywords?: string[] | null;
+  targetTechnologies?: string[] | null;
+  targetRevenueMin?: number | null;
+  targetRevenueMax?: number | null;
+  totalFundingMin?: number | null;
+  totalFundingMax?: number | null;
+  minJobOpenings?: number | null;
+  hiringTitles?: string[] | null;
 };
 
 /** Parse a UI size label ("501-1,000", "10,001+") to numeric bounds. */
@@ -90,6 +113,87 @@ export function legacySettingsToCriteria(
       fieldKey: "industry",
       operator: "in",
       value: settings.targetIndustries,
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  if (settings.targetKeywords && settings.targetKeywords.length > 0) {
+    criteria.push({
+      id: nextId("keywords"),
+      fieldKey: "keywords",
+      operator: "in",
+      value: settings.targetKeywords,
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  if (settings.targetTechnologies && settings.targetTechnologies.length > 0) {
+    criteria.push({
+      id: nextId("technologies"),
+      fieldKey: "technologies",
+      operator: "in",
+      value: settings.targetTechnologies,
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  if (settings.hiringTitles && settings.hiringTitles.length > 0) {
+    criteria.push({
+      id: nextId("hiring_job_titles"),
+      fieldKey: "hiring_job_titles",
+      operator: "in",
+      value: settings.hiringTitles,
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  // Numeric ranges — emit only when at least one bound is set. The
+  // criteria-engine `between` reads { min, max }; an undefined bound is a
+  // one-sided range (to-apollo-params + the scorer both honour that).
+  if (
+    typeof settings.targetRevenueMin === "number" ||
+    typeof settings.targetRevenueMax === "number"
+  ) {
+    criteria.push({
+      id: nextId("revenue"),
+      fieldKey: "revenue",
+      operator: "between",
+      value: {
+        ...(typeof settings.targetRevenueMin === "number" ? { min: settings.targetRevenueMin } : {}),
+        ...(typeof settings.targetRevenueMax === "number" ? { max: settings.targetRevenueMax } : {}),
+      },
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  if (
+    typeof settings.totalFundingMin === "number" ||
+    typeof settings.totalFundingMax === "number"
+  ) {
+    criteria.push({
+      id: nextId("total_funding"),
+      fieldKey: "total_funding",
+      operator: "between",
+      value: {
+        ...(typeof settings.totalFundingMin === "number" ? { min: settings.totalFundingMin } : {}),
+        ...(typeof settings.totalFundingMax === "number" ? { max: settings.totalFundingMax } : {}),
+      },
+      weight: 1,
+      isRequired: false,
+    });
+  }
+
+  if (typeof settings.minJobOpenings === "number" && settings.minJobOpenings > 0) {
+    criteria.push({
+      id: nextId("num_open_jobs"),
+      fieldKey: "num_open_jobs",
+      operator: "gte",
+      value: settings.minJobOpenings,
       weight: 1,
       isRequired: false,
     });

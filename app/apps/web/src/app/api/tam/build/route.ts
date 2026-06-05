@@ -4,6 +4,10 @@ import { db } from "@/db";
 import { companies, icps, icpCriteria } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { icpToStrategy, icpToSignalIcp } from "@/lib/icp/icp-to-tam";
+import {
+  flatFiltersToHardApollo,
+  applyHardFiltersToStrategies,
+} from "@/lib/icp/flat-filters-to-apollo";
 import type { Criterion } from "@/lib/icp/criteria-engine";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
@@ -359,6 +363,37 @@ export async function POST(req: Request) {
           console.log(`[tam-stream ${jobId.slice(0, 8)}] apollo overrides — industries=${ov!.industries?.join("|") ?? "-"} geographies=${ov!.geographies?.join("|") ?? "-"}`);
         }
 
+        // ── Legacy-mode settings hard filters ──
+        // In ICP mode the criteria already define the search exactly, so
+        // we leave it untouched. In legacy mode (no icpId — e.g. the
+        // accounts "Find more accounts" tenant-wide build) we layer the
+        // tenant's explicit Settings → ICP filters (revenue / tech /
+        // funding / exclude-geo / hiring) onto every LLM strategy, and
+        // union the tenant keywords, so the same filters the user set are
+        // honored here too. Single source of truth: flatFiltersToHardApollo.
+        const settingsHard = icpStrategy
+          ? {}
+          : flatFiltersToHardApollo({
+              excludeGeographies: settings.excludeGeographies,
+              technologies: settings.targetTechnologies,
+              revenueMin: settings.targetRevenueMin,
+              revenueMax: settings.targetRevenueMax,
+              fundingRecencyDays: settings.fundingRecencyDays,
+              totalFundingMin: settings.totalFundingMin,
+              totalFundingMax: settings.totalFundingMax,
+              minJobOpenings: settings.minJobOpenings,
+              hiringTitles: settings.hiringTitles,
+            });
+        const settingsKeywords = icpStrategy ? [] : (settings.targetKeywords ?? []);
+        const finalStrategies = applyHardFiltersToStrategies(
+          effectiveStrategies,
+          settingsHard,
+          settingsKeywords,
+        );
+        if (Object.keys(settingsHard).length > 0 || settingsKeywords.length > 0) {
+          console.log(`[tam-stream ${jobId.slice(0, 8)}] legacy settings filters — keys=${Object.keys(settingsHard).join("|") || "-"} keywords=${settingsKeywords.length}`);
+        }
+
         summary.strategiesRun = strategies.length;
         send({
           type: "strategy.generated",
@@ -372,7 +407,7 @@ export async function POST(req: Request) {
         const allPerCompanyWork: Promise<void>[] = [];
         const limiter = createLimiter(MAX_CONCURRENT_PIPELINES);
 
-        outer: for (const strategy of effectiveStrategies) {
+        outer: for (const strategy of finalStrategies) {
           if (abortController.signal.aborted) break;
 
           let added = 0;

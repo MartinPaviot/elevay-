@@ -6,6 +6,13 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import {
+  INDUSTRIES,
+  COMPANY_SIZES,
+  GEOGRAPHIES,
+  JOB_SENIORITIES,
+  JOB_DEPARTMENTS,
+} from "@/lib/config/icp-constants";
 
 /**
  * WS-2 v2 onboarding confirmation card — collapses v1's welcome +
@@ -54,10 +61,41 @@ export interface ConfirmationCardInferred {
   lowConfidenceFields: string[];
 }
 
+/**
+ * Targeting state — mirrors the full pushable Apollo org-search surface
+ * (OrgSearchParams in lib/integrations/apollo-client) plus the two
+ * people-level axes. Every field here has a downstream consumer:
+ *   - org-level fields  → /api/tam/estimate (live count) + /api/tam (build)
+ *   - people-level axes → persisted to settings, drive contact targeting
+ *     via deriveTargetRoles()
+ * "Everything that can be filtered is filtered" — no Apollo org filter is
+ * left unexposed.
+ */
 export interface ConfirmationCardTargeting {
+  // ── Company / firmographics ──
   industries: string[];
+  /** Free keyword tags unioned with industries into q_organization_keyword_tags. */
+  keywords: string[];
   companySizes: string[];
+  /** revenue_range bounds, USD. null = unbounded on that side. */
+  revenueMin: number | null;
+  revenueMax: number | null;
+  /** currently_using_any_of_technology_uids (display names → slugs server-side). */
+  technologies: string[];
   geographies: string[];
+  /** organization_not_locations. */
+  excludeGeographies: string[];
+  // ── Buying signals ──
+  /** latest_funding_date_range.min = now − N days. null = any time. */
+  fundingRecencyDays: number | null;
+  /** total_funding_range bounds, USD. */
+  totalFundingMin: number | null;
+  totalFundingMax: number | null;
+  /** organization_num_jobs_range.min — hiring-intent gate. */
+  minJobOpenings: number | null;
+  /** q_organization_job_titles — roles the company is actively hiring for. */
+  hiringTitles: string[];
+  // ── People ──
   targetSeniorities: string[];
   targetDepartments: string[];
 }
@@ -131,7 +169,23 @@ function useApolloCount(targeting: ConfirmationCardTargeting) {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (targeting.industries.length === 0 && targeting.companySizes.length === 0) {
+    // The estimate counts COMPANIES, so only org-level filters move the
+    // number. If none are set, there's nothing to count yet.
+    const hasOrgFilter =
+      targeting.industries.length > 0 ||
+      targeting.keywords.length > 0 ||
+      targeting.companySizes.length > 0 ||
+      targeting.geographies.length > 0 ||
+      targeting.excludeGeographies.length > 0 ||
+      targeting.technologies.length > 0 ||
+      targeting.hiringTitles.length > 0 ||
+      targeting.revenueMin !== null ||
+      targeting.revenueMax !== null ||
+      targeting.totalFundingMin !== null ||
+      targeting.totalFundingMax !== null ||
+      targeting.minJobOpenings !== null ||
+      targeting.fundingRecencyDays !== null;
+    if (!hasOrgFilter) {
       setCount({ total: null, capped: false, loading: false });
       return;
     }
@@ -145,10 +199,18 @@ function useApolloCount(targeting: ConfirmationCardTargeting) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           industries: targeting.industries,
+          keywords: targeting.keywords,
           companySizes: targeting.companySizes,
           geographies: targeting.geographies,
-          targetSeniorities: targeting.targetSeniorities,
-          targetDepartments: targeting.targetDepartments,
+          excludeGeographies: targeting.excludeGeographies,
+          technologies: targeting.technologies,
+          revenueMin: targeting.revenueMin,
+          revenueMax: targeting.revenueMax,
+          fundingRecencyDays: targeting.fundingRecencyDays,
+          totalFundingMin: targeting.totalFundingMin,
+          totalFundingMax: targeting.totalFundingMax,
+          minJobOpenings: targeting.minJobOpenings,
+          hiringTitles: targeting.hiringTitles,
         }),
         signal: controller.signal,
       })
@@ -344,37 +406,116 @@ export function OnboardingConfirmationCard({
             Adjust anything that doesn&apos;t fit. The live count below reflects your current criteria.
           </p>
 
-          <div className="mt-3 space-y-2">
-            <TargetingRow
-              label="Industries"
-              items={targeting.industries}
-              onChange={(v) => updateTargeting({ industries: v })}
-              placeholder="e.g. Computer Software, Financial Services"
-            />
-            <TargetingRow
-              label="Company sizes"
-              items={targeting.companySizes}
-              onChange={(v) => updateTargeting({ companySizes: v })}
-              placeholder="e.g. 11-50, 51-200"
-            />
-            <TargetingRow
-              label="Geographies"
-              items={targeting.geographies}
-              onChange={(v) => updateTargeting({ geographies: v })}
-              placeholder="e.g. United States, France"
-            />
-            <TargetingRow
-              label="Seniorities"
-              items={targeting.targetSeniorities}
-              onChange={(v) => updateTargeting({ targetSeniorities: v })}
-              placeholder="e.g. C-Suite, VP"
-            />
-            <TargetingRow
-              label="Departments"
-              items={targeting.targetDepartments}
-              onChange={(v) => updateTargeting({ targetDepartments: v })}
-              placeholder="e.g. Engineering, Sales"
-            />
+          <div className="mt-3 space-y-4">
+            {/* Company / firmographics */}
+            <FilterGroup label="Company">
+              <TargetingRow
+                label="Industries"
+                items={targeting.industries}
+                onChange={(v) => updateTargeting({ industries: v })}
+                options={INDUSTRIES}
+                placeholder="Search industries — e.g. Computer Software"
+              />
+              <TargetingRow
+                label="Keywords"
+                items={targeting.keywords}
+                onChange={(v) => updateTargeting({ keywords: v })}
+                options={[]}
+                placeholder="Type a keyword and press Enter — e.g. developer tools"
+              />
+              <TargetingRow
+                label="Company sizes"
+                items={targeting.companySizes}
+                onChange={(v) => updateTargeting({ companySizes: v })}
+                options={COMPANY_SIZES}
+                placeholder="Search sizes — e.g. 11-50"
+              />
+              <RangeRow
+                label="Annual revenue (USD)"
+                min={targeting.revenueMin}
+                max={targeting.revenueMax}
+                onChange={(min, max) =>
+                  updateTargeting({ revenueMin: min, revenueMax: max })
+                }
+                prefix="$"
+              />
+              <TargetingRow
+                label="Technologies used"
+                items={targeting.technologies}
+                onChange={(v) => updateTargeting({ technologies: v })}
+                options={[]}
+                placeholder="Type a technology and press Enter — e.g. Kubernetes"
+              />
+              <TargetingRow
+                label="Geographies"
+                items={targeting.geographies}
+                onChange={(v) => updateTargeting({ geographies: v })}
+                options={GEOGRAPHIES}
+                placeholder="Search geographies — e.g. United States"
+              />
+              <TargetingRow
+                label="Exclude geographies"
+                items={targeting.excludeGeographies}
+                onChange={(v) => updateTargeting({ excludeGeographies: v })}
+                options={GEOGRAPHIES}
+                placeholder="Search geographies to exclude — e.g. India"
+              />
+            </FilterGroup>
+
+            {/* Buying signals */}
+            <FilterGroup label="Buying signals">
+              <SelectRow
+                label="Recently funded"
+                value={targeting.fundingRecencyDays}
+                onChange={(v) => updateTargeting({ fundingRecencyDays: v })}
+                options={[
+                  { label: "Any time", value: null },
+                  { label: "Last 90 days", value: 90 },
+                  { label: "Last 6 months", value: 180 },
+                  { label: "Last 12 months", value: 365 },
+                ]}
+              />
+              <RangeRow
+                label="Total funding raised (USD)"
+                min={targeting.totalFundingMin}
+                max={targeting.totalFundingMax}
+                onChange={(min, max) =>
+                  updateTargeting({ totalFundingMin: min, totalFundingMax: max })
+                }
+                prefix="$"
+              />
+              <NumberRow
+                label="Min. active job postings"
+                value={targeting.minJobOpenings}
+                onChange={(v) => updateTargeting({ minJobOpenings: v })}
+                placeholder="e.g. 1 — companies actively hiring"
+              />
+              <TargetingRow
+                label="Hiring for titles"
+                items={targeting.hiringTitles}
+                onChange={(v) => updateTargeting({ hiringTitles: v })}
+                options={[]}
+                placeholder="Type a title and press Enter — e.g. Account Executive"
+              />
+            </FilterGroup>
+
+            {/* People */}
+            <FilterGroup label="People (who you'll reach inside each company)">
+              <TargetingRow
+                label="Seniorities"
+                items={targeting.targetSeniorities}
+                onChange={(v) => updateTargeting({ targetSeniorities: v })}
+                options={JOB_SENIORITIES}
+                placeholder="Search seniorities — e.g. C-Suite"
+              />
+              <TargetingRow
+                label="Departments"
+                items={targeting.targetDepartments}
+                onChange={(v) => updateTargeting({ targetDepartments: v })}
+                options={JOB_DEPARTMENTS}
+                placeholder="Search departments — e.g. Engineering"
+              />
+            </FilterGroup>
           </div>
 
           <div
@@ -390,7 +531,7 @@ export function OnboardingConfirmationCard({
               </span>
             ) : apolloCount.total === null ? (
               <span style={{ color: "var(--color-text-tertiary)" }}>
-                Add at least one industry or size to see the TAM estimate.
+                Add at least one company filter to see the TAM estimate.
               </span>
             ) : (
               <span style={{ color: "var(--color-text-primary)" }}>
@@ -498,18 +639,60 @@ function Field({
   );
 }
 
-function TargetingRow({
+/** A labelled group of related filters with a faint section heading. */
+function FilterGroup({
   label,
-  items,
-  onChange,
-  placeholder,
+  children,
 }: {
   label: string;
-  items: string[];
-  onChange: (next: string[]) => void;
-  placeholder: string;
+  children: React.ReactNode;
 }) {
-  const [input, setInput] = useState("");
+  return (
+    <div>
+      <div
+        className="text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        {label}
+      </div>
+      <div className="mt-2 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Parse a user-typed number, allowing "10k"/"1.5m"/"2b" shorthand and
+ *  thousands separators. Returns null on empty/unparseable. */
+function parseAmount(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(/[,$\s]/g, "");
+  if (!s) return null;
+  const m = s.match(/^(\d*\.?\d+)([kmb])?$/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const mult = m[2] === "k" ? 1e3 : m[2] === "m" ? 1e6 : m[2] === "b" ? 1e9 : 1;
+  return Math.round(n * mult);
+}
+
+const NUM_INPUT_STYLE: React.CSSProperties = {
+  background: "var(--color-bg-page)",
+  border: "1px solid var(--color-border-default)",
+  color: "var(--color-text-primary)",
+};
+
+/** A min/max numeric range with an optional unit prefix (e.g. "$"). */
+function RangeRow({
+  label,
+  min,
+  max,
+  onChange,
+  prefix,
+}: {
+  label: string;
+  min: number | null;
+  max: number | null;
+  onChange: (min: number | null, max: number | null) => void;
+  prefix?: string;
+}) {
   return (
     <div>
       <label
@@ -518,52 +701,262 @@ function TargetingRow({
       >
         {label}
       </label>
-      <div className="mt-0.5 flex flex-wrap gap-1">
-        {items.map((item) => (
-          <span
-            key={item}
-            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
-            style={{ background: "var(--color-accent)", color: "white" }}
-          >
-            {item}
-            <button
-              type="button"
-              onClick={() => onChange(items.filter((x) => x !== item))}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                padding: 0,
-                lineHeight: 1,
-              }}
-              aria-label={`Remove ${item}`}
-            >
-              ×
-            </button>
-          </span>
+      <div className="mt-1 flex items-center gap-2">
+        <AmountInput
+          value={min}
+          onChange={(v) => onChange(v, max)}
+          placeholder={`${prefix ?? ""}Min`}
+        />
+        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+          to
+        </span>
+        <AmountInput
+          value={max}
+          onChange={(v) => onChange(min, v)}
+          placeholder={`${prefix ?? ""}Max`}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Uncontrolled-friendly amount field — keeps the user's raw text while
+ *  typing, emits the parsed number on change. */
+function AmountInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  placeholder: string;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  // Reflect external resets (e.g. parent clears the field).
+  useEffect(() => {
+    setText((prev) => (parseAmount(prev) === value ? prev : value === null ? "" : String(value)));
+  }, [value]);
+  return (
+    <input
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseAmount(e.target.value));
+      }}
+      inputMode="numeric"
+      placeholder={placeholder}
+      className="w-full rounded-md px-2 py-1 text-[12px]"
+      style={NUM_INPUT_STYLE}
+    />
+  );
+}
+
+/** A single numeric "minimum" field. */
+function NumberRow({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <label
+        className="text-[11px] font-medium"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {label}
+      </label>
+      <div className="mt-1">
+        <AmountInput value={value} onChange={onChange} placeholder={placeholder} />
+      </div>
+    </div>
+  );
+}
+
+/** A single-choice select rendered as a full-width native select. */
+function SelectRow<T extends string | number | null>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ label: string; value: T }>;
+}) {
+  return (
+    <div>
+      <label
+        className="text-[11px] font-medium"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {label}
+      </label>
+      <select
+        value={value === null ? "" : String(value)}
+        onChange={(e) => {
+          const picked = options.find(
+            (o) => (o.value === null ? "" : String(o.value)) === e.target.value,
+          );
+          onChange((picked ? picked.value : null) as T);
+        }}
+        className="mt-1 w-full rounded-md px-2 py-1 text-[12px]"
+        style={NUM_INPUT_STYLE}
+      >
+        {options.map((o) => (
+          <option key={o.label} value={o.value === null ? "" : String(o.value)}>
+            {o.label}
+          </option>
         ))}
+      </select>
+    </div>
+  );
+}
+
+/**
+ * Targeting input — full-width search field (matching the Zone 1 identity
+ * fields) backed by an autocomplete dropdown of the Apollo taxonomy for
+ * this dimension (industries, sizes, geographies, seniorities,
+ * departments — see lib/config/icp-constants). Selected values render as
+ * removable chips above the field. Mirrors the MultiSelectDropdown pattern
+ * from settings/icp so onboarding and settings stay consistent.
+ *
+ * When `options` is empty the field is a pure free-text chip input (used
+ * for keywords / technologies / hiring titles, which have no fixed
+ * taxonomy). Enter adds the top matching suggestion when there is one,
+ * otherwise the raw text.
+ */
+function TargetingRow({
+  label,
+  items,
+  onChange,
+  placeholder,
+  options,
+}: {
+  label: string;
+  items: string[];
+  onChange: (next: string[]) => void;
+  placeholder: string;
+  options: readonly string[];
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const filtered = options.filter(
+    (o) =>
+      o.toLowerCase().includes(search.toLowerCase()) && !items.includes(o),
+  );
+
+  function add(value: string) {
+    const v = value.trim();
+    if (v && !items.includes(v)) onChange([...items, v]);
+    setSearch("");
+    setOpen(false);
+  }
+
+  return (
+    <div>
+      <label
+        className="text-[11px] font-medium"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        {label}
+      </label>
+
+      {items.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {items.map((item) => (
+            <span
+              key={item}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+              style={{ background: "var(--color-accent)", color: "white" }}
+            >
+              {item}
+              <button
+                type="button"
+                onClick={() => onChange(items.filter((x) => x !== item))}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "white",
+                  cursor: "pointer",
+                  padding: 0,
+                  lineHeight: 1,
+                }}
+                aria-label={`Remove ${item}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative mt-1">
         <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && input.trim()) {
+            if (e.key === "Enter" && search.trim()) {
               e.preventDefault();
-              if (!items.includes(input.trim())) {
-                onChange([...items, input.trim()]);
-              }
-              setInput("");
+              add(filtered.length > 0 ? filtered[0] : search);
             }
           }}
-          placeholder={items.length === 0 ? placeholder : "Add more…"}
-          className="rounded-full px-2 py-0.5 text-[11px]"
+          placeholder={placeholder}
+          className="w-full rounded-md px-2 py-1 text-[12px]"
           style={{
             background: "var(--color-bg-page)",
             border: "1px solid var(--color-border-default)",
             color: "var(--color-text-primary)",
-            minWidth: 80,
           }}
         />
+        {open && search && filtered.length > 0 && (
+          <div
+            className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md py-1 shadow-lg"
+            style={{
+              background: "var(--color-bg-card)",
+              border: "1px solid var(--color-border-default)",
+            }}
+          >
+            {filtered.slice(0, 20).map((item) => (
+              <button
+                key={item}
+                type="button"
+                className="block w-full px-3 py-1.5 text-left text-[12px]"
+                style={{ color: "var(--color-text-secondary)" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => add(item)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--color-bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
+        {open && (
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => {
+              setOpen(false);
+              setSearch("");
+            }}
+          />
+        )}
       </div>
     </div>
   );

@@ -95,6 +95,19 @@ export async function POST(req: Request) {
     // source of the desync (editing seniorities/departments on the ICP
     // settings page did not re-derive targetRoles).
     updates.targetGeographies = data.geographies;
+    // Full Apollo filter surface (see ConfirmationCardTargeting). Each
+    // field is optional; only persist when present so partial saves
+    // (e.g. the v1 wizard, which sends none of these) don't wipe them.
+    if (data.keywords !== undefined) updates.targetKeywords = data.keywords;
+    if (data.technologies !== undefined) updates.targetTechnologies = data.technologies;
+    if (data.excludeGeographies !== undefined) updates.excludeGeographies = data.excludeGeographies;
+    if (data.hiringTitles !== undefined) updates.hiringTitles = data.hiringTitles;
+    if (data.revenueMin !== undefined && data.revenueMin !== null) updates.targetRevenueMin = data.revenueMin;
+    if (data.revenueMax !== undefined && data.revenueMax !== null) updates.targetRevenueMax = data.revenueMax;
+    if (data.totalFundingMin !== undefined && data.totalFundingMin !== null) updates.totalFundingMin = data.totalFundingMin;
+    if (data.totalFundingMax !== undefined && data.totalFundingMax !== null) updates.totalFundingMax = data.totalFundingMax;
+    if (data.fundingRecencyDays !== undefined && data.fundingRecencyDays !== null) updates.fundingRecencyDays = data.fundingRecencyDays;
+    if (data.minJobOpenings !== undefined && data.minJobOpenings !== null) updates.minJobOpenings = data.minJobOpenings;
     if (data.aiTone) updates.aiTone = data.aiTone;
   }
 

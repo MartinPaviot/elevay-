@@ -25,6 +25,18 @@ export async function GET() {
       targetCompanySizes: s.targetCompanySizes || [],
       targetRoles: deriveTargetRoles(settingsTyped),
       targetGeographies: s.targetGeographies || [],
+      // Full Apollo filter surface — parity with the onboarding card so
+      // every persisted filter is visible + editable post-onboarding.
+      targetKeywords: s.targetKeywords || [],
+      targetRevenueMin: s.targetRevenueMin ?? null,
+      targetRevenueMax: s.targetRevenueMax ?? null,
+      targetTechnologies: s.targetTechnologies || [],
+      excludeGeographies: s.excludeGeographies || [],
+      fundingRecencyDays: s.fundingRecencyDays ?? null,
+      totalFundingMin: s.totalFundingMin ?? null,
+      totalFundingMax: s.totalFundingMax ?? null,
+      minJobOpenings: s.minJobOpenings ?? null,
+      hiringTitles: s.hiringTitles || [],
     });
   } catch (error) {
     console.error("Failed to fetch ICP settings:", error);
@@ -50,6 +62,11 @@ export async function PUT(req: Request) {
     const fields = [
       "productDescription", "salesMotion", "primaryChallenge", "aiTone",
       "targetIndustries", "targetCompanySizes", "targetRoles", "targetGeographies",
+      // Full Apollo filter surface (parity with onboarding card). Numeric
+      // fields accept null to clear them.
+      "targetKeywords", "targetRevenueMin", "targetRevenueMax",
+      "targetTechnologies", "excludeGeographies", "fundingRecencyDays",
+      "totalFundingMin", "totalFundingMax", "minJobOpenings", "hiringTitles",
     ];
     for (const f of fields) {
       if (body[f] !== undefined) updates[f] = body[f];

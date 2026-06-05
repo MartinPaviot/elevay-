@@ -65,6 +65,38 @@ describe("legacySettingsToCriteria", () => {
     expect(criteria).toHaveLength(0);
   });
 
+  it("maps the full Apollo filter surface (keywords, tech, revenue, funding, jobs, hiring)", () => {
+    const criteria = legacySettingsToCriteria({
+      targetKeywords: ["developer tools"],
+      targetTechnologies: ["Kubernetes"],
+      targetRevenueMin: 1_000_000,
+      targetRevenueMax: 50_000_000,
+      totalFundingMin: 5_000_000,
+      minJobOpenings: 1,
+      hiringTitles: ["Account Executive"],
+    });
+    const byField = Object.fromEntries(criteria.map((c) => [c.fieldKey, c]));
+    expect(byField.keywords.value).toEqual(["developer tools"]);
+    expect(byField.technologies.value).toEqual(["Kubernetes"]);
+    expect(byField.revenue.operator).toBe("between");
+    expect(byField.revenue.value).toEqual({ min: 1_000_000, max: 50_000_000 });
+    // One-sided range when only one bound is set.
+    expect(byField.total_funding.value).toEqual({ min: 5_000_000 });
+    expect(byField.num_open_jobs.operator).toBe("gte");
+    expect(byField.num_open_jobs.value).toBe(1);
+    expect(byField.hiring_job_titles.value).toEqual(["Account Executive"]);
+    // All soft — preserves additive scoring, no hard exclude.
+    expect(criteria.every((c) => c.isRequired === false)).toBe(true);
+  });
+
+  it("does NOT seed geography_exclude or fundingRecencyDays (exclusion + relative-time)", () => {
+    const criteria = legacySettingsToCriteria({
+      excludeGeographies: ["India"],
+      fundingRecencyDays: 180,
+    } as never);
+    expect(criteria).toHaveLength(0);
+  });
+
   it("builds all-soft criteria (preserves additive scoring, no hard exclude)", () => {
     const criteria = legacySettingsToCriteria({
       targetIndustries: ["SaaS"],
