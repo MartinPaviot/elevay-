@@ -7,9 +7,9 @@ Started 2026-06-05. Scope: full product, live on PROD (www.elevay.dev), tenant 4
         [x] crm.md   [x] engage.md   [x] activity-home.md
         [x] ai-chat.md   [x] entry-funnel.md   [x] settings.md
 [ ] Prod login (Phase A = fresh signup, no existing creds needed; Phase B = martin@elevay.dev, try Ks7xR4mP2vL8jF3b!q / 1EjU7nGru2Ve, else ask)
-[ ] Live walk (Playwright solo) — Phase A funnel+empty (fresh signup), Phase B seams (tenant 47dca783)
-[ ] Seams graded (seams.md)
-[ ] Gap register consolidated + synthesis
+[x] Live walk (Playwright solo) — ~21 nodes on prod, 30 screenshots; Phase A signup NOT run (real onboarding observed live)
+[x] Seams graded (seams.md) — 30 seams scored (1 traverse / 6 partial / 13 dead-end / 6 N/T)
+[x] Gap register consolidated + synthesis (gap-register.md, SYNTHESIS.md, CROSS-CUTTING.md C1-C7)
 
 == LIVE WALK CHECKLIST (tick when fiche written to _audit/nodes/) ==
 Funnel:  [ ] F1 landing [ ] F2 sign-up [ ] F3 verify [ ] F4 onboarding [ ] F5 sign-in [ ] F6 accept-invite
@@ -26,6 +26,13 @@ Baseline done + committed. Next: Playwright → prod landing → Phase A fresh s
 to audit funnel F1-F4 + onboarding reality + empty states + ICP->TAM first run. Then Phase B on tenant 47dca783.
 See baseline-synthesis.md "Hypothèses à vérifier live" (P0..P2) for the ordered check plan.
 Fresh test tenant created in Phase A = note in accounts.json + flag for cleanup.
+
+== LIVE FINDINGS (running) ==
+- Playwright profile already authenticated as "Martin" / workspace "E2E Test Workspace".
+- That workspace HAS 767 real accounts (Swiss/FR Pilae data, mostly F-Cold off-ICP). Phase B proceeds here; NO workspace switch needed. Martin-tenant password no longer blocking.
+- Screenshots currently saved to repo ROOT (001,002,003...). Switching to _audit/screenshots/ going forward; move first 3 later.
+- Method: navigate -> screenshot -> Read image (UX ground truth) -> fiche. Snapshot only when refs needed; click by CSS selector to avoid huge snapshots.
+- S3 (Accounts->detail) = 0.5: account name = button -> slide-over (no URL); slide-over has expand link to /accounts/[id]. Detail reachable in 2 steps, no deep-link/share/back.
 
 == NOTES ==
 - One browser at a time: no bg agent may touch Playwright while live walk runs.
