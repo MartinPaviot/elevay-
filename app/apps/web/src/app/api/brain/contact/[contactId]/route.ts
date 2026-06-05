@@ -13,6 +13,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { companies } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { getContactBrain } from "@/lib/company-brain/get-contact-brain";
 
@@ -60,7 +63,28 @@ export async function GET(
     if (!brain) {
       return NextResponse.json({ error: "Contact not found" }, { status: 404 });
     }
-    return NextResponse.json(brain);
+
+    // Attach the company's cached research dossier when one exists. We
+    // only read the cache (companies.properties.dossier) — never trigger
+    // a fresh build here, which is expensive (Apollo + LLM synth). This
+    // is additive; consumers that don't need it ignore the field.
+    let cachedDossier: unknown = null;
+    try {
+      const companyId = brain.companyBrain.company.id;
+      const [co] = await db
+        .select({ properties: companies.properties })
+        .from(companies)
+        .where(
+          and(eq(companies.id, companyId), eq(companies.tenantId, authCtx.tenantId)),
+        )
+        .limit(1);
+      const props = (co?.properties ?? {}) as Record<string, unknown>;
+      if (props.dossier) cachedDossier = props.dossier;
+    } catch {
+      // Dossier is a nice-to-have — never fail the brain over it.
+    }
+
+    return NextResponse.json({ ...brain, cachedDossier });
   } catch (err) {
     console.error("[GET /api/brain/contact]", err);
     return NextResponse.json(

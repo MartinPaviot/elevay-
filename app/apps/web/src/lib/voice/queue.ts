@@ -12,7 +12,7 @@
 
 import { db } from "@/db";
 import { contacts, companies, deals } from "@/db/schema";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { batchDncCheck } from "./dnc";
 import { checkQuietHours, resolveTimezone } from "./quiet-hours";
 import { parseE164 } from "./number-selector";
@@ -22,6 +22,7 @@ export interface QueueItem {
   contactName: string;
   title: string | null;
   companyName: string | null;
+  companyDomain: string | null;
   phone: string;
   score: number;
   intentScore: number;
@@ -50,6 +51,7 @@ interface CompanyProperties {
 export async function buildQueue(
   tenantId: string,
   limit = 100,
+  opts: { companyIds?: string[] } = {},
 ): Promise<QueueItem[]> {
   // Top candidates by raw contact score, joined to company for tz +
   // latest active deal for value weighting. The 3× over-fetch covers
@@ -64,6 +66,7 @@ export async function buildQueue(
       score: contacts.score,
       contactProperties: contacts.properties,
       companyName: companies.name,
+      companyDomain: companies.domain,
       companyProperties: companies.properties,
       dealValue: sql<number | null>`MAX(${deals.value})`,
     })
@@ -75,11 +78,18 @@ export async function buildQueue(
         eq(contacts.tenantId, tenantId),
         isNotNull(contacts.phone),
         isNull(contacts.deletedAt),
+        // Optional account scope — when the rep pushes a selection from
+        // the Accounts list into Call Mode, restrict the queue to those
+        // companies. Empty array → no contacts (explicit empty filter).
+        ...(opts.companyIds
+          ? [inArray(contacts.companyId, opts.companyIds)]
+          : []),
       ),
     )
     .groupBy(
       contacts.id,
       companies.name,
+      companies.domain,
       companies.properties,
     )
     .orderBy(sql`${contacts.score} DESC NULLS LAST`)
@@ -126,6 +136,7 @@ export async function buildQueue(
         `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "Unknown",
       title: r.title,
       companyName: r.companyName,
+      companyDomain: r.companyDomain ?? null,
       phone: r.phone,
       score: composite,
       intentScore,
