@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "@ai-sdk/react";
-import { TextStreamChatTransport } from "ai";
+import { DefaultChatTransport } from "ai";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ChatMarkdown } from "@/components/chat-markdown";
@@ -15,7 +15,7 @@ import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pil
 import { CopyButton } from "@/components/chat/copy-button";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles } from "lucide-react";
+import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles, ArrowUpRight } from "lucide-react";
 import { trackEvent } from "@/components/posthog-provider";
 
 /** Pick a lucide icon for a starter suggestion by intent, so the empty
@@ -41,7 +41,7 @@ export default function ChatPage() {
   const [threadLoaded, setThreadLoaded] = useState(!searchParams.get("thread"));
 
   const chat = useChat({
-    transport: new TextStreamChatTransport({
+    transport: new DefaultChatTransport({
       api: "/api/chat",
       credentials: "include",
     }),
@@ -305,6 +305,76 @@ export default function ChatPage() {
     return { to: toMatch ? toMatch[1].trim() : "", subject, body };
   }
 
+  // Composer (input + attachments + voice). Rendered as the centred hero
+  // when the thread is empty, then docked at the bottom once it has
+  // messages — one definition so the two placements never drift.
+  function renderComposer(maxW: number | null, big = false) {
+    const widthStyle = maxW ? { maxWidth: maxW } : undefined;
+    return (
+      <>
+        {attachedFile && (
+          <div
+            className="mx-auto mb-2 flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[12px]"
+            style={{ ...widthStyle, background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
+          >
+            <Paperclip size={12} style={{ color: "var(--color-accent)" }} />
+            <span className="flex-1 truncate" style={{ color: "var(--color-text-primary)" }}>{attachedFile.name}</span>
+            <button onClick={() => setAttachedFile(null)} className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>Remove</button>
+          </div>
+        )}
+        <form onSubmit={handleLocalSubmit} className="relative mx-auto w-full" style={widthStyle}>
+          <input ref={fileInputRef} type="file" accept=".csv,.txt,.md,.json,.pdf" onChange={handleFileAttach} className="hidden" />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute left-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ color: "var(--color-text-tertiary)" }}
+            title="Attach file"
+          >
+            <Paperclip size={14} />
+          </button>
+          <input
+            ref={inputRef}
+            value={localInput}
+            onChange={(e) => setLocalInput(e.target.value)}
+            placeholder="Ask Elevay..."
+            autoFocus
+            className={`w-full rounded-xl pl-10 pr-20 outline-none transition-all ${big ? "py-3.5 text-[15px]" : "py-2.5 text-[14px]"}`}
+            style={{
+              background: "var(--color-bg-card)",
+              color: "var(--color-text-primary)",
+              border: "1px solid var(--color-border-default)",
+              boxShadow: "var(--shadow-card)",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-border-focus)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--color-border-default)"; }}
+            disabled={chat.status === "streaming"}
+          />
+          <button
+            type="button"
+            onClick={toggleVoiceInput}
+            className="absolute top-1/2 -translate-y-1/2 rounded p-1 transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ right: localInput.trim() ? 42 : 12, color: isListening ? "var(--color-error)" : "var(--color-text-tertiary)" }}
+            title={isListening ? "Stop listening" : "Voice input"}
+          >
+            {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+          </button>
+          {localInput.trim() && (
+            <Button
+              type="submit"
+              variant="solid"
+              size="sm"
+              disabled={chat.status === "streaming"}
+              className="absolute right-2 top-1/2 -translate-y-1/2"
+              icon={<Send size={13} />}
+              style={{ borderRadius: "8px" }}
+            />
+          )}
+        </form>
+      </>
+    );
+  }
+
   // Don't render until thread is loaded (prevents flash of empty state)
   if (!threadLoaded) {
     return (
@@ -351,71 +421,69 @@ export default function ChatPage() {
       {/* Messages area */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:py-8">
         {chat.messages.length === 0 && threadLoaded && (
-          <div className="mx-auto flex min-h-[60vh] max-w-[600px] flex-col items-center justify-center px-2">
+          <div className="mx-auto flex min-h-[72vh] w-full max-w-[560px] flex-col items-center justify-center px-2">
             <div
-              className="flex h-12 w-12 items-center justify-center rounded-2xl"
-              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+              className="flex h-14 w-14 items-center justify-center rounded-2xl"
+              style={{
+                background: "var(--color-bg-card)",
+                border: "1px solid var(--color-border-default)",
+                boxShadow: "var(--shadow-card)",
+                color: "var(--color-accent)",
+              }}
             >
-              <Compass size={24} />
+              <Compass size={26} />
             </div>
-            <h2
-              className="mt-5 text-[26px] font-semibold"
-              style={{ color: "var(--color-text-primary)", letterSpacing: "-0.4px" }}
+            <h1
+              className="mt-6 text-[30px] font-semibold"
+              style={{ color: "var(--color-text-primary)", letterSpacing: "-0.5px" }}
             >
               {greeting ? (firstName ? `${greeting}, ${firstName}` : greeting) : "How can I help?"}
-            </h2>
+            </h1>
             <p
-              className="mt-2 text-[13px]"
+              className="mt-2 text-[14px]"
               style={{ color: "var(--color-text-tertiary)" }}
             >
               Ask about your pipeline, draft outreach, or research an account.
             </p>
-            <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+
+            {/* Composer — the focal point of the empty state */}
+            <div className="mt-7 w-full">{renderComposer(null, true)}</div>
+
+            {/* Starter prompts — a quiet command list, not a wall of boxes */}
+            <div
+              className="mt-3 w-full overflow-hidden rounded-xl border"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+            >
               {(suggestions.length > 0
                 ? suggestions
                 : [
                     "What should I focus on today?",
                     "Summarize my active opportunities",
                     "Which deals are at risk of stalling?",
-                    "Draft a follow-up email to my last meeting",
-                    "Who haven't I followed up with?",
                     "Research my top accounts to refine my ICP",
                   ]
-              ).map((suggestion) => {
-                const Icon = suggestionIcon(suggestion);
-                return (
-                  <button
-                    key={suggestion}
-                    onClick={() => useSuggestion(suggestion)}
-                    className="group flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 hover:-translate-y-px"
-                    style={{
-                      background: "var(--color-bg-card)",
-                      borderColor: "var(--color-border-default)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--color-border-focus)";
-                      e.currentTarget.style.boxShadow = "var(--shadow-card)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--color-border-default)";
-                      e.currentTarget.style.boxShadow = "none";
-                    }}
-                  >
-                    <span
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-                      style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+              )
+                .slice(0, 4)
+                .map((suggestion, i) => {
+                  const Icon = suggestionIcon(suggestion);
+                  return (
+                    <button
+                      key={suggestion}
+                      onClick={() => useSuggestion(suggestion)}
+                      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
+                      style={{
+                        color: "var(--color-text-secondary)",
+                        borderTop: i ? "1px solid var(--color-border-default)" : undefined,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--color-text-secondary)"; }}
                     >
-                      <Icon size={15} />
-                    </span>
-                    <span
-                      className="text-[13px] leading-[1.35]"
-                      style={{ color: "var(--color-text-secondary)" }}
-                    >
-                      {suggestion}
-                    </span>
-                  </button>
-                );
-              })}
+                      <Icon size={16} className="shrink-0" style={{ color: "var(--color-accent)" }} />
+                      <span className="flex-1 truncate text-[14px]">{suggestion}</span>
+                      <ArrowUpRight size={14} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  );
+                })}
             </div>
           </div>
         )}
@@ -759,79 +827,18 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Chat input bar — bottom, same max-w as messages */}
-      <div className="relative shrink-0 px-4 pb-4 pt-3">
-        {/* Fade gradient so messages dissolve behind the input */}
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-full h-8"
-          style={{
-            background: "linear-gradient(to bottom, transparent, var(--color-bg-base))",
-          }}
-        />
-        {/* Attached file indicator */}
-        {attachedFile && (
-          <div className="mx-auto mb-2 flex max-w-[740px] items-center gap-2 rounded-lg px-3 py-1.5 text-[12px]" style={{ background: "var(--color-accent-soft)", border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}>
-            <Paperclip size={12} style={{ color: "var(--color-accent)" }} />
-            <span className="flex-1 truncate" style={{ color: "var(--color-text-primary)" }}>{attachedFile.name}</span>
-            <button onClick={() => setAttachedFile(null)} className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>Remove</button>
-          </div>
-        )}
-        <form onSubmit={handleLocalSubmit} className="relative mx-auto max-w-[740px]">
-          {/* Hidden file input */}
-          <input ref={fileInputRef} type="file" accept=".csv,.txt,.md,.json,.pdf" onChange={handleFileAttach} className="hidden" />
-          {/* Upload button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="absolute left-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
-            style={{ color: "var(--color-text-tertiary)" }}
-            title="Attach file"
-          >
-            <Paperclip size={14} />
-          </button>
-          <input
-            ref={inputRef}
-            value={localInput}
-            onChange={(e) => setLocalInput(e.target.value)}
-            placeholder="Ask Elevay..."
-            className="w-full rounded-xl py-2.5 pl-10 pr-20 text-[14px] outline-none transition-all"
-            style={{
-              background: "var(--color-bg-card)",
-              color: "var(--color-text-primary)",
-              border: "1px solid var(--color-border-default)",
-              boxShadow: "var(--shadow-card)",
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "var(--color-border-focus)";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "var(--color-border-default)";
-            }}
-            disabled={chat.status === "streaming"}
+      {/* Chat input bar — docked once the conversation has started. When the
+          thread is empty the composer lives in the centred hero above. */}
+      {chat.messages.length > 0 && (
+        <div className="relative shrink-0 px-4 pb-4 pt-3">
+          {/* Fade gradient so messages dissolve behind the input */}
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-full h-8"
+            style={{ background: "linear-gradient(to bottom, transparent, var(--color-bg-base))" }}
           />
-          {/* Mic button */}
-          <button
-            type="button"
-            onClick={toggleVoiceInput}
-            className="absolute top-1/2 -translate-y-1/2 rounded p-1 transition-colors hover:bg-[var(--color-bg-hover)]"
-            style={{ right: localInput.trim() ? 42 : 12, color: isListening ? "var(--color-error)" : "var(--color-text-tertiary)" }}
-            title={isListening ? "Stop listening" : "Voice input"}
-          >
-            {isListening ? <MicOff size={14} /> : <Mic size={14} />}
-          </button>
-          {localInput.trim() && (
-            <Button
-              type="submit"
-              variant="solid"
-              size="sm"
-              disabled={chat.status === "streaming"}
-              className="absolute right-2 top-1/2 -translate-y-1/2"
-              icon={<Send size={13} />}
-              style={{ borderRadius: "8px" }}
-            />
-          )}
-        </form>
-      </div>
+          {renderComposer(740)}
+        </div>
+      )}
 
       {emailComposer && (
         <EmailComposerPanel
