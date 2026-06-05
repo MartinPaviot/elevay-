@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
-import { AppFrame } from "./product-mockups";
+import { AppFrame, ScaleToFit } from "./product-mockups";
 import {
   AccountsPhase,
   UpNextPhase,
@@ -94,11 +94,13 @@ function AnimatedSurface({ Phase, h }: { Phase: Phase; h: number }) {
       animate={live ? { opacity: 1, y: 0, scale: 1 } : undefined}
       transition={{ duration: reduced ? 0 : 0.6, ease: [0.22, 0.61, 0.36, 1] }}
     >
-      <AppFrame>
-        <div style={{ height: h }} className="overflow-hidden bg-[#FAFAFA]">
-          {live ? <Phase key="live" reduced={reduced} /> : <Phase key="static" reduced />}
-        </div>
-      </AppFrame>
+      <ScaleToFit designWidth={460}>
+        <AppFrame>
+          <div style={{ height: h }} className="overflow-hidden bg-[#FAFAFA]">
+            {live ? <Phase key="live" reduced={reduced} /> : <Phase key="static" reduced />}
+          </div>
+        </AppFrame>
+      </ScaleToFit>
     </motion.div>
   );
 }

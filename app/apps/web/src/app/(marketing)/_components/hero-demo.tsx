@@ -25,7 +25,7 @@ import {
   Eye, Check, Search, Sparkles, Target, Plus, Gauge, Radio, Mic,
   TrendingUp, RefreshCw, DollarSign, AlertTriangle, type LucideIcon,
 } from "lucide-react";
-import { AppFrame, Avatar, Logo, clogo } from "./product-mockups";
+import { AppFrame, Avatar, Logo, ScaleToFit, clogo } from "./product-mockups";
 
 const BRAND = "linear-gradient(90deg,#17C3B2,#2C6BED,#FF7A3D)";
 const T = { text: "#1A1A2E", sec: "#64648C", ter: "#9CA3AF", border: "#E8E8F0", soft: "#EFEFF5", page: "#FAFAFA", card: "#FFFFFF", accent: "#2C6BED", accentSoft: "rgba(44,107,237,0.08)" };
@@ -703,6 +703,7 @@ export function HeroDemo() {
           composite on some GPUs and smear into a solid green/teal band that
           breaks the whole hero layout. Keep the stage plain. */}
       <div ref={frameRef} className="relative z-10">
+        <ScaleToFit designWidth={460}>
         <AppFrame>
           <div className="flex" style={{ height: 460 }}>
             <Sidebar active={phases[phase].nav} />
@@ -728,6 +729,7 @@ export function HeroDemo() {
             </div>
           </div>
         </AppFrame>
+        </ScaleToFit>
 
         {/* (motion trail removed — radial-gradient glow dots are another
             soft-colour compositing risk on weak GPUs.) */}

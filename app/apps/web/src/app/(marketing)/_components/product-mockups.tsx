@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Marketing product primitives.
  *
@@ -15,6 +17,7 @@
  * skips the faux UI and reads the adjacent copy.
  */
 
+import { useEffect, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 
 // Full-colour real company logos (the brand's actual favicon). When the CDN
@@ -53,6 +56,40 @@ function brandLetter(src: string, name: string) {
     src.match(/simpleicons\.org\/([^/?]+)/);
   const d = (m ? m[1] : src).replace(/^www\./, "");
   return (d.charAt(0) || "•").toUpperCase();
+}
+
+/* ── scale a fixed-width product mockup down to fit narrow screens ─ */
+
+// The mockups are designed at a desktop width; on phones the dense tables and
+// boards would overflow and clip. Render at `designWidth` and, only when the
+// container is narrower, scale the whole thing down (transform: scale — painted
+// uniformly, GPU-safe) and reserve the scaled height so layout flows correctly.
+export function ScaleToFit({ designWidth, children }: { designWidth: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [st, setSt] = useState<{ scale: number; w: string; h?: number }>({ scale: 1, w: "100%" });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const inner = el.firstElementChild as HTMLElement | null;
+      const cw = el.clientWidth;
+      if (cw >= designWidth) setSt({ scale: 1, w: "100%", h: undefined });
+      else setSt({ scale: cw / designWidth, w: `${designWidth}px`, h: (inner?.offsetHeight || 0) * (cw / designWidth) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    const inner = el.firstElementChild;
+    if (inner) ro.observe(inner);
+    return () => ro.disconnect();
+  }, [designWidth]);
+  return (
+    <div ref={ref} style={{ height: st.h }}>
+      <div style={{ width: st.w, transform: st.scale !== 1 ? `scale(${st.scale})` : undefined, transformOrigin: "top left" }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 /* ── person avatar (coloured initials, optional real photo) ─────── */
