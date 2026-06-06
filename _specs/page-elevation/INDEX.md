@@ -88,8 +88,12 @@ NEXT — the "deep" remainder (bigger/sensitive/data-blocked; do carefully, not 
   + the existing capture_approvals seam), so NO new table / NO prod migration. Remaining = cold-
   inbound triage for fully-unknown senders (auto-create vs review queue) — a real ocean, flagged.
   Seeds left for demo: 2 email_received activities for Sarah (messageId seed-msg-inbox-001/002).
-- contacts list: column filters run client-side on the current 50-row page (wrong results). Fix =
-  push filters to the server query. Needs >50 contacts seeded to verify.
+- contacts list: DONE (2e0321c2). Column filters (contact/company/email/title/score/linkedin/phone)
+  now run server-side via /api/contacts params, so they span ALL contacts (WHERE before LIMIT) not
+  the loaded 50-row page; company options sourced from the server (distinct), grades static; client
+  passesColumnFilters + dead get() accessors removed. Verified: each filter type returns the right
+  subset + page-scope proof (pageSize=1 + fTitle=Test -> total=2) + UI select Spineart -> Sarah.
+  Follow-up: NL smart filters still refine client-side; accounts list shares the same latent pattern.
 - reports: "Schedule weekly" fires reports/schedule.requested with no Inngest handler. Fix = real
   scheduled-report worker (cron + generate + email) or stop claiming "Scheduled".
 Pass-2 = elevations per each page's spec.
