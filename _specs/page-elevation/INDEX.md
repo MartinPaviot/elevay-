@@ -16,7 +16,7 @@ Tier 5: proposals · skills · notes · tasks · deliverability · reports · me
 | 1 | /chat | DONE pass-1: live-tested + 2 defects fixed & verified (T13 dup, T3 citations), committed 43e67ecb; elevations=pass 2 | chat/spec.md |
 | 2 | / (Up next) | pass-1: approve-route 404 FIXED+verified; fake-AI follow-up templates FIXED (real opener, compile+render verified) — both committed; remaining: rule-based action ranking (pass 2). Behavioral verify blocked by empty test tenant | — |
 | 3 | /meetings | pass-1: list->detail link FIXED (compile+render verified; behavioral needs calendar data). Remaining: Recall webhook doesn't auto-trigger post-call (auto-capture broken); 15-min bot window no cron | — |
-| 4 | /inbox | queued | — |
+| 4 | /inbox | pass-1: inbound capture SHIPPED + verified (72ad59bc). Webhook now captures every inbound email as an email_received activity (reuses activities + recordCapturedActivity, no migration); new Inbound tab shows real incoming mail w/ full body. Remaining: cold-inbound triage for wholly-unknown senders (flagged ocean); real webhook gated on Martin connecting a mailbox in EmailEngine | — |
 
 Global flow map + per-page coverage gaps: `_audit/2026-06-06-prelaunch/page-coverage-audit.md`.
 
@@ -82,7 +82,12 @@ NEXT — the "deep" remainder (bigger/sensitive/data-blocked; do carefully, not 
     recall-functions.ts). Real dependency = Inngest Cloud must run (prod /api/inngest 500 = no
     Inngest keys, per product-audit memory) -- infra/config, not code.
   Seed left in tenant 47dca783: meeting activity 3aaef096 + its 4 generated tasks (clean up at end).
-- inbox: no inbound capture — needs an inbound table + IMAP/webhook ingestion. Big feature.
+- inbox: DONE (pass-1). Inbound capture shipped (72ad59bc) — captureInboundEmail() in
+  lib/capture/email-capture.ts, wired into the EmailEngine webhook; surfaced via a new Inbound
+  tab. Premise-challenge win: an inbound email is an `activities` row (reused recordCapturedActivity
+  + the existing capture_approvals seam), so NO new table / NO prod migration. Remaining = cold-
+  inbound triage for fully-unknown senders (auto-create vs review queue) — a real ocean, flagged.
+  Seeds left for demo: 2 email_received activities for Sarah (messageId seed-msg-inbox-001/002).
 - contacts list: column filters run client-side on the current 50-row page (wrong results). Fix =
   push filters to the server query. Needs >50 contacts seeded to verify.
 - reports: "Schedule weekly" fires reports/schedule.requested with no Inngest handler. Fix = real
