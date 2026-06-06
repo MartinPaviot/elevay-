@@ -174,8 +174,12 @@ export default function DashboardPage() {
       try {
         const res = await fetch(`/api/contacts/${contactId}/opener`);
         if (res.ok) {
-          const d = (await res.json()) as { opener?: string };
-          if (d.opener) body = d.opener;
+          const d = (await res.json()) as { opener?: { opener?: string } };
+          const text = d.opener?.opener;
+          // Use the generated opener only when it is a real, filled message —
+          // the generator returns a "[placeholder]" skeleton when the account
+          // has no signals, which is worse than a clean blank draft.
+          if (text && !text.includes("[")) body = text;
         }
       } catch {
         /* keep the neutral starter */
