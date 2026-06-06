@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { Target, Loader2, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GrowTextarea } from "@/components/ui/grow-textarea";
 import { useToast } from "@/components/ui/toast";
 
 type GoalType = "calls" | "connects" | "meetings";
@@ -96,13 +97,10 @@ export function CallModeOnboarding({
   });
 
   return (
-    <div
-      className="absolute inset-0 z-20 flex items-center justify-center p-6"
-      style={{ background: "color-mix(in srgb, var(--color-bg-base) 80%, transparent)", backdropFilter: "none" }}
-    >
+    <div className="flex h-full w-full items-center justify-center overflow-auto p-6">
       <div
         className="w-full max-w-lg rounded-2xl p-7"
-        style={{ background: "var(--color-bg-elevated)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.18))" }}
+        style={{ background: "var(--color-bg-elevated)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog, 0 12px 40px rgba(0,0,0,0.18))" }}
       >
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
@@ -186,14 +184,13 @@ export function CallModeOnboarding({
         {/* Free-text shortcut */}
         <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--color-border-subtle, var(--color-border-default))" }}>
           <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Or describe it</label>
-          <div className="mt-1.5 flex gap-2">
-            <input
-              type="text"
+          <div className="mt-1.5 flex items-end gap-2">
+            <GrowTextarea
               value={phrase}
               onChange={(e) => setPhrase(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && phrase.trim()) submit({ phrase: phrase.trim() }); }}
+              onSubmit={() => { if (phrase.trim()) submit({ phrase: phrase.trim() }); }}
               placeholder='e.g. "book 10 demos this month" or "200 dials a day"'
-              className="flex-1 rounded-lg px-3 py-2 text-[13px]"
+              className="flex-1"
               style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
             />
             <Button variant="outline" disabled={submitting || !phrase.trim()} onClick={() => submit({ phrase: phrase.trim() })}>

@@ -6,11 +6,17 @@
  * ICP (industries / sizes / geos / titles / seniorities), shows the live
  * Apollo match count, and saves it as the tenant ICP so it drives sourcing,
  * the daily call list, and fit scoring.
+ *
+ * Built on the shared Modal (escape / scroll-lock / overlay) for consistent
+ * integration, and the auto-growing GrowTextarea so the user sees the full
+ * description as they type.
  */
 
 import { useState } from "react";
-import { Target, Loader2, Search, X, Check } from "lucide-react";
+import { Loader2, Search, X, Check } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { GrowTextarea } from "@/components/ui/grow-textarea";
 import { useToast } from "@/components/ui/toast";
 
 interface ParsedIcp {
@@ -141,7 +147,9 @@ export function PersonaSearch({ onClose, onSaved }: { onClose: () => void; onSav
       }}
     >
       {value}
-      <button type="button" onClick={() => removeChip(field, value)} className="opacity-60 hover:opacity-100"><X size={11} /></button>
+      <button type="button" onClick={() => removeChip(field, value)} className="opacity-60 transition-opacity hover:opacity-100" aria-label={`Remove ${value}`}>
+        <X size={11} />
+      </button>
     </span>
   );
 
@@ -151,59 +159,47 @@ export function PersonaSearch({ onClose, onSaved }: { onClose: () => void; onSav
     return (
       <div>
         <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>{label}</div>
-        <div className="mt-1 flex flex-wrap gap-1.5">{vals.map((v) => chip(field, v, tone))}</div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">{vals.map((v) => chip(field, v, tone))}</div>
       </div>
     );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto p-6" style={{ background: "color-mix(in srgb, var(--color-bg-base) 70%, transparent)" }} onClick={onClose}>
-      <div
-        className="mt-[6vh] w-full max-w-xl rounded-2xl p-6"
-        style={{ background: "var(--color-bg-elevated)", border: "1px solid var(--color-border-default)", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
-            <Target size={18} />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>Find your ideal accounts</h2>
-            <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Describe who you want to reach in plain language — Elevay turns it into your target audience.</p>
-          </div>
-          <button type="button" onClick={onClose} style={{ color: "var(--color-text-tertiary)" }}><X size={18} /></button>
+    <Modal open onClose={onClose} title="Find your ideal accounts" size="lg">
+      <p className="text-[12.5px]" style={{ color: "var(--color-text-tertiary)" }}>
+        Describe who you want to reach in plain language — Elevay turns it into your target audience.
+      </p>
+
+      <div className="mt-3 flex items-end gap-2">
+        <GrowTextarea
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          onSubmit={() => { if (phrase.trim()) parse(phrase); }}
+          placeholder="e.g. VP Engineering at Series B fintech in France, 50-200, using AWS"
+          autoFocus
+          className="flex-1"
+          style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
+        />
+        <Button variant="gradient" disabled={parsing || !phrase.trim()} onClick={() => parse(phrase)}>
+          {parsing ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          {icp ? "Refine" : "Search"}
+        </Button>
+      </div>
+
+      {!icp && (
+        <div className="mt-3 flex flex-col gap-1.5">
+          {EXAMPLES.map((ex) => (
+            <button key={ex} type="button" onClick={() => { setPhrase(ex); parse(ex); }}
+              className="text-left text-[12px] transition-colors hover:underline" style={{ color: "var(--color-text-tertiary)" }}>
+              &ldquo;{ex}&rdquo;
+            </button>
+          ))}
         </div>
+      )}
 
-        <div className="mt-4 flex gap-2">
-          <input
-            type="text"
-            value={phrase}
-            onChange={(e) => setPhrase(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && phrase.trim()) parse(phrase); }}
-            placeholder="e.g. VP Engineering at Series B fintech in France, 50-200"
-            className="flex-1 rounded-lg px-3 py-2 text-[13px]"
-            style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
-            autoFocus
-          />
-          <Button variant="gradient" disabled={parsing || !phrase.trim()} onClick={() => parse(phrase)}>
-            {parsing ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
-            {icp ? "Refine" : "Search"}
-          </Button>
-        </div>
-
-        {!icp && (
-          <div className="mt-3 flex flex-col gap-1.5">
-            {EXAMPLES.map((ex) => (
-              <button key={ex} type="button" onClick={() => { setPhrase(ex); parse(ex); }}
-                className="text-left text-[12px] hover:underline" style={{ color: "var(--color-text-tertiary)" }}>
-                &ldquo;{ex}&rdquo;
-              </button>
-            ))}
-          </div>
-        )}
-
-        {icp && (
-          <div className="mt-5 space-y-3.5">
+      {icp && (
+        <div className="mt-5">
+          <div className="space-y-3.5 overflow-y-auto pr-1" style={{ maxHeight: "44vh" }}>
             {summary && (
               <p className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>{summary}</p>
             )}
@@ -215,28 +211,26 @@ export function PersonaSearch({ onClose, onSaved }: { onClose: () => void; onSav
             <Group label="Technologies" field="technologies" />
             <Group label="Titles (persona)" field="titles" />
             <Group label="Seniority" field="seniorities" />
-
-            <div className="rounded-lg px-3.5 py-2.5 text-[13px]" style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}>
-              {estimate === null ? (
-                <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Estimating reach…</span>
-              ) : estimate.gated ? (
-                <span>Connect Apollo in Settings to see the live match count. Your ICP still saves and drives sourcing.</span>
-              ) : estimate.total === null ? (
-                <span>Couldn&rsquo;t fetch the live count right now.</span>
-              ) : (
-                <span>≈ <strong style={{ color: "var(--color-text-primary)" }}>{estimate.total.toLocaleString()}{estimate.capped ? "+" : ""}</strong> companies match this audience.</span>
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <Button variant="gradient" className="flex-1" disabled={saving} onClick={save}>
-                {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-                Save as my ICP
-              </Button>
-            </div>
           </div>
-        )}
-      </div>
-    </div>
+
+          <div className="mt-3.5 rounded-lg px-3.5 py-2.5 text-[13px]" style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}>
+            {estimate === null ? (
+              <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Estimating reach…</span>
+            ) : estimate.gated ? (
+              <span>Connect Apollo in Settings to see the live match count. Your ICP still saves and drives sourcing.</span>
+            ) : estimate.total === null ? (
+              <span>Couldn&rsquo;t fetch the live count right now.</span>
+            ) : (
+              <span>≈ <strong style={{ color: "var(--color-text-primary)" }}>{estimate.total.toLocaleString()}{estimate.capped ? "+" : ""}</strong> companies match this audience.</span>
+            )}
+          </div>
+
+          <Button variant="gradient" className="mt-3.5 w-full" disabled={saving} onClick={save}>
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+            Save as my ICP
+          </Button>
+        </div>
+      )}
+    </Modal>
   );
 }

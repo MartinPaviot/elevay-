@@ -211,7 +211,7 @@ export default function InboxPage() {
                   <td>
                     <div>
                       {email.body && (
-                        <p className="max-w-[360px] truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }} title={email.body}>
+                        <p className="line-clamp-2 max-w-[420px] text-[12px]" style={{ color: "var(--color-text-secondary)" }} title={email.body}>
                           {email.body}
                         </p>
                       )}
