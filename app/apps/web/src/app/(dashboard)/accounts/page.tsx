@@ -23,6 +23,7 @@ import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/context/custom-fields";
 import type { CustomFieldDef } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
+import { PersonaSearch } from "./_persona-search";
 import { Button } from "@/components/ui/button";
 import { Badge, PropertyBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -144,6 +145,8 @@ export default function AccountsPage() {
   // returned rows are already the matched set across the whole tenant —
   // and `totalAccounts` is the matched count, not the library size.
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // NL persona search — "describe who you want to reach" -> ICP.
+  const [showPersona, setShowPersona] = useState(false);
   const [activeSignalPopover, setActiveSignalPopover] = useState<string | null>(null);
   const [signalPopoverTab, setSignalPopoverTab] = useState<"reasoning" | "sources">("reasoning");
   const [slideOverAccount, setSlideOverAccount] = useState<Account | null>(null);
@@ -1007,6 +1010,14 @@ export default function AccountsPage() {
         <Button
           variant="outline"
           size="sm"
+          icon={<Target size={13} />}
+          onClick={() => setShowPersona(true)}
+        >
+          Describe ICP
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           icon={<Sparkles size={13} />}
           onClick={startTamBuild}
           disabled={tamStream.isRunning}
@@ -1027,6 +1038,8 @@ export default function AccountsPage() {
           Create account
         </Button>
       </PageHeader>
+
+      {showPersona && <PersonaSearch onClose={() => setShowPersona(false)} />}
 
       {/* TAM stream progress banner — sticky above the filter bar
           during a build, collapses to a completion / error state
