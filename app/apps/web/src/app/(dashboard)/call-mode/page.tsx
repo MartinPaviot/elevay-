@@ -617,9 +617,7 @@ export default function CallModePage() {
             inCall ? "max-h-0 opacity-0" : "max-h-48 opacity-100"
           }`}
         >
-          <div className="px-3 pt-3">
-            <CampaignFunnelBar />
-          </div>
+          <CampaignFunnelBar />
         </div>
       )}
       <div className="flex flex-1 min-h-0 w-full relative">

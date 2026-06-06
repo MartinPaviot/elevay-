@@ -55,9 +55,12 @@ export function CampaignFunnelBar() {
   const divider = { borderLeft: "1px solid var(--color-border-default)" } as React.CSSProperties;
 
   return (
+    // Flush full-width strip (matches the app's FilterBar / BulkActionsBar
+    // convention) so the cockpit is framed edge-to-edge instead of floating an
+    // inset card above full-bleed columns.
     <div
-      className="mx-auto flex w-full flex-wrap items-stretch overflow-hidden rounded-lg"
-      style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+      className="flex w-full flex-wrap items-stretch"
+      style={{ background: "var(--color-bg-card)", borderBottom: "1px solid var(--color-border-default)" }}
     >
       {/* Today vs daily quota */}
       <div className={cell} style={{ minWidth: 150, flex: "1 1 150px" }}>
