@@ -1109,55 +1109,27 @@ export default function AccountsPage() {
           );
         })()}
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Smart Search — NL → structured filters. Independent of the
-              text / semantic search to the right; results are extracted
-              filters displayed as chips below the filter bar. */}
-          <div className="w-64">
-            <SmartSearchBar
-              resourceType="account"
-              onFilters={(filters, meta) => {
-                setSmartFilters(filters);
-                setSmartMeta(meta);
-                if (filters.length > 0) {
-                  toast(`Applied ${filters.length} smart filter${filters.length === 1 ? "" : "s"}`, "success");
-                } else if (meta.unmatched.length > 0) {
-                  toast("Nothing matched your query — try rephrasing", "info");
-                }
-              }}
-              onError={(msg) => toast(msg, "error")}
-            />
-          </div>
-          <div className="relative flex items-center">
-            <Search size={13} className="absolute left-2.5" style={{ color: "var(--color-text-muted)" }} />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSemanticSearch(); }}
-              placeholder="Search accounts..."
-              className="!h-7 w-52 !pl-8 !pr-7 !text-[12px]"
-              aria-label="Semantic search"
-              aria-busy={searching}
-            />
-            {searching && (
-              <Loader2
-                size={12}
-                className="absolute right-2 animate-spin"
-                style={{ color: "var(--color-text-muted)" }}
-                aria-hidden="true"
-              />
-            )}
-          </div>
-          {searchResults && (
-            <Button
-              variant="icon"
-              size="sm"
-              onClick={() => { setSearchResults(null); setSearchQuery(""); }}
-              aria-label="Clear search"
-            >
-              <X size={14} />
-            </Button>
-          )}
+        {/* One intelligent search: type -> semantic TAM search (debounced,
+            500ms); press Enter -> natural-language smart filters. Replaces the
+            old pair (separate literal/semantic box + smart-search bar). */}
+        <div className="ml-auto w-80">
+          <SmartSearchBar
+            resourceType="account"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search accounts — or describe and press Enter (e.g. SaaS in France, high fit)"
+            className="w-full"
+            onFilters={(filters, meta) => {
+              setSmartFilters(filters);
+              setSmartMeta(meta);
+              if (filters.length > 0) {
+                toast(`Applied ${filters.length} smart filter${filters.length === 1 ? "" : "s"}`, "success");
+              } else if (meta.unmatched.length > 0) {
+                toast("Nothing matched your query — try rephrasing", "info");
+              }
+            }}
+            onError={(msg) => toast(msg, "error")}
+          />
         </div>
       </FilterBar>
 
