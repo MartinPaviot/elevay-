@@ -96,6 +96,10 @@ export default function ContactsPage() {
   // Per-column header filters (Notion / Excel style), parity with Accounts.
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [openColumnFilter, setOpenColumnFilter] = useState<string | null>(null);
+  // Column filters run server-side (debounced) so they span ALL contacts, not
+  // just the loaded 50-row page. Company options also come from the server.
+  const [debouncedColumnFilters, setDebouncedColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [serverCompanyOptions, setServerCompanyOptions] = useState<string[]>([]);
   // Delete confirmation (single row or current selection).
   const [deleteTarget, setDeleteTarget] = useState<{ type: "single" | "bulk"; id?: string; name?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -105,16 +109,30 @@ export default function ContactsPage() {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
       if (debouncedSearch) params.set("search", debouncedSearch);
+      // Map active column filters -> server params (see /api/contacts).
+      const cf = debouncedColumnFilters;
+      const txt = (k: string) => cf[k]?.text?.trim();
+      const vals = (k: string) => (cf[k]?.values ?? []).filter(Boolean);
+      const pres = (k: string) => cf[k]?.presence;
+      if (txt("contact")) params.set("fName", txt("contact")!);
+      if (txt("email")) params.set("fEmail", txt("email")!);
+      if (txt("title")) params.set("fTitle", txt("title")!);
+      if (vals("companyName").length) params.set("fCompany", vals("companyName").join(","));
+      if (vals("score").length) params.set("fGrade", vals("score").join(","));
+      if (pres("linkedin")) params.set("fLinkedin", pres("linkedin")!);
+      if (pres("phone")) params.set("fPhone", pres("phone")!);
+
       const res = await fetch(`/api/contacts?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setContacts(data.contacts || data.items || []);
         setTotalContacts(data.pagination?.total ?? (data.contacts || data.items)?.length ?? 0);
+        if (data.filterOptions?.companies) setServerCompanyOptions(data.filterOptions.companies);
       }
     } catch (e) {
       console.warn("contacts: list fetch failed", e);
     } finally { setLoading(false); }
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, debouncedColumnFilters]);
 
   // Debounce the search box and push it to the server, so the search spans ALL
   // contacts (not just the loaded 50-row page). Reset to page 1 on a new query.
@@ -125,6 +143,16 @@ export default function ContactsPage() {
     }, 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
+
+  // Debounce column-filter changes -> server, and reset to page 1 so the
+  // filtered set starts at the top.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedColumnFilters(columnFilters);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [columnFilters]);
 
   useEffect(() => {
     fetchContacts();
@@ -283,56 +311,33 @@ export default function ContactsPage() {
 
   const unenrichedCount = contacts.filter((c) => !isEnriched(c)).length;
 
-  // Per-column filter config — drives both the header <ColumnFilter>s and
-  // the `passesColumnFilters` predicate below. NB: operates on the loaded
-  // page (contacts paginate 50/page), so enum options reflect that page.
-  const FILTER_COLUMNS: Record<string, { label: string; kind: ColumnFilterKind; get: (c: Contact) => string | null }> = {
-    contact: { label: "Contact", kind: "text", get: (c) => [c.firstName, c.lastName].filter(Boolean).join(" ") || null },
-    companyName: { label: "Company", kind: "enum", get: (c) => c.companyName },
-    email: { label: "Email", kind: "text", get: (c) => c.email },
-    title: { label: "Title", kind: "text", get: (c) => c.title },
-    linkedin: { label: "LinkedIn", kind: "presence", get: (c) => c.linkedinUrl },
-    phone: { label: "Phone", kind: "presence", get: (c) => c.phone },
-    score: { label: "Score", kind: "enum", get: (c) => formatScore(c.score)?.grade ?? null },
+  // Header column-filter config — label + kind drive the <ColumnFilter>
+  // dropdowns. The filtering itself runs server-side (see fetchContacts ->
+  // /api/contacts), spanning ALL contacts rather than just the loaded page.
+  const FILTER_COLUMNS: Record<string, { label: string; kind: ColumnFilterKind }> = {
+    contact: { label: "Contact", kind: "text" },
+    companyName: { label: "Company", kind: "enum" },
+    email: { label: "Email", kind: "text" },
+    title: { label: "Title", kind: "text" },
+    linkedin: { label: "LinkedIn", kind: "presence" },
+    phone: { label: "Phone", kind: "presence" },
+    score: { label: "Score", kind: "enum" },
   };
 
-  const columnOptions = useMemo(() => {
-    const out: Record<string, string[]> = {};
-    for (const [key, cfg] of Object.entries(FILTER_COLUMNS)) {
-      if (cfg.kind !== "enum") continue;
-      const set = new Set<string>();
-      for (const c of contacts) {
-        const v = cfg.get(c);
-        if (v) set.add(String(v));
-      }
-      out[key] = Array.from(set).sort((a, b) => a.localeCompare(b));
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contacts]);
+  // Enum filter options come from the server now: company names across ALL
+  // contacts (not just the loaded page, which would hide values the server can
+  // still filter on), and grades are a fixed scale.
+  const columnOptions = useMemo<Record<string, string[]>>(() => ({
+    companyName: serverCompanyOptions,
+    score: ["A+", "A", "B", "C", "D", "F"],
+  }), [serverCompanyOptions]);
 
-  function passesColumnFilters(c: Contact): boolean {
-    for (const [key, f] of Object.entries(columnFilters)) {
-      const cfg = FILTER_COLUMNS[key];
-      if (!cfg || !isColumnFilterActive(f)) continue;
-      const v = cfg.get(c);
-      if (cfg.kind === "text") {
-        if (!String(v ?? "").toLowerCase().includes((f.text ?? "").toLowerCase())) return false;
-      } else if (cfg.kind === "enum") {
-        if (f.values && f.values.length > 0 && (v == null || !f.values.includes(String(v)))) return false;
-      } else if (cfg.kind === "presence") {
-        const has = !!(v && String(v).trim());
-        if (f.presence === "has" && !has) return false;
-        if (f.presence === "empty" && has) return false;
-      }
-    }
-    return true;
-  }
-
-  const smartFilteredContacts = (smartFilters.length > 0
+  // Column filters now run server-side (see fetchContacts -> /api/contacts), so
+  // `contacts` is already the filtered + paginated set. Only the NL smart
+  // filters refine it client-side here.
+  const smartFilteredContacts = smartFilters.length > 0
     ? applyFilters(contacts, smartFilters)
-    : contacts
-  ).filter(passesColumnFilters);
+    : contacts;
 
   // The typed text search now runs server-side (debouncedSearch -> /api/contacts
   // ?search=) so it spans ALL contacts, not just the loaded page; smart filters

@@ -8,7 +8,6 @@ import { embedEntity, contactToText } from "@/lib/ai/embeddings";
 import { extractDomain } from "@/lib/util/email";
 import { checkPlanLimit } from "@/lib/billing/plan-limits";
 import { apiError } from "@/lib/infra/api-errors";
-import { paginatedResponse } from "@/lib/infra/api-response";
 import { z } from "zod";
 
 const createContactSchema = z.object({
@@ -88,17 +87,65 @@ export async function GET(req: Request) {
         )`
       : searchWhere;
 
+    // ── Per-column header filters. Applied server-side so they span ALL
+    //    contacts (the list paginates 50/page; a client-side filter would
+    //    only ever see the loaded page and silently drop matches). ──
+    const conds: SQL[] = [];
+    const fName = url.searchParams.get("fName")?.trim();
+    const fEmail = url.searchParams.get("fEmail")?.trim();
+    const fTitle = url.searchParams.get("fTitle")?.trim();
+    const fCompany = (url.searchParams.get("fCompany") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const fGrade = (url.searchParams.get("fGrade") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const fLinkedin = url.searchParams.get("fLinkedin"); // "has" | "empty"
+    const fPhone = url.searchParams.get("fPhone"); // "has" | "empty"
+
+    if (fName) conds.push(sql`(coalesce(${contacts.firstName}, '') || ' ' || coalesce(${contacts.lastName}, '')) ILIKE ${"%" + fName + "%"}`);
+    if (fEmail) conds.push(sql`${contacts.email} ILIKE ${"%" + fEmail + "%"}`);
+    if (fTitle) conds.push(sql`${contacts.title} ILIKE ${"%" + fTitle + "%"}`);
+    if (fCompany.length > 0) {
+      conds.push(sql`${contacts.companyId} IN (
+        SELECT id FROM companies
+        WHERE tenant_id = ${authCtx.tenantId} AND deleted_at IS NULL
+          AND name = ANY(ARRAY[${sql.join(fCompany.map((c) => sql`${c}`), sql`, `)}]::text[])
+      )`);
+    }
+    if (fGrade.length > 0) {
+      // Mirror getGrade() exactly: grade = first threshold where round(score)
+      // >= min. Ranges are [min, nextMin); A+ is open-ended. Null scores match
+      // no grade (NULL comparisons are false), as in the UI.
+      const RANGES: Record<string, [number, number | null]> = {
+        "A+": [90, null], A: [80, 90], B: [60, 80], C: [40, 60], D: [20, 40], F: [0, 20],
+      };
+      const gradeConds = fGrade
+        .filter((g) => RANGES[g])
+        .map((g) => {
+          const [lo, hi] = RANGES[g];
+          return hi == null
+            ? sql`round(${contacts.score}) >= ${lo}`
+            : sql`(round(${contacts.score}) >= ${lo} AND round(${contacts.score}) < ${hi})`;
+        });
+      if (gradeConds.length > 0) conds.push(sql`(${sql.join(gradeConds, sql` OR `)})`);
+    }
+    if (fLinkedin === "has") conds.push(sql`(${contacts.linkedinUrl} IS NOT NULL AND ${contacts.linkedinUrl} <> '')`);
+    if (fLinkedin === "empty") conds.push(sql`(${contacts.linkedinUrl} IS NULL OR ${contacts.linkedinUrl} = '')`);
+    if (fPhone === "has") conds.push(sql`(${contacts.phone} IS NOT NULL AND ${contacts.phone} <> '')`);
+    if (fPhone === "empty") conds.push(sql`(${contacts.phone} IS NULL OR ${contacts.phone} = '')`);
+
+    const finalWhere: SQL = conds.length > 0
+      ? sql`${whereClause} AND ${sql.join(conds, sql` AND `)}`
+      : whereClause;
+
     const [result, countResult] = await Promise.all([
       db
         .select()
         .from(contacts)
-        .where(whereClause)
+        .where(finalWhere)
         .limit(pageSize)
         .offset(offset),
       db
         .select({ count: sql<number>`count(*)::int` })
         .from(contacts)
-        .where(whereClause),
+        .where(finalWhere),
     ]);
 
     const total = countResult[0]?.count ?? 0;
@@ -153,9 +200,31 @@ export async function GET(req: Request) {
       lastInteraction: lastInteractions[c.id] || null,
     }));
 
-    // K1 — canonical paginated response via shared helper.
-    // Legacy key `contacts` preserved for existing consumers.
-    return paginatedResponse(enrichedContacts, { page, pageSize, total }, "contacts");
+    // Company filter options — distinct company names across ALL the tenant's
+    // (non-deleted) contacts, so the header dropdown isn't limited to the
+    // loaded page. Grades are a fixed scale, so the page hardcodes those.
+    let companyOptions: string[] = [];
+    try {
+      const optRows = await db
+        .selectDistinct({ name: companies.name })
+        .from(companies)
+        .innerJoin(contacts, eq(contacts.companyId, companies.id))
+        .where(and(eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt), isNull(companies.deletedAt)))
+        .orderBy(companies.name);
+      companyOptions = optRows.map((r) => r.name).filter((n): n is string => !!n);
+    } catch (e) {
+      console.warn("Failed to fetch contact company options:", e);
+    }
+
+    // Canonical paginated shape (items + legacy `contacts`) plus server-sourced
+    // filter options for the header dropdowns.
+    const totalPages = Math.ceil(total / pageSize);
+    return Response.json({
+      items: enrichedContacts,
+      contacts: enrichedContacts,
+      pagination: { page, pageSize, total, totalPages, hasMore: page * pageSize < total },
+      filterOptions: { companies: companyOptions },
+    });
   } catch (error) {
     console.error("Failed to fetch contacts:", error);
     return apiError("INTERNAL_ERROR", "Failed to fetch contacts");
