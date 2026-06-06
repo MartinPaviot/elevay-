@@ -51,6 +51,21 @@ export async function POST(
   const generateFollowUp = body.generateFollowUp !== false;
   const updateDeal = body.updateDeal !== false;
 
+  // Idempotency — this route creates tasks + a follow-up draft, and task
+  // creation is unconditional. Running it twice (a re-click, or the planned
+  // webhook auto-trigger followed by a manual "Confirm & update CRM") would
+  // duplicate every task. If it already ran, return the stored result unless
+  // the caller explicitly passes `force: true`.
+  if (meta.postCallProcessedAt && !body.force) {
+    return Response.json({
+      success: true,
+      alreadyProcessed: true,
+      tasks: Array.isArray(meta.generatedTaskIds) ? meta.generatedTaskIds.length : 0,
+      followUpDraft: typeof meta.followUpEmailDraft === "string" ? meta.followUpEmailDraft : "",
+      dealUpdated: false,
+    });
+  }
+
   const createdTaskIds: string[] = [];
   let followUpDraft = "";
   let dealUpdated = false;
