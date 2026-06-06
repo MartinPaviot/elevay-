@@ -2,11 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, GitMerge, Trash2, type LucideIcon } from "lucide-react";
 import { SmartImport } from "@/components/smart-import";
 import { CompanyLogo } from "@/components/ui/company-logo";
-import { displayScore, ENRICHMENT_COLORS } from "@/lib/util/ui-utils";
+import { formatScore, ENRICHMENT_COLORS } from "@/lib/util/ui-utils";
 import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
@@ -281,7 +280,7 @@ export default function ContactsPage() {
     title: { label: "Title", kind: "text", get: (c) => c.title },
     linkedin: { label: "LinkedIn", kind: "presence", get: (c) => c.linkedinUrl },
     phone: { label: "Phone", kind: "presence", get: (c) => c.phone },
-    score: { label: "Score", kind: "enum", get: (c) => displayScore(c.score, isEnriched(c))?.grade ?? null },
+    score: { label: "Score", kind: "enum", get: (c) => formatScore(c.score)?.grade ?? null },
   };
 
   const columnOptions = useMemo(() => {
@@ -604,18 +603,7 @@ export default function ContactsPage() {
                     <td>
                       {contact.companyName ? (
                         <div className="flex items-center gap-1.5">
-                          {contact.companyId ? (
-                            <Link
-                              href={`/accounts/${contact.companyId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="truncate text-[12px] hover:underline"
-                              style={{ color: "var(--color-text-secondary)" }}
-                            >
-                              {contact.companyName}
-                            </Link>
-                          ) : (
-                            <span className="truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{contact.companyName}</span>
-                          )}
+                          <span className="truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{contact.companyName}</span>
                           {contact.companyDomain && (
                             <a href={`https://${contact.companyDomain}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                               <ExternalLink size={10} style={{ color: "var(--color-accent)", opacity: 0.5 }} />
@@ -655,12 +643,8 @@ export default function ContactsPage() {
                     {/* Score */}
                     <td>
                       {(() => {
-                        // displayScore(): no grade until the contact is
-                        // enriched — mirrors the accounts table.
-                        const scoreInfo = displayScore(contact.score, isEnriched(contact));
-                        if (!scoreInfo) {
-                          return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>Not scored</span>;
-                        }
+                        const scoreInfo = formatScore(contact.score);
+                        if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
                         return (
                           <span className="flex items-center gap-1.5" title={contact.scoreReasons?.join("; ") || ""}>
                             <span

@@ -15,7 +15,7 @@ function LinkedInIcon({ size = 13 }: { size?: number }) {
     </svg>
   );
 }
-import { getLifecycleStyle, displayScore } from "@/lib/util/ui-utils";
+import { getLifecycleStyle, formatScore } from "@/lib/util/ui-utils";
 import { SlideOver, PropertyRow } from "@/components/slide-over";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { IntelligenceBrief } from "@/components/intelligence-brief";
@@ -157,7 +157,6 @@ export default function AccountsPage() {
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
   const [expandedContacts, setExpandedContacts] = useState<Array<{ id: string; firstName: string | null; lastName: string | null; title: string | null; email: string | null; status?: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
-  const [findingContacts, setFindingContacts] = useState(false);
   const { fields: customFields } = useCustomFields("company");
   // Warm-intro paths from the relationship graph (primitive ②).
   // Keyed by company.id → list of { viaUserId, viaUserName, contactName, strength, ... }.
@@ -284,24 +283,6 @@ export default function AccountsPage() {
     }
   }, [currentPage]);
 
-  // Enrichment alone never recomputes the fit score (the enrich route
-  // only writes firmographics). Left as-is, a freshly enriched account
-  // keeps its stale "no-data" floor score and would re-surface as
-  // F/Cold the moment `isEnriched` flips true. Re-score right after a
-  // successful enrich so the grade reflects the new data.
-  const rescoreIds = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) return;
-    try {
-      await chunkedBulkCall({
-        ids,
-        endpoint: "/api/score",
-        buildPayload: (chunk) => ({ companyIds: chunk }),
-      });
-    } catch (e) {
-      console.warn("accounts: post-enrich rescore failed (non-blocking)", e);
-    }
-  }, []);
-
   const loadMoreAccounts = useCallback(() => {
     if (loadingMore || currentPage >= totalPages) return;
     fetchAccounts(currentPage + 1, true);
@@ -418,7 +399,7 @@ export default function AccountsPage() {
     try {
       const res = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: [id] }) });
       setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
-      if (res.ok) { await rescoreIds([id]); await refetchLoadedAccounts(); }
+      if (res.ok) await refetchLoadedAccounts();
     } catch { setEnrichStatus((prev) => ({ ...prev, [id]: "failed" })); }
   }
 
@@ -446,10 +427,7 @@ export default function AccountsPage() {
         for (const id of ids) next[id] = failedIds.has(id) ? "failed" : "done";
         return next;
       });
-      if (result.succeeded > 0) {
-        await rescoreIds(ids.filter((id) => !failedIds.has(id)));
-        await refetchLoadedAccounts();
-      }
+      if (result.succeeded > 0) await refetchLoadedAccounts();
       if (result.failed === 0) {
         toast(`Enriched ${result.succeeded} accounts.`, "success");
       } else if (result.succeeded > 0) {
@@ -467,9 +445,7 @@ export default function AccountsPage() {
   }
 
   async function scoreAll() {
-    // Only score accounts that are both un-scored and enriched — scoring
-    // an un-enriched account just writes the no-data floor grade.
-    const ids = accounts.filter((a) => a.score == null && isEnriched(a)).map((a) => a.id);
+    const ids = accounts.filter((a) => a.score == null).map((a) => a.id);
     if (ids.length === 0) return;
     setScoreAllRunning(true);
     try {
@@ -524,10 +500,7 @@ export default function AccountsPage() {
         for (const id of ids) next[id] = failed.has(id) ? "failed" : "done";
         return next;
       });
-      if (r.succeeded > 0) {
-        await rescoreIds(ids.filter((id) => !failed.has(id)));
-        await refetchLoadedAccounts();
-      }
+      if (r.succeeded > 0) await refetchLoadedAccounts();
       toast(
         r.failed === 0
           ? `Enriched ${r.succeeded} accounts.`
@@ -541,23 +514,11 @@ export default function AccountsPage() {
   }
 
   async function bulkScoreSelected() {
-    const selected =
+    const targets =
       selectedRows.size > 0
         ? accounts.filter((a) => selectedRows.has(a.id))
         : accounts.filter((a) => a.score == null);
-    // Scoring an un-enriched account only produces the no-data floor
-    // score (F/Cold). Restrict to enriched targets and tell the user
-    // why instead of silently writing meaningless grades.
-    const targets = selected.filter(isEnriched);
-    if (targets.length === 0) {
-      toast(
-        selected.length > 0
-          ? "Enrich the selected accounts first — scoring needs firmographic data."
-          : "Nothing to score.",
-        "info",
-      );
-      return;
-    }
+    if (targets.length === 0) return;
     const ids = targets.map((t) => t.id);
     try {
       const r = await chunkedBulkCall({
@@ -580,12 +541,7 @@ export default function AccountsPage() {
 
   async function detectSignals() {
     const ids = accounts.filter((a) => isEnriched(a)).map((a) => a.id);
-    if (ids.length === 0) {
-      // The header "Signals" button is always visible; without this the
-      // click was a silent no-op when no account is enriched yet.
-      toast("Enrich accounts first — signal detection needs firmographic data.", "info");
-      return;
-    }
+    if (ids.length === 0) return;
     setDetectingSignals(true);
     try {
       const result = await chunkedBulkCall({
@@ -643,41 +599,6 @@ export default function AccountsPage() {
       console.warn("accounts: extract contacts failed", e);
     } finally {
       setExtractingContacts(false);
-    }
-  }
-
-  /** Find contacts for a single (expanded) account via Apollo, then refresh
-   *  the inline contacts list. Wired to the empty-state CTA so the user can
-   *  act on "No contacts found" instead of hitting a dead end. */
-  async function findContactsForExpanded(accountId: string) {
-    setFindingContacts(true);
-    try {
-      const res = await fetch("/api/accounts/extract-contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountIds: [accountId] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast(data?.error || "Failed to find contacts.", "error");
-        return;
-      }
-      // Refresh the inline list regardless of count.
-      setLoadingContacts(true);
-      const cr = await fetch(`/api/accounts/${accountId}/contacts`);
-      const cd = cr.ok ? await cr.json() : { contacts: [] };
-      setExpandedContacts(cd.contacts || []);
-      setLoadingContacts(false);
-      if (data.totalCreated > 0) {
-        toast(`Added ${data.totalCreated} contact${data.totalCreated === 1 ? "" : "s"}.`, "success");
-      } else {
-        toast("No contacts found for this account on Apollo.", "info");
-      }
-    } catch (e) {
-      toast("Failed to find contacts.", "error");
-      console.warn("accounts: find contacts for expanded failed", e);
-    } finally {
-      setFindingContacts(false);
     }
   }
 
@@ -958,7 +879,7 @@ export default function AccountsPage() {
     size: { label: "Size", kind: "enum", get: (a) => a.size },
     revenue: { label: "Revenue", kind: "enum", get: (a) => a.revenue },
     stage: { label: "Stage", kind: "enum", get: (a) => getLifecycleStage(a) },
-    score: { label: "Score", kind: "enum", get: (a) => displayScore(a.score, isEnriched(a))?.grade ?? null },
+    score: { label: "Score", kind: "enum", get: (a) => formatScore(a.score)?.grade ?? null },
   };
 
   // Distinct values per enum column, computed from the loaded rows, for
@@ -1034,32 +955,6 @@ export default function AccountsPage() {
     return getSignals(account).find((s) => s.type === signalType) || null;
   }
 
-  // Prune signal/bool columns that are empty across every loaded row.
-  // `signalTypeColumns` above is already data-derived; these do the same
-  // for the always-present built-in TAM signals + legacy bool columns so
-  // an all-"—" column never widens the table. Deriving the header AND the
-  // body from these same lists also keeps them aligned — previously the
-  // header hard-coded 4 default-signal columns while the body mapped over
-  // all 5 of DEFAULT_SIGNALS, shifting every column to its right.
-  const activeDefaultSignals = useMemo(
-    () => DEFAULT_SIGNALS.filter(({ key }) =>
-      mergedAccounts.some((a) => getTamSignal(a, key).payload != null)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergedAccounts, tamStream.rows],
-  );
-  const activeCustomSignals = useMemo(
-    () => customSignals.filter((c) =>
-      mergedAccounts.some((a) => getCustomSignalPayload(a, c.id) != null)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergedAccounts, customSignals],
-  );
-  const activeCustomBoolColumns = useMemo(
-    () => customBoolColumns.filter((col) =>
-      mergedAccounts.some((a) => getCustomBool(a, col) != null)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergedAccounts, customBoolColumns],
-  );
-
   // === RENDER ===
   return (
     <div className="flex h-full flex-col animate-content-in" style={{ background: "var(--color-bg-page)" }}>
@@ -1101,9 +996,8 @@ export default function AccountsPage() {
         subtitle={`${totalAccounts}`}
       >
         {/* "Delete all accounts" removed from the toolbar — a one-click,
-            always-visible workspace wipe is a footgun. Bulk delete (selected
-            rows) remains, and a full data wipe lives in Settings → Privacy &
-            data behind explicit confirmation. */}
+            always-visible workspace wipe is a footgun. Bulk/single delete
+            (incl. #61 row CRUD) + Settings → Privacy & data remain. */}
         <Button
           variant="outline"
           size="sm"
@@ -1114,7 +1008,7 @@ export default function AccountsPage() {
         >
           {detectingSignals ? "Detecting..." : "Signals"}
         </Button>
-        {accounts.some((a) => a.score == null && isEnriched(a)) && (
+        {accounts.some((a) => a.score == null) && (
           <Button
             variant="outline"
             size="sm"
@@ -1399,12 +1293,6 @@ export default function AccountsPage() {
                 <th style={{ width: 36 }}>
                   <input
                     type="checkbox"
-                    // Show the standard dash when the selection is partial
-                    // (some but not all rows) — `indeterminate` isn't a JSX
-                    // prop, so set it imperatively via a ref callback.
-                    ref={(el) => {
-                      if (el) el.indeterminate = selectedRows.size > 0 && selectedRows.size < filteredAccounts.length;
-                    }}
                     checked={selectedRows.size > 0 && selectedRows.size === filteredAccounts.length}
                     onChange={(e) => {
                       if (e.target.checked) {
@@ -1429,26 +1317,23 @@ export default function AccountsPage() {
                   { label: "Last Interaction", icon: Clock },
                   { label: "Connected to", icon: Users },
                   // TAM streaming signal columns — one per default
-                  // signal that has data on at least one loaded row.
-                  // Rendered as chips in the body via <SignalChip>.
-                  // Positioned right after Connected-to so the
-                  // trust-cluster (warm intro + signals) lives together,
-                  // before legacy/custom columns. Derived from the same
-                  // `activeDefaultSignals` the body maps over, so header
-                  // and body stay column-aligned.
-                  ...activeDefaultSignals.map(({ key }) => ({
-                    label: signalLabelForHeader(key),
-                    icon: Sparkles as LucideIcon,
-                  })),
+                  // signal. Rendered as chips in the body via
+                  // <SignalChip>. Positioned right after Connected-to
+                  // so the trust-cluster (warm intro + signals) lives
+                  // together, before legacy/custom columns.
+                  { label: "Investor", icon: Sparkles as LucideIcon },
+                  { label: "Funding", icon: Sparkles as LucideIcon },
+                  { label: "Hiring", icon: Sparkles as LucideIcon },
+                  { label: "YC", icon: Sparkles as LucideIcon },
                   // User-defined custom signals. Each appears as its
                   // own column; names truncated to 16 chars in the
                   // header to keep row widths predictable.
-                  ...activeCustomSignals.map((c) => ({
+                  ...customSignals.map((c) => ({
                     label: c.name.length > 16 ? `${c.name.slice(0, 15)}…` : c.name,
                     icon: Radio as LucideIcon,
                   })),
                   ...signalTypeColumns.map((t) => ({ label: t.replace(/_/g, " "), icon: Radio as LucideIcon })),
-                  ...activeCustomBoolColumns.map((c) => ({ label: c, icon: Target as LucideIcon })),
+                  ...customBoolColumns.map((c) => ({ label: c, icon: Target as LucideIcon })),
                   ...customFields.map((f) => ({ label: f.name, icon: null as LucideIcon | null })),
                   { label: "", icon: null },
                 ] as Array<{ label: string; icon: LucideIcon | null; filterKey?: string }>).map((col, i) => {
@@ -1656,13 +1541,8 @@ export default function AccountsPage() {
                     {/* Score */}
                     <td>
                       {(() => {
-                        // displayScore() centralises the rule: no grade
-                        // until the account is enriched (otherwise the
-                        // no-data floor grade reads as a verdict).
-                        const scoreInfo = displayScore(account.score, isEnriched(account));
-                        if (!scoreInfo) {
-                          return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>Not scored</span>;
-                        }
+                        const scoreInfo = formatScore(account.score);
+                        if (!scoreInfo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
                         return (
                           <span className="flex items-center gap-1.5" title={account.scoreReasons?.join("; ") || ""}>
                             <span
@@ -1810,7 +1690,7 @@ export default function AccountsPage() {
                         One shared `openSignalChipId` selector means
                         only one popover is open across the whole
                         table at any time. */}
-                    {activeDefaultSignals.map(({ key }) => {
+                    {DEFAULT_SIGNALS.map(({ key }) => {
                       const { payload } = getTamSignal(account, key);
                       const chipId = `${account.id}::${key}`;
                       return (
@@ -1830,7 +1710,7 @@ export default function AccountsPage() {
                     {/* User-defined custom signals — one chip per
                         active signal, reads from
                         `properties.customSignals[signalId]`. */}
-                    {activeCustomSignals.map((custom) => {
+                    {customSignals.map((custom) => {
                       const payload = getCustomSignalPayload(
                         account,
                         custom.id,
@@ -1938,7 +1818,7 @@ export default function AccountsPage() {
                     })}
 
                     {/* Custom bool columns */}
-                    {activeCustomBoolColumns.map((col) => {
+                    {customBoolColumns.map((col) => {
                       const val = getCustomBool(account, col);
                       return (
                         <td key={col} className="text-[11px] font-medium">
@@ -2018,25 +1898,7 @@ export default function AccountsPage() {
                               ))}
                             </div>
                           ) : (
-                            <div className="flex items-center gap-3">
-                              <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>No contacts found at this account.</p>
-                              {account.domain ? (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); findContactsForExpanded(account.id); }}
-                                  disabled={findingContacts}
-                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-60"
-                                  style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}
-                                >
-                                  {findingContacts ? (
-                                    <><Loader2 size={11} className="animate-spin" /> Finding contacts…</>
-                                  ) : (
-                                    <><UserPlus size={11} /> Find contacts</>
-                                  )}
-                                </button>
-                              ) : (
-                                <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>Add a domain to find contacts.</span>
-                              )}
-                            </div>
+                            <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>No contacts found at this account.</p>
                           )}
                         </div>
                       </td>
@@ -2096,7 +1958,7 @@ export default function AccountsPage() {
       >
         {slideOverAccount && (() => {
           const a = slideOverAccount;
-          const scoreInfo = displayScore(a.score, isEnriched(a));
+          const scoreInfo = formatScore(a.score);
           const lc = ((a.properties as Record<string, unknown>)?.lifecycleStage as string) || "new";
           const lcStyle = getLifecycleStyle(lc);
           return (
@@ -2146,7 +2008,7 @@ export default function AccountsPage() {
                     <span className="text-[12px] font-medium" style={{ color: scoreInfo.color }}>{scoreInfo.heat}</span>
                     <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>({a.score})</span>
                   </span>
-                ) : "Not scored"
+                ) : "—"
               } />
               {/* Custom fields in slide-over */}
               {customFields.length > 0 && (
