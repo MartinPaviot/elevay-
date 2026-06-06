@@ -30,7 +30,7 @@ import {
   companies,
   signalOutcomes,
 } from "@/db/schema";
-import { and, eq, desc, sql, or, inArray } from "drizzle-orm";
+import { and, eq, desc, sql, or, inArray, isNull } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { z } from "zod";
@@ -196,6 +196,7 @@ async function benchmarkAgainstSimilar(
     .where(
       and(
         eq(deals.tenantId, tenantId),
+        isNull(deals.deletedAt),
         or(eq(deals.stage, "won"), eq(deals.stage, "lost")),
       ),
     );
@@ -252,7 +253,7 @@ export async function analyzeWinLoss(
   const [deal] = await db
     .select()
     .from(deals)
-    .where(and(eq(deals.id, dealId), eq(deals.tenantId, tenantId)))
+    .where(and(eq(deals.id, dealId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt)))
     .limit(1);
 
   if (!deal) throw new Error(`Deal ${dealId} not found`);
@@ -338,7 +339,7 @@ export async function analyzeWinLoss(
       avgDealCount: sql<number>`count(*)`,
     })
     .from(deals)
-    .where(and(eq(deals.tenantId, tenantId), eq(deals.stage, "won")));
+    .where(and(eq(deals.tenantId, tenantId), isNull(deals.deletedAt), eq(deals.stage, "won")));
 
   const benchmarkVelocity = Number(benchmarkResult?.avgDealCount || 0) > 0
     ? Math.round(Number(benchmarkResult?.avgLifecycleDays || 30) / Math.max(1, allActivities.length) * 10) / 10

@@ -1100,17 +1100,10 @@ export default function AccountsPage() {
         title="Accounts"
         subtitle={`${totalAccounts}`}
       >
-        {totalAccounts > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Trash2 size={13} />}
-            onClick={() => setDeleteTarget({ type: "all" })}
-            title="Delete every account in this workspace"
-          >
-            Delete all
-          </Button>
-        )}
+        {/* "Delete all accounts" removed from the toolbar — a one-click,
+            always-visible workspace wipe is a footgun. Bulk delete (selected
+            rows) remains, and a full data wipe lives in Settings → Privacy &
+            data behind explicit confirmation. */}
         <Button
           variant="outline"
           size="sm"

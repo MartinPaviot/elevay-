@@ -165,7 +165,7 @@ export async function fetchCrmData(
             occurredAt: activities.occurredAt,
           })
           .from(activities)
-          .where(eq(activities.tenantId, tenantId))
+          .where(and(eq(activities.tenantId, tenantId), isNull(activities.deletedAt)))
           .orderBy(desc(activities.occurredAt))
           .limit(Math.min(limit, 500));
 
