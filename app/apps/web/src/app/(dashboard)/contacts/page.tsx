@@ -71,6 +71,7 @@ export default function ContactsPage() {
   const [enrichStatus, setEnrichStatus] = useState<Record<string, EnrichStatus>>({});
   const [enrichAllRunning, setEnrichAllRunning] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   // Pagination
   const [page, setPage] = useState(1);
   const [totalContacts, setTotalContacts] = useState(0);
@@ -102,7 +103,9 @@ export default function ContactsPage() {
 
   const fetchContacts = useCallback(async () => {
     try {
-      const res = await fetch(`/api/contacts?page=${page}&pageSize=${pageSize}`);
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      const res = await fetch(`/api/contacts?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setContacts(data.contacts || data.items || []);
@@ -111,7 +114,17 @@ export default function ContactsPage() {
     } catch (e) {
       console.warn("contacts: list fetch failed", e);
     } finally { setLoading(false); }
-  }, [page]);
+  }, [page, debouncedSearch]);
+
+  // Debounce the search box and push it to the server, so the search spans ALL
+  // contacts (not just the loaded 50-row page). Reset to page 1 on a new query.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchContacts();

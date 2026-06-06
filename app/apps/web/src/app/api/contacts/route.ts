@@ -35,12 +35,22 @@ export async function GET(req: Request) {
     const pageSize = Math.min(200, Math.max(1, parseInt(url.searchParams.get("pageSize") || "50", 10)));
     const offset = (page - 1) * pageSize;
     const emailSearch = url.searchParams.get("email")?.trim().toLowerCase();
+    const search = url.searchParams.get("search")?.trim();
 
-    // Build where clause — optionally filter by email (primary OR additionalEmails)
-    // Always exclude soft-deleted records
+    // Build where clause — optional free-text search (name/email) and/or an
+    // exact email match. Always exclude soft-deleted records. Search runs
+    // server-side so it spans ALL contacts, not just the current 50-row page
+    // (the list previously filtered only the loaded page -> wrong results).
     const baseWhere = and(eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt))!;
-    const whereClause = emailSearch
+    const searchWhere = search
       ? sql`${baseWhere} AND (
+          ${contacts.firstName} ILIKE ${"%" + search + "%"}
+          OR ${contacts.lastName} ILIKE ${"%" + search + "%"}
+          OR ${contacts.email} ILIKE ${"%" + search + "%"}
+        )`
+      : baseWhere;
+    const whereClause = emailSearch
+      ? sql`${searchWhere} AND (
           lower(${contacts.email}) = ${emailSearch}
           OR ${contacts.properties}->>'additionalEmails' IS NOT NULL
             AND EXISTS (
@@ -48,7 +58,7 @@ export async function GET(req: Request) {
               WHERE lower(ae) = ${emailSearch}
             )
         )`
-      : baseWhere;
+      : searchWhere;
 
     const [result, countResult] = await Promise.all([
       db
