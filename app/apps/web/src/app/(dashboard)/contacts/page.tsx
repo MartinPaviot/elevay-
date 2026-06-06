@@ -781,8 +781,8 @@ export default function ContactsPage() {
 
       {/* Create contact dialog */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-          <div className="w-full max-w-md rounded-xl p-6 shadow-xl" style={{ background: "var(--color-bg-card)" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.4)" }}>
+          <div className="w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl p-6 shadow-xl" style={{ background: "var(--color-bg-card)" }}>
             <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--color-text-primary)" }}>Create Contact</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
