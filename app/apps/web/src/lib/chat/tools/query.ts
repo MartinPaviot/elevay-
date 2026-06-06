@@ -11,7 +11,7 @@ import {
   toolCallEvents,
   users,
 } from "@/db/schema";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { searchSimilar } from "@/lib/ai/embeddings";
 import { makeTool, type ToolContext } from "./context";
@@ -49,16 +49,17 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
           .select()
           .from(contacts)
           .where(
-            input.search
-              ? and(
-                  eq(contacts.tenantId, tenantId),
-                  or(
+            and(
+              eq(contacts.tenantId, tenantId),
+              isNull(contacts.deletedAt),
+              input.search
+                ? or(
                     ilike(contacts.firstName, `%${input.search}%`),
                     ilike(contacts.lastName, `%${input.search}%`),
                     ilike(contacts.email, `%${input.search}%`)
                   )
-                )
-              : eq(contacts.tenantId, tenantId)
+                : undefined
+            )
           )
           .orderBy(desc(contacts.createdAt))
           .limit(input.limit ?? 20);
@@ -85,15 +86,16 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
           .select()
           .from(companies)
           .where(
-            input.search
-              ? and(
-                  eq(companies.tenantId, tenantId),
-                  or(
+            and(
+              eq(companies.tenantId, tenantId),
+              isNull(companies.deletedAt),
+              input.search
+                ? or(
                     ilike(companies.name, `%${input.search}%`),
                     ilike(companies.domain, `%${input.search}%`)
                   )
-                )
-              : eq(companies.tenantId, tenantId)
+                : undefined
+            )
           )
           .orderBy(desc(companies.createdAt))
           .limit(input.limit ?? 20);
@@ -119,7 +121,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         limit: z.number().optional().describe("Max results (default 20)"),
       }),
       execute: async (input) => {
-        const conditions = [eq(deals.tenantId, tenantId)];
+        const conditions = [eq(deals.tenantId, tenantId), isNull(deals.deletedAt)];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (input.stage) conditions.push(eq(deals.stage, input.stage as any));
         if (input.search) conditions.push(ilike(deals.name, `%${input.search}%`));
@@ -152,7 +154,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         limit: z.number().optional().describe("Max results (default 20)"),
       }),
       execute: async (input) => {
-        const conditions = [eq(activities.tenantId, tenantId)];
+        const conditions = [eq(activities.tenantId, tenantId), isNull(activities.deletedAt)];
         if (input.entityType) conditions.push(eq(activities.entityType, input.entityType));
         if (input.entityId) conditions.push(eq(activities.entityId, input.entityId));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -203,7 +205,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         limit: z.number().optional().describe("Max results (default 20)"),
       }),
       execute: async (input) => {
-        const conditions = [eq(notes.tenantId, tenantId)];
+        const conditions = [eq(notes.tenantId, tenantId), isNull(notes.deletedAt)];
         if (input.entityType) conditions.push(eq(notes.entityType, input.entityType));
         if (input.entityId) conditions.push(eq(notes.entityId, input.entityId));
         if (input.search) {
@@ -250,7 +252,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         limit: z.number().optional(),
       }),
       execute: async (input) => {
-        const conditions = [eq(tasks.tenantId, tenantId)];
+        const conditions = [eq(tasks.tenantId, tenantId), isNull(tasks.deletedAt)];
         if (input.status) conditions.push(eq(tasks.status, input.status));
         if (input.entityType) conditions.push(eq(tasks.entityType, input.entityType));
         if (input.entityId) conditions.push(eq(tasks.entityId, input.entityId));
@@ -342,6 +344,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
       execute: async (input) => {
         const conditions = [
           eq(activities.tenantId, tenantId),
+          isNull(activities.deletedAt),
           eq(activities.channel, "meeting"),
         ];
         if (input.startDate) {
@@ -397,6 +400,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
       execute: async (input) => {
         const conditions = [
           eq(activities.tenantId, tenantId),
+          isNull(activities.deletedAt),
           eq(activities.channel, "email"),
         ];
         if (input.direction) {
@@ -533,7 +537,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const conditions: any[] = [eq(cfg.table.tenantId, tenantId)];
+        const conditions: any[] = [eq(cfg.table.tenantId, tenantId), isNull(cfg.table.deletedAt)];
         if (input.startDate) conditions.push(gte(cfg.dateField, new Date(input.startDate)));
         if (input.endDate) conditions.push(lte(cfg.dateField, new Date(input.endDate)));
 
@@ -586,7 +590,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         const [note] = await db
           .select()
           .from(notes)
-          .where(and(eq(notes.id, input.noteId), eq(notes.tenantId, tenantId)))
+          .where(and(eq(notes.id, input.noteId), eq(notes.tenantId, tenantId), isNull(notes.deletedAt)))
           .limit(1);
         if (!note) return { error: "Note not found" };
         return {
@@ -626,6 +630,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             and(
               eq(activities.id, input.meetingId),
               eq(activities.tenantId, tenantId),
+              isNull(activities.deletedAt),
               eq(activities.channel, "meeting")
             )
           )
@@ -671,6 +676,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             and(
               eq(activities.id, input.emailId),
               eq(activities.tenantId, tenantId),
+              isNull(activities.deletedAt),
               eq(activities.channel, "email")
             )
           )
@@ -722,7 +728,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         const rows = await db
           .select()
           .from(notes)
-          .where(and(eq(notes.tenantId, tenantId), inArray(notes.id, ids)));
+          .where(and(eq(notes.tenantId, tenantId), isNull(notes.deletedAt), inArray(notes.id, ids)));
         const byId = new Map(rows.map((n) => [n.id, n]));
 
         return {
@@ -776,7 +782,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         const rows = await db
           .select()
           .from(activities)
-          .where(and(eq(activities.tenantId, tenantId), inArray(activities.id, ids)));
+          .where(and(eq(activities.tenantId, tenantId), isNull(activities.deletedAt), inArray(activities.id, ids)));
         const emailRows = rows.filter((a) => a.channel === "email");
         const byId = new Map(emailRows.map((a) => [a.id, a]));
 
@@ -827,7 +833,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         const rows = await db
           .select()
           .from(activities)
-          .where(and(eq(activities.tenantId, tenantId), inArray(activities.id, ids)));
+          .where(and(eq(activities.tenantId, tenantId), isNull(activities.deletedAt), inArray(activities.id, ids)));
         const meetingRows = rows.filter((a) => a.channel === "meeting");
         const byId = new Map(meetingRows.map((a) => [a.id, a]));
 
@@ -870,7 +876,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             const rows = await db
               .select()
               .from(contacts)
-              .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, limited)));
+              .where(and(eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt), inArray(contacts.id, limited)));
             return {
               objectType: input.objectType,
               records: rows.map((c) => ({
@@ -886,7 +892,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             const rows = await db
               .select()
               .from(companies)
-              .where(and(eq(companies.tenantId, tenantId), inArray(companies.id, limited)));
+              .where(and(eq(companies.tenantId, tenantId), isNull(companies.deletedAt), inArray(companies.id, limited)));
             return {
               objectType: input.objectType,
               records: rows.map((c) => ({
@@ -902,7 +908,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             const rows = await db
               .select()
               .from(deals)
-              .where(and(eq(deals.tenantId, tenantId), inArray(deals.id, limited)));
+              .where(and(eq(deals.tenantId, tenantId), isNull(deals.deletedAt), inArray(deals.id, limited)));
             return {
               objectType: input.objectType,
               records: rows.map((d) => ({
@@ -919,21 +925,21 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
             const rows = await db
               .select()
               .from(tasks)
-              .where(and(eq(tasks.tenantId, tenantId), inArray(tasks.id, limited)));
+              .where(and(eq(tasks.tenantId, tenantId), isNull(tasks.deletedAt), inArray(tasks.id, limited)));
             return { objectType: input.objectType, records: rows };
           }
           case "note": {
             const rows = await db
               .select()
               .from(notes)
-              .where(and(eq(notes.tenantId, tenantId), inArray(notes.id, limited)));
+              .where(and(eq(notes.tenantId, tenantId), isNull(notes.deletedAt), inArray(notes.id, limited)));
             return { objectType: input.objectType, records: rows };
           }
           case "activity": {
             const rows = await db
               .select()
               .from(activities)
-              .where(and(eq(activities.tenantId, tenantId), inArray(activities.id, limited)));
+              .where(and(eq(activities.tenantId, tenantId), isNull(activities.deletedAt), inArray(activities.id, limited)));
             return { objectType: input.objectType, records: rows };
           }
           default:
@@ -1023,7 +1029,7 @@ Examples: query="Sarah Chen" finds contacts named Sarah Chen. query="deals over 
         const rows = await db
           .select()
           .from(contacts)
-          .where(eq(contacts.tenantId, tenantId));
+          .where(and(eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt)));
 
         type Row = typeof rows[number];
         const byEmail = new Map<string, Row[]>();

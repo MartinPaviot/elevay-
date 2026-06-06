@@ -82,6 +82,7 @@ export function criteriaToApolloParams(criteria: Criterion[]): {
   // accumulators for array params (union across criteria)
   const keywordTags = new Set<string>();
   const locations = new Set<string>();
+  const notLocations = new Set<string>();
   const techUids = new Set<string>();
   const jobTitles = new Set<string>();
   const personTitles = new Set<string>();
@@ -100,6 +101,9 @@ export function criteriaToApolloParams(criteria: Criterion[]): {
         break;
       case "organization_locations":
         toStringArray(c.value).forEach((v) => locations.add(v));
+        break;
+      case "organization_not_locations":
+        toStringArray(c.value).forEach((v) => notLocations.add(v));
         break;
       case "currently_using_any_of_technology_uids":
         // Display name → Apollo slug UID ("Datadog" → "datadog").
@@ -158,6 +162,7 @@ export function criteriaToApolloParams(criteria: Criterion[]): {
 
   if (keywordTags.size > 0) params.q_organization_keyword_tags = [...keywordTags];
   if (locations.size > 0) params.organization_locations = [...locations];
+  if (notLocations.size > 0) params.organization_not_locations = [...notLocations];
   if (techUids.size > 0) params.currently_using_any_of_technology_uids = [...techUids];
   if (jobTitles.size > 0) params.q_organization_job_titles = [...jobTitles];
   // person_titles / person_seniorities live on the people search params;

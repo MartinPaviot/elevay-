@@ -33,7 +33,7 @@ type PlaybookEntry = {
 
 const TYPE_LABELS: Record<string, string> = {
   objection: "Objections",
-  accroche: "Accroches",
+  accroche: "Hooks",
   question: "Questions",
 };
 
@@ -74,7 +74,7 @@ export default function PlaybookPage() {
     <div className="flex h-full flex-col">
       <PageHeader
         title="Playbook"
-        subtitle="Objections, accroches, questions — distilled from every call, meeting, reply."
+        subtitle="Objections, hooks, questions — distilled from every call, meeting, reply."
       />
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -252,12 +252,12 @@ function EmptyState() {
         color: "var(--color-text-tertiary)",
       }}
     >
-      No entries yet. The capture Inngest fn fans in from calls,
-      meetings, and replies once the LLM extractor is wired — or use{" "}
+      No entries yet. Objections, hooks and questions are captured
+      automatically from your calls, meetings and replies — or use{" "}
       <strong style={{ color: "var(--color-text-secondary)" }}>
         Add entry
       </strong>{" "}
-      to record one directly.
+      to record one yourself.
     </div>
   );
 }

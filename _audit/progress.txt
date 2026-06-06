@@ -1,0 +1,40 @@
+ELEVAY PRODUCT AUDIT — PROGRESS / CRASH RECOVERY
+Started 2026-06-05. Scope: full product, live on PROD (www.elevay.dev), tenant 47dca783.
+
+== PHASES ==
+[x] Scaffolding (_audit/ README, journey-graph, gap-register, progress)
+[x] Static baseline (6/6) → _audit/code-analysis/*.md + baseline-synthesis.md
+        [x] crm.md   [x] engage.md   [x] activity-home.md
+        [x] ai-chat.md   [x] entry-funnel.md   [x] settings.md
+[ ] Prod login (Phase A = fresh signup, no existing creds needed; Phase B = martin@elevay.dev, try Ks7xR4mP2vL8jF3b!q / 1EjU7nGru2Ve, else ask)
+[x] Live walk (Playwright solo) — ~21 nodes on prod, 30 screenshots; Phase A signup NOT run (real onboarding observed live)
+[x] Seams graded (seams.md) — 30 seams scored (1 traverse / 6 partial / 13 dead-end / 6 N/T)
+[x] Gap register consolidated + synthesis (gap-register.md, SYNTHESIS.md, CROSS-CUTTING.md C1-C7)
+
+== LIVE WALK CHECKLIST (tick when fiche written to _audit/nodes/) ==
+Funnel:  [ ] F1 landing [ ] F2 sign-up [ ] F3 verify [ ] F4 onboarding [ ] F5 sign-in [ ] F6 accept-invite
+Setup:   [ ] C1 settings/icp [ ] C2 icp-profiles
+CRM:     [ ] N1 accounts [ ] N2 account [ ] N3 brain [ ] N4 contacts [ ] N5 contact [ ] N6 merge [ ] N7 opps [ ] N8 opp [ ] N9 proposals
+Engage:  [ ] N10 inbox [ ] N11 call-mode [ ] N12 sequences [ ] N13 sequence [ ] N15 deliverability
+Activity:[ ] N16 home [ ] N17 cs/today [ ] N18 meetings [ ] N19 meeting [ ] N20 notes [ ] N21 tasks
+Insights:[ ] N22 insights [ ] N23 hot-to-call [ ] N24 playbook [ ] N25 pilae [ ] N26 reports
+AI:      [ ] N27 chat [ ] N28 knowledge [ ] N29 skills [ ] N30 voice-of-customer [ ] N31 graph
+Settings:[ ] sweep (~27 pages; deep on guardrails/agent/autonomy/signals/workflows/capture-approvals)
+
+== RESUME FROM ==
+Baseline done + committed. Next: Playwright → prod landing → Phase A fresh signup (audit-0605@elevay.dev)
+to audit funnel F1-F4 + onboarding reality + empty states + ICP->TAM first run. Then Phase B on tenant 47dca783.
+See baseline-synthesis.md "Hypothèses à vérifier live" (P0..P2) for the ordered check plan.
+Fresh test tenant created in Phase A = note in accounts.json + flag for cleanup.
+
+== LIVE FINDINGS (running) ==
+- Playwright profile already authenticated as "Martin" / workspace "E2E Test Workspace".
+- That workspace HAS 767 real accounts (Swiss/FR Pilae data, mostly F-Cold off-ICP). Phase B proceeds here; NO workspace switch needed. Martin-tenant password no longer blocking.
+- Screenshots currently saved to repo ROOT (001,002,003...). Switching to _audit/screenshots/ going forward; move first 3 later.
+- Method: navigate -> screenshot -> Read image (UX ground truth) -> fiche. Snapshot only when refs needed; click by CSS selector to avoid huge snapshots.
+- S3 (Accounts->detail) = 0.5: account name = button -> slide-over (no URL); slide-over has expand link to /accounts/[id]. Detail reachable in 2 steps, no deep-link/share/back.
+
+== NOTES ==
+- One browser at a time: no bg agent may touch Playwright while live walk runs.
+- Read-only on prod: NO mutations (no test campaigns, no deletes, no sends).
+- Known issues pre-listed in README (don't re-flag).

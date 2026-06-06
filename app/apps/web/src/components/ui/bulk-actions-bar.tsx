@@ -48,11 +48,11 @@ export function BulkActionsBar({
             key={`${a.label}-${i}`}
             disabled={a.disabled}
             onClick={a.onClick}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             style={
               a.variant === "danger"
-                ? { color: "var(--color-error, #b91c1c)", background: "transparent" }
-                : { color: "var(--color-text-secondary)", background: "transparent" }
+                ? { color: "var(--color-error, #b91c1c)", borderColor: "var(--color-border-default)" }
+                : { color: "var(--color-text-secondary)", borderColor: "var(--color-border-default)" }
             }
           >
             {a.icon}

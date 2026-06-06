@@ -37,6 +37,15 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // N25 — this is an internal dogfood dashboard (Pilae-specific copy:
+  // bookings target, "Paul" deep-dive capacity). When
+  // PILAE_DOGFOOD_TENANT_ID is configured, restrict it to that tenant;
+  // left unset it stays open so existing setups are unaffected.
+  const dogfoodTenant = process.env.PILAE_DOGFOOD_TENANT_ID;
+  if (dogfoodTenant && authCtx.tenantId !== dogfoodTenant) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
   // 1. Funnel: count of deals per stage (open and closed). Excludes
   //    soft-deleted.
   const funnel = (await db

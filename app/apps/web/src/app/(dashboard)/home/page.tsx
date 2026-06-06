@@ -22,7 +22,6 @@ import { ScalingPathPrompt } from "@/components/ScalingPathPrompt";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { HotInboundsWidget } from "@/components/hot-inbounds-widget";
 import { HotVisitorsWidget } from "@/components/hot-visitors-widget";
-import { OnboardingIncompleteBanner } from "@/components/onboarding-7phase/incomplete-banner";
 import { VisitorIdCapBanner } from "@/components/visitor-id-cap-banner";
 
 interface Action {
@@ -191,6 +190,13 @@ export default function DashboardPage() {
     };
     function applyOnboarding(onb: OnboardingPayload | null) {
       if (!onb?.needsOnboarding) return;
+      // Respect a prior "Skip for now" so onboarding isn't force-shown on
+      // every load (it was a non-dismissable trap over already-set-up
+      // tenants — pre-launch audit). Cleared automatically once the server
+      // reports onboarding no longer needed.
+      try {
+        if (localStorage.getItem("elevay_onboarding_dismissed") === "1") return;
+      } catch {}
       setShowOnboarding(true);
       setOnboardingHasGoogle(onb.hasGoogle || false);
       setOnboardingHasMicrosoft(onb.hasMicrosoft || false);
@@ -274,18 +280,28 @@ export default function DashboardPage() {
   }, []);
 
   // H11 — locale-aware concise date ("Mon, Apr 13" pattern).
-  // Falls back to "en-US" only if the browser hasn't reported a locale
-  // yet (SSR pre-hydration). We pick the *short* weekday + month so the
-  // header stays dense — Lightfield's pattern, and the long form bled
-  // into the next line on narrow viewports.
-  const today = new Date().toLocaleDateString(
-    typeof navigator !== "undefined" ? navigator.language : "en-US",
-    {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }
-  );
+  // Computed AFTER mount only. Both `navigator.language` and the local
+  // timezone are absent/different during SSR, so formatting the date
+  // inline during render made the server HTML ("en-US" + server tz) and
+  // the client's first render (browser locale + tz) disagree — a
+  // hydration mismatch (React error #418, text content). Deferring to
+  // useEffect keeps SSR and the first client render identical (empty),
+  // then fills in the localized date. We pick the *short* weekday +
+  // month so the header stays dense (Lightfield's pattern; the long form
+  // bled into the next line on narrow viewports).
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    setToday(
+      // App chrome is English regardless of browser locale (only
+      // prospect-facing generated content adapts language), so the header
+      // date uses en-US — not navigator.language, which rendered "sam. 6 juin".
+      new Date().toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
+    );
+  }, []);
 
   const ws = summary?.weekSummary;
 
@@ -312,10 +328,9 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* MONACO-PARITY-03: discoverability shim — surfaces the
-            7-phase wizard at /onboarding-v3 if onboarding isn't
-            complete. Hides itself on completion. */}
-        <OnboardingIncompleteBanner />
+        {/* Onboarding is the single confirmation-card modal (rendered below).
+            The legacy 7-phase wizard banner (→ /onboarding-v3) was removed —
+            two parallel onboarding surfaces confused users (pre-launch audit). */}
 
         {/* P0-2 follow-up : visitor-ID cap banner. Hides itself when
             spend is healthy ; surfaces amber warning within $5/10%
@@ -980,7 +995,12 @@ export default function DashboardPage() {
             userName={onboardingName}
             onComplete={() => {
               setShowOnboarding(false);
+              try { localStorage.removeItem("elevay_onboarding_dismissed"); } catch {}
               window.location.href = "/?firstTime=true";
+            }}
+            onDismiss={() => {
+              setShowOnboarding(false);
+              try { localStorage.setItem("elevay_onboarding_dismissed", "1"); } catch {}
             }}
           />
         ) : (

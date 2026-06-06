@@ -61,7 +61,19 @@ function norm(v: unknown): string {
   return String(v)
     .trim()
     .toLowerCase()
-    .replace(/[\s_-]+/g, " ");
+    // Strip diacritics so the francophone wedge matches: Apollo returns
+    // "Ile-de-France" / "Neuchatel" (ASCII) while a criterion is authored
+    // "Île-de-France" / "Neuchâtel". Without this, the (required)
+    // geography criterion zeroes the fit of every French company.
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    // Apollo writes industries with an ampersand ("information
+    // technology & services") while criteria authored by hand / the AI
+    // use the word ("...and services"). Equate the two so industry,
+    // keyword, etc. comparisons aren't defeated by "&" vs "and".
+    .replace(/&/g, " and ")
+    .replace(/[\s_-]+/g, " ")
+    .trim();
 }
 
 /**
@@ -216,6 +228,90 @@ export function computeIcpFit(
     matched,
     unmatched,
     excludedBy: null,
+  };
+}
+
+// ── Two-level fit (identity vs signal) ─────────────────────────────
+
+/**
+ * Firmographic IDENTITY fields a registry (SIRENE / Zefix) populates
+ * directly: geography, sector, size. Everything else (technologies,
+ * keywords, intent, persona, funding…) is an enrichment SIGNAL the
+ * registry does not carry — absence means "not enriched yet", not
+ * "doesn't fit".
+ */
+export const IDENTITY_FIELD_KEYS = new Set<string>([
+  "geography", "region", "country", "departement", "state", "city", "location",
+  "industry", "sub_industry", "naf", "code_naf", "sector",
+  "employee_count", "estimatedNumEmployees", "company_size", "headcount", "revenue",
+]);
+
+function hasData(ctx: CompanyContext, key: string): boolean {
+  if (!Object.prototype.hasOwnProperty.call(ctx, key)) return false;
+  const v = ctx[key];
+  return !(v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0));
+}
+
+export type IcpFitLevels = IcpFitResult & {
+  /** Fit over IDENTITY soft criteria we actually have data for (the
+   *  registry layer). A clean registry company that matches its
+   *  sector+geo+size scores high here even with zero signals. */
+  identityFit: number;
+  /** Fit over SIGNAL soft criteria we have data for (0 when unenriched). */
+  signalFit: number;
+  /** Share of soft-criterion weight we had data to evaluate, [0,1] —
+   *  how "backed" the scores are (low = barely enriched). */
+  coverage: number;
+};
+
+/**
+ * Two-level fit. Same hard-filter semantics as computeIcpFit (required
+ * criteria still zero everything), but splits the SOFT score into:
+ *   - identityFit: matched / total over identity criteria WE HAVE DATA FOR
+ *   - signalFit:   matched / total over signal   criteria WE HAVE DATA FOR
+ * Criteria whose field is absent from the context are excluded from
+ * their level's denominator, so a not-yet-enriched company isn't
+ * penalised for missing signals. `coverage` reports how much soft weight
+ * was actually evaluable, so a 1.0 identityFit backed by one field can be
+ * told apart from one backed by sector+geo+size.
+ *
+ * The existing `fitScore` (penalising) is preserved on the result so
+ * callers can migrate incrementally.
+ */
+export function computeIcpFitLevels(
+  criteria: Criterion[],
+  ctx: CompanyContext,
+): IcpFitLevels {
+  const base = computeIcpFit(criteria, ctx);
+
+  let idTotal = 0, idMatched = 0;
+  let sigTotal = 0, sigMatched = 0;
+  let softTotal = 0, softWithData = 0;
+
+  for (const c of criteria) {
+    if (c.isRequired) continue;
+    softTotal += c.weight;
+    if (!hasData(ctx, c.fieldKey)) continue; // not enriched → don't penalise
+    softWithData += c.weight;
+    const ok = evaluateCriterion(c, ctx);
+    if (IDENTITY_FIELD_KEYS.has(c.fieldKey)) {
+      idTotal += c.weight;
+      if (ok) idMatched += c.weight;
+    } else {
+      sigTotal += c.weight;
+      if (ok) sigMatched += c.weight;
+    }
+  }
+
+  const coverage = softTotal > 0 ? softWithData / softTotal : 1;
+  if (base.excludedBy !== null) {
+    return { ...base, identityFit: 0, signalFit: 0, coverage };
+  }
+  return {
+    ...base,
+    identityFit: idTotal > 0 ? idMatched / idTotal : 0,
+    signalFit: sigTotal > 0 ? sigMatched / sigTotal : 0,
+    coverage,
   };
 }
 

@@ -43,6 +43,8 @@ import {
   BookOpen,
   Wand2,
   Phone,
+  Gauge,
+  LineChart,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "@/components/ui/theme-provider";
@@ -84,6 +86,7 @@ const navSections = [
       { label: "Accounts", href: "/accounts", icon: Building2 },
       { label: "Contacts", href: "/contacts", icon: Users },
       { label: "Opportunities", href: "/opportunities", icon: CircleDot },
+      { label: "Proposals", href: "/proposals", icon: Briefcase },
     ],
   },
   {
@@ -92,6 +95,7 @@ const navSections = [
       { label: "Inbox", href: "/inbox", icon: Inbox },
       { label: "Call Mode", href: "/call-mode", icon: Phone },
       { label: "Campaigns", href: "/sequences", icon: Zap },
+      { label: "Deliverability", href: "/deliverability", icon: Gauge },
     ],
   },
   {
@@ -101,6 +105,7 @@ const navSections = [
       { label: "Notes", href: "/notes", icon: FileText },
       { label: "Tasks", href: "/tasks", icon: CheckSquare },
       { label: "Insights", href: "/insights", icon: BarChart3 },
+      { label: "Reports", href: "/reports", icon: LineChart },
     ],
   },
 ];
@@ -157,13 +162,24 @@ function UserMenu({
       style={{ borderTop: "1px solid var(--color-border-default)" }}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false);
+      }}
     >
-      {/* Always visible: avatar + first name */}
-      <div
+      {/* Trigger: avatar + first name. A real <button> (not a div) so the
+          account menu — including Log out — is keyboard-focusable and not
+          hover-only. Hover still opens it; click toggles; Escape closes. */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        onFocus={handleEnter}
+        onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={`flex items-center rounded-md transition-colors ${
-          collapsed ? "h-8 w-8 justify-center mx-auto" : "h-8 gap-2.5 px-2.5"
+          collapsed ? "h-8 w-8 justify-center mx-auto" : "h-8 w-full gap-2.5 px-2.5"
         }`}
-        style={{ cursor: "default" }}
+        style={{ cursor: "pointer", background: "none", border: "none", textAlign: "left" }}
       >
         <Avatar src={avatarUrl} name={avatarName} size="sm" />
         {!collapsed && (
@@ -174,7 +190,7 @@ function UserMenu({
             {firstName}
           </span>
         )}
-      </div>
+      </button>
 
       {/* Hover popover */}
       {open && (
@@ -259,6 +275,18 @@ function UserMenu({
 
 export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tenantName, recentChats, onSignOut }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+
+  // Auto-collapse on small screens so the sidebar doesn't eat the viewport
+  // on mobile (pre-launch audit: not responsive — full 240px rail squeezed
+  // content to ~150px at 390px). Desktop users can still toggle manually.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const apply = () => setCollapsed(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
   const [customObjectTypes, setCustomObjectTypes] = useState<CustomObjectType[]>([]);
   const pathname = usePathname();
   const { theme, toggle: toggleTheme } = useTheme();
@@ -298,7 +326,7 @@ export function Sidebar({ userName, userEmail, userInitials, userAvatarUrl, tena
           <>
             {/* Logo + text */}
             <div className="flex items-center gap-2">
-              <img src="/logo-Elevay.svg" alt="Elevay" className="h-6 w-6" />
+              <img src="/logo-elevay.svg" alt="Elevay" className="h-6 w-6" />
               <span className="gradient-text text-[16px] font-bold tracking-tight">
                 Elevay
               </span>

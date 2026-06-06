@@ -30,6 +30,9 @@ export interface OnboardingV2WrapperProps {
   userEmail?: string;
   userName?: string;
   onComplete: () => void;
+  /** Dismiss without completing (Escape / "Skip for now"). When provided,
+   *  the modal is no longer a trap — the user can leave it. */
+  onDismiss?: () => void;
 }
 
 interface BootstrapData {
@@ -42,6 +45,7 @@ export function OnboardingV2Wrapper({
   userEmail,
   userName,
   onComplete,
+  onDismiss,
 }: OnboardingV2WrapperProps) {
   const [data, setData] = useState<BootstrapData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,8 +117,18 @@ export function OnboardingV2Wrapper({
           },
           targeting: {
             industries: [],
+            keywords: [],
             companySizes: [],
+            revenueMin: null,
+            revenueMax: null,
+            technologies: [],
             geographies: [],
+            excludeGeographies: [],
+            fundingRecencyDays: null,
+            totalFundingMin: null,
+            totalFundingMax: null,
+            minJobOpenings: null,
+            hiringTitles: [],
             targetSeniorities: [],
             targetDepartments: [],
           },
@@ -136,6 +150,17 @@ export function OnboardingV2Wrapper({
       cancelled = true;
     };
   }, [userEmail, userName]);
+
+  // Escape dismisses the modal (when a dismiss handler is provided) so it's
+  // not a trap — addresses the pre-launch audit "non-dismissable dialog".
+  useEffect(() => {
+    if (!onDismiss) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onDismiss();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
 
   const handleConfirm = useCallback(
     async (next: {
@@ -173,8 +198,18 @@ export function OnboardingV2Wrapper({
         body: JSON.stringify({
           step: "icp",
           industries: next.targeting.industries,
+          keywords: next.targeting.keywords,
           companySizes: next.targeting.companySizes,
           geographies: next.targeting.geographies,
+          excludeGeographies: next.targeting.excludeGeographies,
+          technologies: next.targeting.technologies,
+          revenueMin: next.targeting.revenueMin,
+          revenueMax: next.targeting.revenueMax,
+          fundingRecencyDays: next.targeting.fundingRecencyDays,
+          totalFundingMin: next.targeting.totalFundingMin,
+          totalFundingMax: next.targeting.totalFundingMax,
+          minJobOpenings: next.targeting.minJobOpenings,
+          hiringTitles: next.targeting.hiringTitles,
           targetSeniorities: next.targeting.targetSeniorities,
           targetDepartments: next.targeting.targetDepartments,
           aiTone: next.identity.aiTone,
@@ -190,8 +225,18 @@ export function OnboardingV2Wrapper({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           industries: next.targeting.industries,
+          keywords: next.targeting.keywords,
           companySizes: next.targeting.companySizes,
           geographies: next.targeting.geographies,
+          excludeGeographies: next.targeting.excludeGeographies,
+          technologies: next.targeting.technologies,
+          revenueMin: next.targeting.revenueMin,
+          revenueMax: next.targeting.revenueMax,
+          fundingRecencyDays: next.targeting.fundingRecencyDays,
+          totalFundingMin: next.targeting.totalFundingMin,
+          totalFundingMax: next.targeting.totalFundingMax,
+          minJobOpenings: next.targeting.minJobOpenings,
+          hiringTitles: next.targeting.hiringTitles,
           productDescription: next.identity.productDescription,
         }),
       }).catch((err) =>
@@ -274,6 +319,18 @@ export function OnboardingV2Wrapper({
       }}
     >
       <div className="mx-auto max-w-2xl p-6">
+        {onDismiss && (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-md px-2 py-1 text-[12px]"
+              style={{ color: "var(--color-text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+            >
+              Skip for now
+            </button>
+          </div>
+        )}
         <h1 className="gradient-text text-lg font-bold tracking-tight">Elevay</h1>
         <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
           One screen. Confirm what I picked up, or edit anything that doesn&apos;t match.

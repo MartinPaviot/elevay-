@@ -7,8 +7,11 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-// From address — use Resend's test domain until custom domain verified
-const FROM_ADDRESS = "Elevay <notifications@resend.dev>";
+// From address — honor INVITE_FROM_ADDRESS (a verified-domain sender) like the
+// other transactional emails do; fall back to Resend's test domain, which only
+// delivers to the account owner until a custom domain is verified.
+const FROM_ADDRESS =
+  process.env.INVITE_FROM_ADDRESS || "Elevay <notifications@resend.dev>";
 
 export type NotificationType =
   | "deal_risk"

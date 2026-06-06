@@ -52,7 +52,29 @@ const toolDisplayNames: Record<string, { label: string; pastLabel: string; icon:
   recallMemories:         { label: "Recalling memories",    pastLabel: "Recalled memories",   icon: Database,    category: "retrieve" },
   exploreGraph:           { label: "Exploring graph",       pastLabel: "Explored graph",      icon: Zap,         category: "retrieve" },
   getMeetingNotes:        { label: "Retrieving notes",      pastLabel: "Retrieved notes",     icon: Calendar,    category: "retrieve" },
+  runBasicReport:         { label: "Running report",        pastLabel: "Ran report",          icon: BarChart3,   category: "analyze" },
+  executeCode:            { label: "Analyzing data",        pastLabel: "Analyzed data",       icon: BarChart3,   category: "analyze" },
+  briefAllDeals:          { label: "Briefing pipeline",     pastLabel: "Briefed pipeline",    icon: TrendingUp,  category: "analyze" },
+  briefDeal:              { label: "Briefing deal",         pastLabel: "Briefed deal",        icon: TrendingUp,  category: "analyze" },
+  getEnrichedContext:     { label: "Loading context",       pastLabel: "Loaded context",      icon: Layers,      category: "retrieve" },
+  getDealsAtRisk:         { label: "Checking deal risk",    pastLabel: "Checked deal risk",   icon: TrendingUp,  category: "analyze" },
+  getWinLossAnalysis:     { label: "Analyzing win/loss",    pastLabel: "Analyzed win/loss",   icon: BarChart3,   category: "analyze" },
+  getBuyerIntentScore:    { label: "Scoring intent",        pastLabel: "Scored intent",       icon: BarChart3,   category: "analyze" },
+  getRevenueForcast:      { label: "Forecasting revenue",   pastLabel: "Forecasted revenue",  icon: TrendingUp,  category: "analyze" },
+  searchMeetings:         { label: "Searching meetings",    pastLabel: "Found meetings",      icon: Calendar,    category: "retrieve" },
+  searchEmailsByMetadata: { label: "Searching emails",      pastLabel: "Found emails",        icon: Mail,        category: "retrieve" },
+  semanticSearchNotes:    { label: "Searching notes",       pastLabel: "Searched notes",      icon: StickyNote,  category: "retrieve" },
+  semanticSearchEmails:   { label: "Searching emails",      pastLabel: "Searched emails",     icon: Mail,        category: "retrieve" },
+  semanticSearchCallRecordings: { label: "Searching calls", pastLabel: "Searched calls",      icon: Calendar,    category: "retrieve" },
+  getRecordsByIds:        { label: "Loading records",       pastLabel: "Loaded records",      icon: Database,    category: "retrieve" },
+  findDuplicateContacts:  { label: "Finding duplicates",    pastLabel: "Found duplicates",    icon: Users,       category: "retrieve" },
 };
+
+/** Fallback: turn an unmapped tool name like "runBasicReport" into "Run basic report" so internal names never leak to users. */
+function humanizeToolName(name: string): string {
+  const words = name.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
+}
 
 /** Human-readable description of the query args */
 function describeQuery(toolName: string, args: Record<string, unknown>): string | null {
@@ -138,7 +160,7 @@ function formatCellValue(val: unknown): string {
 
 export function ToolCallPanel({ toolName, args, result, isStreaming }: ToolCallPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const display = toolDisplayNames[toolName] || { label: toolName, pastLabel: toolName, icon: Search, category: "retrieve" as const };
+  const display = toolDisplayNames[toolName] || { label: humanizeToolName(toolName), pastLabel: humanizeToolName(toolName), icon: Search, category: "retrieve" as const };
   const Icon = display.icon;
 
   const resultSummary = isStreaming ? null : summarizeResult(toolName, result);
@@ -406,4 +428,63 @@ export function ToolCallGroup({ calls }: { calls: { toolName: string; args: Reco
       })}
     </div>
   );
+}
+
+/** A normalized tool call extracted from AI SDK v6 UI-message parts. */
+export interface ParsedToolCall {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  isStreaming: boolean;
+}
+
+/**
+ * Extract tool calls from an AI SDK v6 `UIMessage.parts`, normalizing the
+ * typed tool-part shape into the flat shape `ToolCallGroup` consumes.
+ *
+ * AI SDK v6 (`toUIMessageStreamResponse()`) dropped the v4
+ * `{ type: "tool-invocation", toolInvocation }` wrapper. Each tool is now its
+ * own part: `type: "tool-<name>"` for static tools, or `"dynamic-tool"` with a
+ * `toolName` field, carrying `state: "input-streaming" | "input-available" |
+ * "output-available" | "output-error"`, plus `input` / `output` / `errorText`.
+ *
+ * In-progress calls (input-streaming / input-available) are included so the
+ * panel renders research steps live as they stream, not only once complete.
+ */
+export function parseUiToolParts(
+  parts: readonly { type: string }[],
+): ParsedToolCall[] {
+  return parts
+    .filter(
+      (p) =>
+        p.type === "dynamic-tool" ||
+        (typeof p.type === "string" && p.type.startsWith("tool-")),
+    )
+    .map((p) => {
+      const part = p as {
+        type: string;
+        toolName?: string;
+        state?: string;
+        input?: Record<string, unknown>;
+        output?: unknown;
+        errorText?: string;
+      };
+      const toolName =
+        part.type === "dynamic-tool"
+          ? part.toolName ?? "tool"
+          : part.type.slice("tool-".length);
+      const done =
+        part.state === "output-available" || part.state === "output-error";
+      return {
+        toolName,
+        args: part.input ?? {},
+        result:
+          part.state === "output-available"
+            ? part.output
+            : part.state === "output-error"
+              ? { error: part.errorText }
+              : undefined,
+        isStreaming: !done,
+      };
+    });
 }

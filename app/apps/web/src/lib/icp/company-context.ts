@@ -34,6 +34,13 @@ function prop(props: Record<string, unknown> | null | undefined, key: string): u
   return props[key];
 }
 
+/** INSEE effectif tranche code → band midpoint (SIRENE firmographics). */
+const TRANCHE_MIDPOINT: Record<string, number> = {
+  "00": 0, "01": 1, "02": 4, "03": 7, "11": 14, "12": 34, "21": 74,
+  "22": 149, "31": 224, "32": 374, "41": 749, "42": 1499, "51": 3499,
+  "52": 7499, "53": 10000,
+};
+
 /** Parse a size label or number to an employee count (use the low bound
  *  of a "51-200" style label so a `gte 50` criterion fires). */
 function toEmployeeCount(
@@ -44,6 +51,12 @@ function toEmployeeCount(
   if (typeof fromProps === "number") return fromProps;
   if (typeof fromProps === "string" && fromProps && !Number.isNaN(Number(fromProps))) {
     return Number(fromProps);
+  }
+  // SIRENE stores an INSEE effectif tranche code, not a number — map to
+  // the band midpoint so a `between 50,150` criterion can fire.
+  const tranche = prop(props, "effectif_tranche");
+  if (typeof tranche === "string" && TRANCHE_MIDPOINT[tranche] != null) {
+    return TRANCHE_MIDPOINT[tranche];
   }
   if (!size) return undefined;
   const clean = String(size).replace(/,/g, "").trim();
@@ -79,9 +92,32 @@ export function buildCompanyContext(
   const emp = toEmployeeCount(company.size, props);
   if (emp != null) ctx.employee_count = emp;
 
-  // geography: properties.country (Apollo) preferred
-  const country = prop(props, "country") ?? prop(props, "geography");
-  if (country != null && country !== "") ctx.geography = country;
+  // geography: a criterion lists regions/cities/countries ("Vaud",
+  // "Geneva", "Île-de-France", "Switzerland"), but Apollo splits a
+  // location across state / city / country. Expose ALL of them as an
+  // array so an `in` criterion matches whichever granularity it used.
+  // (Apollo's `state` holds the canton/region — "Geneva", "Vaud",
+  // "Zurich" for CH; "Île-de-France" for FR — which is what the
+  // geography wedge filters on.)
+  const geoTokens = [
+    prop(props, "region"), // registry-sourced (SIRENE) region name, e.g. "Île-de-France"
+    prop(props, "state"),
+    prop(props, "city"),
+    prop(props, "departement"),
+    prop(props, "country"),
+    prop(props, "geography"),
+  ].filter((t): t is string => typeof t === "string" && t.trim() !== "");
+  if (geoTokens.length > 0) {
+    // de-dupe case-insensitively, preserve first-seen casing
+    const seen = new Set<string>();
+    const uniq = geoTokens.filter((t) => {
+      const k = t.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    ctx.geography = uniq;
+  }
 
   // revenue: column (string) or properties.annual_revenue
   const revenue = toNumber(company.revenue) ?? toNumber(prop(props, "annual_revenue"));

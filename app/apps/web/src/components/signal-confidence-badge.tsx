@@ -54,7 +54,7 @@ export function SignalConfidenceBadge(props:
 
   return (
     <span
-      title={`Signal confidence: ${palette.label}${state === "unverified" ? " (URL HEAD failed — possible LLM hallucination)" : ""}`}
+      title={`Signal confidence: ${palette.label}${state === "unverified" ? " (source link could not be verified)" : ""}`}
       className="inline-flex items-center gap-1 rounded-full font-medium"
       style={{
         fontSize: `${fontSize}px`,

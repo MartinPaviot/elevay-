@@ -20,7 +20,6 @@ import {
   MicOff,
   Mic,
   Voicemail,
-  AlertCircle,
   Loader2,
   Sparkles,
   Clock,
@@ -29,13 +28,21 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CompanyLogo } from "@/components/ui/company-logo";
 import { useToast } from "@/components/ui/toast";
+import {
+  PreCallBrief,
+  AccountBrainPanel,
+  LiveTranscript,
+  type ContactBrainJSON,
+} from "./_panels";
 
 interface QueueItem {
   contactId: string;
   contactName: string;
   title: string | null;
   companyName: string | null;
+  companyDomain: string | null;
   phone: string;
   score: number;
   intentScore: number;
@@ -94,9 +101,16 @@ export default function CallModePage() {
   const [amdDetected, setAmdDetected] = useState<string | null>(null);
   const [voicemailDropping, setVoicemailDropping] = useState(false);
   const [voicemailDropped, setVoicemailDropped] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  // When the queue was pushed from an Accounts selection, how many
+  // accounts it was scoped to — drives the filter banner.
+  const [accountScope, setAccountScope] = useState<number>(0);
   // Phase 3 — live coaching cards. Each card auto-dismisses after 12s
   // unless the user manually closes it. Newest on top, max 5 visible.
   const [coachingCards, setCoachingCards] = useState<CoachingCardData[]>([]);
+  // Full, non-dismissing history of objections raised — surfaced in the
+  // transcript view after the call for review.
+  const [coachingHistory, setCoachingHistory] = useState<CoachingCardData[]>([]);
 
   // SSE subscription handle so we can tear down on unmount / hangup.
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -106,11 +120,25 @@ export default function CallModePage() {
   // Bootstrap: load voice config + queue in parallel.
   useEffect(() => {
     let cancelled = false;
+    // Read ?accounts= straight off the URL — keeps this a plain client
+    // component without a Suspense boundary around useSearchParams.
+    const accountsParam =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("accounts")
+        : null;
+    const scopeIds = accountsParam
+      ? accountsParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    setAccountScope(scopeIds.length);
+    const queueUrl =
+      scopeIds.length > 0
+        ? `/api/calls/queue?limit=50&accounts=${encodeURIComponent(scopeIds.join(","))}`
+        : "/api/calls/queue?limit=50";
     (async () => {
       try {
         const [cfgRes, qRes] = await Promise.all([
           fetch("/api/calls/config"),
-          fetch("/api/calls/queue?limit=50"),
+          fetch(queueUrl),
         ]);
         if (cancelled) return;
         if (cfgRes.ok) setConfig(await cfgRes.json());
@@ -133,9 +161,75 @@ export default function CallModePage() {
     };
   }, []);
 
+  // Per-contact brain cache. Fetched lazily when a contact is selected so
+  // the rep sees the full "remise en contexte" before dialling. `null`
+  // means fetched-but-empty (no company), distinct from "not yet fetched".
+  const [brainByContact, setBrainByContact] = useState<
+    Record<string, ContactBrainJSON | null>
+  >({});
+  const fetchedBrainRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (fetchedBrainRef.current.has(selectedId)) return;
+    fetchedBrainRef.current.add(selectedId);
+    const id = selectedId;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/brain/contact/${id}`);
+        const data = res.ok ? ((await res.json()) as ContactBrainJSON) : null;
+        if (!cancelled) setBrainByContact((p) => ({ ...p, [id]: data }));
+      } catch {
+        if (!cancelled) setBrainByContact((p) => ({ ...p, [id]: null }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   const selected = useMemo(
     () => queue.find((q) => q.contactId === selectedId) ?? null,
     [queue, selectedId],
+  );
+
+  const brain = selectedId ? brainByContact[selectedId] : undefined;
+  const brainLoading = selectedId != null && !(selectedId in brainByContact);
+
+  // On-demand deep enrichment (Zeliq, async) for the focal contact —
+  // surfaced from the brief's "à enrichir" section. The contact updates
+  // when Zeliq posts back to its webhook, so we re-fetch the brain after
+  // a short delay to pick up freshly resolved email / phone.
+  const handleEnrich = useCallback(
+    async (contactId: string) => {
+      setEnriching(true);
+      try {
+        const res = await fetch(`/api/contacts/${contactId}/zeliq-enrich`, {
+          method: "POST",
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          toast(
+            "Enrichment started — Zeliq is completing email and phone in the background.",
+            "info",
+          );
+          // Invalidate the cache so the next selection re-pulls the brain.
+          fetchedBrainRef.current.delete(contactId);
+        } else {
+          toast(
+            body?.error ??
+              "Enrichment unavailable (ZELIQ_API_KEY not configured?).",
+            "error",
+          );
+        }
+      } catch {
+        toast("Failed to enrich the contact.", "error");
+      } finally {
+        setEnriching(false);
+      }
+    },
+    [toast],
   );
 
   const filteredQueue = useMemo(() => {
@@ -157,6 +251,7 @@ export default function CallModePage() {
       setVoicemailDropping(false);
       setVoicemailDropped(false);
       setCoachingCards([]);
+      setCoachingHistory([]);
       try {
         const res = await fetch("/api/calls/start", {
           method: "POST",
@@ -168,16 +263,16 @@ export default function CallModePage() {
           const code = body?.code ?? "unknown";
           toast(
             code === "voice_not_configured"
-              ? "Configurez Twilio dans Settings → Voice avant d'appeler."
+              ? "Configure Twilio in Settings → Voice before calling."
               : code === "dnc"
-                ? "Ce contact est sur la liste DNC du workspace."
+                ? "This contact is on the workspace Do Not Call list."
                 : code === "quiet_hours"
-                  ? `Hors plages d'appel — fuseau ${body.timezone} (${body.localTime}). Réessayez plus tard.`
+                  ? `Outside calling hours — timezone ${body.timezone} (${body.localTime}). Try again later.`
                   : code === "usage_cap"
-                    ? "Plafond mensuel atteint. Voir Settings → Voice."
+                    ? "Monthly cap reached. See Settings → Voice."
                     : code === "no_pool_number"
-                      ? "Aucun numéro sortant provisionné. Achetez-en un dans Settings → Voice."
-                      : `Échec démarrage appel (${code}).`,
+                      ? "No outbound number provisioned. Buy one in Settings → Voice."
+                      : `Failed to start call (${code}).`,
             "error",
           );
           setSoftphone({ kind: "idle" });
@@ -245,6 +340,7 @@ export default function CallModePage() {
               (evt as MessageEvent).data,
             ) as CoachingCardData;
             setCoachingCards((prev) => [card, ...prev].slice(0, 5));
+            setCoachingHistory((prev) => [...prev, card]);
             // Auto-dismiss after 12s — peripheral signal, not a TODO list.
             setTimeout(() => {
               setCoachingCards((prev) => prev.filter((c) => c.ts !== card.ts));
@@ -311,13 +407,13 @@ export default function CallModePage() {
           // failed to attach — the prospect just hears silence. We
           // surface a non-fatal warning toast and the user can hang up.
           toast(
-            "Audio navigateur indisponible — l'appel a démarré côté serveur, raccrochez si nécessaire.",
+            "Browser audio unavailable — the call started server-side, hang up if needed.",
             "info",
           );
         }
       } catch (err) {
         console.warn("call-mode: start error", err);
-        toast(`Erreur démarrage appel: ${err instanceof Error ? err.message : String(err)}`, "error");
+        toast(`Call start error: ${err instanceof Error ? err.message : String(err)}`, "error");
         setSoftphone({ kind: "idle" });
       }
     },
@@ -339,12 +435,12 @@ export default function CallModePage() {
           const code = body?.code ?? "unknown";
           toast(
             code === "no_voicemail_source"
-              ? "Aucun voicemail template ou VOICE_VOICEMAIL_DEFAULT_URL configuré."
+              ? "No voicemail template or VOICE_VOICEMAIL_DEFAULT_URL configured."
               : code === "ended"
-                ? "L'appel est déjà terminé."
+                ? "The call has already ended."
                 : code === "no_sid"
-                  ? "L'appel n'est pas encore attaché à Twilio."
-                  : `Échec drop voicemail (${code}).`,
+                  ? "The call isn't attached to Twilio yet."
+                  : `Failed to drop voicemail (${code}).`,
             "error",
           );
           setVoicemailDropping(false);
@@ -354,7 +450,7 @@ export default function CallModePage() {
         // dropping flag true until then to avoid double-click races.
       } catch (err) {
         toast(
-          `Erreur drop voicemail: ${err instanceof Error ? err.message : String(err)}`,
+          `Voicemail drop error: ${err instanceof Error ? err.message : String(err)}`,
           "error",
         );
         setVoicemailDropping(false);
@@ -380,51 +476,60 @@ export default function CallModePage() {
   }, []);
 
   // ── Render ────────────────────────────────────────────────────
+  // Every state lives inside the same shell as the other tabs: a flush
+  // PageHeader bar (height var(--header-height)) above a flex-1 body.
+  // Loading / not-configured bodies center their content on both axes so
+  // the empty screen reads as deliberate, not top-anchored.
 
   if (loading) {
     return (
-      <div className="p-8">
-        <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
-      </div>
+      <CallModeShell>
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+        </div>
+      </CallModeShell>
     );
   }
 
   if (!config?.configured) {
     return (
-      <div className="p-8">
-        <PageHeader title="Call Mode" subtitle="Cold call autonome depuis Elevay" />
-        <EmptyState
-          icon={<Phone size={20} />}
-          title="Voice n'est pas encore configuré"
-          description="Pour activer Call Mode, configurez Twilio dans Settings → Voice. Vous aurez besoin d'un Account SID, d'un Auth Token et d'au moins un numéro sortant provisionné."
-          actionLabel="Aller dans Settings → Voice"
-          onAction={() => {
-            window.location.href = "/settings/sending-infrastructure";
-          }}
-        />
-      </div>
+      <CallModeShell>
+        <div className="flex flex-1 items-center justify-center px-6">
+          <EmptyState
+            icon={<Phone size={20} />}
+            title="Voice isn't configured yet"
+            description="To enable Call Mode, configure Twilio in Settings → Voice. You'll need an Account SID, an Auth Token, and at least one provisioned outbound number."
+            actionLabel="Go to Settings → Voice"
+            onAction={() => {
+              window.location.href = "/settings/sending-infrastructure";
+            }}
+          />
+        </div>
+      </CallModeShell>
     );
   }
 
   if (!config.ready) {
     return (
-      <div className="p-8">
-        <PageHeader title="Call Mode" subtitle="Cold call autonome depuis Elevay" />
-        <EmptyState
-          icon={<Phone size={20} />}
-          title="Aucun numéro sortant provisionné"
-          description="Twilio est connecté mais aucun numéro n'est encore acheté. Allez dans Settings → Voice pour en provisionner un (un par pays cible, idéalement par area code US si vous appelez les US)."
-          actionLabel="Provisionner un numéro"
-          onAction={() => {
-            window.location.href = "/settings/sending-infrastructure";
-          }}
-        />
-      </div>
+      <CallModeShell>
+        <div className="flex flex-1 items-center justify-center px-6">
+          <EmptyState
+            icon={<Phone size={20} />}
+            title="No outbound number provisioned"
+            description="Twilio is connected but no number has been purchased yet. Go to Settings → Voice to provision one (one per target country, ideally per US area code if you call the US)."
+            actionLabel="Provision a number"
+            onAction={() => {
+              window.location.href = "/settings/sending-infrastructure";
+            }}
+          />
+        </div>
+      </CallModeShell>
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] w-full relative">
+    <CallModeShell>
+      <div className="flex flex-1 min-h-0 w-full relative">
       {/* Phase 3 — live coaching overlay. Bottom-right, peripheral. */}
       {coachingCards.length > 0 && (
         <CoachingCardsOverlay
@@ -439,7 +544,7 @@ export default function CallModePage() {
       <aside className="w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
         <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            À appeler maintenant
+            To call now
           </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
             {filteredQueue.length} contact{filteredQueue.length === 1 ? "" : "s"}
@@ -447,7 +552,7 @@ export default function CallModePage() {
           <div className="flex gap-1.5 mt-2 flex-wrap">
             {(
               [
-                ["all", "Tous"],
+                ["all", "All"],
                 ["high_intent", "High intent"],
                 ["trial_expiring", "Trial expiring"],
                 ["reply_received", "Reply received"],
@@ -467,10 +572,23 @@ export default function CallModePage() {
             ))}
           </div>
         </div>
+        {accountScope > 0 && (
+          <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/60 px-4 py-2 text-[12px] dark:border-indigo-900/40 dark:bg-indigo-950/30">
+            <span className="text-indigo-700 dark:text-indigo-300">
+              Filtered to {accountScope} account{accountScope === 1 ? "" : "s"}
+            </span>
+            <a
+              href="/call-mode"
+              className="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              Show all
+            </a>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto">
           {filteredQueue.length === 0 ? (
             <div className="p-6 text-sm text-zinc-500">
-              File vide. Importez ou enrichissez des contacts pour démarrer.
+              Queue is empty. Import or enrich contacts to get started.
             </div>
           ) : (
             filteredQueue.map((item) => {
@@ -486,12 +604,20 @@ export default function CallModePage() {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                        {item.contactName}
-                      </div>
-                      <div className="text-xs text-zinc-500 truncate">
-                        {item.title ?? "—"} · {item.companyName ?? "—"}
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <CompanyLogo
+                        domain={item.companyDomain}
+                        name={item.companyName ?? item.contactName}
+                        size={28}
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                          {item.contactName}
+                        </div>
+                        <div className="text-xs text-zinc-500 truncate">
+                          {item.title ?? "—"} · {item.companyName ?? "—"}
+                        </div>
                       </div>
                     </div>
                     <Badge className="shrink-0">
@@ -524,14 +650,21 @@ export default function CallModePage() {
           <>
             <div className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-                    {selected.contactName}
-                  </h1>
-                  <p className="text-sm text-zinc-500 mt-0.5">
-                    {selected.title ?? "—"} · {selected.companyName ?? "—"} ·{" "}
-                    {selected.phone}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <CompanyLogo
+                    domain={selected.companyDomain}
+                    name={selected.companyName ?? selected.contactName}
+                    size={40}
+                  />
+                  <div className="min-w-0">
+                    <h1 className="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+                      {selected.contactName}
+                    </h1>
+                    <p className="text-sm text-zinc-500 mt-0.5 truncate">
+                      {selected.title ?? "—"} · {selected.companyName ?? "—"} ·{" "}
+                      {selected.phone}
+                    </p>
+                  </div>
                 </div>
                 <SoftphoneControls
                   state={softphone}
@@ -553,7 +686,7 @@ export default function CallModePage() {
                   }}
                 >
                   <span>
-                    Répondeur détecté ({amdDetected}). Drop le voicemail ou raccroche.
+                    Answering machine detected ({amdDetected}). Drop the voicemail or hang up.
                   </span>
                   {"callId" in softphone && (
                     <Button
@@ -563,7 +696,7 @@ export default function CallModePage() {
                       disabled={voicemailDropping}
                     >
                       <Voicemail className="h-3.5 w-3.5" />
-                      {voicemailDropping ? "Drop en cours…" : "Drop voicemail"}
+                      {voicemailDropping ? "Dropping…" : "Drop voicemail"}
                     </Button>
                   )}
                 </div>
@@ -577,22 +710,37 @@ export default function CallModePage() {
                     color: "rgb(21,128,61)",
                   }}
                 >
-                  Voicemail droppé. La ligne raccroche automatiquement.
+                  Voicemail dropped. The line hangs up automatically.
                 </div>
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 min-h-0">
               {softphone.kind === "connected" || softphone.kind === "ended" ? (
-                <LiveTranscript chunks={transcript} state={softphone} />
+                <LiveTranscript
+                  chunks={transcript}
+                  ended={softphone.kind === "ended"}
+                  connectedAtMs={
+                    softphone.kind === "connected" ? softphone.connectedAtMs : null
+                  }
+                  coaching={coachingHistory}
+                />
               ) : (
-                <BriefPreview selected={selected} />
+                <div className="h-full overflow-y-auto">
+                  <PreCallBrief
+                    selected={selected}
+                    brain={brain}
+                    brainLoading={brainLoading}
+                    onEnrich={() => handleEnrich(selected.contactId)}
+                    enriching={enriching}
+                  />
+                </div>
               )}
             </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">
-            Sélectionnez un contact dans la file.
+            Select a contact from the queue.
           </div>
         )}
       </main>
@@ -600,11 +748,36 @@ export default function CallModePage() {
       {/* ───── RIGHT — Account brain (380px) ───── */}
       <aside className="w-96 shrink-0 border-l border-zinc-200 dark:border-zinc-800 overflow-y-auto">
         {selected ? (
-          <AccountBrainPanel contactId={selected.contactId} />
+          <AccountBrainPanel
+            brain={brain}
+            brainLoading={brainLoading}
+            focalContactId={selected.contactId}
+          />
         ) : (
-          <div className="p-6 text-sm text-zinc-500">—</div>
+          <div className="h-full flex items-center justify-center p-6 text-sm text-zinc-500">
+            Select a contact to see the account.
+          </div>
         )}
       </aside>
+      </div>
+    </CallModeShell>
+  );
+}
+
+/**
+ * Shared page shell — identical structure to every other dashboard tab
+ * (flush PageHeader bar above a flex-1 body) so Call Mode lines up with
+ * the rest of the app instead of floating its own header inside padding.
+ */
+function CallModeShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full flex-col animate-content-in">
+      <PageHeader
+        icon={<Phone size={15} />}
+        title="Call Mode"
+        subtitle="Autonomous cold calling from Elevay"
+      />
+      {children}
     </div>
   );
 }
@@ -626,23 +799,23 @@ function SoftphoneControls(props: {
       return (
         <Button onClick={() => onCall(selected.contactId)} className="gap-2">
           <Phone className="h-4 w-4" />
-          Appeler
+          Call
         </Button>
       );
     case "starting":
       return (
         <Button disabled className="gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Préparation…
+          Preparing…
         </Button>
       );
     case "dialing":
       return (
         <div className="flex items-center gap-3">
-          <span className="text-sm text-zinc-500">Composing {state.toNumber}…</span>
+          <span className="text-sm text-zinc-500">Dialing {state.toNumber}…</span>
           <Button variant="outline" onClick={onHangup} className="gap-2">
             <PhoneOff className="h-4 w-4" />
-            Annuler
+            Cancel
           </Button>
         </div>
       );
@@ -650,10 +823,10 @@ function SoftphoneControls(props: {
       const sec = Math.floor((Date.now() - state.ringingSinceMs) / 1000);
       return (
         <div className="flex items-center gap-3">
-          <span className="text-sm text-zinc-500">Sonne depuis {sec}s</span>
+          <span className="text-sm text-zinc-500">Ringing for {sec}s</span>
           <Button variant="outline" onClick={onHangup} className="gap-2">
             <PhoneOff className="h-4 w-4" />
-            Raccrocher
+            Hang up
           </Button>
           {sec >= 8 && (
             <Button
@@ -663,7 +836,7 @@ function SoftphoneControls(props: {
               disabled={voicemailDropping || voicemailDropped}
             >
               <Voicemail className="h-4 w-4" />
-              {voicemailDropped ? "Voicemail droppé" : voicemailDropping ? "Drop en cours…" : "Drop voicemail"}
+              {voicemailDropped ? "Voicemail dropped" : voicemailDropping ? "Dropping…" : "Drop voicemail"}
             </Button>
           )}
         </div>
@@ -689,11 +862,11 @@ function SoftphoneControls(props: {
             disabled={voicemailDropping || voicemailDropped}
           >
             <Voicemail className="h-4 w-4" />
-            {voicemailDropped ? "Voicemail droppé" : voicemailDropping ? "Drop…" : "Drop voicemail"}
+            {voicemailDropped ? "Voicemail dropped" : voicemailDropping ? "Drop…" : "Drop voicemail"}
           </Button>
           <Button onClick={onHangup} className="gap-2 bg-red-600 hover:bg-red-700">
             <PhoneOff className="h-4 w-4" />
-            Raccrocher
+            Hang up
           </Button>
         </div>
       );
@@ -704,138 +877,11 @@ function SoftphoneControls(props: {
           <Badge>{state.outcome ?? "ended"}</Badge>
           <Button onClick={() => onCall(selected.contactId)} className="gap-2">
             <Phone className="h-4 w-4" />
-            Rappeler
+            Call again
           </Button>
         </div>
       );
   }
-}
-
-function BriefPreview(props: { selected: QueueItem }) {
-  const { selected } = props;
-  return (
-    <div className="p-6 space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <BriefCard
-          icon={Sparkles}
-          title="Pourquoi maintenant"
-          body={
-            selected.latestSignal
-              ? selected.latestSignal.label
-              : "Score d'intent élevé — sans signal récent identifié."
-          }
-        />
-        <BriefCard
-          icon={AlertCircle}
-          title="Score composite"
-          body={`${Math.round(selected.score * 100)}/100 (intent ${Math.round(selected.intentScore * 100)}, accès ${Math.round(selected.accessibilityScore * 100)}, deal ×${selected.dealValueWeight.toFixed(1)})`}
-        />
-        <BriefCard
-          icon={Clock}
-          title="Heure locale"
-          body={`${selected.localTime} (${selected.localTimezone})`}
-        />
-        <BriefCard
-          icon={Phone}
-          title="Numéro"
-          body={selected.phone}
-        />
-      </div>
-      <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-          Playbook
-        </h3>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Ouverture: <em>« Bonjour {selected.contactName.split(" ")[0]}, Martin de Elevay — j'ai 30 secondes ? »</em>
-        </p>
-        <p className="text-xs text-zinc-500 mt-2">
-          Playbook live (objections → réponses) arrive en Phase 3.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function BriefCard(props: {
-  icon: typeof Phone;
-  title: string;
-  body: string;
-}) {
-  const Icon = props.icon;
-  return (
-    <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-zinc-500">
-        <Icon className="h-3 w-3" />
-        {props.title}
-      </div>
-      <div className="text-sm text-zinc-900 dark:text-zinc-100 mt-1">
-        {props.body}
-      </div>
-    </div>
-  );
-}
-
-function LiveTranscript(props: {
-  chunks: TranscriptChunk[];
-  state: SoftphoneState;
-}) {
-  const { chunks, state } = props;
-  if (chunks.length === 0) {
-    return (
-      <div className="p-6 text-sm text-zinc-500">
-        {state.kind === "ended"
-          ? "Aucune transcription captée — l'appel n'a pas connecté ou la fonction streaming n'est pas encore active (Phase 1.5)."
-          : "Conversation en cours. La transcription live arrive en Phase 1.5."}
-      </div>
-    );
-  }
-  return (
-    <div className="p-6 space-y-2">
-      {chunks.map((c, i) => (
-        <div key={i} className="flex gap-3 text-sm">
-          <span
-            className={`shrink-0 w-16 text-[11px] uppercase tracking-wide ${
-              c.speaker === "agent"
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-zinc-500"
-            }`}
-          >
-            {c.speaker === "agent" ? "Vous" : "Prospect"}
-          </span>
-          <span className="text-zinc-700 dark:text-zinc-300">{c.text}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AccountBrainPanel(props: { contactId: string }) {
-  // Reuse the existing contact-brain endpoint if it exists; Phase 1
-  // simply shows a stub. Phase 2 wires the live brain (last touches,
-  // notes, deal stage, MRR) via /api/contacts/[id]/brain.
-  return (
-    <div className="p-6 space-y-4">
-      <div>
-        <h3 className="text-[11px] uppercase tracking-wide text-zinc-500">
-          Cette personne
-        </h3>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-          Connecter `/api/contacts/{props.contactId}/brain` en Phase 2 pour
-          afficher les derniers touches, la position dans le deal, les notes
-          existantes.
-        </p>
-      </div>
-      <div>
-        <h3 className="text-[11px] uppercase tracking-wide text-zinc-500">
-          Prochains pas suggérés
-        </h3>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-          Après l'appel — apparaîtront : booker meeting, draft follow-up, créer
-          tâche de rappel.
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function CoachingCardsOverlay(props: {

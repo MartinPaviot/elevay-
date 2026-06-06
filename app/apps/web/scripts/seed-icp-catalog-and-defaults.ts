@@ -88,6 +88,16 @@ async function main() {
       targetGeographies: settings.targetGeographies as string[] | undefined,
       targetSeniorities: settings.targetSeniorities as string[] | undefined,
       targetDepartments: settings.targetDepartments as string[] | undefined,
+      // Full Apollo filter surface — without these the flat→criteria
+      // bridge silently drops them and the Default ICP under-targets.
+      targetKeywords: settings.targetKeywords as string[] | undefined,
+      targetTechnologies: settings.targetTechnologies as string[] | undefined,
+      targetRevenueMin: settings.targetRevenueMin as number | undefined,
+      targetRevenueMax: settings.targetRevenueMax as number | undefined,
+      totalFundingMin: settings.totalFundingMin as number | undefined,
+      totalFundingMax: settings.totalFundingMax as number | undefined,
+      minJobOpenings: settings.minJobOpenings as number | undefined,
+      hiringTitles: settings.hiringTitles as string[] | undefined,
     };
     const criteria = legacySettingsToCriteria(legacy);
 

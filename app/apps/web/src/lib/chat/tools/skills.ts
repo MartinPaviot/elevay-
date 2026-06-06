@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { companies } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { companies, proposalTemplates } from "@/db/schema";
+import { desc, eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { makeTool, type ToolContext } from "./context";
 
@@ -645,6 +645,76 @@ export function buildSkillsTools(ctx: ToolContext) {
         const result = await runSkill(
           reEngageStalledSkill,
           { dealId: input.dealId },
+          { tenantId, dryRun: false },
+        );
+        return result.data ?? { error: result.error };
+      },
+    }),
+
+    listProposalTemplates: makeTool({
+      description: `List the user's proposal templates and their status (uploaded/detected/mapped), or inspect one template's detected component map. Use when the user asks "show my proposal templates", "what proposal templates do I have", or "show the components for template X".`,
+      inputSchema: z.object({
+        templateId: z
+          .string()
+          .optional()
+          .describe("Inspect a specific template's component map; omit to list all"),
+      }),
+      execute: async (input) => {
+        if (input.templateId) {
+          const [tpl] = await db
+            .select()
+            .from(proposalTemplates)
+            .where(
+              and(
+                eq(proposalTemplates.id, input.templateId),
+                eq(proposalTemplates.tenantId, tenantId),
+                isNull(proposalTemplates.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (!tpl) return { error: "Template not found" };
+          return {
+            template: {
+              id: tpl.id,
+              name: tpl.name,
+              status: tpl.status,
+              componentMap: tpl.componentMap,
+            },
+          };
+        }
+        const templates = await db
+          .select({
+            id: proposalTemplates.id,
+            name: proposalTemplates.name,
+            status: proposalTemplates.status,
+            sourceFormat: proposalTemplates.sourceFormat,
+            updatedAt: proposalTemplates.updatedAt,
+          })
+          .from(proposalTemplates)
+          .where(
+            and(
+              eq(proposalTemplates.tenantId, tenantId),
+              isNull(proposalTemplates.deletedAt),
+            ),
+          )
+          .orderBy(desc(proposalTemplates.updatedAt))
+          .limit(50);
+        return { templates };
+      },
+    }),
+
+    fillProposal: makeTool({
+      description: `Draft a commercial proposal by filling a MAPPED template from a deal's information base (resolves field values + generates each section's prose). Use when the user asks "draft a proposal for deal X using template Y", "fill my proposal template for this deal", or "generate the proposal".`,
+      inputSchema: z.object({
+        templateId: z.string().describe("A mapped proposal template id"),
+        dealId: z.string().describe("The deal to draft the proposal for"),
+      }),
+      execute: async (input) => {
+        const { runSkill } = await import("@/skills/runner");
+        const { proposalFillSkill } = await import("@/skills/intelligence/proposal-fill");
+        const result = await runSkill(
+          proposalFillSkill,
+          { templateId: input.templateId, dealId: input.dealId },
           { tenantId, dryRun: false },
         );
         return result.data ?? { error: result.error };

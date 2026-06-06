@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { activities, companies, contacts, deals } from "@/db/schema";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { makeTool, type ToolContext } from "./context";
 import { scoreBuyerIntent, type BuyerIntentScore } from "@/lib/scoring/buyer-intent";
@@ -20,7 +20,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
         const [deal] = await db
           .select()
           .from(deals)
-          .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId)))
+          .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt)))
           .limit(1);
         if (!deal) return { error: "Deal not found" };
 
@@ -29,7 +29,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
             ? db
                 .select()
                 .from(contacts)
-                .where(eq(contacts.id, deal.contactId))
+                .where(and(eq(contacts.id, deal.contactId), isNull(contacts.deletedAt)))
                 .limit(1)
                 .then((r) => r[0] || null)
             : null,
@@ -37,7 +37,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
             ? db
                 .select()
                 .from(companies)
-                .where(eq(companies.id, deal.companyId))
+                .where(and(eq(companies.id, deal.companyId), isNull(companies.deletedAt)))
                 .limit(1)
                 .then((r) => r[0] || null)
             : null,
@@ -47,6 +47,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
             .where(
               and(
                 eq(activities.tenantId, tenantId),
+                isNull(activities.deletedAt),
                 or(
                   and(eq(activities.entityType, "deal"), eq(activities.entityId, input.dealId)),
                   ...(deal.contactId
@@ -122,7 +123,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
         const [company] = await db
           .select()
           .from(companies)
-          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
+          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId), isNull(companies.deletedAt)))
           .limit(1);
         if (!company) return { error: "Account not found" };
 
@@ -132,18 +133,19 @@ export function buildIntelligenceTools(ctx: ToolContext) {
             .select()
             .from(contacts)
             .where(
-              and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId))
+              and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt))
             ),
           db
             .select()
             .from(deals)
-            .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId))),
+            .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt))),
           db
             .select()
             .from(activities)
             .where(
               and(
                 eq(activities.tenantId, tenantId),
+                isNull(activities.deletedAt),
                 eq(activities.entityType, "company"),
                 eq(activities.entityId, input.accountId)
               )
@@ -225,7 +227,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
           const [company] = await db
             .select()
             .from(companies)
-            .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
+            .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId), isNull(companies.deletedAt)))
             .limit(1);
           if (company) {
             data.account = {
@@ -247,7 +249,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
               .select()
               .from(contacts)
               .where(
-                and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId))
+                and(eq(contacts.companyId, input.accountId), eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt))
               );
             data.contacts = companyContacts.map((c) => ({
               name: [c.firstName, c.lastName].filter(Boolean).join(" "),
@@ -258,7 +260,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
             const companyDeals = await db
               .select()
               .from(deals)
-              .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId)));
+              .where(and(eq(deals.companyId, input.accountId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt)));
             data.deals = companyDeals.map((d) => ({
               name: d.name,
               stage: d.stage,
@@ -271,6 +273,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
               .where(
                 and(
                   eq(activities.tenantId, tenantId),
+                  isNull(activities.deletedAt),
                   eq(activities.entityType, "company"),
                   eq(activities.entityId, input.accountId)
                 )
@@ -290,7 +293,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
           const [contact] = await db
             .select()
             .from(contacts)
-            .where(and(eq(contacts.id, input.contactId), eq(contacts.tenantId, tenantId)))
+            .where(and(eq(contacts.id, input.contactId), eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt)))
             .limit(1);
           if (contact) {
             data.contact = {
@@ -304,6 +307,7 @@ export function buildIntelligenceTools(ctx: ToolContext) {
               .where(
                 and(
                   eq(activities.tenantId, tenantId),
+                  isNull(activities.deletedAt),
                   eq(activities.entityType, "contact"),
                   eq(activities.entityId, input.contactId)
                 )
@@ -341,6 +345,7 @@ Examples: "What did we discuss with Acme last call?" "What were the action items
           .where(
             and(
               eq(activities.tenantId, tenantId),
+              isNull(activities.deletedAt),
               eq(activities.channel, "meeting"),
               sql`metadata->>'structuredNotes' IS NOT NULL`
             )
@@ -455,7 +460,7 @@ Examples: "What did we discuss with Acme last call?" "What were the action items
         const [deal] = await db
           .select({ properties: deals.properties, stage: deals.stage, name: deals.name })
           .from(deals)
-          .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId)))
+          .where(and(eq(deals.id, input.dealId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt)))
           .limit(1);
 
         if (!deal) return { error: "Deal not found" };

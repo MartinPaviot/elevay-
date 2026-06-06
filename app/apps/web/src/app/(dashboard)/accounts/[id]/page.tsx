@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { displayScore } from "@/lib/util/ui-utils";
 
 interface Account {
   id: string;
@@ -39,6 +40,7 @@ export default function AccountDetailPage() {
   const accountId = params.id as string;
   const [account, setAccount] = useState<Account | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [contacts, setContacts] = useState<Array<{ id: string; firstName: string | null; lastName: string | null; title: string | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -55,6 +57,10 @@ export default function AccountDetailPage() {
           const data = await res.json();
           setAccount(data.account);
           setDeals(data.deals || []);
+          fetch(`/api/contacts?companyId=${accountId}`)
+            .then((r) => (r.ok ? r.json() : { contacts: [] }))
+            .then((cd) => setContacts(cd.contacts || cd.items || []))
+            .catch((e) => console.warn("account-detail: contacts fetch failed", e));
           const props = data.account?.properties as Record<string, unknown> | null;
           if (props) {
             setAiSummary((props.ai_account_summary as string) || null);
@@ -255,6 +261,33 @@ export default function AccountDetailPage() {
           </div>
         )}
 
+        {/* Contacts at this account */}
+        <div className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+            Contacts ({contacts.length})
+          </h2>
+          {contacts.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--color-text-tertiary)]">No contacts linked to this account yet.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {contacts.map((c) => (
+                <Link key={c.id} href={`/contacts/${c.id}`} className="block">
+                  <Card>
+                    <CardBody>
+                      <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                        {[c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed contact"}
+                      </p>
+                      {c.title && (
+                        <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">{c.title}</p>
+                      )}
+                    </CardBody>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Deals */}
         <div className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
@@ -265,17 +298,19 @@ export default function AccountDetailPage() {
           ) : (
             <div className="mt-2 space-y-2">
               {deals.map((deal) => (
-                <Card key={deal.id}>
-                  <CardBody>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-[var(--color-text-primary)]">{deal.name}</p>
-                      <Badge variant="neutral">{deal.stage}</Badge>
-                    </div>
-                    {deal.value != null && deal.value > 0 && (
-                      <p className="mt-0.5 text-xs text-emerald-500">${deal.value.toLocaleString()}</p>
-                    )}
-                  </CardBody>
-                </Card>
+                <Link key={deal.id} href={`/opportunities/${deal.id}`} className="block">
+                  <Card>
+                    <CardBody>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-[var(--color-text-primary)]">{deal.name}</p>
+                        <Badge variant="neutral">{deal.stage}</Badge>
+                      </div>
+                      {deal.value != null && deal.value > 0 && (
+                        <p className="mt-0.5 text-xs text-emerald-500">${deal.value.toLocaleString()}</p>
+                      )}
+                    </CardBody>
+                  </Card>
+                </Link>
               ))}
             </div>
           )}
@@ -345,19 +380,41 @@ export default function AccountDetailPage() {
               )}
             </div>
           ))}
-          {account.score != null && (
-            <div>
-              <p className="text-xs text-[var(--color-text-tertiary)]">Score</p>
-              <p className="text-sm font-medium text-[var(--color-text-primary)]">{Math.round(account.score)}</p>
-              {account.scoreReasons && account.scoreReasons.length > 0 && (
-                <ul className="mt-1 space-y-0.5">
-                  {account.scoreReasons.slice(0, 3).map((r, i) => (
-                    <li key={i} className="text-[10px] text-[var(--color-text-tertiary)]">• {r}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          {(() => {
+            // A fit score is only meaningful once the account carries
+            // real firmographics. Without enrichment the score is a
+            // no-data floor (F/Cold), so show "Not scored" instead of a
+            // misleading grade — consistent with the accounts/contacts tables.
+            const enriched = !!(account.industry && account.description);
+            const s = displayScore(account.score, enriched);
+            return (
+              <div>
+                <p className="text-xs text-[var(--color-text-tertiary)]">Score</p>
+                {s ? (
+                  <>
+                    <p className="flex items-center gap-1.5 text-sm font-medium">
+                      <span
+                        className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        style={{ background: s.color }}
+                      >
+                        {s.grade}
+                      </span>
+                      <span style={{ color: s.color }}>{s.heat}</span>
+                    </p>
+                    {account.scoreReasons && account.scoreReasons.length > 0 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {account.scoreReasons.slice(0, 3).map((r, i) => (
+                          <li key={i} className="text-[10px] text-[var(--color-text-tertiary)]">• {r}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>Not scored</p>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   type OrgSearchParams,
 } from "@/lib/integrations/apollo-client";
 import { sizesToApolloRanges } from "@/lib/config/icp-constants";
+import { flatFiltersToHardApollo } from "@/lib/icp/flat-filters-to-apollo";
 
 /**
  * POST /api/tam/estimate
@@ -35,8 +36,18 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as {
     industries?: string[];
+    keywords?: string[];
     companySizes?: string[];
     geographies?: string[];
+    excludeGeographies?: string[];
+    technologies?: string[];
+    revenueMin?: number | null;
+    revenueMax?: number | null;
+    fundingRecencyDays?: number | null;
+    totalFundingMin?: number | null;
+    totalFundingMax?: number | null;
+    minJobOpenings?: number | null;
+    hiringTitles?: string[];
   };
 
   const filters: OrgSearchParams = {
@@ -62,12 +73,20 @@ export async function POST(req: Request) {
     // Apollo accepts free-text locations — countries, states, cities.
     filters.organization_locations = body.geographies;
   }
-  if (body.industries?.length) {
-    // Industries are passed as keyword tags; Apollo's industry filter
-    // requires industry IDs which we don't map. Keywords is close
-    // enough for an estimate and degrades gracefully.
-    filters.q_organization_keyword_tags = body.industries;
+  // Industries + free keywords both map to keyword tags; Apollo's
+  // industry filter requires industry IDs we don't map, and keywords is
+  // close enough for an estimate and degrades gracefully.
+  const keywordTags = [
+    ...(body.industries ?? []),
+    ...(body.keywords ?? []),
+  ].filter(Boolean);
+  if (keywordTags.length) {
+    filters.q_organization_keyword_tags = keywordTags;
   }
+  // All the "hard" filters (exclude-geo, technologies, revenue, funding,
+  // hiring) come from the shared single-source-of-truth mapper so the
+  // live count can't drift from what the build paths actually source.
+  Object.assign(filters, flatFiltersToHardApollo(body));
 
   try {
     const result = await searchOrganizations(filters);
@@ -79,8 +98,18 @@ export async function POST(req: Request) {
       capped: total >= 100_000,
       filtersApplied: {
         industries: body.industries?.length ?? 0,
+        keywords: body.keywords?.length ?? 0,
         companySizes: body.companySizes?.length ?? 0,
         geographies: body.geographies?.length ?? 0,
+        excludeGeographies: body.excludeGeographies?.length ?? 0,
+        technologies: body.technologies?.length ?? 0,
+        revenue: filters.revenue_range ? 1 : 0,
+        funding:
+          (filters.latest_funding_date_range ? 1 : 0) +
+          (filters.total_funding_range ? 1 : 0),
+        jobs:
+          (filters.organization_num_jobs_range ? 1 : 0) +
+          (body.hiringTitles?.length ?? 0),
       },
     });
   } catch (err) {

@@ -21,7 +21,7 @@ import {
   contextGraphEdges,
   contextGraphNodes,
 } from "@/db/schema";
-import { and, desc, eq, notInArray, or, inArray } from "drizzle-orm";
+import { and, desc, eq, isNull, notInArray, or, inArray } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
@@ -50,7 +50,7 @@ export async function buildDealBrief(
   const [deal] = await db
     .select()
     .from(deals)
-    .where(and(eq(deals.id, dealId), eq(deals.tenantId, tenantId)));
+    .where(and(eq(deals.id, dealId), eq(deals.tenantId, tenantId), isNull(deals.deletedAt)));
 
   if (!deal) throw new Error(`Deal ${dealId} not found`);
 
@@ -60,7 +60,7 @@ export async function buildDealBrief(
       ? db
           .select()
           .from(companies)
-          .where(eq(companies.id, deal.companyId))
+          .where(and(eq(companies.id, deal.companyId), isNull(companies.deletedAt)))
           .limit(1)
           .then((r) => r[0] || null)
       : null,
@@ -68,7 +68,7 @@ export async function buildDealBrief(
       ? db
           .select()
           .from(contacts)
-          .where(eq(contacts.id, deal.contactId))
+          .where(and(eq(contacts.id, deal.contactId), isNull(contacts.deletedAt)))
           .limit(1)
           .then((r) => r[0] || null)
       : null,
@@ -103,6 +103,7 @@ export async function buildDealBrief(
     .where(
       and(
         eq(activities.tenantId, tenantId),
+        isNull(activities.deletedAt),
         or(...entityFilters),
       ),
     )
@@ -243,6 +244,7 @@ export async function briefAllOpenDeals(
     .where(
       and(
         eq(deals.tenantId, tenantId),
+        isNull(deals.deletedAt),
         notInArray(deals.stage, ["won", "lost"]),
       ),
     )

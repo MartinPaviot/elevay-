@@ -2,7 +2,7 @@ import { z } from "zod";
 import { makeTool, type ToolContext } from "./context";
 import { db } from "@/db";
 import { deals, activities, companies } from "@/db/schema";
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import {
   runMonteCarloForecast,
@@ -36,6 +36,7 @@ export function buildForecastTools(ctx: ToolContext) {
           .where(
             and(
               eq(deals.tenantId, tenantId),
+              isNull(deals.deletedAt),
               notInArray(deals.stage, ["won", "lost"]),
             ),
           );
@@ -69,7 +70,7 @@ export function buildForecastTools(ctx: ToolContext) {
               const [company] = await db
                 .select({ industry: companies.industry, size: companies.size })
                 .from(companies)
-                .where(eq(companies.id, deal.companyId))
+                .where(and(eq(companies.id, deal.companyId), isNull(companies.deletedAt)))
                 .limit(1);
               if (company) {
                 industry = company.industry || "unknown";
@@ -89,6 +90,7 @@ export function buildForecastTools(ctx: ToolContext) {
               .where(
                 and(
                   eq(activities.tenantId, tenantId),
+                  isNull(activities.deletedAt),
                   eq(activities.entityId, dealEntityId),
                 ),
               );

@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
 import { notes, companies, contacts, deals } from "@/db/schema";
-import { eq, desc, and, isNull, sql } from "drizzle-orm";
+import { eq, desc, and, isNull, inArray } from "drizzle-orm";
 import { ingestEpisode } from "@/lib/ai/context-graph";
 import { apiError } from "@/lib/infra/api-errors";
 import { z } from "zod";
@@ -48,7 +48,7 @@ export async function GET() {
       const rows = await db
         .select({ id: companies.id, name: companies.name })
         .from(companies)
-        .where(sql`${companies.id} = ANY(${ids})`);
+        .where(inArray(companies.id, ids));
       for (const r of rows) nameMap.set(r.id, r.name);
     }
 
@@ -57,7 +57,7 @@ export async function GET() {
       const rows = await db
         .select({ id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName })
         .from(contacts)
-        .where(sql`${contacts.id} = ANY(${ids})`);
+        .where(inArray(contacts.id, ids));
       for (const r of rows) {
         nameMap.set(r.id, [r.firstName, r.lastName].filter(Boolean).join(" ") || "Unknown");
       }
@@ -68,7 +68,7 @@ export async function GET() {
       const rows = await db
         .select({ id: deals.id, name: deals.name })
         .from(deals)
-        .where(sql`${deals.id} = ANY(${ids})`);
+        .where(inArray(deals.id, ids));
       for (const r of rows) nameMap.set(r.id, r.name);
     }
 

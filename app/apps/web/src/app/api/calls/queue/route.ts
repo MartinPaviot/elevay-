@@ -12,7 +12,16 @@ export async function GET(req: Request) {
   return withAuthRLS(async (authCtx) => {
     const url = new URL(req.url);
     const limit = Number(url.searchParams.get("limit") ?? 50);
-    const items = await buildQueue(authCtx.tenantId, limit);
+    // Optional ?accounts=id1,id2 — scope the queue to a selection pushed
+    // from the Accounts list. Blank/whitespace ids are dropped; an empty
+    // result falls back to the global queue rather than an empty screen.
+    const accountsParam = url.searchParams.get("accounts");
+    const companyIds = accountsParam
+      ? accountsParam.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const items = await buildQueue(authCtx.tenantId, limit, {
+      companyIds: companyIds.length > 0 ? companyIds : undefined,
+    });
     return Response.json({ calls: items });
   });
 }

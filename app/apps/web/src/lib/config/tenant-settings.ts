@@ -62,6 +62,29 @@ export interface TenantSettings {
   targetSeniorities?: string[];
   targetDepartments?: string[];
   targetGeographies?: string[];
+  /**
+   * Full Apollo org-search filter surface set during onboarding /
+   * ICP editing. Every field maps 1:1 to an OrgSearchParams key and is
+   * consumed by /api/tam (build) + /api/tam/estimate (live count). Kept
+   * flat (not nested) to match the rest of the target* settings.
+   */
+  targetKeywords?: string[];
+  /** revenue_range bounds, USD. */
+  targetRevenueMin?: number;
+  targetRevenueMax?: number;
+  /** currently_using_any_of_technology_uids (display names; slugged at use). */
+  targetTechnologies?: string[];
+  /** organization_not_locations. */
+  excludeGeographies?: string[];
+  /** latest_funding_date_range.min = now − N days. */
+  fundingRecencyDays?: number;
+  /** total_funding_range bounds, USD. */
+  totalFundingMin?: number;
+  totalFundingMax?: number;
+  /** organization_num_jobs_range.min — hiring-intent gate. */
+  minJobOpenings?: number;
+  /** q_organization_job_titles — roles companies are actively hiring for. */
+  hiringTitles?: string[];
 
   // ── Email provider ──
   emailProvider?: string;

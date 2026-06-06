@@ -65,6 +65,38 @@ describe("legacySettingsToCriteria", () => {
     expect(criteria).toHaveLength(0);
   });
 
+  it("maps the full Apollo filter surface (keywords, tech, revenue, funding, jobs, hiring)", () => {
+    const criteria = legacySettingsToCriteria({
+      targetKeywords: ["developer tools"],
+      targetTechnologies: ["Kubernetes"],
+      targetRevenueMin: 1_000_000,
+      targetRevenueMax: 50_000_000,
+      totalFundingMin: 5_000_000,
+      minJobOpenings: 1,
+      hiringTitles: ["Account Executive"],
+    });
+    const byField = Object.fromEntries(criteria.map((c) => [c.fieldKey, c]));
+    expect(byField.keywords.value).toEqual(["developer tools"]);
+    expect(byField.technologies.value).toEqual(["Kubernetes"]);
+    expect(byField.revenue.operator).toBe("between");
+    expect(byField.revenue.value).toEqual({ min: 1_000_000, max: 50_000_000 });
+    // One-sided range when only one bound is set.
+    expect(byField.total_funding.value).toEqual({ min: 5_000_000 });
+    expect(byField.num_open_jobs.operator).toBe("gte");
+    expect(byField.num_open_jobs.value).toBe(1);
+    expect(byField.hiring_job_titles.value).toEqual(["Account Executive"]);
+    // All soft — preserves additive scoring, no hard exclude.
+    expect(criteria.every((c) => c.isRequired === false)).toBe(true);
+  });
+
+  it("does NOT seed geography_exclude or fundingRecencyDays (exclusion + relative-time)", () => {
+    const criteria = legacySettingsToCriteria({
+      excludeGeographies: ["India"],
+      fundingRecencyDays: 180,
+    } as never);
+    expect(criteria).toHaveLength(0);
+  });
+
   it("builds all-soft criteria (preserves additive scoring, no hard exclude)", () => {
     const criteria = legacySettingsToCriteria({
       targetIndustries: ["SaaS"],
@@ -115,7 +147,9 @@ describe("buildCompanyContext", () => {
         investor_names: ["Sequoia"],
       },
     });
-    expect(ctx.geography).toBe("France");
+    // geography is now an array of location tokens (state/city/country)
+    // so a criterion listing regions can match Apollo's `state`.
+    expect(ctx.geography).toEqual(["France"]);
     expect(ctx.revenue).toBe(5_000_000);
     expect(ctx.technologies).toEqual(["Kubernetes", "React"]);
     expect(ctx.latest_funding_stage).toBe("Series A");
@@ -123,6 +157,36 @@ describe("buildCompanyContext", () => {
     expect(ctx.num_open_jobs).toBe(8);
     expect(ctx.founded_year).toBe(2019);
     expect(ctx.investor_names).toEqual(["Sequoia"]);
+  });
+
+  it("exposes state + city + country as geography tokens (region wedge)", () => {
+    const ctx = buildCompanyContext({
+      properties: { state: "Geneva", city: "Genève", country: "Switzerland" },
+    });
+    expect(ctx.geography).toEqual(["Geneva", "Genève", "Switzerland"]);
+  });
+
+  it("de-dupes geography tokens case-insensitively", () => {
+    const ctx = buildCompanyContext({
+      properties: { state: "Vaud", city: "vaud", country: "Switzerland" },
+    });
+    expect(ctx.geography).toEqual(["Vaud", "Switzerland"]);
+  });
+
+  it("includes a SIRENE region in geography tokens (so region criteria match)", () => {
+    const ctx = buildCompanyContext({
+      properties: { region: "Île-de-France", departement: "75", country: "France" },
+    });
+    expect(ctx.geography).toContain("Île-de-France");
+  });
+
+  it("maps a SIRENE effectif tranche to an employee-count midpoint", () => {
+    expect(buildCompanyContext({ properties: { effectif_tranche: "21" } }).employee_count).toBe(74);
+    expect(buildCompanyContext({ properties: { effectif_tranche: "22" } }).employee_count).toBe(149);
+    // a real number still wins over the tranche
+    expect(
+      buildCompanyContext({ properties: { estimated_num_employees: 120, effectif_tranche: "21" } }).employee_count,
+    ).toBe(120);
   });
 
   it("converts funding date to epoch ms for numeric between", () => {

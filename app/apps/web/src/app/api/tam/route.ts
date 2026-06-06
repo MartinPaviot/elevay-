@@ -20,6 +20,7 @@ import {
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { getTenantKnowledge, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
 import { sizesToApolloRanges } from "@/lib/config/icp-constants";
+import { flatFiltersToHardApollo } from "@/lib/icp/flat-filters-to-apollo";
 
 /**
  * TAM building strategy (v2 — search-first):
@@ -90,11 +91,61 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { industries, companySizes, targetRoles, geographies, productDescription } = body;
+    const {
+      industries,
+      companySizes,
+      targetRoles,
+      geographies,
+      productDescription,
+      // Full Apollo filter surface — applied as HARD constraints on top
+      // of every LLM-generated search angle (see hardFilters below).
+      keywords,
+      excludeGeographies,
+      technologies,
+      revenueMin,
+      revenueMax,
+      fundingRecencyDays,
+      totalFundingMin,
+      totalFundingMax,
+      minJobOpenings,
+      hiringTitles,
+    } = body as {
+      industries?: string[];
+      companySizes?: string[];
+      targetRoles?: string;
+      geographies?: string[];
+      productDescription?: string;
+      keywords?: string[];
+      excludeGeographies?: string[];
+      technologies?: string[];
+      revenueMin?: number | null;
+      revenueMax?: number | null;
+      fundingRecencyDays?: number | null;
+      totalFundingMin?: number | null;
+      totalFundingMax?: number | null;
+      minJobOpenings?: number | null;
+      hiringTitles?: string[];
+    };
 
     if (!industries?.length && !companySizes?.length && !productDescription) {
       return apiError("VALIDATION_ERROR", "At least industries, company sizes, or product description required");
     }
+
+    // Build the user's explicit hard filters once (single source of
+    // truth — see lib/icp/flat-filters-to-apollo). Merged into EVERY
+    // strategy below so a chosen revenue band / tech / funding / hiring
+    // signal always applies, regardless of which angle the LLM picked.
+    const hardFilters = flatFiltersToHardApollo({
+      excludeGeographies,
+      technologies,
+      revenueMin,
+      revenueMax,
+      fundingRecencyDays,
+      totalFundingMin,
+      totalFundingMax,
+      minJobOpenings,
+      hiringTitles,
+    });
 
     // Load tenant settings for context
     const settings = await getTenantSettings(authCtx.tenantId);
@@ -121,8 +172,13 @@ export async function POST(req: Request) {
       settings.salesMotion && `Sales motion: ${settings.salesMotion}`,
       settings.primaryChallenge && `Primary challenge: ${settings.primaryChallenge}`,
       industries?.length && `Target industries: ${industries.join(", ")}`,
+      keywords?.length && `Target keywords: ${keywords.join(", ")}`,
       companySizes?.length && `Target company sizes: ${companySizes.join(", ")}`,
       geographies?.length && `Target geographies: ${geographies.join(", ")}`,
+      technologies?.length && `Must use technologies: ${technologies.join(", ")}`,
+      (typeof revenueMin === "number" || typeof revenueMax === "number") &&
+        `Revenue band (USD): ${revenueMin ?? "0"}–${revenueMax ?? "∞"}`,
+      hiringTitles?.length && `Actively hiring for: ${hiringTitles.join(", ")}`,
       targetRoles && `Buyer personas: ${targetRoles}`,
       knowledgeBlock && `Knowledge base:\n${knowledgeBlock}`,
     ]
@@ -173,17 +229,26 @@ Generate strategies that maximize COVERAGE while maintaining RELEVANCE. Each str
 
     for (const strategy of strategyResult.strategies) {
       try {
+        // Union the user's explicit keywords into every angle so they
+        // always narrow the search, then layer the hard filters on top
+        // (they win over anything the LLM produced for the same key).
+        const mergedKeywords = [
+          ...(strategy.filters.q_organization_keyword_tags ?? []),
+          ...(keywords ?? []),
+        ].filter(Boolean);
+
         const params: OrgSearchParams = {
           organization_num_employees_ranges:
             strategy.filters.organization_num_employees_ranges,
           organization_locations: strategy.filters.organization_locations,
           q_organization_keyword_tags:
-            strategy.filters.q_organization_keyword_tags,
+            mergedKeywords.length > 0 ? mergedKeywords : undefined,
           currently_using_any_of_technology_uids:
             strategy.filters.currently_using_any_of_technology_uids,
           revenue_range: strategy.filters.revenue_range,
           per_page: 100,
           page: 1,
+          ...hardFilters,
         };
 
         // Fetch up to 3 pages (300 companies) per strategy

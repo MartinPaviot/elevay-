@@ -4,6 +4,10 @@ import { db } from "@/db";
 import { companies, icps, icpCriteria } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { icpToStrategy, icpToSignalIcp } from "@/lib/icp/icp-to-tam";
+import {
+  flatFiltersToHardApollo,
+  applyHardFiltersToStrategies,
+} from "@/lib/icp/flat-filters-to-apollo";
 import type { Criterion } from "@/lib/icp/criteria-engine";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
@@ -23,6 +27,7 @@ import {
 import { getTenantKnowledge, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
 import { sizesToApolloRanges } from "@/lib/config/icp-constants";
 import { runPerCompanyPipeline } from "@/lib/tam-stream/per-company";
+import { inngest } from "@/inngest/client";
 import type { SignalContext } from "@/lib/tam-stream/signals/types";
 import {
   initSummary,
@@ -42,7 +47,12 @@ const MAX_CONCURRENT_PIPELINES = 6;
 
 const DEFAULT_TARGET_COUNT = 300;
 const DEFAULT_STRATEGY_COUNT = 4;
-const MAX_PAGES_PER_STRATEGY = 3;
+// 6 pages × 100 = up to 600 orgs per strategy. ICP mode runs a single
+// strategy, so this is what lets one ICP build reach a 500+ TAM
+// (e.g. ICP-1 ≈ 544 reachable) rather than capping at 300. Bounded by
+// `targetCount` and the 300s maxDuration — very large TAMs should be
+// sourced via scripts/source-icp-tam.ts which has no time limit.
+const MAX_PAGES_PER_STRATEGY = 6;
 const APOLLO_PAGE_SIZE = 100;
 
 // ── LLM strategy schema ──────────────────────────────────────────
@@ -353,6 +363,37 @@ export async function POST(req: Request) {
           console.log(`[tam-stream ${jobId.slice(0, 8)}] apollo overrides — industries=${ov!.industries?.join("|") ?? "-"} geographies=${ov!.geographies?.join("|") ?? "-"}`);
         }
 
+        // ── Legacy-mode settings hard filters ──
+        // In ICP mode the criteria already define the search exactly, so
+        // we leave it untouched. In legacy mode (no icpId — e.g. the
+        // accounts "Find more accounts" tenant-wide build) we layer the
+        // tenant's explicit Settings → ICP filters (revenue / tech /
+        // funding / exclude-geo / hiring) onto every LLM strategy, and
+        // union the tenant keywords, so the same filters the user set are
+        // honored here too. Single source of truth: flatFiltersToHardApollo.
+        const settingsHard = icpStrategy
+          ? {}
+          : flatFiltersToHardApollo({
+              excludeGeographies: settings.excludeGeographies,
+              technologies: settings.targetTechnologies,
+              revenueMin: settings.targetRevenueMin,
+              revenueMax: settings.targetRevenueMax,
+              fundingRecencyDays: settings.fundingRecencyDays,
+              totalFundingMin: settings.totalFundingMin,
+              totalFundingMax: settings.totalFundingMax,
+              minJobOpenings: settings.minJobOpenings,
+              hiringTitles: settings.hiringTitles,
+            });
+        const settingsKeywords = icpStrategy ? [] : (settings.targetKeywords ?? []);
+        const finalStrategies = applyHardFiltersToStrategies(
+          effectiveStrategies,
+          settingsHard,
+          settingsKeywords,
+        );
+        if (Object.keys(settingsHard).length > 0 || settingsKeywords.length > 0) {
+          console.log(`[tam-stream ${jobId.slice(0, 8)}] legacy settings filters — keys=${Object.keys(settingsHard).join("|") || "-"} keywords=${settingsKeywords.length}`);
+        }
+
         summary.strategiesRun = strategies.length;
         send({
           type: "strategy.generated",
@@ -366,7 +407,7 @@ export async function POST(req: Request) {
         const allPerCompanyWork: Promise<void>[] = [];
         const limiter = createLimiter(MAX_CONCURRENT_PIPELINES);
 
-        outer: for (const strategy of effectiveStrategies) {
+        outer: for (const strategy of finalStrategies) {
           if (abortController.signal.aborted) break;
 
           let added = 0;
@@ -457,6 +498,17 @@ export async function POST(req: Request) {
         }
 
         await Promise.allSettled(allPerCompanyWork);
+
+        // Fill the multi-ICP fit matrix for the freshly-sourced rows.
+        // The per-company pipeline writes companies.score (legacy) but
+        // NOT company_icp_fit — that matrix (and the ICP card's "N
+        // companies fit") is only populated by the recompute job. Fire
+        // it now so a build is immediately reflected on the ICP.
+        if (summary.companiesInserted > 0) {
+          inngest
+            .send({ name: "icp/recompute-tenant", data: { tenantId: authCtx.tenantId } })
+            .catch(() => {});
+        }
 
         summary.durationMs = Date.now() - startedAt;
         console.log(`[tam-stream ${jobId.slice(0, 8)}] done — inserted=${summary.companiesInserted} skipped=${summary.companiesSkipped} aBurning=${summary.aBurningCount} duration=${summary.durationMs}ms`);

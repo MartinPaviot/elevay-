@@ -63,6 +63,11 @@ vi.mock("@/lib/config/icp-constants", () => ({
   sizesToApolloRanges: vi.fn((sizes: string[]) => sizes.map((s) => s.replace("-", ","))),
 }));
 
+vi.mock("@/lib/icp/apollo-technology-uids", () => ({
+  toTechnologyUid: (t: string) => t.toLowerCase(),
+  toTechnologyUids: (arr: string[]) => arr.map((t) => t.toLowerCase()),
+}));
+
 vi.mock("@/lib/knowledge/get-tenant-knowledge", () => ({
   getTenantKnowledge: vi.fn(() => Promise.resolve([])),
   formatKnowledgeBlock: vi.fn(() => ""),
@@ -234,6 +239,77 @@ describe("POST /api/tam (generate)", () => {
         q_organization_keyword_tags: ["saas", "b2b"],
       })
     );
+  });
+
+  it("merges the user's explicit Apollo filters as hard constraints on every strategy", async () => {
+    vi.mocked(getAuthContext).mockResolvedValue({
+      userId: "u1",
+      tenantId: "t1",
+      appUserId: "u1",
+      role: "admin",
+    });
+
+    const limitFn = vi.fn().mockResolvedValue([]);
+    const whereFn = vi.fn().mockReturnValue({ limit: limitFn });
+    const fromFn = vi.fn().mockReturnValue({ where: whereFn });
+    vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
+    vi.mocked(db.insert).mockReturnValue({ values: vi.fn().mockResolvedValue([]) } as never);
+
+    // LLM produces one angle with its own keyword tags; the user's
+    // explicit keywords must be unioned in, and the hard filters layered on.
+    vi.mocked(tracedGenerateObject).mockResolvedValueOnce({
+      object: {
+        strategies: [
+          {
+            label: "Direct fit",
+            reasoning: "Test",
+            filters: {
+              organization_num_employees_ranges: ["51,200"],
+              q_organization_keyword_tags: ["saas"],
+            },
+          },
+        ],
+      },
+    } as never);
+
+    // Return zero orgs so the page loop breaks immediately (no enrich path).
+    vi.mocked(searchOrganizations).mockResolvedValue({
+      organizations: [],
+      pagination: { page: 1, per_page: 100, total_entries: 0 },
+    });
+
+    const req = new Request("http://localhost/api/tam", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        industries: ["Computer Software"],
+        companySizes: ["51-200"],
+        keywords: ["b2b"],
+        excludeGeographies: ["India"],
+        technologies: ["Kubernetes"],
+        revenueMin: 1_000_000,
+        revenueMax: 50_000_000,
+        fundingRecencyDays: 180,
+        totalFundingMin: 5_000_000,
+        minJobOpenings: 1,
+        hiringTitles: ["Account Executive"],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const params = vi.mocked(searchOrganizations).mock.calls[0][0];
+    // User keywords unioned with the LLM's.
+    expect(params.q_organization_keyword_tags).toEqual(["saas", "b2b"]);
+    // Hard filters present on the strategy.
+    expect(params.organization_not_locations).toEqual(["India"]);
+    expect(params.currently_using_any_of_technology_uids).toEqual(["kubernetes"]);
+    expect(params.revenue_range).toEqual({ min: 1_000_000, max: 50_000_000 });
+    expect(params.total_funding_range).toEqual({ min: 5_000_000 });
+    expect(params.organization_num_jobs_range).toEqual({ min: 1 });
+    expect(params.q_organization_job_titles).toEqual(["Account Executive"]);
+    expect(params.latest_funding_date_range?.min).toBeTypeOf("string");
   });
 
   it("skips duplicate domains from Apollo results", async () => {

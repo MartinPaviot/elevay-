@@ -154,6 +154,9 @@ export async function searchPeople(params: {
 // ── Organization Search ──
 
 export interface OrgSearchParams {
+  /** Free-text organization name match (used to resolve a domain from a
+   * registry-sourced company that has only a legal name). */
+  q_organization_name?: string;
   /** Apollo keyword tags (e.g. ["saas", "cloud"]) */
   q_organization_keyword_tags?: string[];
   /** Employee count ranges in Apollo format: ["1,10", "51,200"] */
