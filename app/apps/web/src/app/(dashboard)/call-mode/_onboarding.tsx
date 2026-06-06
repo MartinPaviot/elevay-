@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { Target, Loader2, Phone } from "lucide-react";
+import { Target, Loader2, Phone, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GrowTextarea } from "@/components/ui/grow-textarea";
 import { useToast } from "@/components/ui/toast";
@@ -59,6 +59,12 @@ export function CallModeOnboarding({
   const [daysPerWeek, setDaysPerWeek] = useState<number>(5);
   const [phrase, setPhrase] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // After submit: the honest result — list ready / building / needs ICP — so
+  // the user never lands on an empty cockpit or a Twilio dead-end.
+  const [result, setResult] = useState<
+    { campaign: Campaign; calls: QueueItem[]; callableTotal: number; sourcing: boolean; hasIcp: boolean } | null
+  >(null);
+  const [voiceReady, setVoiceReady] = useState<boolean | null>(null);
 
   const perDay = dailyCalls(type, target, window, daysPerWeek);
 
@@ -75,8 +81,19 @@ export function CallModeOnboarding({
         toast(data.error || "Couldn't set up the campaign", "error");
         return;
       }
-      toast("Calling plan set — your list is ready", "success");
-      onCreated(data.campaign, data.calls || []);
+      toast("Calling plan set", "success");
+      setResult({
+        campaign: data.campaign,
+        calls: data.calls || [],
+        callableTotal: data.callableTotal ?? 0,
+        sourcing: !!data.sourcing,
+        hasIcp: !!data.hasIcp,
+      });
+      // Whether dialing can start (number connected) drives the result CTA.
+      fetch("/api/calls/config")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((c) => setVoiceReady(c ? !!c.ready : false))
+        .catch(() => setVoiceReady(false));
     } catch {
       toast("Network error — try again", "error");
     } finally {
@@ -102,6 +119,8 @@ export function CallModeOnboarding({
         className="w-full max-w-lg rounded-2xl p-7"
         style={{ background: "var(--color-bg-elevated)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog, 0 12px 40px rgba(0,0,0,0.18))" }}
       >
+        {!result && (
+        <>
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
             <Target size={18} />
@@ -198,6 +217,51 @@ export function CallModeOnboarding({
             </Button>
           </div>
         </div>
+        </>
+        )}
+
+        {result && (
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
+                <Check size={18} />
+              </div>
+              <div>
+                <h2 className="text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>{result.campaign.name}</h2>
+                <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  {result.campaign.dailyQuota} calls/day · retry up to {result.campaign.maxAttempts}&times; over {result.campaign.windowDays} days
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-lg px-3.5 py-3 text-[13px]" style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}>
+              {result.calls.length > 0 ? (
+                <span><strong style={{ color: "var(--color-text-primary)" }}>{result.calls.length} prospect{result.calls.length === 1 ? "" : "s"}</strong> ready to call today.</span>
+              ) : result.sourcing ? (
+                <span className="inline-flex items-start gap-1.5"><Loader2 size={13} className="mt-0.5 shrink-0 animate-spin" /> Building your list — finding prospects that match your ICP and resolving their numbers. New prospects appear here through the day.</span>
+              ) : !result.hasIcp ? (
+                <span>Tell Elevay who to call: set your ideal customer on the Accounts page (&ldquo;Describe ICP&rdquo;), and your morning list builds automatically.</span>
+              ) : (
+                <span>No reachable prospects yet — import contacts or refine your ICP, then your list fills in.</span>
+              )}
+            </div>
+
+            {voiceReady === false && (
+              <div className="mt-3 rounded-lg px-3.5 py-2.5 text-[12.5px]" style={{ background: "var(--color-warning-soft)", color: "var(--color-warning)" }}>
+                Connect a phone number to start dialing — <a href="/settings/sending-infrastructure" className="font-medium underline">Settings → Voice</a>.
+              </div>
+            )}
+
+            <Button variant="gradient" className="mt-5 w-full" onClick={() => onCreated(result.campaign, result.calls)}>
+              <Phone size={15} /> Open call cockpit
+            </Button>
+            {!result.hasIcp && (
+              <a href="/accounts" className="mt-2.5 block text-center text-[12px] transition-colors hover:underline" style={{ color: "var(--color-accent)" }}>
+                Define your ICP on Accounts &rarr;
+              </a>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

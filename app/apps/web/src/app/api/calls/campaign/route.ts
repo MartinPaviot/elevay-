@@ -10,8 +10,8 @@
 
 import { withAuthRLS } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { callCampaigns, companies } from "@/db/schema";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { callCampaigns, companies, contacts } from "@/db/schema";
+import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import {
   createCallCampaign,
   generateDailyCallList,
@@ -19,6 +19,24 @@ import {
   parseGoalPhrase,
   type GoalSpec,
 } from "@/lib/voice/campaign";
+import { hasUsableIcp } from "@/lib/voice/source-prospects";
+import { getTenantSettings } from "@/lib/config/tenant-settings";
+import { inngest } from "@/inngest/client";
+
+/** Count contacts that can actually be dialed (have a phone). */
+async function callableCount(tenantId: string): Promise<number> {
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(contacts)
+    .where(
+      and(
+        eq(contacts.tenantId, tenantId),
+        isNull(contacts.deletedAt),
+        sql`${contacts.phone} IS NOT NULL AND ${contacts.phone} <> ''`,
+      ),
+    );
+  return Number(r?.n ?? 0);
+}
 
 async function getActiveCampaign(tenantId: string) {
   const [c] = await db
@@ -65,7 +83,18 @@ export async function GET() {
   return withAuthRLS(async (authCtx) => {
     const campaign = await getActiveCampaign(authCtx.tenantId);
     const calls = campaign ? await todayQueue(authCtx.tenantId) : [];
-    return Response.json({ campaign, calls, needsOnboarding: !campaign });
+    const [callableTotal, settings] = await Promise.all([
+      callableCount(authCtx.tenantId),
+      getTenantSettings(authCtx.tenantId),
+    ]);
+    return Response.json({
+      campaign,
+      calls,
+      needsOnboarding: !campaign,
+      callableTotal,
+      hasIcp: hasUsableIcp(settings),
+      sourcing: !!campaign && callableTotal < (campaign.dailyQuota ?? 0),
+    });
   });
 }
 
@@ -110,6 +139,27 @@ export async function POST(req: Request) {
     await generateDailyCallList(campaign.id);
     const calls = await todayQueue(authCtx.tenantId);
 
-    return Response.json({ campaign, calls });
+    // Guarantee a list: if the callable pool can't cover the daily quota and
+    // the tenant has an ICP, kick off sourcing (Apollo -> companies -> people
+    // -> enrichment) so the morning list fills. Honest status drives the
+    // onboarding's result step (ready / building / define-ICP).
+    const [callableTotal, settings] = await Promise.all([
+      callableCount(authCtx.tenantId),
+      getTenantSettings(authCtx.tenantId),
+    ]);
+    const hasIcp = hasUsableIcp(settings);
+    const needsSourcing = callableTotal < (campaign.dailyQuota ?? 0);
+    let sourcing = false;
+    if (needsSourcing && hasIcp) {
+      sourcing = true;
+      inngest
+        .send({
+          name: "call-campaign/source",
+          data: { tenantId: authCtx.tenantId, maxCompanies: 40, maxContactsPerCompany: 5 },
+        })
+        .catch(() => {});
+    }
+
+    return Response.json({ campaign, calls, callableTotal, needsSourcing, sourcing, hasIcp });
   });
 }
