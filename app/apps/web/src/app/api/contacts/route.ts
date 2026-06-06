@@ -1,7 +1,8 @@
 import { db } from "@/db";
 import { contacts, companies, activities } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth/auth-utils";
-import { and, eq, sql, isNull } from "drizzle-orm";
+import { and, eq, sql, isNull, type SQL } from "drizzle-orm";
+import { matchIndustries } from "@/lib/search/industry-match";
 import { inngest } from "@/inngest/client";
 import { embedEntity, contactToText } from "@/lib/ai/embeddings";
 import { extractDomain } from "@/lib/util/email";
@@ -37,18 +38,45 @@ export async function GET(req: Request) {
     const emailSearch = url.searchParams.get("email")?.trim().toLowerCase();
     const search = url.searchParams.get("search")?.trim();
 
-    // Build where clause — optional free-text search (name/email) and/or an
-    // exact email match. Always exclude soft-deleted records. Search runs
-    // server-side so it spans ALL contacts, not just the current 50-row page
-    // (the list previously filtered only the loaded page -> wrong results).
+    // Build where clause — optional free-text search and/or an exact email
+    // match. Always exclude soft-deleted records. Search runs server-side so
+    // it spans ALL contacts, not just the current 50-row page.
     const baseWhere = and(eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt))!;
-    const searchWhere = search
-      ? sql`${baseWhere} AND (
-          ${contacts.firstName} ILIKE ${"%" + search + "%"}
-          OR ${contacts.lastName} ILIKE ${"%" + search + "%"}
-          OR ${contacts.email} ILIKE ${"%" + search + "%"}
-        )`
-      : baseWhere;
+
+    let searchWhere: SQL = baseWhere;
+    if (search) {
+      // Intelligent, industry-aware search. A contact has no industry of its
+      // own, but its company does — so resolve the query to the matching
+      // industries via an LLM (matchIndustries, NOT a hardcoded synonym list)
+      // and ALSO match contacts whose company sits in those industries. That
+      // makes "medical" return people who work at health-care companies, on
+      // top of any literal name / email / title hit.
+      const indRows = await db
+        .selectDistinct({ industry: companies.industry })
+        .from(companies)
+        .where(and(eq(companies.tenantId, authCtx.tenantId), isNull(companies.deletedAt)));
+      const industries = indRows.map((r) => r.industry).filter((x): x is string => !!x);
+      const matched = await matchIndustries(search, industries, authCtx.tenantId);
+
+      // Self-contained subquery over `companies` only (no correlation), so the
+      // unqualified column names bind unambiguously to companies — the outer
+      // `contacts.companyId` stays bound to contacts.
+      const industryClause = matched.length > 0
+        ? sql` OR ${contacts.companyId} IN (
+            SELECT id FROM companies
+            WHERE tenant_id = ${authCtx.tenantId}
+              AND deleted_at IS NULL
+              AND industry = ANY(ARRAY[${sql.join(matched.map((m) => sql`${m}`), sql`, `)}]::text[])
+          )`
+        : sql``;
+
+      searchWhere = sql`${baseWhere} AND (
+        ${contacts.firstName} ILIKE ${"%" + search + "%"}
+        OR ${contacts.lastName} ILIKE ${"%" + search + "%"}
+        OR ${contacts.email} ILIKE ${"%" + search + "%"}
+        OR ${contacts.title} ILIKE ${"%" + search + "%"}${industryClause}
+      )`;
+    }
     const whereClause = emailSearch
       ? sql`${searchWhere} AND (
           lower(${contacts.email}) = ${emailSearch}
