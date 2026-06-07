@@ -110,6 +110,7 @@ export const enrichCompany = inngest.createFunction(
                 country: llmResult.country,
                 keywords: llmResult.keywords,
               },
+              lastEnrichedAt: new Date(),
               updatedAt: new Date(),
             })
             .where(eq(companies.id, companyId));
@@ -171,6 +172,7 @@ export const enrichCompany = inngest.createFunction(
               enrichment_source: "unavailable",
               enrichment_attempted_at: new Date().toISOString(),
             },
+            lastEnrichedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(companies.id, companyId));
@@ -206,6 +208,7 @@ export const enrichCompany = inngest.createFunction(
             keywords: org.keywords,
             enriched_at: new Date().toISOString(),
           },
+          lastEnrichedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(companies.id, companyId));
@@ -372,6 +375,7 @@ export const enrichContact = inngest.createFunction(
               enrichment_source: "unavailable",
               enrichment_attempted_at: new Date().toISOString(),
             },
+            lastEnrichedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(contacts.id, contactId));
@@ -413,6 +417,7 @@ export const enrichContact = inngest.createFunction(
             organization_name: person.organization?.name,
             enriched_at: new Date().toISOString(),
           },
+          lastEnrichedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(contacts.id, contactId));

@@ -81,6 +81,13 @@ export const companies = pgTable(
     priorityScoreComputedAt: timestamp("priority_score_computed_at", {
       withTimezone: true,
     }),
+    // TAM freshness + origin (tam-lifecycle). lastEnrichedAt: when
+    // enrichment last wrote this row — the refresh queue sorts the
+    // stalest first; NULL = never enriched. sourceSystem: the system the
+    // record originated from (apollo|csv|manual|inbound|...), denormalised
+    // from properties.source for the accounts "Source" column + filters.
+    lastEnrichedAt: timestamp("last_enriched_at", { withTimezone: true }),
+    sourceSystem: text("source_system"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -93,6 +100,10 @@ export const companies = pgTable(
     index("companies_priority_score_idx").on(
       table.tenantId,
       table.priorityScore,
+    ),
+    index("companies_tenant_last_enriched_idx").on(
+      table.tenantId,
+      table.lastEnrichedAt,
     ),
   ]
 );
@@ -113,6 +124,9 @@ export const contacts = pgTable(
     score: real("score"),
     scoreReasons: jsonb("score_reasons").default([]),
     ownerId: text("owner_id").references(() => users.id),
+    // TAM freshness + origin (tam-lifecycle) — same semantics as companies.
+    lastEnrichedAt: timestamp("last_enriched_at", { withTimezone: true }),
+    sourceSystem: text("source_system"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -121,6 +135,10 @@ export const contacts = pgTable(
     index("contacts_tenant_id_idx").on(table.tenantId),
     index("contacts_company_id_idx").on(table.companyId),
     index("contacts_email_idx").on(table.email),
+    index("contacts_tenant_last_enriched_idx").on(
+      table.tenantId,
+      table.lastEnrichedAt,
+    ),
   ]
 );
 

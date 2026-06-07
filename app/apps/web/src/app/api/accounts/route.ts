@@ -170,6 +170,7 @@ export async function POST(req: Request) {
         name: name.trim(),
         domain: domain?.trim() || null,
         tenantId: authCtx.tenantId,
+        sourceSystem: "manual",
         properties: customProperties || {},
       })
       .returning();
