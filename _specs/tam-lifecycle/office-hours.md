@@ -186,3 +186,37 @@ silently drifts from reality.
 - L3 (first principles): the domain-resolution bridge + per-field provenance is
   the genuinely novel, prized piece — it's what lets a domain-less authoritative
   source feed a domain-keyed engine and lets the TAM *live*.
+
+---
+
+## 8. Shipped — vivant phase (2026-06-07, branch feat/tam-lifecycle)
+
+Order chosen with Martin: **lifecycle before new sources**, **approval-queue
+posture** (the loops propose; the founder approves; nothing spends enrichment
+credits without an OK).
+
+- **Exclude "not a fit"** (`dd3a0efe`). `POST /api/accounts/exclude`
+  `{ids|all, action: exclude|include, reason?, note?}` (reversible, audited).
+  Excluded rows are hidden from the default accounts list (`?excluded=true|all`
+  to review), stay in the row set so the TAM-build dedup never re-sources them,
+  and were already gated out of enrollment. Bulk + per-row UI + header toggle.
+- **Freshness + origin primitive** (`679a5dff`). `last_enriched_at` +
+  `source_system` on companies & contacts (migration 0062, backfilled), stamped
+  at every enrichment completion point + creation. `isEnrichmentStale()` predicate.
+- **Proposal queue** (`3ad37845`). `tam_proposals` table (migration 0063) +
+  `lib/tam/proposals.ts` (propose/apply/decide/list) + `GET /api/tam/proposals`
+  + `POST /api/tam/proposals/decide` + `/tam/review` surface + a "Proposals (N)"
+  entry point in the accounts header.
+- **Living loops** (this commit). `tam.refresh.daily` cron proposes the stalest
+  companies for re-enrichment (bounded per tenant); `icp/source-tenant` (fired
+  when an ICP is activated) sources a bounded Apollo page and proposes the
+  net-new domains. Both feed the approval queue; `lib/tam/candidate.ts` is the
+  pure, source-agnostic candidate→add-proposal mapping (ready for SIRENE/Pappers
+  to normalise into in the multi-source phase).
+
+Tests: exclude API, list-filter, freshness, proposals, candidate mapping.
+
+### Not yet (the multi-source phase — task #6)
+Full per-field provenance, the `DiscoverySource` registry, the domain-resolution
+bridge, and wiring SIRENE/Pappers/Zefix. They plug into the **same** approval
+queue: each new source becomes another `add`-proposal generator.

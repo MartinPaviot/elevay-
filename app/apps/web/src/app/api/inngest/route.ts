@@ -72,6 +72,9 @@ import { deliverabilityHealthCron } from "@/inngest/deliverability-monitor";
 import { campaignWeeklyReport } from "@/inngest/campaign-weekly-report";
 // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
 import { postProcessCall } from "@/inngest/calls-post-process";
+// tam-lifecycle — living-TAM loops (propose into the approval queue)
+import { tamRefreshDaily } from "@/inngest/tam-refresh-cron";
+import { sourceIcpToProposals } from "@/inngest/icp-source";
 
 // Register task executors so Inngest runner can dispatch by type
 import("@/lib/import/agentic-executor").then((m) => m.registerImportExecutor()).catch(() => {});
@@ -256,5 +259,9 @@ export const { GET, POST, PUT } = serve({
     campaignWeeklyReport,
     // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
     postProcessCall,
+    // tam-lifecycle — living-TAM loops: refresh stale rows + source
+    // net-new from active ICPs, both into the approval queue.
+    tamRefreshDaily,
+    sourceIcpToProposals,
   ],
 });
