@@ -186,6 +186,13 @@ export default function AccountsPage() {
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
   const [expandedContacts, setExpandedContacts] = useState<Array<{ id: string; firstName: string | null; lastName: string | null; title: string | null; email: string | null; status?: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
+  // On-demand contact sourcing for the inline expanded row. Only one
+  // account is expanded at a time, so a single state pair is enough;
+  // both reset whenever the expanded row changes.
+  const [sourcingContacts, setSourcingContacts] = useState(false);
+  const [sourceResult, setSourceResult] = useState<
+    { tone: "info" | "error"; text: string; retry?: boolean; href?: string; hrefLabel?: string } | null
+  >(null);
   const { fields: customFields } = useCustomFields("company");
   // Warm-intro paths from the relationship graph (primitive ②).
   // Keyed by company.id → list of { viaUserId, viaUserName, contactName, strength, ... }.
@@ -683,6 +690,88 @@ export default function AccountsPage() {
       console.warn("accounts: extract contacts failed", e);
     } finally {
       setExtractingContacts(false);
+    }
+  }
+
+  // Read the contacts already linked to an account for the inline
+  // expanded row. The endpoint is POST (a pure read, but defined as POST
+  // and covered by a POST test); calling it without a method hits a 405
+  // and silently renders the empty state — the latent bug this fixes.
+  // Shared by the expand toggle and the post-sourcing refresh.
+  const loadExpandedContacts = useCallback(async (accountId: string) => {
+    setLoadingContacts(true);
+    try {
+      const r = await fetch(`/api/accounts/${accountId}/contacts`, { method: "POST" });
+      const d = r.ok ? await r.json() : { contacts: [] };
+      setExpandedContacts(d.contacts || []);
+    } catch {
+      setExpandedContacts([]);
+    } finally {
+      setLoadingContacts(false);
+    }
+  }, []);
+
+  // Source decision-makers for a single account on demand — the inline
+  // "Find contacts" action in the expanded empty state. Reuses the same
+  // Apollo extract endpoint as the bulk action, scoped to one id, and
+  // turns its per-account result into a clear outcome: contacts rendered
+  // on success, or a specific reason + next step otherwise. Never a bare
+  // "no contacts found" dead-end.
+  async function findContactsForAccount(account: Account) {
+    setSourcingContacts(true);
+    setSourceResult(null);
+    try {
+      const res = await fetch("/api/accounts/extract-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountIds: [account.id], perAccount: 10 }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        totalCreated?: number;
+        results?: Array<{ found: number; created: number; error?: string }>;
+      };
+
+      // Apollo key missing (env-level): can't source automatically.
+      if (res.status === 503) {
+        setSourceResult({ tone: "error", text: "Apollo isn't connected, so contacts can't be sourced automatically. Add one manually for now." });
+        return;
+      }
+      if (!res.ok) {
+        setSourceResult({ tone: "error", text: data.error || "Couldn't source contacts. Try again.", retry: true });
+        return;
+      }
+
+      const result = data.results?.[0];
+      const created = result?.created ?? 0;
+      const found = result?.found ?? 0;
+
+      if (created > 0) {
+        await loadExpandedContacts(account.id);
+        toast(`Added ${created} contact${created === 1 ? "" : "s"} at ${account.name}.`, "success");
+        return;
+      }
+      if (result?.error === "No domain") {
+        setSourceResult({ tone: "info", text: `No website on file for ${account.name} — add one on the account so its team can be sourced.`, href: `/accounts/${account.id}`, hrefLabel: "Open account" });
+        return;
+      }
+      if (result?.error === "Apollo search failed") {
+        setSourceResult({ tone: "error", text: "Apollo didn't respond. Try again in a moment.", retry: true });
+        return;
+      }
+      // Searched successfully, but nothing new to add.
+      setSourceResult({
+        tone: "info",
+        text: found > 0
+          ? `Found ${found} ${found === 1 ? "person" : "people"} at ${account.domain ?? account.name}, but they're already on file or have no usable email.`
+          : `No decision-makers found at ${account.domain ?? account.name} for your target roles.`,
+        href: "/settings/icp",
+        hrefLabel: "Adjust target roles",
+      });
+    } catch {
+      setSourceResult({ tone: "error", text: "Couldn't reach the server. Try again.", retry: true });
+    } finally {
+      setSourcingContacts(false);
     }
   }
 
@@ -1637,14 +1726,11 @@ export default function AccountsPage() {
                             if (expandedAccountId === account.id) {
                               setExpandedAccountId(null);
                               setExpandedContacts([]);
+                              setSourceResult(null);
                             } else {
                               setExpandedAccountId(account.id);
-                              setLoadingContacts(true);
-                              fetch(`/api/accounts/${account.id}/contacts`)
-                                .then(r => r.ok ? r.json() : { contacts: [] })
-                                .then(d => setExpandedContacts(d.contacts || []))
-                                .catch(() => setExpandedContacts([]))
-                                .finally(() => setLoadingContacts(false));
+                              setSourceResult(null);
+                              loadExpandedContacts(account.id);
                             }
                           }}
                           className="shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -2143,7 +2229,31 @@ export default function AccountsPage() {
                               ))}
                             </div>
                           ) : (
-                            <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>No contacts found at this account.</p>
+                            <div className="space-y-2">
+                              <p className="text-[12px]" style={{ color: sourceResult?.tone === "error" ? "var(--color-error)" : "var(--color-text-tertiary)" }}>
+                                {sourceResult ? sourceResult.text : "No contacts on file for this account yet."}
+                              </p>
+                              <div className="flex items-center gap-2.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => findContactsForAccount(account)}
+                                  disabled={sourcingContacts}
+                                  className="!px-2.5 !py-1"
+                                >
+                                  {sourcingContacts ? (
+                                    <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Searching Apollo…</span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5"><UserPlus size={12} /> {sourceResult?.retry ? "Try again" : "Find contacts"}</span>
+                                  )}
+                                </Button>
+                                {sourceResult?.href && (
+                                  <a href={sourceResult.href} className="text-[11px] hover:underline" style={{ color: "var(--color-accent)" }}>
+                                    {sourceResult.hrefLabel ?? "Open"}
+                                  </a>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </div>
                       </td>
