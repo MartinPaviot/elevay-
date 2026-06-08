@@ -38,6 +38,7 @@ import { applyFilters } from "@/lib/search/filters";
 import type { FilterCondition } from "@/lib/search/filters";
 import { ColumnFilter, isColumnFilterActive, type ColumnFilterKind, type ColumnFilterState } from "@/components/ui/column-filter";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { CascadeDeleteModal, type CascadeOption } from "@/components/ui/cascade-delete-modal";
 
 interface Account {
   id: string;
@@ -142,6 +143,11 @@ export default function AccountsPage() {
   // Bulk contact extraction (Apollo) + delete flows.
   const [extractingContacts, setExtractingContacts] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: "single" | "bulk" | "all"; id?: string; name?: string } | null>(null);
+  // Single-account delete now goes through the cascade modal (lets the user
+  // also delete related contacts/deals/activities/notes/tasks in one step).
+  const [cascadeTarget, setCascadeTarget] = useState<{ id: string; name: string } | null>(null);
+  const [cascadeCounts, setCascadeCounts] = useState<CascadeOption[] | null>(null);
+  const [cascadeBusy, setCascadeBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [scoreAllRunning, setScoreAllRunning] = useState(false);
   const [detectingSignals, setDetectingSignals] = useState(false);
@@ -793,6 +799,61 @@ export default function AccountsPage() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  }
+
+  // Open the single-account cascade modal and load live related-data counts so
+  // the checkboxes can show "Contacts 4 / Deals 1 / …". Counts start null
+  // (modal shows "Loading…") and resolve from /related-counts.
+  async function openCascadeDelete(id: string, name: string) {
+    setCascadeTarget({ id, name });
+    setCascadeCounts(null);
+    const labels: Array<[string, string]> = [
+      ["contacts", "Contacts"],
+      ["deals", "Deals"],
+      ["activities", "Activities"],
+      ["notes", "Notes"],
+      ["tasks", "Tasks"],
+    ];
+    try {
+      const res = await fetch(`/api/accounts/${id}/related-counts`);
+      const data = (await res.json().catch(() => ({}))) as { counts?: Record<string, number> };
+      const counts = data.counts ?? {};
+      setCascadeCounts(labels.map(([key, label]) => ({ key, label, count: counts[key] ?? 0 })));
+    } catch {
+      setCascadeCounts(labels.map(([key, label]) => ({ key, label, count: 0 })));
+    }
+  }
+
+  // Soft-delete one account plus any related sets the user ticked. Everything
+  // is recoverable from the Archive view.
+  async function performCascadeDelete(selectedKeys: string[]) {
+    if (!cascadeTarget) return;
+    setCascadeBusy(true);
+    try {
+      const res = await fetch(`/api/accounts/${cascadeTarget.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cascade: selectedKeys }),
+      });
+      if (!res.ok) {
+        toast("Delete failed.", "error");
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as { cascaded?: Record<string, number> };
+      const extra = Object.values(data.cascaded ?? {}).reduce<number>((a, b) => a + (b ?? 0), 0);
+      toast(
+        extra > 0 ? `Deleted account + ${extra} related record${extra === 1 ? "" : "s"}.` : "Deleted account.",
+        "success",
+      );
+      setSelectedRows(new Set());
+      await refetchLoadedAccounts();
+    } catch (e) {
+      toast("Delete failed.", "error");
+      console.warn("accounts: cascade delete failed", e);
+    } finally {
+      setCascadeBusy(false);
+      setCascadeTarget(null);
     }
   }
 
@@ -2026,7 +2087,7 @@ export default function AccountsPage() {
                           title="Delete account"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDeleteTarget({ type: "single", id: account.id, name: account.name });
+                            openCascadeDelete(account.id, account.name);
                           }}
                           className="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                           style={{ color: "var(--color-text-muted)" }}
@@ -2315,6 +2376,17 @@ export default function AccountsPage() {
         busy={deleting}
         onConfirm={performDelete}
         onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+      />
+
+      {/* Single-account delete with optional cascade to related data. */}
+      <CascadeDeleteModal
+        open={!!cascadeTarget}
+        entityKind="account"
+        entityLabel={cascadeTarget?.name ?? "This account"}
+        options={cascadeCounts}
+        busy={cascadeBusy}
+        onConfirm={performCascadeDelete}
+        onCancel={() => { if (!cascadeBusy) setCascadeTarget(null); }}
       />
     </div>
   );
