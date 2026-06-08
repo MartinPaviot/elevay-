@@ -109,9 +109,12 @@ export async function markNeedsReauth(
   await db
     .update(tenants)
     .set({
-      // bare `settings` = the updated row's column (UPDATE SET RHS); bound
-      // params for the dynamic key + value avoid any injection.
-      settings: sql`jsonb_set(coalesce(settings, '{}'::jsonb), array['syncHealth'::text, ${key}::text], ${JSON.stringify(entry)}::jsonb, true)`,
+      // Merge into settings.syncHealth[key]. NOTE: jsonb_set cannot create a
+      // missing intermediate ("syncHealth"), so on a tenant with no prior
+      // syncHealth it would silently no-op — build the object with `||`
+      // concat instead. bare `settings` = the row's current value; the
+      // dynamic key + JSON value are bound params (no injection).
+      settings: sql`coalesce(settings, '{}'::jsonb) || jsonb_build_object('syncHealth', coalesce(settings -> 'syncHealth', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(entry)}::jsonb))`,
     })
     .where(eq(tenants.id, tenantId));
 
