@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Dark mode is driven by a `.dark` class on <html> (see ThemeProvider), not the
+   OS `prefers-color-scheme` media query. Tailwind v4 defaults the `dark:`
+   variant to the media query, so without this line every `dark:` utility
+   silently no-ops whenever the in-app theme differs from the OS theme — e.g.
+   names written as `text-zinc-900 dark:text-zinc-100` stay near-black on a dark
+   background and become illegible. Binding the variant to the class realigns
+   all `dark:` utilities app-wide with the theme the user actually selected. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ================================================================
    LEADSENS DESIGN SYSTEM — GLOBALS
    Light mode default ("Clear Mode"), dark mode via .dark class
