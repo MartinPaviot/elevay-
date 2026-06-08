@@ -1,11 +1,12 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { activities, contacts, companies, users, authAccounts, outboundEmails, sequenceEnrollments } from "@/db/schema";
+import { activities, contacts, companies, users, authAccounts, outboundEmails, sequenceEnrollments, tenants } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { fetchRecentEmails, type SyncedEmail } from "@/lib/integrations/gmail";
 import { fetchOutlookEmails } from "@/lib/integrations/outlook";
 import { fetchRecentMeetings, type SyncedMeeting } from "@/lib/integrations/calendar";
 import { embedEntity, activityToText, contactToText, companyToText } from "@/lib/ai/embeddings";
+import { markNeedsReauth, clearSyncHealth, isNeedsReauth, isOAuthAuthError } from "@/lib/integrations/sync-health";
 import { getTenantSettings, backsyncRangeToDays, buildIgnoredDomains, shouldAutoCreateContact } from "@/lib/config/tenant-settings";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { anthropic } from "@/lib/ai/ai-provider";
@@ -135,22 +136,27 @@ export const syncEmails = inngest.createFunction(
       }
     });
 
-    // Surface auth errors as notifications so the user knows
+    // Auth failure → flag the connection `needs_reauth` so the 15-min crons
+    // stop hammering a dead token, and notify the user exactly once (only on
+    // the healthy → needs_reauth transition, not every cycle).
     if (fetchError) {
       try {
-        const { notifications, users } = await import("@/db/schema");
-        const tenantUsers = await db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId)).limit(5);
-        for (const u of tenantUsers) {
-          await db.insert(notifications).values({
-            tenantId,
-            userId: u.id,
-            type: "system" as const,
-            title: "Email sync disconnected",
-            body: fetchError,
-          });
+        const { newlyMarked } = await markNeedsReauth(tenantId, userId, provider, fetchError);
+        if (newlyMarked) {
+          const { notifications, users } = await import("@/db/schema");
+          const tenantUsers = await db.select({ id: users.id }).from(users).where(eq(users.tenantId, tenantId)).limit(5);
+          for (const u of tenantUsers) {
+            await db.insert(notifications).values({
+              tenantId,
+              userId: u.id,
+              type: "system" as const,
+              title: "Email sync disconnected",
+              body: fetchError,
+            });
+          }
         }
       } catch (e) {
-        console.warn("sync: notification creation failed", e);
+        console.warn("sync: needs-reauth mark/notification failed", e);
       }
       return { synced: 0, reason: fetchError };
     }
@@ -522,22 +528,32 @@ export const syncCalendar = inngest.createFunction(
     },
     triggers: [{ event: "calendar/sync-requested" }],
   },
-  async ({ event, step }: { event: { data: { userId: string; tenantId: string; appUserId: string } }; step: any }) => {
-    const { userId, tenantId, appUserId } = event.data;
+  async ({ event, step }: { event: { data: { userId: string; tenantId: string; appUserId: string; provider?: string } }; step: any }) => {
+    const { userId, tenantId, appUserId, provider } = event.data;
 
     const userEmail = await step.run("get-user-email", async () => {
       const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, appUserId)).limit(1);
       return user?.email || "";
     });
 
+    let calAuthError: string | null = null;
     const meetings = await step.run("fetch-meetings", async () => {
       try {
         return await fetchRecentMeetings(userId, 30, 14);
       } catch (err) {
-        console.error("Calendar fetch failed:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Calendar fetch failed:", msg);
+        if (isOAuthAuthError(msg)) calAuthError = msg;
         return [];
       }
     });
+
+    // Dead OAuth grant → flag needs_reauth so the crons skip it. The email
+    // sync path owns the single user-facing notification; here we only mark.
+    if (calAuthError) {
+      await markNeedsReauth(tenantId, userId, provider, calAuthError);
+      return { synced: 0, reason: "calendar auth error" };
+    }
 
     if (meetings.length === 0) return { synced: 0 };
 
@@ -662,6 +678,11 @@ export const onGoogleOAuthConnected = inngest.createFunction(
   async ({ event, step }: { event: { data: { userId: string; tenantId: string; appUserId: string } }; step: any }) => {
     const { userId, tenantId, appUserId } = event.data;
 
+    // Reconnect clears any prior needs-reauth flag so the crons resume syncing.
+    await step.run("clear-sync-health", async () => {
+      await clearSyncHealth(tenantId, userId, "google");
+    });
+
     // Read backsync range from tenant settings
     const daysBack = await step.run("get-backsync-range", async () => {
       const s = await getTenantSettings(tenantId);
@@ -698,6 +719,11 @@ export const onMicrosoftOAuthConnected = inngest.createFunction(
   },
   async ({ event, step }: { event: { data: { userId: string; tenantId: string; appUserId: string } }; step: any }) => {
     const { userId, tenantId, appUserId } = event.data;
+
+    // Reconnect clears any prior needs-reauth flag so the crons resume syncing.
+    await step.run("clear-sync-health", async () => {
+      await clearSyncHealth(tenantId, userId, "microsoft");
+    });
 
     // Read backsync range from tenant settings
     const daysBack = await step.run("get-backsync-range", async () => {
@@ -748,20 +774,31 @@ export const cronSyncEmails = inngest.createFunction(
 
       // Resolve tenant info for each
       const results: { userId: string; tenantId: string; appUserId: string; provider: string }[] = [];
+      const tenantSettingsCache = new Map<string, unknown>();
       for (const account of accounts) {
         const [user] = await db
           .select({ id: users.id, tenantId: users.tenantId })
           .from(users)
           .where(eq(users.clerkId, account.userId))
           .limit(1);
-        if (user) {
-          results.push({
-            userId: account.userId,
-            tenantId: user.tenantId,
-            appUserId: user.id,
-            provider: account.provider === "microsoft-entra-id" ? "microsoft" : "google",
-          });
+        if (!user) continue;
+        if (!tenantSettingsCache.has(user.tenantId)) {
+          const [t] = await db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, user.tenantId))
+            .limit(1);
+          tenantSettingsCache.set(user.tenantId, t?.settings ?? null);
         }
+        // Skip connections flagged needs_reauth — don't dispatch sync for a
+        // dead token. This is what stops the infinite 15-min retry loop.
+        if (isNeedsReauth(tenantSettingsCache.get(user.tenantId), account.userId, account.provider)) continue;
+        results.push({
+          userId: account.userId,
+          tenantId: user.tenantId,
+          appUserId: user.id,
+          provider: account.provider === "microsoft-entra-id" ? "microsoft" : "google",
+        });
       }
       return results;
     });

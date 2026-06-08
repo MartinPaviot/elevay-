@@ -1,9 +1,10 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { activities, authAccounts, authUsers, users } from "@/db/schema";
+import { activities, authAccounts, authUsers, users, tenants } from "@/db/schema";
 import { eq, and, sql, gte, lte } from "drizzle-orm";
 import { fetchMicrosoftMeetings } from "@/lib/integrations/calendar-microsoft";
 import { fetchRecentMeetings, type SyncedMeeting } from "@/lib/integrations/calendar";
+import { isNeedsReauth, markNeedsReauth, isOAuthAuthError } from "@/lib/integrations/sync-health";
 import { tracedGenerateText } from "@/lib/ai/traced-ai";
 import { createBot } from "@/lib/integrations/recall";
 
@@ -53,7 +54,26 @@ export const cronCalendarSync = inngest.createFunction(
         .limit(1);
       if (!user) continue;
 
+      // Resolve tenant + its sync-health once per user (for the needs_reauth skip).
+      const [appUser] = await db
+        .select({ tenantId: users.tenantId })
+        .from(users)
+        .where(eq(users.clerkId, userId))
+        .limit(1);
+      const userTenantId = appUser?.tenantId ?? null;
+      let tenantSettings: unknown = null;
+      if (userTenantId) {
+        const [t] = await db
+          .select({ settings: tenants.settings })
+          .from(tenants)
+          .where(eq(tenants.id, userTenantId))
+          .limit(1);
+        tenantSettings = t?.settings ?? null;
+      }
+
       for (const provider of providers) {
+        // Skip dead connections — don't hammer a token that needs re-auth.
+        if (userTenantId && isNeedsReauth(tenantSettings, userId, provider)) continue;
         try {
           let meetings: SyncedMeeting[] = [];
 
@@ -159,7 +179,12 @@ export const cronCalendarSync = inngest.createFunction(
             }
           }
         } catch (err) {
-          console.error(`Calendar sync failed for user ${userId} (${provider}):`, err);
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`Calendar sync failed for user ${userId} (${provider}):`, msg);
+          // Dead OAuth grant → flag needs_reauth so this cron + the email cron skip it.
+          if (userTenantId && isOAuthAuthError(msg)) {
+            await markNeedsReauth(userTenantId, userId, provider, msg);
+          }
           errors++;
         }
       }

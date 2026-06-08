@@ -342,18 +342,23 @@ export default function MailCalendarPage() {
               const isOutlook = acct.providerLabel === "outlook" || acct.provider === "microsoft-entra-id";
               const providerName = isGmail ? "Google" : isOutlook ? "Microsoft" : acct.provider === "smtp_custom" ? "IMAP / SMTP" : acct.provider;
 
-              // Status logic: OAuth-only = "syncing", mailbox active = "active", etc.
-              const displayStatus = acct.oauthConnected && !acct.mailboxConnected
+              // Status logic: needs_reauth (dead OAuth token) wins; else
+              // OAuth-only = "syncing", mailbox active = "active", etc.
+              const displayStatus = acct.status === "needs_reauth"
+                ? "needs_reauth"
+                : acct.oauthConnected && !acct.mailboxConnected
                 ? "syncing"
                 : acct.status;
               const statusVariant = displayStatus === "active" ? "success" as const
                 : displayStatus === "warming_up" ? "warning" as const
                 : displayStatus === "syncing" ? "info" as const
+                : displayStatus === "needs_reauth" ? "error" as const
                 : displayStatus === "error" ? "error" as const
                 : "neutral" as const;
               const statusLabel = displayStatus === "syncing" ? "Syncing emails"
                 : displayStatus === "warming_up" ? `Warming up${wp ? ` — Day ${wp.daysSinceStart}/21` : ""}`
                 : displayStatus === "active" ? "Active"
+                : displayStatus === "needs_reauth" ? "Reconnect needed"
                 : displayStatus;
 
               return (
@@ -427,6 +432,15 @@ export default function MailCalendarPage() {
                       </div>
 
                       <div className="flex items-center gap-1">
+                        {acct.oauthConnected && acct.status === "needs_reauth" && (
+                          <Button
+                            variant="solid"
+                            size="sm"
+                            onClick={() => (isOutlook ? connectMicrosoft() : connectGoogle())}
+                          >
+                            Reconnect
+                          </Button>
+                        )}
                         {acct.status === "warming_up" && acct.mailboxConnected && (
                           <Button variant="ghost" size="sm" onClick={() => skipWarmup(acct.id)}>
                             Skip warm-up

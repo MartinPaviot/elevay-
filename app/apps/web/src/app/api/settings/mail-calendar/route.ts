@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { authAccounts, connectedMailboxes, tenants } from "@/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { updateTenantSettings } from "@/lib/config/tenant-settings";
+import { isNeedsReauth } from "@/lib/integrations/sync-health";
 
 const CONTACT_CREATION_MODES = ["disabled", "selective", "always"] as const;
 const BACKSYNC_RANGES = ["1m", "3m", "6m", "12m"] as const;
@@ -125,7 +126,9 @@ export async function GET() {
         providerLabel,
         oauthConnected: true,
         mailboxConnected: !!mailbox,
-        status: mailbox?.status as string || "syncing",
+        status: isNeedsReauth(settings, authCtx.userId, oa.provider)
+          ? "needs_reauth"
+          : (mailbox?.status as string || "syncing"),
         lastEmailSyncAt: null, // TODO: track in connectedAccounts table in Phase B
         lastCalSyncAt: null,
         dailyLimit: mailbox?.dailyLimit || 0,
