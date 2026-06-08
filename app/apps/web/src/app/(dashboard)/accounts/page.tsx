@@ -203,6 +203,7 @@ export default function AccountsPage() {
   // sentinel just below the last row triggers the next page when it
   // scrolls into view (see the IntersectionObserver effect below).
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // ── TAM streaming build ──
   // Live stream of new rows + signals from /api/tam/build. Rows arrive
@@ -326,18 +327,36 @@ export default function AccountsPage() {
   /** Reload all pages that have been loaded so far. Used after mutations
    *  (enrich, score, create) so the user doesn't snap back to page 1. */
   const refetchLoadedAccounts = useCallback(async () => {
-    // Page-based: just reload the page the user is on (replace, not append).
-    await fetchAccounts(currentPage, false);
-  }, [fetchAccounts, currentPage]);
+    try {
+      const pagesToLoad = Math.max(currentPage, 1);
+      let all: Account[] = [];
+      for (let p = 1; p <= pagesToLoad; p++) {
+        const params = new URLSearchParams({ pageSize: "200", page: String(p) });
+        if (debouncedSearch) params.set("search", debouncedSearch);
+        if (viewExcluded) params.set("excluded", "true");
+        if (viewDeleted) params.set("deleted", "true");
+        for (const [k, v] of serializeAccountFilters()) params.set(k, v);
+        const res = await fetch(`/api/accounts?${params.toString()}`);
+        if (!res.ok) break;
+        const data = await res.json();
+        const batch: Account[] = data.accounts || data.items || [];
+        all = [...all, ...batch];
+        if (p === pagesToLoad) {
+          const pagination = data.pagination as { total: number; totalPages: number } | undefined;
+          setTotalAccounts(pagination?.total ?? all.length);
+          setTotalPages(pagination?.totalPages ?? 1);
+        }
+      }
+      setAccounts(all);
+    } catch (e) {
+      console.warn("accounts: refetch failed", e);
+    }
+  }, [currentPage, debouncedSearch, viewExcluded, viewDeleted, serializeAccountFilters]);
 
-  // Page-based navigation (200/page): each page REPLACES the list and resets
-  // the scroll to the top, so the user pages through a stable list instead of
-  // an endless scroll.
-  const goToPage = useCallback((p: number) => {
-    if (loadingMore || loading || p < 1 || p > totalPages || p === currentPage) return;
-    fetchAccounts(p, false);
-    scrollContainerRef.current?.scrollTo({ top: 0 });
-  }, [fetchAccounts, loadingMore, loading, currentPage, totalPages]);
+  const loadMoreAccounts = useCallback(() => {
+    if (loadingMore || currentPage >= totalPages) return;
+    fetchAccounts(currentPage + 1, true);
+  }, [fetchAccounts, loadingMore, currentPage, totalPages]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
 
@@ -363,8 +382,19 @@ export default function AccountsPage() {
   // re-binds after every page load (currentPage/totalPages change) so it
   // keeps chaining until the sentinel is off-screen or the list is
   // exhausted. Replaces the manual "Load more" click.
-  // (Infinite-scroll auto-load removed — the list is now 200/page with
-  //  explicit Previous/Next controls, so it never re-loads on scroll.)
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+    if (currentPage >= totalPages) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMoreAccounts();
+      },
+      { root: scrollContainerRef.current ?? null, rootMargin: "300px 0px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMoreAccounts, currentPage, totalPages, loading]);
 
   // When the TAM stream terminates, refetch so the rows picked up
   // from the stream also land in the DB-backed list (enrichment
@@ -2124,35 +2154,39 @@ export default function AccountsPage() {
               })}
             </tbody>
           </table>
-          {/* Page-based pagination (200/page) — explicit Previous/Next, no
-              infinite scroll. The list shows one stable page at a time. */}
-          {accounts.length > 0 && (
+          {/* Infinite scroll sentinel — the IntersectionObserver effect
+              auto-loads the next page when this enters view, so the list
+              grows on scroll with no click. The text doubles as a manual
+              fallback (clickable) for the rare case the observer can't
+              fire (e.g. the loaded rows are shorter than the viewport). */}
+          {currentPage < totalPages && (
             <div
-              className="flex items-center justify-center gap-3 border-t py-3"
+              ref={loadMoreSentinelRef}
+              className="flex items-center justify-center gap-2 border-t py-4"
               style={{ borderColor: "var(--color-border-default)" }}
             >
-              <button
-                type="button"
-                disabled={loadingMore || loading || currentPage <= 1}
-                onClick={() => goToPage(currentPage - 1)}
-                className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ border: "1px solid var(--color-border-default)", color: "var(--color-text-secondary)" }}
-              >
-                Previous
-              </button>
-              <span className="inline-flex items-center gap-1.5 text-[12px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>
-                {loadingMore && <Loader2 size={13} className="animate-spin" />}
-                Page {currentPage} of {Math.max(totalPages, 1)} · {totalAccounts} accounts
+              {loadingMore ? (
+                <span className="inline-flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  <Loader2 size={14} className="animate-spin" />
+                  Loading more…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={loadMoreAccounts}
+                  className="text-[12px] transition-colors hover:underline"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Showing {accounts.length} of {totalAccounts} — scroll to load more
+                </button>
+              )}
+            </div>
+          )}
+          {currentPage >= totalPages && accounts.length > 0 && (
+            <div className="flex items-center justify-center py-3">
+              <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>
+                Showing all {accounts.length} accounts
               </span>
-              <button
-                type="button"
-                disabled={loadingMore || loading || currentPage >= totalPages}
-                onClick={() => goToPage(currentPage + 1)}
-                className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ border: "1px solid var(--color-border-default)", color: "var(--color-text-secondary)" }}
-              >
-                Next
-              </button>
             </div>
           )}
           </>
