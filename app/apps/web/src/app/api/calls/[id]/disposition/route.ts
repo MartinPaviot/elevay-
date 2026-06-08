@@ -51,6 +51,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       contactId: row.contactId,
       outcome,
       occurredAt: now,
+      ownerId: row.userId, // per-user Call Mode: feed the calling rep's cadence
     }).catch(() => {});
 
     // Immediate CRM routing from the disposition (the transcript worker later

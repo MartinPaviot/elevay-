@@ -5,16 +5,18 @@
  * and spins up a goal-driven campaign. Shown when the tenant has no active
  * call campaign yet. Structured controls are the reliable path; the
  * "describe it" box is the chat-first shortcut (LLM-parsed server-side).
+ *
+ * Split into two short steps so the card always fits the screen. The same
+ * goal + cadence controls power the later "Edit plan" modal — see
+ * `_call-plan-form.tsx`.
  */
 
 import { useState } from "react";
-import { Target, Loader2, Phone, Check } from "lucide-react";
+import { Target, Loader2, Phone, Check, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GrowTextarea } from "@/components/ui/grow-textarea";
 import { useToast } from "@/components/ui/toast";
-
-type GoalType = "calls" | "connects" | "meetings";
-type GoalWindow = "day" | "week" | "month";
+import { useCallPlan, GoalSection, CadenceSection, PlanPreview } from "./_call-plan-form";
 
 interface Campaign {
   id: string;
@@ -27,47 +29,16 @@ interface QueueItem {
   contactId: string;
 }
 
-// Mirror of lib/voice/campaign.dailyCallsForGoal for instant client preview.
-function dailyCalls(type: GoalType, target: number, window: GoalWindow, daysPerWeek: number): number {
-  const t = Math.max(0, Math.floor(target));
-  if (!t) return 0;
-  const calls = type === "calls" ? t : type === "connects" ? Math.ceil(t / 0.25) : Math.ceil(t / 0.05);
-  const days = window === "day" ? 1 : window === "week" ? Math.min(7, daysPerWeek || 5) : (daysPerWeek ? Math.round(daysPerWeek * 4.3) : 22);
-  return Math.max(1, Math.ceil(calls / days));
-}
-
-const TYPES: { key: GoalType; label: string; hint: string }[] = [
-  { key: "calls", label: "Calls", hint: "dials to make" },
-  { key: "connects", label: "Connects", hint: "live conversations" },
-  { key: "meetings", label: "Meetings", hint: "demos booked" },
-];
-const WINDOWS: { key: GoalWindow; label: string }[] = [
-  { key: "day", label: "per day" },
-  { key: "week", label: "this week" },
-  { key: "month", label: "this month" },
-];
-const DAYS: { i: number; l: string }[] = [
-  { i: 1, l: "Mo" }, { i: 2, l: "Tu" }, { i: 3, l: "We" }, { i: 4, l: "Th" },
-  { i: 5, l: "Fr" }, { i: 6, l: "Sa" }, { i: 0, l: "Su" },
-];
-
 export function CallModeOnboarding({
   onCreated,
 }: {
   onCreated: (campaign: Campaign, calls: QueueItem[]) => void;
 }) {
   const { toast } = useToast();
-  const [type, setType] = useState<GoalType>("calls");
-  const [target, setTarget] = useState<number>(1000);
-  const [window, setWindow] = useState<GoalWindow>("week");
-  // The user defines their own rhythm — nothing is hardcoded.
-  const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri (0=Sun)
-  const [listFrequency, setListFrequency] = useState<"daily" | "weekly">("daily");
-  const [maxAttempts, setMaxAttempts] = useState<number>(8);
-  const [windowDays, setWindowDays] = useState<number>(15);
+  const { value, set, daysPerWeek, perDay, payload } = useCallPlan();
   const [phrase, setPhrase] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const daysPerWeek = Math.max(1, workingDays.length);
+  const [step, setStep] = useState<1 | 2>(1);
   // After submit: the honest result — list ready / building / needs ICP — so
   // the user never lands on an empty cockpit or a Twilio dead-end.
   const [result, setResult] = useState<
@@ -75,15 +46,13 @@ export function CallModeOnboarding({
   >(null);
   const [voiceReady, setVoiceReady] = useState<boolean | null>(null);
 
-  const perDay = dailyCalls(type, target, window, daysPerWeek);
-
-  async function submit(payload: Record<string, unknown>) {
+  async function submit(body: Record<string, unknown>) {
     setSubmitting(true);
     try {
       const res = await fetch("/api/calls/campaign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -110,162 +79,100 @@ export function CallModeOnboarding({
     }
   }
 
-  const segBtn = (active: boolean): React.CSSProperties => ({
-    padding: "6px 12px",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border-default)"}`,
-    background: active ? "var(--color-accent-soft)" : "transparent",
-    color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
-    transition: "all .12s",
-  });
-
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-auto p-6">
+    <div className="flex h-full w-full items-center justify-center p-4">
       <div
-        className="w-full max-w-lg rounded-2xl p-7"
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col rounded-2xl"
         style={{ background: "var(--color-bg-elevated)", border: "1px solid var(--color-border-default)", boxShadow: "var(--shadow-dialog, 0 12px 40px rgba(0,0,0,0.18))" }}
       >
         {!result && (
         <>
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
-            <Target size={18} />
+        {/* Pinned header */}
+        <div className="flex items-center gap-2.5 px-5 pt-5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
+            <Target size={16} />
           </div>
-          <div>
-            <h2 className="text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>
-              Set your calling goal
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>
+              {step === 1 ? "Set your calling goal" : "List & cadence"}
             </h2>
-            <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-              Elevay builds your enriched call list on the rhythm you set, and dials on your cadence so no lead slips through.
+            <p className="truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+              {step === 1 ? "What do you want to hit, and when?" : "How Elevay sources and retries."}
             </p>
           </div>
+          <span className="ml-auto shrink-0 text-[11px] font-medium tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>{step}/2</span>
         </div>
 
-        {/* Goal type */}
-        <div className="mt-5">
-          <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Objective</label>
-          <div className="mt-1.5 flex gap-1.5">
-            {TYPES.map((tt) => (
-              <button key={tt.key} type="button" style={segBtn(type === tt.key)} onClick={() => setType(tt.key)}>
-                {tt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Scrollable body */}
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        {step === 1 && (
+        <>
+          <GoalSection value={value} set={set} />
 
-        {/* Target + window */}
-        <div className="mt-4 flex items-end gap-3">
-          <div className="flex-1">
-            <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>How many</label>
-            <input
-              type="number"
-              min={1}
-              value={target}
-              onChange={(e) => setTarget(Math.max(0, parseInt(e.target.value || "0", 10)))}
-              className="mt-1.5 w-full rounded-lg px-3 py-2 text-[14px]"
-              style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
-            />
-          </div>
-          <div className="flex gap-1.5 pb-0.5">
-            {WINDOWS.map((w) => (
-              <button key={w.key} type="button" style={segBtn(window === w.key)} onClick={() => setWindow(w.key)}>
-                {w.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Working days — the rep picks the days they actually call. */}
-        <div className="mt-4">
-          <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Working days</label>
-          <div className="mt-1.5 flex gap-1">
-            {DAYS.map((d) => {
-              const on = workingDays.includes(d.i);
-              return (
-                <button
-                  key={d.i}
-                  type="button"
-                  onClick={() => setWorkingDays((w) => (on ? w.filter((x) => x !== d.i) : [...w, d.i]))}
-                  style={{ ...segBtn(on), padding: "6px 0", width: 40, textAlign: "center" }}
-                >
-                  {d.l}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* List frequency + follow-up cadence — fully user-defined. */}
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Fresh list</label>
-            <div className="mt-1.5 flex gap-1.5">
-              <button type="button" style={segBtn(listFrequency === "daily")} onClick={() => setListFrequency("daily")}>Every working day</button>
-              <button type="button" style={segBtn(listFrequency === "weekly")} onClick={() => setListFrequency("weekly")}>Weekly</button>
+          {/* Free-text shortcut */}
+          <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--color-border-subtle, var(--color-border-default))" }}>
+            <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Or describe it</label>
+            <div className="mt-1.5 flex items-end gap-2">
+              <GrowTextarea
+                value={phrase}
+                onChange={(e) => setPhrase(e.target.value)}
+                onSubmit={() => { if (phrase.trim()) submit({ phrase: phrase.trim(), maxAttempts: value.maxAttempts, windowDays: value.windowDays, listFrequency: value.listFrequency, workingDays: value.workingDays }); }}
+                placeholder='e.g. "book 10 demos this month"'
+                className="flex-1"
+                style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
+              />
+              <Button variant="outline" disabled={submitting || !phrase.trim()} onClick={() => submit({ phrase: phrase.trim(), maxAttempts: value.maxAttempts, windowDays: value.windowDays, listFrequency: value.listFrequency, workingDays: value.workingDays })}>
+                Set
+              </Button>
             </div>
           </div>
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Follow-up cadence</label>
-            <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px]" style={{ color: "var(--color-text-secondary)" }}>
-              up to
-              <input type="number" min={1} max={20} value={maxAttempts}
-                onChange={(e) => setMaxAttempts(Math.min(20, Math.max(1, parseInt(e.target.value || "8", 10))))}
-                className="w-12 rounded-md px-2 py-1.5 text-center text-[13px]" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }} />
-              &times;, over
-              <input type="number" min={1} max={60} value={windowDays}
-                onChange={(e) => setWindowDays(Math.min(60, Math.max(1, parseInt(e.target.value || "15", 10))))}
-                className="w-12 rounded-md px-2 py-1.5 text-center text-[13px]" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }} />
-              days
-            </div>
+        </>
+        )}
+
+        {step === 2 && (
+        <>
+          <CadenceSection value={value} set={set} />
+          <div className="mt-4">
+            <PlanPreview value={value} perDay={perDay} daysPerWeek={daysPerWeek} />
           </div>
+        </>
+        )}
         </div>
 
-        {/* Live plan preview — entirely from the user's choices. */}
-        <div className="mt-5 rounded-lg px-3.5 py-3 text-[13px] leading-relaxed" style={{ background: "var(--color-bg-hover)", color: "var(--color-text-secondary)" }}>
-          Plan: <strong style={{ color: "var(--color-text-primary)" }}>{perDay} calls / day</strong> across <strong style={{ color: "var(--color-text-primary)" }}>{daysPerWeek} day{daysPerWeek === 1 ? "" : "s"}/week</strong> · fresh list <strong style={{ color: "var(--color-text-primary)" }}>{listFrequency === "weekly" ? "weekly" : "every working day"}</strong> · retry up to <strong style={{ color: "var(--color-text-primary)" }}>{maxAttempts}&times;</strong> over <strong style={{ color: "var(--color-text-primary)" }}>{windowDays} days</strong>.
-        </div>
-
-        <Button
-          variant="gradient"
-          className="mt-5 w-full"
-          disabled={submitting || target <= 0}
-          onClick={() => submit({ goal: { type, target, window, daysPerWeek }, maxAttempts, windowDays, listFrequency, workingDays })}
-        >
-          {submitting ? <Loader2 size={15} className="animate-spin" /> : <Phone size={15} />}
-          Start calling
-        </Button>
-
-        {/* Free-text shortcut */}
-        <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--color-border-subtle, var(--color-border-default))" }}>
-          <label className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>Or describe it</label>
-          <div className="mt-1.5 flex items-end gap-2">
-            <GrowTextarea
-              value={phrase}
-              onChange={(e) => setPhrase(e.target.value)}
-              onSubmit={() => { if (phrase.trim()) submit({ phrase: phrase.trim(), maxAttempts, windowDays, listFrequency, workingDays }); }}
-              placeholder='e.g. "book 10 demos this month" or "200 dials a day"'
-              className="flex-1"
-              style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", color: "var(--color-text-primary)" }}
-            />
-            <Button variant="outline" disabled={submitting || !phrase.trim()} onClick={() => submit({ phrase: phrase.trim(), maxAttempts, windowDays, listFrequency, workingDays })}>
-              Set
+        {/* Pinned footer */}
+        <div className="flex items-center gap-2 border-t px-5 py-4" style={{ borderColor: "var(--color-border-subtle, var(--color-border-default))" }}>
+          {step === 2 && (
+            <Button variant="outline" onClick={() => setStep(1)}>
+              <ArrowLeft size={15} /> Back
             </Button>
-          </div>
+          )}
+          {step === 1 ? (
+            <Button variant="gradient" className="flex-1" disabled={value.target <= 0} onClick={() => setStep(2)}>
+              Continue <ArrowRight size={15} />
+            </Button>
+          ) : (
+            <Button
+              variant="gradient"
+              className="flex-1"
+              disabled={submitting || value.target <= 0}
+              onClick={() => submit(payload)}
+            >
+              {submitting ? <Loader2 size={15} className="animate-spin" /> : <Phone size={15} />}
+              Start calling
+            </Button>
+          )}
         </div>
         </>
         )}
 
         {result && (
-          <div>
+          <div className="overflow-auto px-5 py-5">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
                 <Check size={18} />
               </div>
-              <div>
-                <h2 className="text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>{result.campaign.name}</h2>
+              <div className="min-w-0">
+                <h2 className="truncate text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>{result.campaign.name}</h2>
                 <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
                   {result.campaign.dailyQuota} calls/day · retry up to {result.campaign.maxAttempts}&times; over {result.campaign.windowDays} days
                 </p>

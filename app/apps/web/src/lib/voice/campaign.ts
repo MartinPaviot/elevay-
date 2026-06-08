@@ -201,6 +201,72 @@ export async function createCallCampaign(args: CreateCampaignArgs) {
   return row;
 }
 
+export interface UpdateCampaignArgs {
+  tenantId: string;
+  campaignId: string;
+  name?: string;
+  /** New objective; omit to keep the current goal. */
+  goal?: GoalSpec;
+  maxAttempts?: number;
+  windowDays?: number;
+  listFrequency?: "daily" | "weekly";
+  workingDays?: number[];
+}
+
+/**
+ * Update an existing campaign's plan in place — the goal + cadence the rep set
+ * at onboarding stay editable later. Tenant-scoped. Recomputes dailyQuota /
+ * weeklyTarget when the goal changes and refreshes the targetFilter snapshot
+ * (goal / listFrequency / workingDays) that drives top-up + display. The
+ * caller regenerates today's list so the new quota takes effect immediately.
+ */
+export async function updateCallCampaign(args: UpdateCampaignArgs) {
+  const [existing] = await db
+    .select()
+    .from(callCampaigns)
+    .where(and(eq(callCampaigns.id, args.campaignId), eq(callCampaigns.tenantId, args.tenantId)))
+    .limit(1);
+  if (!existing) return null;
+
+  const prevFilter = (existing.targetFilter ?? {}) as Record<string, unknown>;
+  const patch: Partial<typeof callCampaigns.$inferInsert> = { updatedAt: new Date() };
+
+  if (args.goal) {
+    const goal = args.goal;
+    const daysPerWeek = Math.min(7, Math.max(1, goal.daysPerWeek ?? (goal.window === "day" ? 1 : 5)));
+    patch.daysPerWeek = daysPerWeek;
+    patch.dailyQuota = dailyCallsForGoal(goal);
+    patch.weeklyTarget =
+      goal.type === "calls" && goal.window === "week"
+        ? Math.max(0, Math.floor(goal.target))
+        : patch.dailyQuota * daysPerWeek;
+  }
+
+  // The onboarding form has no name field, so the name always tracks the goal;
+  // refresh it on a goal change unless the caller passes an explicit name.
+  if (args.name !== undefined) {
+    patch.name = args.name.trim() || existing.name;
+  } else if (args.goal) {
+    patch.name = describeGoal(args.goal);
+  }
+
+  if (args.maxAttempts !== undefined) patch.maxAttempts = Math.max(1, args.maxAttempts);
+  if (args.windowDays !== undefined) patch.windowDays = Math.max(1, args.windowDays);
+
+  const nextFilter: Record<string, unknown> = { ...prevFilter };
+  if (args.goal) nextFilter.goal = args.goal;
+  if (args.listFrequency) nextFilter.listFrequency = args.listFrequency;
+  if (Array.isArray(args.workingDays) && args.workingDays.length > 0) nextFilter.workingDays = args.workingDays;
+  patch.targetFilter = nextFilter;
+
+  const [row] = await db
+    .update(callCampaigns)
+    .set(patch)
+    .where(and(eq(callCampaigns.id, args.campaignId), eq(callCampaigns.tenantId, args.tenantId)))
+    .returning();
+  return row ?? null;
+}
+
 export interface DailyListResult {
   campaignId: string;
   quota: number;
@@ -311,9 +377,20 @@ export async function generateDailyCallList(
   return { campaignId, quota, retriesDue, newlyAdded, listed, poolExhausted };
 }
 
-/** Today's call list for a tenant (across active campaigns) — what to dial. */
-export async function getTodaysCallList(tenantId: string, now: Date = new Date()) {
+/**
+ * Today's call list — what to dial. Call Mode is individualised per user
+ * inside a workspace: pass `ownerId` to get only that rep's campaign list.
+ * Omit it (e.g. tenant-wide jobs) for every active campaign in the tenant.
+ */
+export async function getTodaysCallList(tenantId: string, now: Date = new Date(), ownerId?: string) {
   const today = dayStr(now);
+  const where = [
+    eq(callCampaignTargets.tenantId, tenantId),
+    eq(callCampaignTargets.listedOn, today),
+    inArray(callCampaignTargets.status, ["queued", "in_progress"]),
+    isNull(contacts.deletedAt),
+  ];
+  if (ownerId) where.push(eq(callCampaigns.ownerId, ownerId));
   return db
     .select({
       targetId: callCampaignTargets.id,
@@ -331,14 +408,9 @@ export async function getTodaysCallList(tenantId: string, now: Date = new Date()
     })
     .from(callCampaignTargets)
     .innerJoin(contacts, eq(contacts.id, callCampaignTargets.contactId))
-    .where(
-      and(
-        eq(callCampaignTargets.tenantId, tenantId),
-        eq(callCampaignTargets.listedOn, today),
-        inArray(callCampaignTargets.status, ["queued", "in_progress"]),
-        isNull(contacts.deletedAt),
-      ),
-    )
+    // Join the campaign so an owner filter (per-user Call Mode) can apply.
+    .innerJoin(callCampaigns, eq(callCampaigns.id, callCampaignTargets.campaignId))
+    .where(and(...where))
     .orderBy(desc(contacts.score));
 }
 
@@ -347,6 +419,8 @@ export interface RecordOutcomeArgs {
   contactId: string;
   outcome: string;
   occurredAt?: Date;
+  /** Scope to one rep's campaign (per-user Call Mode). Omit for tenant-wide. */
+  ownerId?: string;
 }
 
 /**
@@ -377,6 +451,8 @@ export async function recordCallOutcomeForCampaigns(
         eq(callCampaignTargets.contactId, args.contactId),
         inArray(callCampaignTargets.status, ["queued", "in_progress"]),
         eq(callCampaigns.status, "active"),
+        // Per-user Call Mode: attach the outcome to the calling rep's campaign.
+        ...(args.ownerId ? [eq(callCampaigns.ownerId, args.ownerId)] : []),
       ),
     )
     .orderBy(desc(callCampaignTargets.updatedAt))

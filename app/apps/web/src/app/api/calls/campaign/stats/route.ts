@@ -26,10 +26,12 @@ function startOfWeekUTC(now = new Date()): Date {
 export async function GET() {
   return withAuthRLS(async (authCtx) => {
     const tenantId = authCtx.tenantId;
+    const userId = authCtx.appUserId;
+    // Per-user Call Mode: a rep's funnel reflects their own campaign only.
     const [campaign] = await db
       .select()
       .from(callCampaigns)
-      .where(and(eq(callCampaigns.tenantId, tenantId), eq(callCampaigns.status, "active")))
+      .where(and(eq(callCampaigns.tenantId, tenantId), eq(callCampaigns.ownerId, userId), eq(callCampaigns.status, "active")))
       .orderBy(desc(callCampaigns.createdAt))
       .limit(1);
 
@@ -39,14 +41,14 @@ export async function GET() {
     const weekStart = startOfWeekUTC();
     const endOfToday = new Date(today.getTime() + 86_400_000);
 
-    // Calls progress (tenant-wide proxy for the active campaign).
+    // Calls progress — this rep's own calls (per-user Call Mode).
     const progressRows = (await db.execute(sql`
       SELECT
         count(*) FILTER (WHERE started_at >= ${today.toISOString()})::int AS calls_today,
         count(*) FILTER (WHERE started_at >= ${weekStart.toISOString()})::int AS calls_week,
         count(*) FILTER (WHERE started_at >= ${weekStart.toISOString()} AND outcome IN ('connected','meeting_booked','callback_requested'))::int AS connects_week,
         count(*) FILTER (WHERE started_at >= ${weekStart.toISOString()} AND outcome = 'meeting_booked')::int AS meetings_week
-      FROM calls WHERE tenant_id = ${tenantId}
+      FROM calls WHERE tenant_id = ${tenantId} AND user_id = ${userId}
     `)) as unknown as Array<{ calls_today: number; calls_week: number; connects_week: number; meetings_week: number }>;
     const p = progressRows[0] ?? { calls_today: 0, calls_week: 0, connects_week: 0, meetings_week: 0 };
 

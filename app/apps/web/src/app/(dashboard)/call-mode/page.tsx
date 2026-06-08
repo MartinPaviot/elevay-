@@ -23,6 +23,7 @@ import {
   Loader2,
   Sparkles,
   Clock,
+  SlidersHorizontal,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,7 @@ import {
   type ContactBrainJSON,
 } from "./_panels";
 import { CallModeOnboarding } from "./_onboarding";
+import { EditCampaignModal } from "./_edit-campaign-modal";
 import { CampaignFunnelBar } from "./_funnel-bar";
 import { CallScriptPanel } from "./_call-script";
 
@@ -112,7 +114,11 @@ export default function CallModePage() {
   // Goal-driven campaign drives the daily list; first visit (no campaign yet)
   // shows the onboarding.
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [campaign, setCampaign] = useState<{ id: string; name: string; dailyQuota: number; maxAttempts: number; windowDays: number } | null>(null);
+  const [campaign, setCampaign] = useState<{ id: string; name: string; dailyQuota: number; maxAttempts: number; windowDays: number; targetFilter?: unknown } | null>(null);
+  // Editing the plan (goal + cadence) after onboarding. planVersion remounts the
+  // funnel bar so its stats reload once the plan changes.
+  const [editingPlan, setEditingPlan] = useState(false);
+  const [planVersion, setPlanVersion] = useState(0);
   // Phase 3 — live coaching cards. Each card auto-dismisses after 12s
   // unless the user manually closes it. Newest on top, max 5 visible.
   const [coachingCards, setCoachingCards] = useState<CoachingCardData[]>([]);
@@ -631,14 +637,33 @@ export default function CallModePage() {
   return (
     <CallModeShell
       subtitle={campaign ? `Goal: ${campaign.name} - ${campaign.dailyQuota} calls/day, retry up to ${campaign.maxAttempts}x over ${campaign.windowDays}d` : undefined}
+      headerAction={
+        campaign && !inCall ? (
+          <Button variant="outline" size="sm" onClick={() => setEditingPlan(true)}>
+            <SlidersHorizontal size={14} /> Edit plan
+          </Button>
+        ) : undefined
+      }
     >
+      {campaign && editingPlan && (
+        <EditCampaignModal
+          campaign={campaign}
+          onClose={() => setEditingPlan(false)}
+          onUpdated={({ campaign: updated, calls }) => {
+            setCampaign(updated);
+            setQueue(calls as unknown as QueueItem[]);
+            if (calls.length > 0) setSelectedId(calls[0].contactId);
+            setPlanVersion((v) => v + 1);
+          }}
+        />
+      )}
       {campaign && (
         <div
           className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
             inCall ? "max-h-0 opacity-0" : "max-h-48 opacity-100"
           }`}
         >
-          <CampaignFunnelBar />
+          <CampaignFunnelBar key={planVersion} />
         </div>
       )}
       <div className="flex flex-1 min-h-0 w-full relative">
@@ -936,14 +961,16 @@ export default function CallModePage() {
  * (flush PageHeader bar above a flex-1 body) so Call Mode lines up with
  * the rest of the app instead of floating its own header inside padding.
  */
-function CallModeShell({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
+function CallModeShell({ children, subtitle, headerAction }: { children: React.ReactNode; subtitle?: string; headerAction?: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col animate-content-in">
       <PageHeader
         icon={<Phone size={15} />}
         title="Call Mode"
         subtitle={subtitle ?? "Autonomous cold calling from Elevay"}
-      />
+      >
+        {headerAction}
+      </PageHeader>
       {children}
     </div>
   );
