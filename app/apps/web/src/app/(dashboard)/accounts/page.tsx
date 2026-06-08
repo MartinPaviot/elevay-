@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Building2, Search, Filter, Plus, Zap, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, type LucideIcon } from "lucide-react";
+import { Building2, Search, Filter, Plus, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, type LucideIcon } from "lucide-react";
 import { useTamStream } from "@/hooks/use-tam-stream";
 import { TamBuildProgress } from "@/components/tam-build-progress";
 import { SignalChip } from "@/components/signal-chip";
@@ -25,7 +25,7 @@ import type { CustomFieldDef } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { PersonaSearch } from "./_persona-search";
 import { Button } from "@/components/ui/button";
-import { Badge, PropertyBadge } from "@/components/ui/badge";
+import { PropertyBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -39,6 +39,16 @@ import type { FilterCondition } from "@/lib/search/filters";
 import { ColumnFilter, isColumnFilterActive, type ColumnFilterKind, type ColumnFilterState } from "@/components/ui/column-filter";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CascadeDeleteModal, type CascadeOption } from "@/components/ui/cascade-delete-modal";
+import { EnrichMenu } from "@/components/ui/enrich-menu";
+import { useEnrichStream, type EnrichCellState } from "@/hooks/use-enrich-stream";
+import { ColumnPicker, type PickerCategory } from "@/components/ui/column-picker";
+import { COLUMN_CATEGORIES, DEFAULT_VISIBLE_CATEGORY_KEYS } from "@/lib/accounts/column-categories";
+
+/** Firmographic-extra category columns (founded year, tech, funding,
+ * keywords) — addable via the Categories picker, filled by the same
+ * enrichment criteria they map to. */
+const EXTRA_COLUMNS = COLUMN_CATEGORIES.filter((c) => c.group === "firmographic");
+const CATEGORIES_STORAGE_KEY = "accounts:visibleCategories:v1";
 
 interface Account {
   id: string;
@@ -111,8 +121,6 @@ function streamedRowToAccount(
   };
 }
 
-type EnrichStatus = "idle" | "enriching" | "done" | "failed";
-
 export default function AccountsPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -125,8 +133,6 @@ export default function AccountsPage() {
   const [newName, setNewName] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [creating, setCreating] = useState(false);
-  const [enrichStatus, setEnrichStatus] = useState<Record<string, EnrichStatus>>({});
-  const [enrichAllRunning, setEnrichAllRunning] = useState(false);
   const [filter, setFilter] = useState<"all" | "tam" | "manual">("all");
   // Per-column header filters (Notion / Excel style). Keyed by the
   // column's filterKey → its filter state. An entry only exists while
@@ -220,6 +226,133 @@ export default function AccountsPage() {
   // stream end via a background refetch — no full-page reload.
   const tamStream = useTamStream();
   const [streamBanner, setStreamBanner] = useState<boolean>(true);
+
+  // ── Live criteria enrichment ──
+  // Per-cell "searching… → value / not found" feedback from
+  // /api/enrich/stream. Replaces the old fire-and-forget enrich that
+  // marked rows "done" even when nothing was actually filled.
+  const enrichStream = useEnrichStream();
+
+  // Run criteria enrichment with live feedback. `ids` defaults to the
+  // loaded accounts still missing their base firmographics; pass a
+  // selection to scope it. Honest by construction — the stream reports
+  // filled / already-present / not-found per cell.
+  const runEnrich = useCallback(
+    (criteria: string[], ids?: string[]) => {
+      const targetIds =
+        ids && ids.length > 0
+          ? ids
+          : accounts.filter((a) => !(a.industry && a.description)).map((a) => a.id);
+      if (targetIds.length === 0) {
+        toast("No accounts need enrichment.", "info");
+        return;
+      }
+      enrichStream.start({ companyIds: targetIds, criteria });
+    },
+    [accounts, enrichStream, toast],
+  );
+
+  // Live overlay for an enrichable cell. While the stream fetches a
+  // criterion the cell shimmers; if it came back empty we say "not found"
+  // (honest) rather than a blank "—"; otherwise the real cell renders.
+  const renderEnrichable = (
+    accountId: string,
+    criterionKey: string,
+    hasValue: boolean,
+    node: React.ReactNode,
+  ): React.ReactNode => {
+    const cell: EnrichCellState | undefined = enrichStream.cells.get(accountId)?.get(criterionKey);
+    if (cell?.status === "searching") {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+          <Loader2 size={11} className="animate-spin" /> searching…
+        </span>
+      );
+    }
+    if (!hasValue && cell?.status === "resolved") {
+      if (cell.outcome === "not-found") {
+        return <span className="text-[11px] italic" style={{ color: "var(--color-text-muted)" }}>not found</span>;
+      }
+      if (cell.value) {
+        return <span className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{cell.value}</span>;
+      }
+    }
+    return node;
+  };
+
+  // ── Category columns (show/hide via the Categories picker) ──
+  // Built-in signals + firmographic extras are opt-in columns; custom
+  // signals/fields stay always-visible. Choice persists per browser.
+  const [visibleCategories, setVisibleCategories] = useState<Set<string>>(
+    () => new Set(DEFAULT_VISIBLE_CATEGORY_KEYS),
+  );
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
+      if (raw) setVisibleCategories(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* localStorage unavailable — keep defaults */
+    }
+  }, []);
+  const toggleCategory = useCallback((key: string) => {
+    setVisibleCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+  const resetCategories = useCallback(() => {
+    setVisibleCategories(new Set(DEFAULT_VISIBLE_CATEGORY_KEYS));
+    try {
+      localStorage.removeItem(CATEGORIES_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const pickerCategories = useMemo<PickerCategory[]>(
+    () => COLUMN_CATEGORIES.map((c) => ({ key: c.key, label: c.label, group: c.group, source: c.source })),
+    [],
+  );
+
+  /** Render a firmographic-extra cell (founded year / tech / funding /
+   * keywords) from `properties`, wrapped in the live enrichment overlay
+   * so it shimmers while its criterion is being fetched. */
+  const renderExtraCell = (account: Account, refKey: string): React.ReactNode => {
+    const p = (account.properties ?? {}) as Record<string, unknown>;
+    const muted = <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+    let hasValue = false;
+    let node: React.ReactNode = muted;
+    if (refKey === "foundedYear") {
+      const y = p.founded_year;
+      hasValue = typeof y === "number";
+      node = hasValue ? <span className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{y as number}</span> : muted;
+    } else if (refKey === "technologies") {
+      const t = Array.isArray(p.technologies) ? (p.technologies as string[]) : [];
+      hasValue = t.length > 0;
+      node = hasValue ? (
+        <div className="flex flex-wrap gap-0.5">{t.slice(0, 3).map((v, i) => <PropertyBadge key={i} value={String(v)} />)}</div>
+      ) : muted;
+    } else if (refKey === "funding") {
+      const stage = typeof p.latest_funding_stage === "string" ? p.latest_funding_stage : null;
+      const total = typeof p.total_funding === "number" ? (p.total_funding as number) : null;
+      hasValue = !!stage || total != null;
+      const txt = [stage, total != null ? `$${(total / 1_000_000).toFixed(total >= 1_000_000 ? 0 : 1)}M` : null].filter(Boolean).join(" · ");
+      node = hasValue ? <span className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{txt}</span> : muted;
+    } else if (refKey === "keywords") {
+      const k = Array.isArray(p.keywords) ? (p.keywords as string[]) : [];
+      hasValue = k.length > 0;
+      node = hasValue ? (
+        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }} title={k.join(", ")}>{k.slice(0, 3).join(", ")}</span>
+      ) : muted;
+    }
+    return renderEnrichable(account.id, refKey, hasValue, node);
+  };
 
   const startTamBuild = useCallback(async () => {
     setStreamBanner(true);
@@ -414,6 +547,27 @@ export default function AccountsPage() {
     }
   }, [tamStream.terminated, refetchLoadedAccounts]);
 
+  // When the enrichment stream finishes, pull the freshly-written values
+  // from the DB so the filled cells render their canonical formatting
+  // (the live overlay was only a preview). Toasts a one-line summary.
+  useEffect(() => {
+    if (enrichStream.terminated !== "done") return;
+    refetchLoadedAccounts();
+    const s = enrichStream.summary;
+    if (s) {
+      if (s.enriched > 0) {
+        toast(
+          `Enriched ${s.enriched} account${s.enriched === 1 ? "" : "s"}${s.noData > 0 ? ` · ${s.noData} with no new data` : ""}.`,
+          "success",
+        );
+      } else if (s.noData > 0) {
+        toast(`No new data found for ${s.noData} account${s.noData === 1 ? "" : "s"}.`, "info");
+      } else if (s.alreadyComplete > 0) {
+        toast(`Already complete — nothing to fetch.`, "info");
+      }
+    }
+  }, [enrichStream.terminated, enrichStream.summary, refetchLoadedAccounts, toast]);
+
   // Fetch warm-intro paths in a single batched call once accounts
   // are loaded. Keeps the "Connected to" column off the critical
   // render path and avoids N+1 requests.
@@ -485,56 +639,6 @@ export default function AccountsPage() {
     } finally { setCreating(false); }
   }
 
-  async function enrichSingle(id: string) {
-    setEnrichStatus((prev) => ({ ...prev, [id]: "enriching" }));
-    try {
-      const res = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: [id] }) });
-      setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
-      if (res.ok) await refetchLoadedAccounts();
-    } catch { setEnrichStatus((prev) => ({ ...prev, [id]: "failed" })); }
-  }
-
-  async function enrichAll() {
-    const unenriched = accounts.filter((a) => !a.industry && !a.description);
-    if (unenriched.length === 0) return;
-    setEnrichAllRunning(true);
-    const ids = unenriched.map((a) => a.id);
-    for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "enriching" }));
-    try {
-      // Server caps at 20 ids per call. Chunk client-side so every selected
-      // account is actually enriched instead of silently dropped.
-      const result = await chunkedBulkCall({
-        ids,
-        endpoint: "/api/enrich",
-        buildPayload: (chunk) => ({ companyIds: chunk }),
-        onProgress: (done, total) => {
-          toast(`Enriching ${done} / ${total} accounts…`, "info");
-        },
-      });
-      // Per-id status: ids belonging to failed chunks are marked failed; the rest done.
-      const failedIds = new Set(result.errors.flatMap((e) => e.ids));
-      setEnrichStatus((prev) => {
-        const next = { ...prev };
-        for (const id of ids) next[id] = failedIds.has(id) ? "failed" : "done";
-        return next;
-      });
-      if (result.succeeded > 0) await refetchLoadedAccounts();
-      if (result.failed === 0) {
-        toast(`Enriched ${result.succeeded} accounts.`, "success");
-      } else if (result.succeeded > 0) {
-        toast(`Enriched ${result.succeeded} of ${result.total}. ${result.failed} failed.`, "warning");
-        console.warn("accounts: enrichAll partial failure", result.errors);
-      } else {
-        toast(`Failed to enrich accounts.`, "error");
-        console.warn("accounts: enrichAll all chunks failed", result.errors);
-      }
-    } catch (e) {
-      for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "failed" }));
-      toast("Bulk enrichment failed.", "error");
-      console.warn("accounts: enrichAll crashed", e);
-    } finally { setEnrichAllRunning(false); }
-  }
-
   async function scoreAll() {
     const ids = accounts.filter((a) => a.score == null).map((a) => a.id);
     if (ids.length === 0) return;
@@ -564,46 +668,8 @@ export default function AccountsPage() {
     } finally { setScoreAllRunning(false); }
   }
 
-  // A3 — bulk actions that operate on the current selection. If nothing
-  // is selected we fall back to the all-eligible-accounts set (matching
-  // the old `Enrich all` / `Score all` semantics) so the header-level
-  // buttons keep working as before.
-  async function bulkEnrichSelected() {
-    const targets =
-      selectedRows.size > 0
-        ? accounts.filter((a) => selectedRows.has(a.id))
-        : accounts.filter((a) => !a.industry && !a.description);
-    if (targets.length === 0) {
-      toast("No accounts to enrich in the current selection.", "info");
-      return;
-    }
-    const ids = targets.map((t) => t.id);
-    for (const id of ids) setEnrichStatus((p) => ({ ...p, [id]: "enriching" }));
-    try {
-      const r = await chunkedBulkCall({
-        ids,
-        endpoint: "/api/enrich",
-        buildPayload: (chunk) => ({ companyIds: chunk }),
-      });
-      const failed = new Set(r.errors.flatMap((e) => e.ids));
-      setEnrichStatus((prev) => {
-        const next = { ...prev };
-        for (const id of ids) next[id] = failed.has(id) ? "failed" : "done";
-        return next;
-      });
-      if (r.succeeded > 0) await refetchLoadedAccounts();
-      toast(
-        r.failed === 0
-          ? `Enriched ${r.succeeded} accounts.`
-          : `Enriched ${r.succeeded} of ${r.total}. ${r.failed} failed.`,
-        r.failed === 0 ? "success" : "warning"
-      );
-    } catch (e) {
-      toast("Bulk enrichment failed.", "error");
-      console.warn("accounts: bulk enrich selected failed", e);
-    }
-  }
-
+  // Bulk score the current selection (or all unscored when nothing is
+  // selected). Enrichment now runs through the streaming EnrichMenu.
   async function bulkScoreSelected() {
     const targets =
       selectedRows.size > 0
@@ -1018,13 +1084,6 @@ export default function AccountsPage() {
   interface Signal { type: string; title: string; description: string; relevance: string; reasoning?: string; sources?: Array<{ url: string; title: string }>; }
   function getSignals(account: Account): Signal[] { return ((account.properties as Record<string, unknown>)?.signals as Signal[]) || []; }
 
-  // Legacy custom bool columns (kept for backward compatibility with existing signal data)
-  const [customBoolColumns] = useState<string[]>(["Common Investor?", "Sales-led?"]);
-  function getCustomBool(account: Account, column: string): boolean | null {
-    const customs = (account.properties as Record<string, unknown>)?.customBools as Record<string, boolean> | undefined;
-    return customs?.[column] ?? null;
-  }
-
   /** Render a custom field cell value */
   function renderCustomFieldCell(account: Account, field: CustomFieldDef) {
     const value = getCustomFieldValue(account.properties, field.id);
@@ -1238,8 +1297,16 @@ export default function AccountsPage() {
       <BulkActionsBar
         count={selectedRows.size}
         onClear={() => setSelectedRows(new Set())}
+        primary={
+          <EnrichMenu
+            targetCount={selectedRows.size}
+            running={enrichStream.isRunning}
+            processed={enrichStream.processed}
+            total={enrichStream.total}
+            onEnrich={(criteria) => runEnrich(criteria, Array.from(selectedRows))}
+          />
+        }
         actions={[
-          { label: "Enrich", icon: <Zap size={13} />, onClick: bulkEnrichSelected },
           { label: "Score", icon: <Target size={13} />, onClick: bulkScoreSelected },
           { label: "Detect signals", icon: <Radio size={13} />, onClick: detectSignals },
           {
@@ -1340,18 +1407,24 @@ export default function AccountsPage() {
             {scoreAllRunning ? "Scoring..." : "Score"}
           </Button>
         )}
-        {unenrichedCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<Zap size={13} />}
-            onClick={enrichAll}
-            disabled={enrichAllRunning}
-            loading={enrichAllRunning}
-          >
-            {enrichAllRunning ? "Enriching..." : `Enrich (${unenrichedCount})`}
-          </Button>
+        {/* Criteria enrichment — base by default, à la carte via the caret.
+            When rows are selected the menu moves into the bulk-actions bar
+            (top), so it's hidden here to avoid two enrich entry points. */}
+        {selectedRows.size === 0 && unenrichedCount > 0 && (
+          <EnrichMenu
+            targetCount={unenrichedCount}
+            running={enrichStream.isRunning}
+            processed={enrichStream.processed}
+            total={enrichStream.total}
+            onEnrich={(criteria) => runEnrich(criteria)}
+          />
         )}
+        <ColumnPicker
+          categories={pickerCategories}
+          visible={visibleCategories}
+          onToggle={toggleCategory}
+          onReset={resetCategories}
+        />
         <Button
           variant="outline"
           size="sm"
@@ -1567,7 +1640,7 @@ export default function AccountsPage() {
           <TableSkeleton
             rows={8}
             // +4 for built-in TAM signals + N for custom signals.
-            cols={9 + 4 + customSignals.length + signalTypeColumns.length + customBoolColumns.length + customFields.length}
+            cols={9 + DEFAULT_SIGNALS.filter((s) => visibleCategories.has(`signal:${s.key}`)).length + EXTRA_COLUMNS.filter((c) => visibleCategories.has(c.key)).length + customSignals.length + signalTypeColumns.length + customFields.length}
           />
         ) : mergedAccounts.length === 0 ? (
           debouncedSearch ? (
@@ -1642,15 +1715,16 @@ export default function AccountsPage() {
                   { label: "Score", icon: Gauge, filterKey: "score" },
                   { label: "Last Interaction", icon: Clock },
                   { label: "Connected to", icon: Users },
-                  // TAM streaming signal columns — one per default
-                  // signal. Rendered as chips in the body via
-                  // <SignalChip>. Positioned right after Connected-to
-                  // so the trust-cluster (warm intro + signals) lives
-                  // together, before legacy/custom columns.
-                  { label: "Investor", icon: Sparkles as LucideIcon },
-                  { label: "Funding", icon: Sparkles as LucideIcon },
-                  { label: "Hiring", icon: Sparkles as LucideIcon },
-                  { label: "YC", icon: Sparkles as LucideIcon },
+                  // Optional category columns — built-in signals + firmographic
+                  // extras the user adds via the Categories picker. Header and
+                  // body iterate the SAME visibility-filtered lists so they stay
+                  // aligned (this also fixes the old 4-header / 5-body signal skew).
+                  ...DEFAULT_SIGNALS
+                    .filter((s) => visibleCategories.has(`signal:${s.key}`))
+                    .map((s) => ({ label: signalLabelForHeader(s.key), icon: Sparkles as LucideIcon })),
+                  ...EXTRA_COLUMNS
+                    .filter((c) => visibleCategories.has(c.key))
+                    .map((c) => ({ label: c.label, icon: null as LucideIcon | null })),
                   // User-defined custom signals. Each appears as its
                   // own column; names truncated to 16 chars in the
                   // header to keep row widths predictable.
@@ -1659,7 +1733,6 @@ export default function AccountsPage() {
                     icon: Radio as LucideIcon,
                   })),
                   ...signalTypeColumns.map((t) => ({ label: t.replace(/_/g, " "), icon: Radio as LucideIcon })),
-                  ...customBoolColumns.map((c) => ({ label: c, icon: Target as LucideIcon })),
                   ...customFields.map((f) => ({ label: f.name, icon: null as LucideIcon | null })),
                   { label: "", icon: null },
                 ] as Array<{ label: string; icon: LucideIcon | null; filterKey?: string }>).map((col, i) => {
@@ -1702,7 +1775,7 @@ export default function AccountsPage() {
 
                 return (
                   <React.Fragment key={account.id}>
-                  <tr data-selected={selectedRows.has(account.id) ? "true" : undefined}>
+                  <tr className="group" data-selected={selectedRows.has(account.id) ? "true" : undefined}>
                     {/* Row checkbox */}
                     <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
@@ -1738,16 +1811,27 @@ export default function AccountsPage() {
                         >
                           {expandedAccountId === account.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         </button>
-                        {/* Status dot */}
-                        {enrichStatus[account.id] === "enriching" ? (
-                          <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" style={{ background: "var(--color-warning)" }} />
-                        ) : isEnriched(account) ? (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--color-success)" }} />
-                        ) : enrichStatus[account.id] === "failed" ? (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--color-error)" }} />
-                        ) : (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--color-text-muted)" }} />
-                        )}
+                        {/* Status dot — driven by the live enrichment stream. */}
+                        {(() => {
+                          const active = enrichStream.active.has(account.id);
+                          const streamStatus = enrichStream.companyStatus.get(account.id);
+                          const color = active
+                            ? "var(--color-warning)"
+                            : isEnriched(account)
+                              ? "var(--color-success)"
+                              : streamStatus === "no-data"
+                                ? "var(--color-warning)"
+                                : streamStatus === "error"
+                                  ? "var(--color-error)"
+                                  : "var(--color-text-muted)";
+                          return (
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full${active ? " animate-pulse" : ""}`}
+                              style={{ background: color }}
+                              title={active ? "Enriching…" : streamStatus === "no-data" ? "No data found" : undefined}
+                            />
+                          );
+                        })()}
 
                         {/* Logo */}
                         <CompanyLogo
@@ -1797,7 +1881,7 @@ export default function AccountsPage() {
 
                     {/* LinkedIn */}
                     <td>
-                      {(() => {
+                      {renderEnrichable(account.id, "linkedin", !!getLinkedInUrl(account), (() => {
                         const linkedIn = getLinkedInUrl(account);
                         if (!linkedIn) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
                         return (
@@ -1812,19 +1896,19 @@ export default function AccountsPage() {
                             <span>Profile</span>
                           </a>
                         );
-                      })()}
+                      })())}
                     </td>
 
                     {/* Industry -- auto-colored badge */}
                     <td>
-                      {account.industry ? (
+                      {renderEnrichable(account.id, "industry", !!account.industry, account.industry ? (
                         <PropertyBadge value={account.industry} />
-                      ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>}
+                      ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>)}
                     </td>
 
                     {/* Geography -- city / state / country */}
                     <td>
-                      {(() => {
+                      {renderEnrichable(account.id, "geography", !!formatGeography(account), (() => {
                         const geo = formatGeography(account);
                         return geo ? (
                           <span className="inline-flex items-center gap-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
@@ -1832,17 +1916,17 @@ export default function AccountsPage() {
                             {geo}
                           </span>
                         ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
-                      })()}
+                      })())}
                     </td>
 
                     {/* Size */}
                     <td className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                      {account.size || "—"}
+                      {renderEnrichable(account.id, "size", !!account.size, account.size || "—")}
                     </td>
 
                     {/* Revenue */}
                     <td className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                      {account.revenue || "—"}
+                      {renderEnrichable(account.id, "revenue", !!account.revenue, account.revenue || "—")}
                     </td>
 
                     {/* Lifecycle stage */}
@@ -2005,7 +2089,7 @@ export default function AccountsPage() {
                         One shared `openSignalChipId` selector means
                         only one popover is open across the whole
                         table at any time. */}
-                    {DEFAULT_SIGNALS.map(({ key }) => {
+                    {DEFAULT_SIGNALS.filter((s) => visibleCategories.has(`signal:${s.key}`)).map(({ key }) => {
                       const { payload } = getTamSignal(account, key);
                       const chipId = `${account.id}::${key}`;
                       return (
@@ -2021,6 +2105,12 @@ export default function AccountsPage() {
                         </td>
                       );
                     })}
+
+                    {/* Firmographic extra columns (Categories picker) — founded
+                        year / tech / funding / keywords, filled by enrichment. */}
+                    {EXTRA_COLUMNS.filter((c) => visibleCategories.has(c.key)).map((c) => (
+                      <td key={c.key}>{renderExtraCell(account, c.refKey)}</td>
+                    ))}
 
                     {/* User-defined custom signals — one chip per
                         active signal, reads from
@@ -2132,22 +2222,6 @@ export default function AccountsPage() {
                       );
                     })}
 
-                    {/* Custom bool columns */}
-                    {customBoolColumns.map((col) => {
-                      const val = getCustomBool(account, col);
-                      return (
-                        <td key={col} className="text-[11px] font-medium">
-                          {val === null ? (
-                            <span style={{ color: "var(--color-text-muted)" }}>—</span>
-                          ) : val ? (
-                            <Badge variant="success" size="sm">Yes</Badge>
-                          ) : (
-                            <span style={{ color: "var(--color-text-muted)" }}>No</span>
-                          )}
-                        </td>
-                      );
-                    })}
-
                     {/* Custom fields from data model */}
                     {customFields.map((field) => (
                       <td key={field.id}>
@@ -2155,19 +2229,10 @@ export default function AccountsPage() {
                       </td>
                     ))}
 
-                    {/* Actions */}
+                    {/* Actions — revealed on row hover / focus to cut clutter.
+                        The primary action (Enrich) now lives in the top bar. */}
                     <td className="actions">
-                      <div className="flex items-center gap-1">
-                        {!isEnriched(account) && enrichStatus[account.id] !== "enriching" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => enrichSingle(account.id)}
-                            className="!px-2 !py-0.5"
-                          >
-                            Enrich
-                          </Button>
-                        )}
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                         <button
                           type="button"
                           aria-label={viewDeleted ? `Restore ${account.name}` : viewExcluded ? `Restore ${account.name}` : `Mark ${account.name} as not a fit`}
