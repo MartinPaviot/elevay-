@@ -48,7 +48,7 @@ function mockSelect(map: Partial<Record<TableTag, Array<{ id: string }>>>) {
 }
 
 function updatedTablesInOrder(): TableTag[] {
-  return vi.mocked(db.update).mock.calls.map((c) => (c[0] as { __t: TableTag }).__t);
+  return vi.mocked(db.update).mock.calls.map((c) => (c[0] as unknown as { __t: TableTag }).__t);
 }
 
 beforeEach(() => vi.clearAllMocks());
