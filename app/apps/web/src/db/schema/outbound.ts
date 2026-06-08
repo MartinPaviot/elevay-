@@ -229,6 +229,12 @@ export const connectedMailboxes = pgTable(
     smtpPort: integer("smtp_port"),
     secretEncrypted: text("secret_encrypted"),
     imapLastUid: integer("imap_last_uid"),
+    // CalDAV calendar for "smtp_custom" mailboxes (the IMAP/SMTP path has no
+    // OAuth calendar). The collection URL is discovered on connect (or supplied
+    // by the user); the same encrypted password (secret_encrypted) authenticates
+    // it. caldav_last_sync_at lets the cron page incrementally like imap_last_uid.
+    caldavUrl: text("caldav_url"),
+    caldavLastSyncAt: timestamp("caldav_last_sync_at", { withTimezone: true }),
     domain: text("domain").notNull(),
     status: mailboxStatusEnum("status").default("warming_up"),
     dailyLimit: integer("daily_limit").notNull().default(50),

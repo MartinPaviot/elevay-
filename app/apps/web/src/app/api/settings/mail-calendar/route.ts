@@ -79,6 +79,7 @@ export async function GET() {
       // Connection status
       oauthConnected: boolean;
       mailboxConnected: boolean;
+      calendarConnected: boolean;
       status: string;
       // Sync info
       lastEmailSyncAt: string | null;
@@ -126,6 +127,9 @@ export async function GET() {
         providerLabel,
         oauthConnected: true,
         mailboxConnected: !!mailbox,
+        // OAuth (Google/Microsoft) is granted with calendar.readonly /
+        // Calendars.Read in the same consent, so calendar is always connected.
+        calendarConnected: true,
         status: isNeedsReauth(settings, authCtx.userId, oa.provider)
           ? "needs_reauth"
           : (mailbox?.status as string || "syncing"),
@@ -151,6 +155,9 @@ export async function GET() {
         providerLabel: mb.provider,
         oauthConnected: false,
         mailboxConnected: true,
+        // Custom IMAP/SMTP mailboxes get calendar via CalDAV when a collection
+        // was discovered/configured on connect.
+        calendarConnected: !!mb.caldavUrl,
         status: mb.status as string,
         lastEmailSyncAt: null,
         lastCalSyncAt: null,
