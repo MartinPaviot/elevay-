@@ -1,50 +1,54 @@
 import { describe, it, expect } from "vitest";
-import { deriveOpeningReason, REASON_BRIDGE } from "@/lib/call-mode/live-script";
+import { deriveOpeningReason, isVoiceableSignal, REASON_BRIDGE } from "@/lib/call-mode/live-script";
+
+describe("isVoiceableSignal", () => {
+  it("accepts real-world trigger events + explicit interactions", () => {
+    for (const t of ["funding", "hiring", "leadership_change", "tech_adoption", "expansion", "reply_received", "trial_expiring"]) {
+      expect(isVoiceableSignal(t)).toBe(true);
+    }
+  });
+  it("rejects internal / behavioral signals (creepy or nonsensical on a cold call)", () => {
+    for (const t of ["engagement_spike", "deal_stall", "stalled_no_activity", "positive_sentiment", "usage_increase", "deal_upsell_ready"]) {
+      expect(isVoiceableSignal(t)).toBe(false);
+    }
+    expect(isVoiceableSignal(null)).toBe(false);
+    expect(isVoiceableSignal(undefined)).toBe(false);
+  });
+});
 
 describe("deriveOpeningReason", () => {
-  it("prefers a live signal over every other source", () => {
-    const r = deriveOpeningReason({
-      signalLabel: "Essai expirant dans 3 jours",
-      messagingAngle: "Réduire le coût logiciel",
-      hiringRole: "Responsable IT",
-      fundingLastRound: "Série A",
-    });
-    expect(r).toEqual({
-      fact: "Essai expirant dans 3 jours",
-      source: "signal",
-      sourceLabel: "Signal temps réel",
-    });
+  it("uses a voiceable signal as the reason", () => {
+    const r = deriveOpeningReason({ signal: { type: "funding", label: "Série A levée en mai" }, hiringRole: "DSI", fundingLastRound: "Série B" });
+    expect(r).toEqual({ fact: "Série A levée en mai", source: "signal", sourceLabel: "Signal temps réel" });
   });
 
-  it("falls back to the research angle when there is no signal", () => {
-    const r = deriveOpeningReason({
-      messagingAngle: "Vous payez plusieurs SaaS remplaçables",
-      hiringRole: "Responsable IT",
-    });
-    expect(r?.source).toBe("research");
-    expect(r?.fact).toBe("Vous payez plusieurs SaaS remplaçables");
+  it("IGNORES an internal signal and falls through to a real event (the fix)", () => {
+    const r = deriveOpeningReason({ signal: { type: "engagement_spike", label: "Pic d'engagement détecté" }, hiringRole: "Responsable IT" });
+    expect(r?.source).toBe("hiring");
+    expect(r?.fact).toBe("Recrute Responsable IT");
+  });
+
+  it("returns null when the only signal is internal and there is no event to state", () => {
+    expect(deriveOpeningReason({ signal: { type: "deal_stall", label: "Deal au point mort" } })).toBeNull();
   });
 
   it("uses hiring before funding", () => {
-    const r = deriveOpeningReason({ hiringRole: "DSI", fundingLastRound: "Série B" });
-    expect(r).toEqual({ fact: "Recrute DSI", source: "hiring", sourceLabel: "Recrutement" });
+    expect(deriveOpeningReason({ hiringRole: "DSI", fundingLastRound: "Série B" })).toEqual({ fact: "Recrute DSI", source: "hiring", sourceLabel: "Recrutement" });
   });
 
-  it("uses funding when it is the only grounded fact", () => {
+  it("uses funding when it is the only event", () => {
     const r = deriveOpeningReason({ fundingLastRound: "Série B (2026)" });
     expect(r?.source).toBe("funding");
     expect(r?.fact).toBe("Série B (2026)");
   });
 
-  it("returns null when nothing is grounded — never invents a reason", () => {
+  it("returns null when nothing sayable is known — never invents a reason", () => {
     expect(deriveOpeningReason({})).toBeNull();
-    expect(
-      deriveOpeningReason({ signalLabel: "  ", messagingAngle: "", hiringRole: null, fundingLastRound: undefined }),
-    ).toBeNull();
+    expect(deriveOpeningReason({ signal: null, hiringRole: "", fundingLastRound: undefined })).toBeNull();
   });
 
   it("collapses whitespace in the grounded fact", () => {
-    const r = deriveOpeningReason({ signalLabel: "  Nouveau   DSI\n nommé " });
+    const r = deriveOpeningReason({ signal: { type: "leadership_change", label: "  Nouveau   DSI\n nommé " } });
     expect(r?.fact).toBe("Nouveau DSI nommé");
   });
 

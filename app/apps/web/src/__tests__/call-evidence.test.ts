@@ -2,18 +2,26 @@ import { describe, it, expect } from "vitest";
 import { buildProspectEvidence } from "@/lib/call-mode/evidence";
 
 describe("buildProspectEvidence", () => {
-  it("derives the reason from a live signal (highest confidence)", () => {
-    const e = buildProspectEvidence({ signal: { type: "trial_expiring", label: "Essai expirant dans 3 jours" } });
-    expect(e.reason?.value).toBe("Essai expirant dans 3 jours");
+  it("derives the reason from a voiceable live signal (highest confidence)", () => {
+    const e = buildProspectEvidence({ signal: { type: "hiring", label: "Recrute 4 commerciaux" } });
+    expect(e.reason?.value).toBe("Recrute 4 commerciaux");
     expect(e.reason?.source.kind).toBe("signal");
-    expect(e.reason?.source.ref).toBe("trial_expiring");
+    expect(e.reason?.source.ref).toBe("hiring");
     expect(e.reason?.confidence).toBeGreaterThanOrEqual(0.9);
   });
 
-  it("falls back to the research angle when there is no signal", () => {
-    const e = buildProspectEvidence({ dossier: { recommendedApproach: { messagingAngle: "SaaS remplaçable" } } });
-    expect(e.reason?.value).toBe("SaaS remplaçable");
+  it("ignores an internal signal type and falls to a dossier event", () => {
+    const e = buildProspectEvidence({
+      signal: { type: "engagement_spike", label: "Pic d'engagement" },
+      dossier: { funding: { lastRound: "Série B" } },
+    });
     expect(e.reason?.source.kind).toBe("dossier");
+    expect(e.reason?.value).toBe("Série B");
+  });
+
+  it("does NOT voice a messaging angle — it is a strategy note, not a reason", () => {
+    const e = buildProspectEvidence({ dossier: { recommendedApproach: { messagingAngle: "Insister sur le coût" } } });
+    expect(e.reason).toBeNull();
   });
 
   it("selects the problem trigger from the tech stack and exposes insight inputs", () => {
@@ -26,7 +34,6 @@ describe("buildProspectEvidence", () => {
     });
     expect(e.problemTrigger?.source.ref).toBe("techStack");
     expect(e.problemTrigger?.value).toContain("Salesforce");
-    // insight inputs carry stable ids and are all grounded dossier facts
     const ids = e.insightInputs.map((i) => i.id);
     expect(ids).toEqual([...new Set(ids)]); // unique
     expect(e.insightInputs.some((i) => i.value.includes("Série B"))).toBe(true);
@@ -42,7 +49,7 @@ describe("buildProspectEvidence", () => {
 
   it("drops a stale signal rather than presenting it as 'now'", () => {
     const e = buildProspectEvidence({
-      signal: { type: "trial_expiring", label: "Vieux signal", observedAt: "2020-01-01T00:00:00Z" },
+      signal: { type: "hiring", label: "Vieux recrutement", observedAt: "2020-01-01T00:00:00Z" },
     });
     expect(e.reason).toBeNull();
   });

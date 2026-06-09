@@ -1,54 +1,80 @@
 /**
  * Per-prospect "reason to call" — Bloc 2 of the locked methodology (the
- * contextual bridge the rep says RIGHT AFTER the permission gate, see
- * _research/cold-call-exchange-top01-2026-06.md). The opener template stays a
- * pure permission gate (no listed problems); this module derives the ONE
- * grounded reason-to-call from what we actually hold on the prospect — the
- * live signal first, then the cached research dossier.
+ * contextual bridge said right AFTER the permission gate, see
+ * _research/cold-call-exchange-top01-2026-06.md).
  *
- * Grounded-only by design: when nothing real is known we return null rather
- * than invent a reason. On a cold call, an ungrounded reason the rep then
- * repeats is worse than silence — the same principle the pre-call brief
- * already applies to facts. Stating a real reason to call is worth ~x2.1 on
- * the meeting rate (Gong), so this is the highest-leverage thing to surface,
- * but only when it traces to a source the rep can stand behind.
+ * Grounded is NOT enough — it must be SAYABLE. Only externally-voiceable
+ * trigger events become a reason: a live signal whose TYPE is a real-world
+ * event or an explicit interaction, then a hiring / funding fact from the
+ * research dossier. Internal/behavioral signals (engagement spike, deal stall,
+ * sentiment, usage) are excluded — reading "I'm calling because your
+ * engagement spiked / your deal stalled" on a cold call is creepy or
+ * nonsensical (and pipeline/usage signals only exist for accounts you already
+ * work). A research "messaging angle" is the rep's own strategy note, not a
+ * reason — it is never spoken here.
+ *
+ * Priority: voiceable signal → hiring → funding. Null when nothing sayable is
+ * known — then the rep opens on the bare permission gate, which is better than
+ * reading an internal signal or a strategy note aloud. Stating a real reason is
+ * worth ~x2.1 on the meeting rate (Gong), but only when it is real AND sayable.
  *
  * Pure + unit-tested; no I/O, no React.
  */
 
-export type OpeningReasonSource = "signal" | "research" | "hiring" | "funding";
+export type OpeningReasonSource = "signal" | "hiring" | "funding";
 
 export interface OpeningReason {
   /** The grounded fact to lead with, in plain words. */
   fact: string;
-  /** Where it came from — drives the provenance chip so the rep trusts it. */
   source: OpeningReasonSource;
-  /** Human label for the source. */
+  /** Human label for the provenance chip. */
   sourceLabel: string;
 }
 
+/**
+ * Signal types that are sayable as a reason to call: real-world trigger events
+ * and explicit interactions. Keyed on the signal-scanner vocabulary
+ * (skills/signals/*). Anything NOT listed (engagement_spike, deal_stall,
+ * stalled_no_activity, at_risk_negative, positive/negative_sentiment,
+ * usage_increase, deal_upsell_ready) is an internal/behavioral inference we
+ * never voice to the prospect on a cold call.
+ */
+const VOICEABLE_SIGNAL_TYPES = new Set([
+  "hiring",
+  "funding",
+  "funding_recent",
+  "leadership_change",
+  "tech_adoption",
+  "expansion",
+  "new_department",
+  "headcount_growth",
+  "competitor_mention",
+  "trial_expiring",
+  "reply_received",
+]);
+
+export function isVoiceableSignal(type?: string | null): boolean {
+  return Boolean(type && VOICEABLE_SIGNAL_TYPES.has(type.trim().toLowerCase()));
+}
+
 export interface OpeningReasonInput {
-  /** Live trigger event on the prospect (the strongest "why now"). */
-  signalLabel?: string | null;
-  /** Research dossier's messaging angle (recommendedApproach). */
-  messagingAngle?: string | null;
-  /** Top hiring signal role from the dossier. */
+  /** Freshest signal as {type,label}. Used ONLY if the type is voiceable. */
+  signal?: { type: string; label: string } | null;
+  /** Top hiring role from the research dossier (a voiceable event). */
   hiringRole?: string | null;
-  /** Last funding round from the dossier. */
+  /** Last funding round from the dossier (a voiceable event). */
   fundingLastRound?: string | null;
 }
 
 const SOURCE_LABEL: Record<OpeningReasonSource, string> = {
   signal: "Signal temps réel",
-  research: "Recherche société",
   hiring: "Recrutement",
   funding: "Levée de fonds",
 };
 
 /**
  * The fixed Bloc-2 connector the rep says to bridge permission → reason.
- * Methodology-correct and content-free, so it never invents a fact — the fact
- * itself always comes from a grounded source.
+ * Methodology-correct and content-free, so it never invents a fact.
  */
 export const REASON_BRIDGE = "C'est justement pour ça que je vous appelle :";
 
@@ -57,16 +83,15 @@ function clean(s?: string | null): string {
 }
 
 /**
- * Pick the single strongest grounded reason to call, in priority order: a live
- * signal (the best "why now") → research angle → hiring → funding. Returns
- * null when nothing is grounded (never fabricates a reason).
+ * Pick the single strongest grounded AND sayable reason to call: a voiceable
+ * live signal → hiring → funding. Returns null when nothing sayable is known
+ * (never fabricates, never voices an internal signal or a strategy note).
  */
 export function deriveOpeningReason(input: OpeningReasonInput): OpeningReason | null {
-  const signal = clean(input.signalLabel);
-  if (signal) return { fact: signal, source: "signal", sourceLabel: SOURCE_LABEL.signal };
-
-  const angle = clean(input.messagingAngle);
-  if (angle) return { fact: angle, source: "research", sourceLabel: SOURCE_LABEL.research };
+  if (input.signal && isVoiceableSignal(input.signal.type)) {
+    const label = clean(input.signal.label);
+    if (label) return { fact: label, source: "signal", sourceLabel: SOURCE_LABEL.signal };
+  }
 
   const hiring = clean(input.hiringRole);
   if (hiring) return { fact: `Recrute ${hiring}`, source: "hiring", sourceLabel: SOURCE_LABEL.hiring };

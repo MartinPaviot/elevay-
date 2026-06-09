@@ -12,6 +12,7 @@ const T: ScriptTemplate = {
   bookingAsk:
     "45 minutes : vous repartez avec une première lecture même si on ne bosse jamais ensemble. Mardi 14h ou jeudi matin ?",
   guidance: [],
+  posture: "challenger",
   microCTA: "Ça vous parle ?",
   insightStub: "Insight par défaut.",
   sectorObjections: [{ objection: "On a déjà un outil", response: "on mesure l'écart en 45 min" }],
@@ -79,6 +80,14 @@ describe("assembleScript", () => {
     const bi = bogus.blocs.find((b) => b.kind === "insight");
     expect(bi?.grounded).toBe(false); // fell back to the template stub
     expect(bi?.text).toBe("Insight par défaut.");
+  });
+
+  it("suppresses the insight bloc for the consultative posture (no Challenger reframe)", () => {
+    const consultative: ScriptTemplate = { ...T, posture: "consultative" };
+    const s = assembleScript(fullEvidence, consultative, { groundedInsight: { text: "Reframe contrariant.", evidenceRef: "E1" } });
+    expect(s.blocs.find((b) => b.kind === "insight")).toBeUndefined();
+    // the rest of the script still assembles
+    expect(s.blocs.find((b) => b.kind === "problemTier1")).toBeDefined();
   });
 
   it("uses a grounded problem scene when cited", () => {

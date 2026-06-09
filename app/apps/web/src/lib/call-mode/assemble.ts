@@ -111,6 +111,7 @@ export function assembleScript(
   opts: AssembleOptions = {},
 ): AssembledScript {
   const ids = evidenceIds(evidence);
+  const posture = template.posture ?? "consultative";
   const blocs: AssembledBloc[] = [];
 
   // opener (permission gate or heard-the-name) — template, by construction
@@ -127,18 +128,22 @@ export function assembleScript(
     });
   }
 
-  // insight (Challenger reframe) — grounded LLM claim if cited, else stub, else omit
-  const insight = validClaim(opts.groundedInsight, ids);
-  if (insight) {
-    blocs.push({
-      kind: "insight",
-      text: insight.text,
-      grounded: true,
-      provenance: { label: SOURCE_LABEL.dossier, sourceRef: insight.evidenceRef },
-      leverIds: ["insight_present"],
-    });
-  } else if (template.insightStub?.trim()) {
-    blocs.push({ kind: "insight", text: template.insightStub.trim(), grounded: false, leverIds: ["insight_present"] });
+  // insight (Challenger reframe) — ONLY for the "challenger" posture. Suppressed
+  // for consultative segments (foundations / parapublic / santé), where the
+  // per-industry matrix says never sur-vendre and a contrarian reframe backfires.
+  if (posture === "challenger") {
+    const insight = validClaim(opts.groundedInsight, ids);
+    if (insight) {
+      blocs.push({
+        kind: "insight",
+        text: insight.text,
+        grounded: true,
+        provenance: { label: SOURCE_LABEL.dossier, sourceRef: insight.evidenceRef },
+        leverIds: ["insight_present"],
+      });
+    } else if (template.insightStub?.trim()) {
+      blocs.push({ kind: "insight", text: template.insightStub.trim(), grounded: false, leverIds: ["insight_present"] });
+    }
   }
 
   // problemTier1 — exactly one. Grounded scene (LLM) if cited, else the picked enjeu.

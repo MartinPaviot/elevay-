@@ -20,7 +20,7 @@ import { deriveOpeningReason } from "./live-script";
 
 /** Per-source confidence priors. Tuned to the methodology's trust order: a
  *  live signal is the strongest "why now"; research facts are softer. */
-const CONF = { signal: 0.9, research: 0.7, hiring: 0.6, funding: 0.6, dossierFact: 0.6 } as const;
+const CONF = { signal: 0.9, hiring: 0.6, funding: 0.6, dossierFact: 0.6 } as const;
 const MIN_CONFIDENCE = 0.5;
 /** Drop an item whose observedAt is older than this (ms) — never present a
  *  stale trigger as "right now". Items without a date are kept (not datable). */
@@ -63,17 +63,12 @@ export function buildProspectEvidence(input: EvidenceBrainInput): ProspectEviden
   // ── reason (why now) — reuse the shipped priority, wrap as evidence ──
   let reason: EvidenceItem | null = null;
   const r = deriveOpeningReason({
-    signalLabel: input.signal?.label,
-    messagingAngle: dossier?.recommendedApproach?.messagingAngle,
+    signal: input.signal ?? null,
     hiringRole: hiringRoles[0],
     fundingLastRound: dossier?.funding?.lastRound,
   });
   if (r) {
-    const confidence =
-      r.source === "signal" ? CONF.signal
-      : r.source === "research" ? CONF.research
-      : r.source === "hiring" ? CONF.hiring
-      : CONF.funding;
+    const confidence = r.source === "signal" ? CONF.signal : r.source === "hiring" ? CONF.hiring : CONF.funding;
     const kind: EvidenceKind = r.source === "signal" ? "signal" : "dossier";
     const ref = r.source === "signal" ? input.signal?.type ?? "signal" : r.source;
     const candidate: EvidenceItem = {

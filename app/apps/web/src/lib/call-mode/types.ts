@@ -124,6 +124,15 @@ export interface ScriptTemplate extends ScriptFields {
   askReversibility?: string | null;
   /** Product/register context handed to the constrained insight step. */
   product?: string | null;
+  /**
+   * Conversation posture for the segment. "consultative" (sober, non-pression —
+   * the safe default; fits foundations / parapublic / santé, where the
+   * methodology says never sur-vendre) suppresses the Challenger insight
+   * reframe. "challenger" enables an insight reframe for segments that reward it
+   * (SaaS / tech / finance execs). Founder-set per the per-industry matrix —
+   * never auto-classified (no hardcoded sector→posture map).
+   */
+  posture?: "consultative" | "challenger";
 }
 
 /** A grounded claim the LLM step may return — kept only if its evidenceRef is valid. */

@@ -1152,8 +1152,7 @@ export default function CallModePage() {
                 contactName={selected.contactName}
                 defaultSector={brain?.companyBrain?.company?.industry}
                 reasonInput={{
-                  signalLabel: selected.latestSignal?.label,
-                  messagingAngle: brain?.cachedDossier?.recommendedApproach?.messagingAngle,
+                  signal: selected.latestSignal,
                   hiringRole: brain?.cachedDossier?.hiringSignals?.[0]?.role,
                   fundingLastRound: brain?.cachedDossier?.funding?.lastRound,
                 }}

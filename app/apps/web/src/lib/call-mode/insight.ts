@@ -33,14 +33,20 @@ const schema = z.object({
   problemScene: z.object({ text: z.string(), evidenceRef: z.string() }).nullable(),
 });
 
-const SYSTEM_PROMPT = `You phrase a cold-call commercial insight and ONE Tier-1 problem scene from grounded evidence, for a salesperson booking a 45-min meeting.
+function systemPrompt(wantInsight: boolean): string {
+  const base = `You phrase content for a cold call from grounded evidence, for a salesperson booking a 45-min meeting.
 
 Hard rules:
 - Reference ONLY facts present in EVIDENCE. Do not invent companies, numbers, triggers, or claims.
 - For each output set evidenceRef to the EVIDENCE id (e.g. "E1") you used.
 - If you cannot ground a field in EVIDENCE, return null for that field.
-- One reframe (insight) + one vivid, specific problem scene (problemScene). Not three.
 - Use "vous". No vendor pitch, no product feature dump, no superlatives.`;
+  return wantInsight
+    ? `${base}
+- Produce ONE contrarian commercial insight (insight) + ONE vivid, specific problem scene (problemScene). Not three.`
+    : `${base}
+- This is a consultative segment: set insight to null (NO contrarian reframe, no pressure). Produce ONLY a sober, factual problemScene grounded in EVIDENCE.`;
+}
 
 /** Keep a claim only if it is non-empty AND cites a real evidence id. */
 function validRef(claim: GroundedClaim | null | undefined, ids: Set<string>): GroundedClaim | null {
@@ -57,6 +63,9 @@ export async function generateGroundedInsight(
   if (!deps.model || evidence.insightInputs.length === 0) {
     return { insight: null, problemScene: null };
   }
+  // Consultative segments get NO contrarian reframe (insight stays null even if
+  // the model returns one) — only a sober problem scene.
+  const wantInsight = (template.posture ?? "consultative") === "challenger";
   const ids = new Set(evidence.insightInputs.map((e) => e.id));
   const evidenceBlock = evidence.insightInputs.map((e) => `${e.id}: ${e.value}`).join("\n");
   const generate = deps.generate ?? generateObject;
@@ -65,7 +74,7 @@ export async function generateGroundedInsight(
     const { object } = await generate({
       model: deps.model,
       schema,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt(wantInsight),
       prompt: `PRODUCT/REGISTER: ${template.product?.trim() || "(non renseigné)"}
 SECTOR: ${evidence.sector || "(générique)"}${evidence.persona.title ? `\nPERSONA: ${evidence.persona.title}` : ""}
 
@@ -75,8 +84,12 @@ ${evidenceBlock}
 Return { insight, problemScene } grounded in the EVIDENCE ids above.`,
     });
     const out = object as GroundedInsightResult;
-    // Fail-closed: drop any claim that doesn't cite a real evidence id.
-    return { insight: validRef(out.insight, ids), problemScene: validRef(out.problemScene, ids) };
+    // Fail-closed: drop any claim that doesn't cite a real evidence id; and
+    // drop the insight entirely for consultative posture.
+    return {
+      insight: wantInsight ? validRef(out.insight, ids) : null,
+      problemScene: validRef(out.problemScene, ids),
+    };
   } catch {
     // A missed insight must never crash assembly — the stub takes over.
     return { insight: null, problemScene: null };

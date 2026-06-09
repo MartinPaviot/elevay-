@@ -8,6 +8,7 @@ const tmpl: ScriptTemplate = {
   permissionCheck: "",
   bookingAsk: "",
   guidance: [],
+  posture: "challenger",
   product: "Logiciels open-source opérés, souverains, moins chers",
 };
 
@@ -63,4 +64,13 @@ describe("generateGroundedInsight (the single, fail-closed LLM step)", () => {
     const r = await generateGroundedInsight(ev([E1]), tmpl, { model: {}, generate } as never);
     expect(r).toEqual({ insight: null, problemScene: null });
   });
+
+  it("suppresses the insight for the consultative posture, keeps the problem scene", async () => {
+    const consultative: ScriptTemplate = { ...tmpl, posture: "consultative" };
+    const generate = vi.fn(async () => ({ object: { insight: { text: "reframe", evidenceRef: "E1" }, problemScene: { text: "scène sobre", evidenceRef: "E1" } } }));
+    const r = await generateGroundedInsight(ev([E1]), consultative, { model: {}, generate } as never);
+    expect(r.insight).toBeNull();
+    expect(r.problemScene?.text).toBe("scène sobre");
+  });
 });
+
