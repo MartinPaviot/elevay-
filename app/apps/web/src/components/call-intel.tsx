@@ -10,21 +10,28 @@
  *   - contact.properties.callProfile -> ContactCallProfile (role / disposition)
  *   - company.properties.callIntel   -> AccountCallIntel (replaceable stack / triggers)
  *
+ * Human-in-the-loop: when the tenant is in captureApprovalMode='review', the
+ * pipeline writes these facts to a `pending*` key instead of the live one. Each
+ * card then shows the proposal with an Approve / Dismiss bar (POST
+ * /api/call-intel/review) — review happens where the data lives. In 'auto'
+ * (default) the live key is written directly and no bar shows.
+ *
  * Every component self-extracts from the entity's `properties` bag and returns
- * null when its key is absent, so a record with no call simply shows nothing.
- * Labels are English (app chrome); the captured values stay in whatever language
- * the prospect spoke. An empty MEDDPICC cell is not an error — it is the agenda
- * for the next call, so it reads "Not captured yet", muted, never red.
+ * null when there's nothing (live or pending) to show. Labels are English (app
+ * chrome); captured values stay in the prospect's language. An empty MEDDPICC
+ * cell is the agenda for the next call, so it reads "Not captured yet", muted.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CheckCircle2, CircleDashed, ShieldCheck, ShieldAlert, Phone,
-  Quote, Layers, Swords, Users, Rocket,
+  Quote, Layers, Swords, Users, Rocket, Sparkles,
 } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 
 type Props = Record<string, unknown> | null | undefined;
+type EntityType = "deal" | "company" | "contact";
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -42,6 +49,79 @@ function shortDate(iso: unknown): string | null {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ── Human-in-the-loop review (live vs pending) ──────────────────────────────
+
+function usePendingReview<T>(args: {
+  entityType: EntityType;
+  entityId?: string;
+  live: T | null;
+  pending: T | null;
+}): { data: T | null; usingPending: boolean; showBanner: boolean; busy: boolean; act: (a: "approve" | "dismiss") => void } {
+  const { toast } = useToast();
+  const [resolved, setResolved] = useState<null | "approved" | "dismissed">(null);
+  const [busy, setBusy] = useState(false);
+
+  const isDismissed = resolved === "dismissed";
+  const isApproved = resolved === "approved";
+  const usingPending = !!args.pending && !isDismissed;
+  const data = usingPending ? args.pending : args.live;
+  const showBanner = usingPending && !isApproved && !!args.entityId;
+
+  async function act(action: "approve" | "dismiss") {
+    if (!args.entityId || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/call-intel/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityType: args.entityType, entityId: args.entityId, action }),
+      });
+      if (!res.ok) {
+        toast("Couldn't update the proposal.", "error");
+        return;
+      }
+      setResolved(action === "approve" ? "approved" : "dismissed");
+      toast(action === "approve" ? "Applied to the record." : "Proposal dismissed.", "success");
+    } catch {
+      toast("Network error.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return { data, usingPending, showBanner, busy, act };
+}
+
+function PendingBar({ busy, onAct }: { busy: boolean; onAct: (a: "approve" | "dismiss") => void }) {
+  return (
+    <div
+      className="mb-3 flex items-center gap-2 rounded-md px-2.5 py-1.5"
+      style={{ background: "var(--color-warning-soft)", border: "1px solid var(--color-warning)" }}
+    >
+      <Sparkles size={12} className="shrink-0" style={{ color: "var(--color-warning)" }} />
+      <span className="flex-1 text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
+        Proposed from the last call — pending your approval
+      </span>
+      <button
+        onClick={() => onAct("approve")}
+        disabled={busy}
+        className="rounded px-2 py-0.5 text-[11px] font-medium disabled:opacity-50"
+        style={{ background: "var(--color-success)", color: "#fff" }}
+      >
+        Approve
+      </button>
+      <button
+        onClick={() => onAct("dismiss")}
+        disabled={busy}
+        className="rounded px-2 py-0.5 text-[11px] disabled:opacity-50"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
 }
 
 // ── Deal: MEDDPICC scorecard ────────────────────────────────────────────────
@@ -68,10 +148,17 @@ interface Evidence {
  * the missing letters are the plan. Evidence quotes ground the capture so the
  * rep trusts it (a fact with no source is not shown).
  */
-export function MeddpiccScorecard({ properties }: { properties: Props }) {
-  const meddic = (properties?.meddic ?? null) as Meddic | null;
-  const evidence = (Array.isArray(properties?.evidence) ? properties!.evidence : []) as Evidence[];
+export function MeddpiccScorecard({ properties, entityId }: { properties: Props; entityId?: string }) {
+  const { data: meddic, usingPending, showBanner, busy, act } = usePendingReview<Meddic>({
+    entityType: "deal",
+    entityId,
+    live: (properties?.meddic ?? null) as Meddic | null,
+    pending: (properties?.pendingMeddic ?? null) as Meddic | null,
+  });
   if (!meddic) return null;
+
+  const evidenceSrc = usingPending ? properties?.pendingEvidence : properties?.evidence;
+  const evidence = (Array.isArray(evidenceSrc) ? evidenceSrc : []) as Evidence[];
 
   const dims: { label: string; value: string | null; action: string }[] = [
     { label: "Metrics", value: asString(meddic.metrics), action: "quantify the pain or ROI in their own terms" },
@@ -98,6 +185,7 @@ export function MeddpiccScorecard({ properties }: { properties: Props }) {
   return (
     <Card className="mt-4">
       <CardBody>
+        {showBanner && <PendingBar busy={busy} onAct={act} />}
         <div className="mb-3 flex items-center gap-2">
           <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)]">Qualification · MEDDPICC</p>
           <span
@@ -188,8 +276,13 @@ const DISPOSITION_STYLE: Record<string, { label: string; bg: string; color: stri
  * What the last call revealed about THIS person in the buying group — their
  * role, whether they decide, and their stance toward us. Sidebar-sized.
  */
-export function ContactCallProfile({ properties, className }: { properties: Props; className?: string }) {
-  const profile = (properties?.callProfile ?? null) as CallProfile | null;
+export function ContactCallProfile({ properties, className, entityId }: { properties: Props; className?: string; entityId?: string }) {
+  const { data: profile, showBanner, busy, act } = usePendingReview<CallProfile>({
+    entityType: "contact",
+    entityId,
+    live: (properties?.callProfile ?? null) as CallProfile | null,
+    pending: (properties?.pendingCallProfile ?? null) as CallProfile | null,
+  });
   const lastCall = (properties?.lastCall ?? null) as LastCall | null;
   if (!profile && !lastCall) return null;
 
@@ -208,6 +301,7 @@ export function ContactCallProfile({ properties, className }: { properties: Prop
         <Phone size={13} /> From the call
       </h3>
       <div className="mt-3 rounded-lg p-3" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+        {showBanner && <PendingBar busy={busy} onAct={act} />}
         <div className="flex flex-wrap items-center gap-1.5">
           {disposition && (
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: disposition.bg, color: disposition.color }}>
@@ -274,8 +368,13 @@ function ChipRow({ icon, label, items }: { icon: ReactNode; label: string; items
  * alternatives in play, the triggers driving change. This is the account-level
  * lever for the Pilae pitch (a replaceable, costly SaaS).
  */
-export function AccountCallIntel({ properties }: { properties: Props }) {
-  const intel = (properties?.callIntel ?? null) as CallIntel | null;
+export function AccountCallIntel({ properties, entityId }: { properties: Props; entityId?: string }) {
+  const { data: intel, showBanner, busy, act } = usePendingReview<CallIntel>({
+    entityType: "company",
+    entityId,
+    live: (properties?.callIntel ?? null) as CallIntel | null,
+    pending: (properties?.pendingCallIntel ?? null) as CallIntel | null,
+  });
   if (!intel) return null;
 
   const stack = asStringArray(intel.stack);
@@ -289,6 +388,7 @@ export function AccountCallIntel({ properties }: { properties: Props }) {
   return (
     <Card className="mt-4">
       <CardBody>
+        {showBanner && <PendingBar busy={busy} onAct={act} />}
         <div className="mb-3 flex items-center gap-2">
           <Phone size={13} style={{ color: "var(--color-text-tertiary)" }} />
           <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)]">Captured on the call</p>

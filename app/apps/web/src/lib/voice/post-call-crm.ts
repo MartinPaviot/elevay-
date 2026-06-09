@@ -14,9 +14,10 @@
  */
 
 import { db } from "@/db";
-import { deals, tasks, contacts, companies } from "@/db/schema";
+import { deals, tasks, contacts, companies, tenants } from "@/db/schema";
 import { and, eq, isNull, inArray, desc, sql } from "drizzle-orm";
 import type { CallNotes } from "./extraction-schema";
+import { getCaptureApprovalMode } from "@/lib/capture/approval";
 
 const OPEN_STAGES = ["lead", "qualification", "demo", "trial", "proposal", "negotiation"] as const;
 
@@ -74,6 +75,22 @@ export async function applyCallToCrm(args: ApplyCallArgs): Promise<ApplyCallResu
       .limit(1);
     companyId = c?.companyId ?? null;
   }
+
+  // Human-in-the-loop: in 'review' mode the captured qualification facts land in
+  // a pending namespace (approved/dismissed on the fiche) instead of overwriting
+  // live. 'auto' (default) writes live, as before. Deal routing + tasks are
+  // workflow, not facts, so they are not gated.
+  const [tenantRow] = await db
+    .select({ settings: tenants.settings })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+  const reviewMode =
+    getCaptureApprovalMode(tenantRow?.settings as Record<string, unknown> | null) === "review";
+  const mKey = reviewMode ? "pendingMeddic" : "meddic";
+  const eKey = reviewMode ? "pendingEvidence" : "evidence";
+  const ciKey = reviewMode ? "pendingCallIntel" : "callIntel";
+  const cpKey = reviewMode ? "pendingCallProfile" : "callProfile";
 
   const outcome = notes.outcome;
   const bs = notes.buyingSignals;
@@ -138,7 +155,7 @@ export async function applyCallToCrm(args: ApplyCallArgs): Promise<ApplyCallResu
             value: dealValue,
             expectedCloseDate: closeDate,
             summary: notes.summary,
-            properties: { source: "call", callId, buyingSignals: signalProps, ...(meddicProps ? { meddic: meddicProps } : {}), ...(evidence.length ? { evidence } : {}) },
+            properties: { source: "call", callId, buyingSignals: signalProps, ...(meddicProps ? { [mKey]: meddicProps } : {}), ...(evidence.length ? { [eKey]: evidence } : {}) },
           })
           .returning({ id: deals.id });
         result.dealId = created.id;
@@ -147,7 +164,7 @@ export async function applyCallToCrm(args: ApplyCallArgs): Promise<ApplyCallResu
     } else {
       // Patch the existing deal with anything newly learned.
       const patch: Record<string, unknown> = {
-        properties: { ...((openDeal.properties as Record<string, unknown>) || {}), buyingSignals: signalProps, ...(meddicProps ? { meddic: meddicProps } : {}), ...(evidence.length ? { evidence } : {}), lastCallId: callId },
+        properties: { ...((openDeal.properties as Record<string, unknown>) || {}), buyingSignals: signalProps, ...(meddicProps ? { [mKey]: meddicProps } : {}), ...(evidence.length ? { [eKey]: evidence } : {}), lastCallId: callId },
         updatedAt: occurredAt,
       };
       if (openDeal.value == null && dealValue != null) patch.value = dealValue;
@@ -168,13 +185,13 @@ export async function applyCallToCrm(args: ApplyCallArgs): Promise<ApplyCallResu
     try {
       const [co] = await db.select({ properties: companies.properties }).from(companies).where(eq(companies.id, companyId)).limit(1);
       const cprops = (co?.properties as Record<string, unknown>) || {};
-      const prevIntel = (cprops.callIntel as Record<string, unknown>) || {};
+      const prevIntel = (cprops[ciKey] as Record<string, unknown>) || {};
       await db
         .update(companies)
         .set({
           properties: {
             ...cprops,
-            callIntel: {
+            [ciKey]: {
               ...prevIntel,
               stack: bs.currentStack.length ? bs.currentStack : prevIntel.stack ?? [],
               competitors: bs.competitors.length ? bs.competitors : prevIntel.competitors ?? [],
@@ -244,7 +261,7 @@ export async function applyCallToCrm(args: ApplyCallArgs): Promise<ApplyCallResu
     await db
       .update(contacts)
       .set({
-        properties: { ...props, lastCall: { outcome, sentiment: notes.sentiment, at: occurredAt.toISOString(), callId }, ...(notes.contactProfile ? { callProfile: { ...notes.contactProfile, updatedFromCallId: callId, updatedAt: occurredAt.toISOString() } } : {}) },
+        properties: { ...props, lastCall: { outcome, sentiment: notes.sentiment, at: occurredAt.toISOString(), callId }, ...(notes.contactProfile ? { [cpKey]: { ...notes.contactProfile, updatedFromCallId: callId, updatedAt: occurredAt.toISOString() } } : {}) },
         updatedAt: occurredAt,
       })
       .where(eq(contacts.id, contactId));
