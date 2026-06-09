@@ -8,6 +8,11 @@ interface SelectionContext {
   tenantId: string;
   recipientDomain?: string;
   preferredMailboxId?: string;
+  /** Owner (auth-user id = connected_mailboxes.user_id). Connected mailboxes are
+   * PERSONAL — when sending on a user's behalf, pass their id so the pool only
+   * rotates across THEIR mailboxes, never a colleague's. App-user owners (e.g.
+   * deals.ownerId) must be mapped first — see lib/integrations/owner-mailbox.ts. */
+  ownerId?: string;
 }
 
 export async function selectBestMailbox(context: SelectionContext): Promise<MailboxSelection | null> {
@@ -15,10 +20,14 @@ export async function selectBestMailbox(context: SelectionContext): Promise<Mail
     .select()
     .from(connectedMailboxes)
     .where(
-      and(
-        eq(connectedMailboxes.tenantId, context.tenantId),
-        // Only active or warming_up mailboxes
-      )
+      // Personal mailboxes: scope the pool to the owner when one is given,
+      // otherwise (legacy/agent) fall back to the whole tenant.
+      context.ownerId
+        ? and(
+            eq(connectedMailboxes.tenantId, context.tenantId),
+            eq(connectedMailboxes.userId, context.ownerId),
+          )
+        : eq(connectedMailboxes.tenantId, context.tenantId),
     );
 
   const eligible = mailboxes.filter((m) => {
