@@ -14,16 +14,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, CalendarClock, Phone, Pencil, Sparkles, Loader2, X, Plus, Trash2 } from "lucide-react";
 import { interpolateOpener, defaultScriptFields, splitGuidance, withNoResponse, type ScriptFields } from "@/lib/call-mode/call-scripts";
+import { deriveOpeningReason, REASON_BRIDGE, type OpeningReasonInput } from "@/lib/call-mode/live-script";
 import { useToast } from "@/components/ui/toast";
 
 export function CallScriptPanel({
   contactName,
   defaultSector,
   defaultGeo,
+  reasonInput,
 }: {
   contactName?: string | null;
   defaultSector?: string | null;
   defaultGeo?: string | null;
+  /** Grounded prospect context (live signal + dossier). Drives the sayable
+   *  "reason to call" line said right after the opener — voiceable triggers
+   *  only, never an internal signal or a strategy note. */
+  reasonInput?: OpeningReasonInput;
 }) {
   const { toast } = useToast();
   const [sector, setSector] = useState(defaultSector ?? "");
@@ -68,6 +74,10 @@ export function CallScriptPanel({
     () => interpolateOpener(fields.opener, { name: contactName, sector, geo }),
     [fields.opener, contactName, sector, geo],
   );
+  // The sayable reason to call THIS prospect — said right after the permission
+  // opener (Bloc 2). Per-prospect, recomputed each render, never persisted; null
+  // when nothing voiceable is grounded (then the rep just opens on the gate).
+  const reason = deriveOpeningReason(reasonInput ?? {});
   const anyChecked = checked.size > 0;
   const toggle = (i: number) =>
     setChecked((prev) => {
@@ -223,6 +233,19 @@ export function CallScriptPanel({
         // ── Read mode — what to say ──
         <>
           <p className="text-[13px] leading-relaxed" style={{ color: "var(--color-text-primary)" }}>{opener}</p>
+          {reason && (
+            <p className="text-[13px] leading-relaxed" style={{ color: "var(--color-text-primary)" }}>
+              <span style={{ color: "var(--color-text-tertiary)" }}>{REASON_BRIDGE} </span>
+              {reason.fact}
+              <span
+                className="ml-1.5 rounded-sm px-1.5 py-px align-middle text-[9px] font-semibold uppercase tracking-wide"
+                style={{ background: "var(--color-bg-hover)", color: "var(--color-text-tertiary)" }}
+                title="Source de la raison"
+              >
+                {reason.sourceLabel}
+              </span>
+            </p>
+          )}
           <div className="flex flex-col gap-1.5">
             {view.problems.map((p, i) => (
               <button key={i} type="button" onClick={() => toggle(i)}

@@ -1136,7 +1136,15 @@ export default function CallModePage() {
         {selected ? (
           <>
             <div className="p-3">
-              <CallScriptPanel contactName={selected.contactName} defaultSector={brain?.companyBrain?.company?.industry} />
+              <CallScriptPanel
+                contactName={selected.contactName}
+                defaultSector={brain?.companyBrain?.company?.industry}
+                reasonInput={{
+                  signal: selected.latestSignal,
+                  hiringRole: brain?.cachedDossier?.hiringSignals?.[0]?.role,
+                  fundingLastRound: brain?.cachedDossier?.funding?.lastRound,
+                }}
+              />
             </div>
             {inCall && (
               <InCallContext selected={selected} brain={brain} coaching={[]} />
