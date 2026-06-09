@@ -51,6 +51,14 @@ const nextConfig: NextConfig = {
       // lazy-loads when session_recording is enabled.
       "https://eu.i.posthog.com",
       "https://eu-assets.i.posthog.com",
+      // Twilio Voice SDK (Call Mode softphone). The browser agent leg needs
+      // the signaling WebSocket (wss://voice-js.<region>.twilio.com/signal),
+      // the eventgw + SDK asset/sound hosts (https://*.twilio.com,
+      // https://sdk.twilio.com). Without these the Device errors 31000 and no
+      // call can be placed from the browser.
+      "https://sdk.twilio.com",
+      "https://*.twilio.com",
+      "wss://*.twilio.com",
       ...(process.env.NODE_ENV === "development" ? ["http://localhost:8288"] : []),
     ].join(" ");
 
@@ -88,8 +96,11 @@ const nextConfig: NextConfig = {
             value: "strict-origin-when-cross-origin",
           },
           {
+            // Call Mode's softphone needs the mic for the app's own origin;
+            // camera + geolocation stay disabled. `microphone=()` (the old
+            // value) blocked getUserMedia everywhere, including self.
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(), microphone=(self), geolocation=()",
           },
           {
             key: "Strict-Transport-Security",
