@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { sequenceEnrollments } from "@/db/schema";
+import { sequenceEnrollments, sequences } from "@/db/schema";
 import { eq, and, lte } from "drizzle-orm";
 
 /**
@@ -21,12 +21,19 @@ export const cronTriggerSequenceSteps = inngest.createFunction(
   },
   async ({ step }) => {
     const dueEnrollments = await step.run("fetch-due-enrollments", async () => {
+      // Gate on the PARENT sequence being 'active' too. The "Start"
+      // button flips sequences.status draft→active; nothing used to read
+      // it, so a campaign's enrollments sent while it was still a draft
+      // (and pausing/archiving the campaign didn't stop sends). Joining
+      // here makes Start/Pause/Archive actually control delivery.
       return db
         .select({ id: sequenceEnrollments.id })
         .from(sequenceEnrollments)
+        .innerJoin(sequences, eq(sequenceEnrollments.sequenceId, sequences.id))
         .where(
           and(
             eq(sequenceEnrollments.status, "active"),
+            eq(sequences.status, "active"),
             lte(sequenceEnrollments.nextStepAt, new Date())
           )
         )
