@@ -13,6 +13,8 @@ import type { EmailComposerDraft } from "@/components/email-composer-panel";
 import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { CopyButton } from "@/components/chat/copy-button";
+import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
+import type { UiDirective } from "@/lib/chat/ui-directives";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles, ArrowUpRight } from "lucide-react";
@@ -59,6 +61,19 @@ export default function ChatPage() {
   const savingRef = useRef(false);
   const [emailComposer, setEmailComposer] = useState<EmailComposerDraft | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  // Command layer: execute UI directives carried on tool results (open a
+  // record/view, or the composer) exactly once per turn. Replayed thread
+  // history has no tool parts, so loading an old chat never auto-navigates.
+  const onDirective = useCallback(
+    (d: UiDirective) =>
+      runUiDirective(d, {
+        navigate: (p) => router.push(p),
+        openComposer: (draft) => setEmailComposer(draft),
+      }),
+    [router],
+  );
+  useUiDirectives(chat, onDirective);
   const [firstName, setFirstName] = useState<string>("");
   // Time-based greeting computed AFTER mount. new Date().getHours() differs
   // between the SSR render (server timezone) and the client (local tz), so
@@ -243,13 +258,16 @@ export default function ChatPage() {
   }, [chat.status, chat.messages.length, lastSavedCount, saveMessages]);
 
   // Auto-grow the composer so the full message stays visible as it's typed
-  // (and snap back to one line after sending / clearing). Capped at 200px,
-  // then it scrolls.
+  // (and snap back to one line after sending / clearing). Standard chat
+  // behaviour: grow in height first, and only show a scrollbar once we hit
+  // the cap (200px) — never a scrollbar on a one-liner.
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
+    const MAX = 200;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, MAX)}px`;
+    el.style.overflowY = el.scrollHeight > MAX ? "auto" : "hidden";
   }, [localInput]);
 
   function handleLocalSubmit(e: React.FormEvent) {
@@ -349,7 +367,7 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="absolute left-3 bottom-2 rounded p-0.5 transition-colors hover:bg-[var(--color-bg-hover)]"
+            className="absolute left-2 bottom-2 flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: "var(--color-text-tertiary)" }}
             title="Attach file"
           >
@@ -376,7 +394,7 @@ export default function ChatPage() {
               border: "1px solid var(--color-border-default)",
               boxShadow: "var(--shadow-card)",
               maxHeight: 200,
-              overflowY: "auto",
+              overflowY: "hidden",
               lineHeight: 1.5,
             }}
             onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-border-focus)"; }}
@@ -386,8 +404,8 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={toggleVoiceInput}
-            className="absolute bottom-2 rounded p-1 transition-colors hover:bg-[var(--color-bg-hover)]"
-            style={{ right: localInput.trim() ? 42 : 12, color: isListening ? "var(--color-error)" : "var(--color-text-tertiary)" }}
+            className="absolute bottom-2 flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ right: localInput.trim() ? 40 : 8, color: isListening ? "var(--color-error)" : "var(--color-text-tertiary)" }}
             title={isListening ? "Stop listening" : "Voice input"}
           >
             {isListening ? <MicOff size={14} /> : <Mic size={14} />}
