@@ -190,7 +190,8 @@ RULES:
 - buyingSignals: only what is explicitly mentioned. currentStack = the tools/vendors they use today (the replaceable stack). initiatives = concrete projects/triggers driving change (a migration, a mandate, a reorg, a renewal).
 - meddic: fill the deal's qualification spine ONLY from what was said — metrics (quantified pain/ROI in their words), economicBuyer (who controls budget or signs), decisionCriteria, decisionProcess (how they buy: steps/approvals/timeline), identifiedPain (the core pain driving change), champion (who could sell this internally for us). Null any cell the transcript did not reveal.
 - contactProfile: the person actually on the call — their role/function, whether they decide, and their disposition toward us (champion/supporter/neutral/detractor), based strictly on what they said.
-- evidence: for each notable claim you record (a pain, a budget, a competitor, a role, an initiative), pair it with the verbatim transcript line that grounds it. A fact with no supporting quote should not be asserted.`,
+- evidence: for each notable claim you record (a pain, a budget, a competitor, a role, an initiative), pair it with the verbatim transcript line that grounds it. A fact with no supporting quote should not be asserted.
+- debrief: a short, honest post-call review of how the REP ran the call (their side, not the prospect's data). wentWell = what they did well; toImprove = concrete, actionable next-time fixes — each tied to a real moment in the transcript, in the rep's own language, never generic. This is the one place a judgement is allowed; keep it specific and kind. Null it for a non-conversation (voicemail, no-answer, gatekeeper, wrong number).`,
             providerOptions: {
               anthropic: { cacheControl: { type: "ephemeral" } },
             },
@@ -265,6 +266,9 @@ RULES:
             actionItems: notes.actionItems,
             durationSec: callRow.durationSec,
             recordingUrl: callRow.recordingUrl,
+            // Post-call debrief (ce qui a marché / à améliorer), surfaced in
+            // the Call Mode ended view once processing is done.
+            debrief: notes.debrief,
           },
         },
       });

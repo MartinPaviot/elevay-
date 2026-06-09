@@ -7,8 +7,8 @@
 
 import { withAuthRLS } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { calls, contacts } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { calls, contacts, activities } from "@/db/schema";
+import { and, eq, sql, desc } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -30,8 +30,27 @@ export async function GET(
     if (!row) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Post-call debrief lives on the call_completed activity's metadata,
+    // written by the async post-processor. Null until processing is done —
+    // the ended view polls processingState and shows it when it lands.
+    const [act] = await db
+      .select({ metadata: activities.metadata })
+      .from(activities)
+      .where(
+        and(
+          eq(activities.tenantId, authCtx.tenantId),
+          sql`${activities.metadata}->>'callId' = ${id}`,
+        ),
+      )
+      .orderBy(desc(activities.occurredAt))
+      .limit(1);
+    const debrief =
+      (act?.metadata as Record<string, unknown> | null | undefined)?.debrief ?? null;
+
     return Response.json({
       ...row.call,
+      debrief,
       contactName:
         `${row.contactFirstName ?? ""} ${row.contactLastName ?? ""}`.trim() ||
         "Unknown",

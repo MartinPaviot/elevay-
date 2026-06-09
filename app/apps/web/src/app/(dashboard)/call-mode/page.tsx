@@ -27,6 +27,7 @@ import {
   ChevronDown,
   Check,
   Plus,
+  ClipboardList,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -84,14 +85,6 @@ type SoftphoneState =
   | { kind: "ringing"; callId: string; toNumber: string; ringingSinceMs: number }
   | { kind: "connected"; callId: string; toNumber: string; connectedAtMs: number; muted: boolean }
   | { kind: "ended"; callId: string; outcome: string | null };
-
-interface CoachingCardData {
-  ts: number;
-  objectionClass: string;
-  label: string;
-  prospectQuote: string;
-  suggestedResponses: string[];
-}
 
 interface TranscriptChunk {
   speaker: "agent" | "prospect" | string;
@@ -218,12 +211,9 @@ export default function CallModePage() {
   // funnel bar so its stats reload once the plan changes.
   const [editingPlan, setEditingPlan] = useState(false);
   const [planVersion, setPlanVersion] = useState(0);
-  // Phase 3 — live coaching cards. Each card auto-dismisses after 12s
-  // unless the user manually closes it. Newest on top, max 5 visible.
-  const [coachingCards, setCoachingCards] = useState<CoachingCardData[]>([]);
-  // Full, non-dismissing history of objections raised — surfaced in the
-  // transcript view after the call for review.
-  const [coachingHistory, setCoachingHistory] = useState<CoachingCardData[]>([]);
+  // In-call coaching is intentionally NOT surfaced during a call — the call
+  // stays a human exchange (no live nudging). The review happens AFTER the
+  // call via the post-call debrief in the ended view.
 
   // SSE subscription handle so we can tear down on unmount / hangup.
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -390,8 +380,6 @@ export default function CallModePage() {
       setAmdDetected(null);
       setVoicemailDropping(false);
       setVoicemailDropped(false);
-      setCoachingCards([]);
-      setCoachingHistory([]);
       try {
         const res = await fetch("/api/calls/start", {
           method: "POST",
@@ -479,21 +467,9 @@ export default function CallModePage() {
           setVoicemailDropped(true);
           setVoicemailDropping(false);
         });
-        es.addEventListener("coaching_card", (evt) => {
-          try {
-            const card = JSON.parse(
-              (evt as MessageEvent).data,
-            ) as CoachingCardData;
-            setCoachingCards((prev) => [card, ...prev].slice(0, 5));
-            setCoachingHistory((prev) => [...prev, card]);
-            // Auto-dismiss after 12s — peripheral signal, not a TODO list.
-            setTimeout(() => {
-              setCoachingCards((prev) => prev.filter((c) => c.ts !== card.ts));
-            }, 12_000);
-          } catch {
-            /* ignore malformed card */
-          }
-        });
+        // NOTE: the server may still emit "coaching_card" events, but we
+        // deliberately do not listen for them — no AI interaction during the
+        // call. The post-call debrief covers the review afterwards.
         es.addEventListener("transcript", (evt) => {
           try {
             const chunk = JSON.parse((evt as MessageEvent).data) as TranscriptChunk;
@@ -851,15 +827,7 @@ export default function CallModePage() {
         </div>
       )}
       <div className="flex flex-1 min-h-0 w-full relative">
-      {/* Phase 3 — live coaching overlay. Bottom-right, peripheral. */}
-      {coachingCards.length > 0 && (
-        <CoachingCardsOverlay
-          cards={coachingCards}
-          onDismiss={(ts) =>
-            setCoachingCards((prev) => prev.filter((c) => c.ts !== ts))
-          }
-        />
-      )}
+      {/* No in-call coaching overlay — the call stays a human exchange. */}
 
       {/* ───── LEFT — Queue: full in prep, thin strip when live ───── */}
       <aside
@@ -1111,13 +1079,15 @@ export default function CallModePage() {
                       connectedAtMs={
                         softphone.kind === "connected" ? softphone.connectedAtMs : null
                       }
-                      coaching={coachingHistory}
+                      coaching={[]}
                     />
                   </div>
-                  {/* After the call: write the follow-up + book the meeting the
-                      prospect just agreed to, without leaving the cockpit. */}
+                  {/* After the call: the debrief (what worked / to improve),
+                      then write the follow-up + book the meeting the prospect
+                      just agreed to, without leaving the cockpit. */}
                   {softphone.kind === "ended" && (
                     <div className="shrink-0 border-t border-zinc-200 dark:border-zinc-800">
+                      <CallDebrief callId={softphone.callId} />
                       <CallActions
                         contactId={selected.contactId}
                         contactName={selected.contactName}
@@ -1169,7 +1139,7 @@ export default function CallModePage() {
               <CallScriptPanel contactName={selected.contactName} defaultSector={brain?.companyBrain?.company?.industry} />
             </div>
             {inCall && (
-              <InCallContext selected={selected} brain={brain} coaching={coachingHistory} />
+              <InCallContext selected={selected} brain={brain} coaching={[]} />
             )}
           </>
         ) : (
@@ -1561,47 +1531,106 @@ function FromNumberRow(props: {
   );
 }
 
-function CoachingCardsOverlay(props: {
-  cards: CoachingCardData[];
-  onDismiss: (ts: number) => void;
-}) {
+/**
+ * Post-call debrief — the "ce qui a marché / à améliorer" review, shown only
+ * AFTER the call (never during it). The notes are produced asynchronously by
+ * the call post-processor, so we poll /api/calls/[id] until they land.
+ */
+function CallDebrief({ callId }: { callId: string | null }) {
+  const [debrief, setDebrief] = useState<{ wentWell: string[]; toImprove: string[] } | null>(null);
+  const [phase, setPhase] = useState<"loading" | "ready" | "none">("loading");
+
+  useEffect(() => {
+    if (!callId) {
+      setPhase("none");
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let tries = 0;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/calls/${callId}`);
+        if (res.ok && !cancelled) {
+          const d = (await res.json()) as {
+            processingState?: string;
+            debrief?: { wentWell?: string[]; toImprove?: string[] } | null;
+          };
+          const db = d.debrief;
+          const count = (db?.wentWell?.length ?? 0) + (db?.toImprove?.length ?? 0);
+          if (count > 0) {
+            setDebrief({ wentWell: db?.wentWell ?? [], toImprove: db?.toImprove ?? [] });
+            setPhase("ready");
+            return;
+          }
+          // Processed but nothing to debrief (voicemail / no-answer) → hide.
+          if (d.processingState === "done") {
+            setPhase("none");
+            return;
+          }
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+      if (!cancelled && tries++ < 20) {
+        timer = setTimeout(poll, 3000);
+      } else if (!cancelled) {
+        setPhase("none");
+      }
+    };
+    timer = setTimeout(poll, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [callId]);
+
+  if (phase === "none") return null;
+
   return (
-    <div className="absolute right-6 bottom-6 z-30 flex flex-col gap-2 max-w-sm pointer-events-none">
-      {props.cards.map((card) => (
-        <div
-          key={card.ts}
-          className="pointer-events-auto rounded-md border bg-white dark:bg-zinc-900 shadow-md p-3 text-[12px]"
-          style={{
-            borderColor: "var(--color-border-default)",
-            color: "var(--color-text-primary)",
-          }}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
-              Objection · {card.label}
-            </div>
-            <button
-              onClick={() => props.onDismiss(card.ts)}
-              className="text-[11px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-100"
-            >
-              ×
-            </button>
-          </div>
-          <div className="mt-1 italic text-zinc-600 dark:text-zinc-400">
-            « {card.prospectQuote} »
-          </div>
-          <ul className="mt-2 space-y-1.5">
-            {card.suggestedResponses.map((r, i) => (
-              <li
-                key={i}
-                className="rounded-sm bg-zinc-50 dark:bg-zinc-800/50 px-2 py-1.5 leading-snug"
-              >
-                {r}
-              </li>
-            ))}
-          </ul>
+    <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center gap-1.5 mb-2">
+        <ClipboardList size={13} className="text-zinc-500" />
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          Débrief de l&apos;appel
+        </span>
+      </div>
+      {phase === "loading" ? (
+        <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+          <Loader2 size={12} className="animate-spin" />
+          Analyse de l&apos;appel en cours…
         </div>
-      ))}
+      ) : debrief ? (
+        <div className="space-y-2.5">
+          {debrief.wentWell.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium mb-1 text-emerald-600 dark:text-emerald-400">Ce qui a marché</p>
+              <ul className="space-y-1">
+                {debrief.wentWell.map((s, i) => (
+                  <li key={i} className="flex gap-1.5 text-[12px] text-zinc-700 dark:text-zinc-300">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {debrief.toImprove.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium mb-1 text-amber-600 dark:text-amber-400">À améliorer</p>
+              <ul className="space-y-1">
+                {debrief.toImprove.map((s, i) => (
+                  <li key={i} className="flex gap-1.5 text-[12px] text-zinc-700 dark:text-zinc-300">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
+
