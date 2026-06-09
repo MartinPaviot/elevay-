@@ -46,6 +46,7 @@ import {
   Swords,
   Target,
   ChevronDown,
+  Check,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { CompanyLogo } from "@/components/ui/company-logo";
@@ -319,29 +320,26 @@ export function PreCallBrief({
   onEnrich?: () => void;
   enriching?: boolean;
 }) {
-  const firstName = selected.contactName.split(" ")[0];
   const focal = brain?.focalContact;
   const deals = brain?.ownedDeals ?? [];
   const activities = brain?.directActivities ?? [];
   const dossier = brain?.cachedDossier ?? null;
   const approach = dossier?.recommendedApproach;
-  const opener =
-    approach?.openingLine?.trim() ||
-    `« Bonjour ${firstName}, j'ai 30 secondes ? »`;
-
-  // Pre-call hero — the three things to know in the 5 seconds before dialing.
-  // The dense dossier (score, facts, history, deals) collapses beneath it.
+  const company = brain?.companyBrain?.company;
   const [showDossier, setShowDossier] = useState(false);
+
+  // The fiche leads with INTELLIGENCE, not the opener (the opener lives in the
+  // independent script panel on the right). L'enjeu = a one-glance synthesis of
+  // who/business + why now + the angle.
+  const enjeuSituation = [company?.industry, company?.sizeBand].filter(Boolean).join(" · ");
   const whyNow =
     selected.latestSignal?.label ||
-    "Pas de signal temps réel — appel à froid sur le profil ICP.";
-  const whatTheyCare =
-    approach?.messagingAngle?.trim() ||
-    (dossier?.hiringSignals && dossier.hiringSignals.length > 0
-      ? `Recrute ${dossier.hiringSignals[0].role}`
-      : `Priorités d'un(e) ${selected.title ?? "décideur"}`);
-  // Aligned with the script's deep-dive ask (45 min), not a contradicting 15.
-  const theAsk = "Décrocher un échange de 45 min cette semaine.";
+    (dossier?.funding ? `Levée ${dossier.funding.lastRound}` : null) ||
+    (dossier?.hiringSignals && dossier.hiringSignals.length > 0 ? `Recrute ${dossier.hiringSignals[0].role}` : null) ||
+    "Pas de signal récent — appel à froid sur le profil ICP.";
+  const angle = approach?.messagingAngle?.trim() || null;
+  const lastTouch = focal?.lastTouchAt;
+  const relationLabel = lastTouch ? `Dernier contact ${relTime(lastTouch)}` : "Jamais contacté";
 
   // What's still worth pulling before the call — honest gap list.
   const gaps: string[] = [];
@@ -352,23 +350,36 @@ export function PreCallBrief({
   if (selected.accessibilityScore <= 0.5) gaps.push("Numéro non qualifié (standard probable)");
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-6">
-      {/* ── Hero: the line to say, then why now / what they care about / the ask ── */}
-      <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <div className="p-4" style={{ background: "rgba(99,102,241,.06)" }}>
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "rgb(79,70,229)" }}>
-            <MessageSquare className="h-3.5 w-3.5" />
-            Accroche à dire
-          </div>
-          <p className="mt-1.5 text-[15px] italic leading-snug text-zinc-800 dark:text-zinc-100">{opener}</p>
+    <div className="mx-auto max-w-3xl space-y-4 p-6">
+      {/* ── L'enjeu — the one-glance synthesis (the opener is on the script, right) ── */}
+      <div className="rounded-xl border p-4" style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-accent)" }}>
+          <Sparkles className="h-3.5 w-3.5" />
+          L&apos;enjeu
         </div>
-        <div
-          className="divide-y divide-zinc-100 dark:divide-zinc-800"
-          style={{ borderTop: "1px solid var(--color-border-default)" }}
-        >
-          <HeroBullet icon={Sparkles} label="Pourquoi maintenant" value={whyNow} trend={focal?.intentTrend ?? null} />
-          <HeroBullet icon={Target} label="Ce qui compte pour eux" value={whatTheyCare} />
-          <HeroBullet icon={Phone} label="L'objectif de l'appel" value={theAsk} />
+        <p className="mt-1.5 text-[14px] leading-snug" style={{ color: "var(--color-text-primary)" }}>
+          {enjeuSituation && <span className="font-medium">{enjeuSituation}. </span>}
+          {whyNow}
+          {angle && <span style={{ color: "var(--color-text-secondary)" }}> — {angle}</span>}
+        </p>
+      </div>
+
+      {/* ── La personne — disposition + comment la joindre. Coordonnées en
+          icônes : survol = la valeur, clic = copie. ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4" style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]" style={{ color: "var(--color-text-secondary)" }}>
+          <span className="font-medium" style={{ color: "var(--color-text-primary)" }}>{selected.title ?? "Décideur"}</span>
+          {focal?.isChampion && (
+            <span className="inline-flex items-center gap-1 font-medium" style={{ color: "rgb(180,83,9)" }}>
+              <Crown className="h-3.5 w-3.5" /> Champion
+            </span>
+          )}
+          {focal?.intentTrend && <IntentTrend trend={focal.intentTrend} />}
+          <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {relationLabel}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <CopyChip icon={Mail} label="Email" value={focal?.email} />
+          <CopyChip icon={Phone} label="Téléphone" value={selected.phone} />
         </div>
       </div>
 
@@ -550,26 +561,31 @@ export function PreCallBrief({
   );
 }
 
-function HeroBullet({
-  icon: Icon,
-  label,
-  value,
-  trend,
-}: {
-  icon: typeof Phone;
-  label: string;
-  value: string;
-  trend?: BrainContact["intentTrend"] | null;
-}) {
+/** A coordinate rendered as an icon only: hover shows the value (native
+ * tooltip), click copies it to the clipboard. Renders nothing when empty —
+ * so we never show a quarter of the data or a dead field. */
+function CopyChip({ icon: Icon, label, value }: { icon: typeof Mail; label: string; value: string | null | undefined }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
   return (
-    <div className="flex items-start gap-2.5 px-4 py-2.5">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">{label}</div>
-        <p className="mt-0.5 text-[13px] leading-snug text-zinc-700 dark:text-zinc-300">{value}</p>
-      </div>
-      {trend && <IntentTrend trend={trend} />}
-    </div>
+    <button
+      type="button"
+      title={`${label} : ${value} — cliquer pour copier`}
+      aria-label={`Copier ${label.toLowerCase()}`}
+      onClick={() => {
+        navigator.clipboard?.writeText(value).catch(() => {});
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors hover:bg-[var(--color-bg-hover)]"
+      style={{ borderColor: "var(--color-border-default)" }}
+    >
+      {copied ? (
+        <Check className="h-4 w-4 text-emerald-500" />
+      ) : (
+        <Icon className="h-4 w-4" style={{ color: "var(--color-text-secondary)" }} />
+      )}
+    </button>
   );
 }
 
