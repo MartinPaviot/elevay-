@@ -30,6 +30,10 @@ describe("callNotesSchema", () => {
         whenIso: "2026-05-21T14:00:00+02:00",
         note: "Tuesday after lunch",
       },
+      debrief: {
+        wentWell: ["Opened with a clear reason for the call"],
+        toImprove: ["Talked over the prospect when they raised pricing"],
+      },
     });
     expect(ok.success).toBe(true);
   });
@@ -70,6 +74,7 @@ describe("callNotesSchema", () => {
         { claim: "La souveraineté est un sujet du comité", quote: "le board nous a demandé un audit là-dessus" },
       ],
       callbackRequest: null,
+      debrief: null,
     });
     expect(ok.success).toBe(true);
   });
@@ -122,6 +127,7 @@ describe("callNotesSchema", () => {
       contactProfile: null,
       evidence: [],
       callbackRequest: null,
+      debrief: null,
     });
     expect(ok.success).toBe(true);
   });

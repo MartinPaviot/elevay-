@@ -67,6 +67,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       contactProfile: null,
       evidence: [],
       callbackRequest: outcome === "callback_requested" ? { requested: true, whenIso: null, note: null } : null,
+      debrief: null,
     };
     const crm = await applyCallToCrm({
       tenantId: authCtx.tenantId,

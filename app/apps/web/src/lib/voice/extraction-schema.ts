@@ -92,6 +92,21 @@ export const callNotesSchema = z.object({
       note: z.string().nullable(),
     })
     .nullable(),
+  // Post-call debrief for the rep — a short "what went well / what to improve"
+  // read on how the CALL ITSELF was conducted (the human's side), distinct
+  // from the prospect's data above. This is a coaching judgement grounded in
+  // the transcript; it is shown only AFTER the call, never during it.
+  debrief: z
+    .object({
+      wentWell: z
+        .array(z.string())
+        .describe("2-4 concrete things the rep did well on this call, tied to what actually happened. Empty if the call was too short to assess."),
+      toImprove: z
+        .array(z.string())
+        .describe("2-4 concrete, actionable things to do better next time, each tied to a real moment in the transcript. Empty if nothing notable."),
+    })
+    .nullable()
+    .describe("A quick post-call debrief on the rep's own performance. Null for non-conversations (voicemail, no-answer, wrong number)."),
 });
 
 export type CallNotes = z.infer<typeof callNotesSchema>;
