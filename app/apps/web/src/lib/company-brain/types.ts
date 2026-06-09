@@ -19,6 +19,8 @@ export interface CompanyBrainCompany {
   industry: string | null;
   sizeBand: string | null;
   score: number | null;
+  /** Precise location from enrichment (city, state/canton, country), deduped. */
+  location?: string | null;
   createdAt: Date;
 }
 
