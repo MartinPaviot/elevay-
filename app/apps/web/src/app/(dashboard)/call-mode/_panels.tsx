@@ -100,6 +100,7 @@ interface BrainCompany {
   industry: string | null;
   sizeBand: string | null;
   score: number | null;
+  location?: string | null;
 }
 interface BrainMemory { id: string; scope: string; content: string; createdAt: string }
 interface BrainEdge {
@@ -362,6 +363,9 @@ export function PreCallBrief({
   const dossier = brain?.cachedDossier ?? null;
   const approach = dossier?.recommendedApproach;
   const company = brain?.companyBrain?.company;
+  // Precise location (enrichment city/canton/country) when we have it; otherwise
+  // fall back to the country derived from the contact's timezone.
+  const geo = company?.location ?? geoLabel(selected.localTimezone);
   const [showDossier, setShowDossier] = useState(false);
 
   // The script is on the right — the centre is situational intelligence. What an
@@ -451,7 +455,7 @@ export function PreCallBrief({
       <div className="flex flex-wrap items-center gap-1.5">
         {company?.industry && <ContextChip icon={Building2}>{company.industry}</ContextChip>}
         {company?.sizeBand && <ContextChip icon={Users}>{company.sizeBand}</ContextChip>}
-        {geoLabel(selected.localTimezone) && <ContextChip icon={Globe}>{geoLabel(selected.localTimezone)}</ContextChip>}
+        {geo && <ContextChip icon={Globe}>{geo}</ContextChip>}
         {selected.localTime && <ContextChip icon={Clock}>{selected.localTime} (heure locale)</ContextChip>}
         {onEnrich && (
           <button
@@ -772,7 +776,7 @@ export function AccountBrainPanel({
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{company.name}</h3>
           <p className="truncate text-[12px] text-zinc-500">
-            {[company.industry, company.sizeBand].filter(Boolean).join(" · ") || "—"}
+            {[company.industry, company.sizeBand, company.location].filter(Boolean).join(" · ") || "—"}
           </p>
           {company.domain && (
             <a

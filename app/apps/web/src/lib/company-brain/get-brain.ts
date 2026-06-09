@@ -116,6 +116,7 @@ export async function getCompanyBrain(
       industry: companies.industry,
       sizeBand: companies.size,
       score: companies.score,
+      properties: companies.properties,
       createdAt: companies.createdAt,
     })
     .from(companies)
@@ -387,6 +388,22 @@ export async function getCompanyBrain(
   });
 
   // ── 11. Assemble + return ───────────────────────────────
+  // Precise location from the enrichment waterfall (companies.properties.city/
+  // state/country), deduped case-insensitively (CH: city + canton often match).
+  const cprops = (company.properties ?? {}) as Record<string, unknown>;
+  const pickStr = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const locSeen = new Set<string>();
+  const companyLocation =
+    [pickStr(cprops.city), pickStr(cprops.state), pickStr(cprops.country)]
+      .filter((v): v is string => !!v)
+      .filter((v) => {
+        const k = v.toLowerCase();
+        if (locSeen.has(k)) return false;
+        locSeen.add(k);
+        return true;
+      })
+      .join(", ") || null;
+
   const baseBrain = {
     company: {
       id: company.id,
@@ -395,6 +412,7 @@ export async function getCompanyBrain(
       industry: company.industry,
       sizeBand: company.sizeBand,
       score: company.score,
+      location: companyLocation,
       createdAt: company.createdAt ?? new Date(0),
     },
     contacts: contactsBrain,
