@@ -247,7 +247,7 @@ export default function AccountDetailPage() {
         })()}
 
         {/* What the call revealed about the org (stack / triggers — the Pilae lever) */}
-        <AccountCallIntel properties={account.properties} />
+        <AccountCallIntel properties={account.properties} entityId={accountId} />
 
         {/* Research Dossier */}
         <div className="mt-4">

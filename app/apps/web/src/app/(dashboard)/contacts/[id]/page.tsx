@@ -345,7 +345,7 @@ export default function ContactDetailPage() {
         {buyerIntent && <BuyerIntentCard data={buyerIntent} />}
 
         {/* What the last call revealed about this person (role / disposition) */}
-        <ContactCallProfile properties={contact.properties} className={buyerIntent ? "mt-6" : undefined} />
+        <ContactCallProfile properties={contact.properties} className={buyerIntent ? "mt-6" : undefined} entityId={contactId} />
 
         <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
           Contact details

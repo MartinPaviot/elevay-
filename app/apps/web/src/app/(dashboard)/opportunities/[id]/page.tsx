@@ -584,7 +584,7 @@ export default function DealDetailPage() {
         })()}
 
         {/* Qualification spine captured from calls — MEDDPICC + grounded sources */}
-        <MeddpiccScorecard properties={deal.properties} />
+        <MeddpiccScorecard properties={deal.properties} entityId={deal.id} />
 
         {/* (c) Stakeholder Map — from deal properties */}
         <StakeholderMap deal={deal} />
