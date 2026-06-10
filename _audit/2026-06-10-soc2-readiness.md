@@ -17,7 +17,7 @@ Le socle technique est nettement meilleur que la moyenne d'un produit à ce stad
 | Lockout brute-force : 5 échecs/15 min par compte, 30/60 min par IP, persisté en DB, email hashé SHA-256 (anti-énumération) | `lib/auth/auth-lockout.ts:25-36`, `db/schema/auth.ts:206-222` |
 | Sessions JWT 8 h absolu / refresh 1 h | `auth.ts:284` |
 | RBAC admin/member + `requireAdmin()` sur toutes les routes /api/admin et /api/eval | `lib/auth/auth-utils.ts:82-87` |
-| Isolation tenant : WHERE applicatif + RLS Postgres (migration 0038) + test `__tests__/rls.test.ts` | `lib/db/rls.ts:39-40` |
+| Isolation tenant : WHERE applicatif systématique via getAuthContext/withAuthRLS. **CORRECTIF 2026-06-10 (T8)** : la RLS Postgres revendiquée par le code (migration 0038) est ABSENTE de la prod — `pg_policies` vide, `relrowsecurity=false` sur contacts/companies/deals/activities, connexion en `postgres` avec `rolbypassrls=true`. L'isolation = couche applicative seule. Fix réel = rôle DB dédié non-BYPASSRLS + réapplication des policies (risque R-08b du registre) | vérifié live via `scripts/inspect-mfa-and-rls.ts` |
 | **11/11 webhooks signés** (Stripe, Resend/Svix, Twilio HMAC, Zeliq, FullEnrich, EmailEngine, Recall, Inngest, inbound), fail-closed, comparaison timing-safe, fenêtre anti-replay 5 min | scan des 314 routes API |
 | Audit log signé HMAC-SHA256, inviolabilité, **rétention 7 ans**, exclu de la purge | `lib/infra/audit-log.ts`, `lib/infra/signed-audit.ts` |
 | Chiffrement AES-256-GCM des mots de passe IMAP/SMTP/CalDAV et clés API tenant | `lib/crypto/settings-encryption.ts`, `db/schema/outbound.ts:240` |
@@ -106,6 +106,15 @@ Rien de tout cela n'existe aujourd'hui dans le repo ; tout est exigé par l'audi
 - **Branch protection ✗** : GitHub répond « Upgrade to GitHub Pro or make this repository public » (repo privé, plan Free). Décision : Pro (~4 $/mois) ou repo public.
 
 **Toujours ouverts** : T4 (MFA), T8 (BYPASSRLS Inngest), T9 (uptime/alerting), T11 (rétention recordings), T12 (rotation clés), et tout le volet organisationnel (§3).
+
+## 3ter. État d'exécution vague 2 (2026-06-10, soir)
+
+- **T4 ✓** MFA TOTP complet : RFC 6238 maison validé par les vecteurs de l'Appendix B (14 tests), secret chiffré AES-256-GCM dans `user_mfa_secrets` (table prod préexistante, schéma calqué), anti-replay par step, 10 recovery codes single-use hashés SHA-256, exigé au login credentials (`MfaRequired`/`InvalidTotp` + champ conditionnel sur /sign-in), carte d'enrôlement sur /settings/security, audit `mfa_enrolled`/`mfa_disabled`. Politique 02 : MFA requis pour les admins (grâce 14 j).
+- **T8 ✓ (constat)** — voir le correctif RLS en section 1 : la RLS n'existe pas en prod ; documenté honnêtement (risque R-08b), fix infra = rôle DB dédié (hors périmètre de cette vague).
+- **T9 ✓** `/api/health` teste la DB (budget 3 s, 503 si KO) + expose le commit déployé ; `uptime.yml` (probe 5 min sur prod, alerte email GitHub native) — en attente du scope workflow avec ci.yml.
+- **T11 ✓** Cron `recording-retention-purge` (04:00 UTC) : recordings > 90 j (override `settings.recordingRetentionDays`, min 7) supprimés chez Twilio puis pointeur nullé ; 404 toléré, échec → re-tenté le lendemain ; transcripts conservés (vie du contrat) ; audit-loggé par batch.
+- **T12 — exclu sur décision Martin** (risque R-03 accepté au registre).
+- **Volet org ✓ (v1)** : 12 politiques + liste subprocessors (28 vendors prod) dans `_compliance/`, ancrées sur les mécanismes réels (crons, endpoints, env), registre de risques 11 entrées. Restent les actes externes : signer les DPAs, choisir Vanta/Drata, drill de restauration, pentest.
 
 ## 4. Ordre d'exécution recommandé
 
