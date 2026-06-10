@@ -289,6 +289,9 @@ export async function GET() {
     const openRate = emailHealth?.sent > 0
       ? Math.round((emailHealth.opened / emailHealth.sent) * 100)
       : null;
+    const replyRate = emailHealth?.sent > 0
+      ? Math.round((emailHealth.replied / emailHealth.sent) * 100)
+      : null;
 
     const firstName = settings.onboardingFullName?.split(" ")[0]
       || (await auth())?.user?.name?.split(" ")[0]
@@ -324,6 +327,8 @@ export async function GET() {
         totalAccounts: accountsCount[0]?.count || 0,
         emailsSent7d: emailHealth?.sent || 0,
         openRate,
+        replies7d: emailHealth?.replied || 0,
+        replyRate,
         dealsAtRisk: dealsAtRisk.map((d) => ({
           id: d.id,
           name: d.name,
