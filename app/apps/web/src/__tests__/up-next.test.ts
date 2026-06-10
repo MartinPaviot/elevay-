@@ -168,7 +168,7 @@ describe("buildLedger — synthesis not row dump (AC6)", () => {
   function rx(trigger: string, label: string, deferred = 0): ReactionInput {
     return { trigger, entityLabel: label, actionsTaken: 0, actionsDeferred: deferred };
   }
-  it("groups by trigger with counts, samples and awaiting-approval sum", () => {
+  it("groups by trigger with counts and samples (no phantom approval count)", () => {
     const groups = buildLedger([
       rx("signal_detected", "Siit", 1),
       rx("signal_detected", "Axelor", 1),
@@ -179,11 +179,12 @@ describe("buildLedger — synthesis not row dump (AC6)", () => {
     expect(groups[0].trigger).toBe("signal_detected");
     expect(groups[0].count).toBe(4);
     expect(groups[0].samples).toHaveLength(3);
-    expect(groups[0].awaitingApproval).toBe(2);
     expect(groups[0].verb).toBe("Detected buying signals");
+    // The ledger must NOT assert "awaiting approval" — that's the queue's job.
+    expect("awaitingApproval" in groups[0]).toBe(false);
   });
   it("renders the +N overflow sentence", () => {
-    const g = { trigger: "signal_detected", verb: "Detected buying signals", count: 5, samples: ["Siit", "Axelor"], awaitingApproval: 0 };
+    const g = { trigger: "signal_detected", verb: "Detected buying signals", count: 5, samples: ["Siit", "Axelor"] };
     expect(ledgerSentence(g)).toBe("Detected buying signals at Siit, Axelor +3");
   });
   it("drops test entities from the ledger", () => {

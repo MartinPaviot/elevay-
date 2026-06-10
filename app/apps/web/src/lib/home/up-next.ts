@@ -112,7 +112,6 @@ export interface LedgerGroup {
   verb: string;
   count: number;
   samples: string[];
-  awaitingApproval: number;
 }
 
 export interface EngineLine {
@@ -326,16 +325,21 @@ function ledgerVerb(trigger: string): string {
 }
 
 export function buildLedger(reactions: ReactionInput[]): LedgerGroup[] {
-  const byTrigger = new Map<string, { count: number; samples: string[]; deferred: number }>();
+  // The ledger is a pure "what the agent observed / did" synthesis. It does NOT
+  // surface reactions.actionsDeferred as "awaiting approval": that counter is
+  // disconnected from actionable rows (deferred actions are currently recorded
+  // status='executed', and no dispatcher consumes scheduled actions — see
+  // _specs/up-next-redesign/tasks.md follow-up). Pending approvals have ONE
+  // source of truth: the "Needs you" approval lane (scheduled agent_actions).
+  const byTrigger = new Map<string, { count: number; samples: string[] }>();
   for (const r of reactions) {
     if (isTestLabel(r.entityLabel)) continue;
     let g = byTrigger.get(r.trigger);
     if (!g) {
-      g = { count: 0, samples: [], deferred: 0 };
+      g = { count: 0, samples: [] };
       byTrigger.set(r.trigger, g);
     }
     g.count += 1;
-    g.deferred += r.actionsDeferred || 0;
     if (r.entityLabel && g.samples.length < 3 && !g.samples.includes(r.entityLabel)) {
       g.samples.push(r.entityLabel);
     }
@@ -347,7 +351,6 @@ export function buildLedger(reactions: ReactionInput[]): LedgerGroup[] {
       verb: ledgerVerb(trigger),
       count: g.count,
       samples: g.samples,
-      awaitingApproval: g.deferred,
     }))
     .sort((a, b) => b.count - a.count);
 }

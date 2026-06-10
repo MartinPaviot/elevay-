@@ -248,11 +248,6 @@ export function UpNextView() {
                       {g.samples.join(", ")}
                     </p>
                   )}
-                  {g.awaitingApproval > 0 && (
-                    <p className="mt-1 text-[11px] font-medium" style={{ color: "var(--color-warning)" }}>
-                      {g.awaitingApproval} awaiting your approval
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
