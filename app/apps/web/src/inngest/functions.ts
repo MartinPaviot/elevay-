@@ -830,8 +830,8 @@ export const processReply = inngest.createFunction(
     },
     triggers: [{ event: "email/reply-received" }],
   },
-  async ({ event, step }: { event: { data: { enrollmentId: string; replyContent: string } }; step: any }) => {
-    const { enrollmentId, replyContent } = event.data;
+  async ({ event, step }: { event: { data: { enrollmentId: string; replyContent: string; outboundEmailId?: string } }; step: any }) => {
+    const { enrollmentId, replyContent, outboundEmailId } = event.data;
 
     // Mark enrollment as replied (centralised — also writes audit activity)
     await step.run("mark-replied", async () => {
@@ -885,6 +885,18 @@ Also determine:
         return object as any;
       });
       classification = result.classification;
+
+      // Persist the classification on the replied outbound email — the
+      // inbox triage lanes and outcome-detector both read this column
+      // (it used to be computed here and dropped, leaving it always null).
+      if (outboundEmailId) {
+        await step.run("persist-classification", async () => {
+          await db
+            .update(outboundEmails)
+            .set({ replyClassification: result.classification, updatedAt: new Date() })
+            .where(eq(outboundEmails.id, outboundEmailId));
+        });
+      }
 
       // Fire event for intelligent reply handling (if not ooo/unsubscribe)
       if (!["ooo", "unsubscribe"].includes(classification)) {
