@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     const scope = new URL(req.url).searchParams.get("scope") === "team" ? "team" : "me";
 
     // Active campaign(s) in scope: the rep's own (me) or every rep's (team).
-    const campaigns = await db
+    let campaigns = await db
       .select()
       .from(callCampaigns)
       .where(
@@ -47,6 +47,18 @@ export async function GET(req: Request) {
         ),
       )
       .orderBy(desc(callCampaigns.createdAt));
+
+    // A member without their own campaign works the shared workspace
+    // campaign (same fallback as GET /api/calls/campaign) — their "me"
+    // funnel mirrors it instead of rendering empty next to a live queue.
+    if (campaigns.length === 0 && scope === "me") {
+      campaigns = await db
+        .select()
+        .from(callCampaigns)
+        .where(and(eq(callCampaigns.tenantId, tenantId), eq(callCampaigns.status, "active")))
+        .orderBy(desc(callCampaigns.createdAt))
+        .limit(1);
+    }
 
     if (campaigns.length === 0) return Response.json({ campaign: null, scope });
 
