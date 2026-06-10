@@ -50,6 +50,7 @@ import { EditCampaignModal } from "./_edit-campaign-modal";
 import { CampaignFunnelBar } from "./_funnel-bar";
 import { CallScriptPanel } from "./_call-script";
 import { isVoiceableSignal, mergeTechStacks } from "@/lib/call-mode/live-script";
+import { pickReplaceableTools } from "@/lib/tech-detect/replaceable";
 import { CallActions } from "./_call-actions";
 
 interface QueueItem {
@@ -402,6 +403,13 @@ export default function CallModePage() {
 
   const brain = selectedId ? brainByContact[selectedId] : undefined;
   const brainLoading = selectedId != null && !(selectedId in brainByContact);
+  // Merged stack (dossier ∪ enriched) + the first catalog-replaceable tool —
+  // feeds the script's trigger matching and its {tool} enjeu interpolation.
+  const mergedStack = useMemo(
+    () => mergeTechStacks(brain?.cachedDossier?.techStack, brain?.enrichedTechnologies),
+    [brain],
+  );
+  const replaceableTool = useMemo(() => pickReplaceableTools(mergedStack)[0] ?? null, [mergedStack]);
 
   // On-demand deep enrichment (Zeliq, async) for the focal contact —
   // surfaced from the brief's "à enrichir" section. The contact updates
@@ -1253,11 +1261,12 @@ export default function CallModePage() {
                   fundingDate: brain?.cachedDossier?.funding?.date,
                 }}
                 triggerText={[
-                  ...mergeTechStacks(brain?.cachedDossier?.techStack, brain?.enrichedTechnologies),
+                  ...mergedStack,
                   selected.latestSignal && isVoiceableSignal(selected.latestSignal.type)
                     ? selected.latestSignal.label
                     : null,
                 ].filter(Boolean).join(" ")}
+                replaceableTool={replaceableTool}
               />
             </div>
             {inCall && (
