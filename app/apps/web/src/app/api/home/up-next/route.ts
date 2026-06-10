@@ -1,7 +1,7 @@
 import { withAuthRLS } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { agentActions, agentReactions } from "@/db/schema";
-import { and, eq, isNull, desc } from "drizzle-orm";
+import { agentActions, agentReactions, companies, contacts, deals } from "@/db/schema";
+import { and, eq, isNull, desc, inArray } from "drizzle-orm";
 import { GET as getSummary } from "@/app/api/dashboard/summary/route";
 import {
   buildNeedsYou,
@@ -128,28 +128,99 @@ async function loadApprovals(tenantId: string): Promise<ApprovalInput[]> {
       .orderBy(desc(agentActions.createdAt))
       .limit(25);
 
-    return rows.map((r) => {
+    const base = rows.map((r) => {
       const p = (r.payload ?? {}) as Record<string, unknown>;
-      const amount =
-        num(p.amount) ?? num(p.value) ?? num(p.dealValue) ?? null;
-      const entityLabel =
-        str(p.entityLabel) ??
-        str(p.contactName) ??
-        str(p.companyName) ??
-        str(p.dealName) ??
-        null;
+      const amount = num(p.amount) ?? num(p.value) ?? num(p.dealValue) ?? null;
+      const explicitLabel =
+        str(p.entityLabel) ?? str(p.contactName) ?? str(p.companyName) ?? str(p.dealName) ?? null;
       return {
         id: r.id,
         actionType: r.actionType,
         reasoning: str(p.reasoning),
         entityType: str(p.entityType),
         entityId: str(p.entityId),
-        entityLabel,
+        explicitLabel,
         confidence: num(p.confidence),
         amount,
         createdAt: r.createdAt ? new Date(r.createdAt as unknown as string).toISOString() : null,
       };
     });
+
+    // Resolve each approval's target entity to (a) name it and (b) verify it is
+    // still LIVE. The agent defers a decision, then the founder often deletes or
+    // excludes the company before approving — surfacing "Create deal for <deleted
+    // company>" is noise (and the executor would fail). So we drop any approval
+    // whose CRM target is deleted, excluded, or missing. A `live` set gates the
+    // filter; `nameMap` drives display. Both cover company/contact/deal.
+    const idsOf = (type: string) => [
+      ...new Set(base.filter((b) => b.entityType === type && b.entityId).map((b) => b.entityId as string)),
+    ];
+    const companyIds = idsOf("company");
+    const contactIds = idsOf("contact");
+    const dealIds = idsOf("deal");
+    const live = new Set<string>();
+    const nameMap = new Map<string, string>();
+    await Promise.all([
+      companyIds.length
+        ? db
+            .select({ id: companies.id, name: companies.name, deletedAt: companies.deletedAt, excludedReason: companies.excludedReason })
+            .from(companies)
+            .where(and(eq(companies.tenantId, tenantId), inArray(companies.id, companyIds)))
+            .then((rs) =>
+              rs.forEach((c) => {
+                if (c.deletedAt || c.excludedReason) return; // dead/not-a-fit → not live
+                live.add(`company:${c.id}`);
+                if (c.name) nameMap.set(`company:${c.id}`, c.name);
+              }),
+            )
+        : Promise.resolve(),
+      contactIds.length
+        ? db
+            .select({ id: contacts.id, firstName: contacts.firstName, lastName: contacts.lastName, email: contacts.email, deletedAt: contacts.deletedAt })
+            .from(contacts)
+            .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, contactIds)))
+            .then((rs) =>
+              rs.forEach((c) => {
+                if (c.deletedAt) return;
+                live.add(`contact:${c.id}`);
+                const n = [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email;
+                if (n) nameMap.set(`contact:${c.id}`, n);
+              }),
+            )
+        : Promise.resolve(),
+      dealIds.length
+        ? db
+            .select({ id: deals.id, name: deals.name, deletedAt: deals.deletedAt })
+            .from(deals)
+            .where(and(eq(deals.tenantId, tenantId), inArray(deals.id, dealIds)))
+            .then((rs) =>
+              rs.forEach((d) => {
+                if (d.deletedAt) return;
+                live.add(`deal:${d.id}`);
+                if (d.name) nameMap.set(`deal:${d.id}`, d.name);
+              }),
+            )
+        : Promise.resolve(),
+    ]);
+
+    const KNOWN = new Set(["company", "contact", "deal"]);
+    return base
+      // Drop approvals whose CRM target is dead/excluded/missing. Items with no
+      // CRM entity ref (or an unknown type) can't be verified — keep them.
+      .filter((b) => !(b.entityType && b.entityId && KNOWN.has(b.entityType)) || live.has(`${b.entityType}:${b.entityId}`))
+      .map((b) => ({
+        id: b.id,
+        actionType: b.actionType,
+        reasoning: b.reasoning,
+        entityType: b.entityType,
+        entityId: b.entityId,
+        entityLabel:
+          b.explicitLabel ??
+          (b.entityType && b.entityId ? nameMap.get(`${b.entityType}:${b.entityId}`) ?? null : null),
+        confidence: b.confidence,
+        amount: b.amount,
+        createdAt: b.createdAt,
+      }));
   } catch {
     return [];
   }

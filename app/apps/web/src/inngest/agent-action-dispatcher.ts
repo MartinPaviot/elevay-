@@ -62,10 +62,14 @@ export const agentActionDispatcher = inngest.createFunction(
 
     for (const row of due) {
       const result = await step.run(`dispatch-${row.id}`, async () => {
-        // Atomic claim — only the tick that flips 'scheduled' → 'executing' runs it.
+        // Atomic claim. The status column allows only scheduled/executed/
+        // reversed/failed (DB check constraint — no transient 'executing'), so
+        // we claim by flipping 'scheduled' → 'executed'. With concurrency:1 this
+        // prevents double-execution; a crash mid-execute leaves the row
+        // 'executed' un-run (rare, acceptable). On failure we flip to 'failed'.
         const won = await db
           .update(agentActions)
-          .set({ status: "executing", updatedAt: new Date() })
+          .set({ status: "executed", executedAt: new Date(), updatedAt: new Date() })
           .where(and(eq(agentActions.id, row.id), eq(agentActions.status, "scheduled")))
           .returning({ id: agentActions.id });
         if (won.length === 0) return { claimed: false as const };
@@ -78,10 +82,7 @@ export const agentActionDispatcher = inngest.createFunction(
             payload: (row.payload ?? {}) as Record<string, unknown>,
           });
           if (exec.ok) {
-            await db
-              .update(agentActions)
-              .set({ status: "executed", executedAt: new Date(), updatedAt: new Date() })
-              .where(eq(agentActions.id, row.id));
+            // Already marked 'executed' by the claim above.
             return { claimed: true as const, ok: true as const, detail: exec.detail };
           }
           await db

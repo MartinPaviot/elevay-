@@ -223,11 +223,20 @@ export async function GET() {
         .select({ count: sql<number>`count(*)::int` })
         .from(contacts)
         .where(and(eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt))),
-      // Total accounts
+      // Total accounts — the WORKING SET, matching what the Accounts page shows
+      // by default: non-deleted AND not excluded ("not a fit"). Counting excluded
+      // rows here is what made the home line read e.g. 998 while Accounts showed
+      // 897 (101 excluded). One source of truth.
       db
         .select({ count: sql<number>`count(*)::int` })
         .from(companies)
-        .where(and(eq(companies.tenantId, authCtx.tenantId), isNull(companies.deletedAt))),
+        .where(
+          and(
+            eq(companies.tenantId, authCtx.tenantId),
+            isNull(companies.deletedAt),
+            isNull(companies.excludedReason),
+          ),
+        ),
       // Email deliverability (last 7 days)
       db
         .select({

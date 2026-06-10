@@ -188,7 +188,9 @@ export function UpNextView() {
                   {queue.length}
                 </span>
               </SectionLabel>
-              <div className="mt-2.5 space-y-2">
+              {/* Two columns on wide screens so terse cards (e.g. "Create deal
+                  · Acme") don't span the full width for little info. */}
+              <div className="mt-2.5 grid gap-2 lg:grid-cols-2">
                 {queue.map((item, idx) => (
                   <Collapsing key={item.id} removing={removing.has(item.id)}>
                     <QueueCard item={item} onAction={onAction} delayMs={idx * 35} />
