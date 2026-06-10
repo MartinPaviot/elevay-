@@ -38,6 +38,7 @@ import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { useToast } from "@/components/ui/toast";
+import { useCan } from "@/components/role-provider";
 import {
   PreCallBrief,
   AccountBrainPanel,
@@ -1489,6 +1490,9 @@ function FromNumberPicker(props: {
   );
   const [buyArea, setBuyArea] = useState("");
   const [buying, setBuying] = useState(false);
+  // Buying a Twilio number is a money action — admin-only (billing:manage).
+  // Non-admins still pick from the existing pool; they just can't add one.
+  const canBuy = useCan("billing:manage");
 
   useEffect(() => {
     if (!open) return;
@@ -1597,6 +1601,7 @@ function FromNumberPicker(props: {
             />
           ))}
 
+          {canBuy && (<>
           <div className="my-1" style={{ borderTop: "1px solid var(--color-border-default)" }} />
           {!adding ? (
             <button
@@ -1651,6 +1656,7 @@ function FromNumberPicker(props: {
               </p>
             </div>
           )}
+          </>)}
         </div>
       )}
     </div>
