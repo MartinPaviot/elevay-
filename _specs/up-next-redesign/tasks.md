@@ -17,9 +17,19 @@
 7. [ ] Commit my files (stacked on the uncommitted inbox-triage work). Do NOT
    push to main (prod auto-deploys).
 
+## Approve→execute loop — DONE (separate commit)
+- deferAction now records `awaitingApproval` (scheduled, null exec) → surfaces +
+  skippable. NEW `inngest/agent-action-dispatcher` (cron 1m, concurrency 1)
+  atomically claims due scheduled actions and runs them via NEW
+  `lib/agents/action-executors`: email (deliverInteractiveEmail, OUTBOUND_TEST_MODE
+  gated), create_task, create_deal (idempotent). advance_deal/enroll_sequence
+  fail-closed. Registered in inngest serve route. Backfill script (dry-run
+  default) flips existing mis-stamped 'executed' deferrals → 'scheduled'.
+- Run the backfill to populate 47dca783's lane:
+  `tsx --env-file=.env.local scripts/backfill-deferred-actions.ts --tenant=47dca783-dac0-45a5-85cb-d217b2a3174d --apply`
+
 ## Follow-ups (not this slice)
-- Reconcile reactions.actionsDeferred → real approvable `agent_actions` rows so
-  the 31 "awaiting approval" become an actionable approval lane (today they have
-  no scheduled rows, so the queue correctly shows none).
 - Keyboard layer (j/k/e/a/s) + bulk actions.
 - Fold Hot inbounds/visitors into the queue as a "fresh intent" lane.
+- Validated param schemas for advance_deal / enroll_sequence executors.
+- Draft email body at dispatch (so send_followup without a stored body works).
