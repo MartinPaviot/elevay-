@@ -40,18 +40,28 @@ async function callableCount(tenantId: string): Promise<number> {
 }
 
 /**
- * The current rep's active campaign. Call Mode is individualised per user
- * inside a workspace, so we scope by ownerId (not just tenant) — each user
- * gets their own goal, list and cadence.
+ * The current rep's active campaign — their own first; otherwise the
+ * workspace's most recent active campaign. Call Mode stays individualised
+ * (own goal, list and cadence) the moment a rep creates their own campaign,
+ * but a member who hasn't set one up yet works the running workspace
+ * campaign instead of being walled off behind the onboarding wizard —
+ * same cockpit the campaign owner sees.
  */
 async function getActiveCampaign(tenantId: string, ownerId: string) {
-  const [c] = await db
+  const [own] = await db
     .select()
     .from(callCampaigns)
     .where(and(eq(callCampaigns.tenantId, tenantId), eq(callCampaigns.ownerId, ownerId), eq(callCampaigns.status, "active")))
     .orderBy(desc(callCampaigns.createdAt))
     .limit(1);
-  return c ?? null;
+  if (own) return own;
+  const [shared] = await db
+    .select()
+    .from(callCampaigns)
+    .where(and(eq(callCampaigns.tenantId, tenantId), eq(callCampaigns.status, "active")))
+    .orderBy(desc(callCampaigns.createdAt))
+    .limit(1);
+  return shared ?? null;
 }
 
 /** Today's targets for one rep, mapped to the cockpit's queue-item shape. */
@@ -88,7 +98,9 @@ async function todayQueue(tenantId: string, ownerId: string) {
 export async function GET() {
   return withAuthRLS(async (authCtx) => {
     const campaign = await getActiveCampaign(authCtx.tenantId, authCtx.appUserId);
-    const calls = campaign ? await todayQueue(authCtx.tenantId, authCtx.appUserId) : [];
+    // Queue follows the DISPLAYED campaign: for a member working the shared
+    // workspace campaign, today's list is the campaign owner's list.
+    const calls = campaign ? await todayQueue(authCtx.tenantId, campaign.ownerId ?? authCtx.appUserId) : [];
     const [callableTotal, settings] = await Promise.all([
       callableCount(authCtx.tenantId),
       getTenantSettings(authCtx.tenantId),
@@ -182,7 +194,7 @@ export async function POST(req: Request) {
       },
     });
     await generateDailyCallList(campaign.id);
-    const calls = await todayQueue(authCtx.tenantId, authCtx.appUserId);
+    const calls = await todayQueue(authCtx.tenantId, campaign.ownerId ?? authCtx.appUserId);
     const { callableTotal, hasIcp, needsSourcing, sourcing } = await listStatus(authCtx.tenantId, campaign.dailyQuota ?? 0);
 
     return Response.json({ campaign, calls, callableTotal, needsSourcing, sourcing, hasIcp });
@@ -228,7 +240,7 @@ export async function PATCH(req: Request) {
     }
 
     await generateDailyCallList(campaign.id);
-    const calls = await todayQueue(authCtx.tenantId, authCtx.appUserId);
+    const calls = await todayQueue(authCtx.tenantId, active.ownerId ?? authCtx.appUserId);
     const { callableTotal, hasIcp, needsSourcing, sourcing } = await listStatus(authCtx.tenantId, campaign.dailyQuota ?? 0);
 
     return Response.json({ campaign, calls, callableTotal, needsSourcing, sourcing, hasIcp });
