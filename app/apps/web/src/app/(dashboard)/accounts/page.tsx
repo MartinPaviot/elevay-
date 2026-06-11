@@ -77,6 +77,8 @@ interface Account {
   score: number | null;
   scoreReasons: string[] | null;
   properties: Record<string, unknown> | null;
+  /** Effective stage computed server-side (manual override > deal-derived > 'new'). */
+  lifecycleStage?: string | null;
   lastInteraction: { date: string; summary: string | null } | null;
 }
 
@@ -1158,7 +1160,9 @@ export default function AccountsPage() {
 
   function isEnriched(account: Account): boolean { return !!(account.industry && account.description); }
   function isTAM(account: Account): boolean { return (account.properties as Record<string, unknown>)?.source === "tam"; }
-  function getLifecycleStage(account: Account): string { return ((account.properties as Record<string, unknown>)?.lifecycleStage as string) || "new"; }
+  // Prefer the server-computed effective stage (manual override > deal-derived);
+  // the properties fallback covers streamed rows that bypass the list API.
+  function getLifecycleStage(account: Account): string { return account.lifecycleStage || ((account.properties as Record<string, unknown>)?.lifecycleStage as string) || "new"; }
 
   interface Signal { type: string; title: string; description: string; relevance: string; reasoning?: string; sources?: Array<{ url: string; title: string }>; }
   function getSignals(account: Account): Signal[] { return ((account.properties as Record<string, unknown>)?.signals as Signal[]) || []; }
@@ -2472,7 +2476,7 @@ export default function AccountsPage() {
         {slideOverAccount && (() => {
           const a = slideOverAccount;
           const scoreInfo = displayScore(a.score, isEnriched(a));
-          const lc = ((a.properties as Record<string, unknown>)?.lifecycleStage as string) || "new";
+          const lc = getLifecycleStage(a);
           const lcStyle = getLifecycleStyle(lc);
           return (
             <div>
