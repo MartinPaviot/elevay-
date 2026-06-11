@@ -1,7 +1,8 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { companies, contacts, authAccounts, tenants, authUsers } from "@/db/schema";
+import { companies, contacts, authAccounts, tenants, authUsers, pendingInvites } from "@/db/schema";
 import { eq, and, sql, isNull } from "drizzle-orm";
+import { hasUsableIcp, type TenantSettings } from "@/lib/config/tenant-settings";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -74,6 +75,33 @@ export async function GET() {
     .where(eq(authUsers.id, authCtx.userId))
     .limit(1);
 
+  // Invite-aware suppression: a user who JOINED VIA INVITE into a workspace
+  // that is already established (has accounts or a usable ICP) lands on the
+  // briefing, not the setup modal — someone else already set the workspace
+  // up, and `onboardingCompleted` being false only means nobody finished
+  // the modal (setup often happens through /settings/icp or sourcing).
+  //
+  // Deliberately scoped to invited users (T0.1): the founder mid-wizard
+  // keeps resume behavior even after the async TAM build starts inserting
+  // accounts, because no accepted invite points at them. An invitee landing
+  // in an EMPTY workspace still gets the modal — someone has to set it up.
+  const established = accounts > 0 || hasUsableIcp(settings as TenantSettings);
+  let joinedViaInvite = false;
+  if (!onboardingCompleted && established) {
+    const [acceptedInvite] = await db
+      .select({ id: pendingInvites.id })
+      .from(pendingInvites)
+      .where(
+        and(
+          eq(pendingInvites.tenantId, authCtx.tenantId),
+          eq(pendingInvites.status, "accepted"),
+          eq(pendingInvites.acceptedByUserId, authCtx.appUserId),
+        ),
+      )
+      .limit(1);
+    joinedViaInvite = !!acceptedInvite;
+  }
+
   return Response.json({
     isNew,
     accounts,
@@ -81,7 +109,7 @@ export async function GET() {
     hasGoogle,
     hasMicrosoft,
     hasEmail: hasGoogle || hasMicrosoft,
-    needsOnboarding: !onboardingCompleted,
+    needsOnboarding: !onboardingCompleted && !(established && joinedViaInvite),
     onboardingCurrentStep,
     email: authUser?.email,
     name: authUser?.name || null,

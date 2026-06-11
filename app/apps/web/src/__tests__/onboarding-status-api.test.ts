@@ -17,6 +17,7 @@ vi.mock("@/db/schema", () => ({
   authAccounts: { id: "id", userId: "userId", provider: "provider" },
   authUsers: { id: "id", email: "email", name: "name" },
   tenants: { id: "id", settings: "settings" },
+  pendingInvites: { id: "id", tenantId: "tenantId", status: "status", acceptedByUserId: "acceptedByUserId" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -40,6 +41,8 @@ const statusModule = await import("@/app/api/onboarding/status/route");
  *   4. microsoft account (where+limit)
  *   5. tenant settings (where)
  *   6. auth user (where+limit)
+ *   7. accepted invite (where+limit) — only consumed when the route runs the
+ *      invite-aware suppression query (!onboardingCompleted && established)
  */
 function mockSelectChain({
   accountCount,
@@ -49,6 +52,7 @@ function mockSelectChain({
   tenantSettings,
   userEmail,
   userName,
+  acceptedInvite = false,
 }: {
   accountCount: number;
   contactCount: number;
@@ -57,6 +61,8 @@ function mockSelectChain({
   tenantSettings: Record<string, unknown>;
   userEmail?: string;
   userName?: string | null;
+  /** The current user has an accepted invite into the current tenant. */
+  acceptedInvite?: boolean;
 }) {
   const whereTerminal = (value: unknown) => vi.fn().mockResolvedValue(value);
   const limitTerminal = (value: unknown) => ({
@@ -96,12 +102,21 @@ function mockSelectChain({
           userEmail ? [{ email: userEmail, name: userName ?? null }] : []
         )),
       }),
+    } as never)
+    .mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue(limitTerminal(acceptedInvite ? [{ id: "inv-1" }] : [])),
+      }),
     } as never);
 }
 
 describe("GET /api/onboarding/status", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks does NOT drain the mockReturnValueOnce queue — a test
+    // whose route run skips the conditional invite query (query 7) would
+    // leak its unconsumed mock into the next test's chain. Reset fully.
+    vi.mocked(db.select).mockReset();
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -238,5 +253,77 @@ describe("GET /api/onboarding/status", () => {
     const res = await statusModule.GET();
     const data = await res.json();
     expect(data.onboardingCurrentStep).toBeNull();
+  });
+
+  it("suppresses onboarding for an invited user when the workspace already has accounts", async () => {
+    vi.mocked(getAuthContext).mockResolvedValue({
+      userId: "u2",
+      tenantId: "t1",
+      appUserId: "u2",
+      role: "member",
+    });
+    mockSelectChain({
+      accountCount: 150,
+      contactCount: 42,
+      google: false,
+      microsoft: false,
+      tenantSettings: { onboardingCompleted: false },
+      userEmail: "invitee@example.com",
+      acceptedInvite: true,
+    });
+
+    const res = await statusModule.GET();
+    const data = await res.json();
+    expect(data.needsOnboarding).toBe(false);
+    expect(data.isNew).toBe(false);
+  });
+
+  it("suppresses onboarding for an invited user when the workspace has a usable ICP but 0 accounts", async () => {
+    vi.mocked(getAuthContext).mockResolvedValue({
+      userId: "u2",
+      tenantId: "t1",
+      appUserId: "u2",
+      role: "member",
+    });
+    mockSelectChain({
+      accountCount: 0,
+      contactCount: 0,
+      google: false,
+      microsoft: false,
+      tenantSettings: { onboardingCompleted: false, targetIndustries: ["Nonprofit"] },
+      userEmail: "invitee@example.com",
+      acceptedInvite: true,
+    });
+
+    const res = await statusModule.GET();
+    const data = await res.json();
+    expect(data.needsOnboarding).toBe(false);
+    // isNew stays data-driven — ICP defined but no accounts yet is still "new"
+    expect(data.isNew).toBe(true);
+  });
+
+  it("keeps onboarding for an invited user in an empty workspace (nobody set it up yet)", async () => {
+    vi.mocked(getAuthContext).mockResolvedValue({
+      userId: "u2",
+      tenantId: "t1",
+      appUserId: "u2",
+      role: "member",
+    });
+    mockSelectChain({
+      accountCount: 0,
+      contactCount: 0,
+      google: false,
+      microsoft: false,
+      tenantSettings: { onboardingCompleted: false },
+      userEmail: "invitee@example.com",
+      acceptedInvite: true,
+    });
+
+    const res = await statusModule.GET();
+    const data = await res.json();
+    expect(data.needsOnboarding).toBe(true);
+    // The invite lookup is short-circuited: 0 accounts + no ICP means the
+    // workspace isn't established, so only the 6 base queries ran.
+    expect(vi.mocked(db.select)).toHaveBeenCalledTimes(6);
   });
 });
