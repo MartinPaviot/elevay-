@@ -3,6 +3,8 @@ import { activities } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { apiError } from "@/lib/infra/api-errors";
+import { getTenantMemberNames } from "@/lib/collision/member-names";
+import { resolveActorName } from "@/lib/collision/actor-name";
 import { z } from "zod";
 
 const createActivitySchema = z.object({
@@ -41,7 +43,16 @@ export async function GET(req: Request) {
       .orderBy(desc(activities.occurredAt))
       .limit(limit);
 
-    return Response.json({ activities: result });
+    // Attribute each user action to the member who did it (one members lookup,
+    // no N+1). Non-user actors (system / inbound-from-contact) and unresolved
+    // ids stay null so the UI keeps the anonymous line. See collision-awareness.
+    const names = await getTenantMemberNames(authCtx.tenantId);
+    const enriched = result.map((a) => ({
+      ...a,
+      actorName: resolveActorName(a.actorType, a.actorId, names),
+    }));
+
+    return Response.json({ activities: enriched });
   } catch (error) {
     console.error("Failed to fetch activities:", error);
     return Response.json({ error: "Failed to fetch activities" }, { status: 500 });
