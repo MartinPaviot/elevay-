@@ -7,7 +7,12 @@
  *
  * The dashboard is three things, all from REAL data:
  *   1. KPIs        — the founder metrics that matter (buildKpis).
- *   2. Actualités  — a cross-page feed of real events (buildActualites).
+ *   2. Actualités  — a cross-page feed of real events (buildActualites):
+ *                    replies, email opens (aggregated), inbound forms, calls
+ *                    with outcomes, deal lifecycle events (from the
+ *                    deal_stage_changed/won/lost activities, NOT the
+ *                    updatedAt proxy), meetings, and adds with provenance
+ *                    (bulk imports grouped to one line per source).
  *   3. À faire     — only genuine human work (buildNeedsYou): replies to answer,
  *                    discovery calls to prep, live deals at risk, due tasks.
  *
@@ -100,12 +105,17 @@ export function buildKpis(m: KpiMetrics): Kpi[] {
 // ── Actualités (cross-page real-event feed) ─────────────────────────
 
 export type ActualiteKind =
-  | "deal" // deal created / updated (incl. from transcript/email analysis)
+  | "deal" // deal created / stage changed (transcript/email analysis or chat)
+  | "deal_won"
+  | "deal_lost"
   | "reply" // inbound reply received
+  | "open" // prospect opened an outbound email (pixel logs first open per email)
+  | "form" // inbound form submission
+  | "call" // outbound call with a meaningful outcome (Call Mode)
   | "meeting_booked"
   | "meeting_done"
-  | "account" // account added / enriched
-  | "contact" // contact added / enriched
+  | "account" // account added (individually, or grouped per import source)
+  | "contact" // contact added (individually, or grouped per import source)
   | "campaign";
 
 export interface Actualite {
@@ -118,10 +128,23 @@ export interface Actualite {
   href: string | null;
 }
 
+/** Per-kind feed caps so one chatty source (opens, bulk adds) can't drown a
+ *  reply. Kinds not listed are uncapped — the overall limit still rules. */
+export const ACTUALITE_KIND_CAPS: Partial<Record<ActualiteKind, number>> = {
+  open: 3,
+  call: 4,
+  account: 4,
+  contact: 4,
+};
+
 /** Merge cross-source events into one feed: drop test rows, dedupe by id, sort
- *  newest-first, cap. The API does the per-source mapping; this is the pure
- *  merge/sort/filter so it's unit-testable. */
-export function buildActualites(items: Actualite[], limit = 12): Actualite[] {
+ *  newest-first, cap per kind then overall. The API does the per-source
+ *  mapping; this is the pure merge/sort/filter so it's unit-testable. */
+export function buildActualites(
+  items: Actualite[],
+  limit = 12,
+  caps: Partial<Record<ActualiteKind, number>> = ACTUALITE_KIND_CAPS,
+): Actualite[] {
   const seen = new Set<string>();
   const out: Actualite[] = [];
   for (const it of items) {
@@ -135,7 +158,137 @@ export function buildActualites(items: Actualite[], limit = 12): Actualite[] {
     const bt = b.at ? new Date(b.at).getTime() : 0;
     return bt - at;
   });
-  return out.slice(0, limit);
+  const kept: Actualite[] = [];
+  const perKind = new Map<ActualiteKind, number>();
+  for (const it of out) {
+    const cap = caps[it.kind];
+    const n = perKind.get(it.kind) ?? 0;
+    if (cap != null && n >= cap) continue;
+    perKind.set(it.kind, n + 1);
+    kept.push(it);
+    if (kept.length >= limit) break;
+  }
+  return kept;
+}
+
+/** Raw email-open rows, one per outbound email. The tracking pixel records
+ *  only the FIRST open of each email, so the honest per-contact aggregate is
+ *  "N emails opened" — never "opened N times". */
+export interface OpenRow {
+  id: string;
+  contactId: string | null;
+  name: string | null;
+  at: string | null;
+}
+
+export function aggregateOpens(rows: OpenRow[]): Actualite[] {
+  const byContact = new Map<string, { name: string | null; newest: string | null; count: number }>();
+  for (const r of rows) {
+    if (!r.contactId) continue; // unattributable — no feed value
+    if (isTestLabel(r.name)) continue;
+    const g = byContact.get(r.contactId) ?? { name: null, newest: null, count: 0 };
+    g.count += 1;
+    g.name = g.name ?? r.name;
+    // ISO strings from the same formatter compare lexicographically.
+    if (r.at && (!g.newest || r.at > g.newest)) g.newest = r.at;
+    byContact.set(r.contactId, g);
+  }
+  return [...byContact.entries()].map(([contactId, g]) => ({
+    id: `open:${contactId}`,
+    kind: "open" as const,
+    title: g.name ? `${g.name} opened your email` : "Email opened",
+    detail: g.count > 1 ? `${g.count} emails opened` : null,
+    at: g.newest,
+    href: `/contacts/${contactId}`,
+  }));
+}
+
+/** Recent account/contact adds. A bulk import collapses into ONE grouped line
+ *  per source system (≥ threshold rows); a trickle stays individual lines,
+ *  each carrying its provenance. */
+export interface AddRow {
+  id: string;
+  name: string;
+  sourceSystem: string | null;
+  at: string | null;
+}
+
+/** Display labels for OUR OWN sourceSystem values (written by us at capture
+ *  time) — a UI label map, not business classification. */
+const SOURCE_LABEL: Record<string, string> = {
+  apollo: "Apollo",
+  csv: "CSV import",
+  manual: "manual",
+  inbound: "inbound form",
+  tam: "TAM discovery",
+  sirene: "SIRENE",
+  pappers: "Pappers",
+  zefix: "Zefix",
+};
+
+function sourceLabel(s: string | null): string | null {
+  if (!s) return null;
+  return SOURCE_LABEL[s.toLowerCase()] ?? s;
+}
+
+export function groupAdds(
+  rows: AddRow[],
+  kind: "account" | "contact",
+  threshold = 3,
+  /** How many rows the caller fetched. A group that saturates the fetch
+   *  window is almost certainly truncated (e.g. a 600-row import showing as
+   *  25 rows) — its count gets a "+" so the line never under-claims. */
+  fetchCap = Number.POSITIVE_INFINITY,
+): Actualite[] {
+  const listHref = kind === "account" ? "/accounts" : "/contacts";
+  const single = kind === "account" ? "account added" : "contact added";
+  const bySource = new Map<string, AddRow[]>();
+  for (const r of rows) {
+    if (isTestLabel(r.name)) continue;
+    const key = (r.sourceSystem ?? "").toLowerCase();
+    const list = bySource.get(key) ?? [];
+    list.push(r);
+    bySource.set(key, list);
+  }
+  const out: Actualite[] = [];
+  for (const list of bySource.values()) {
+    if (list.length >= threshold) {
+      const newest = list.reduce<string | null>(
+        (m, r) => (r.at && (!m || r.at > m) ? r.at : m),
+        null,
+      );
+      out.push({
+        id: `${kind}-group:${(list[0].sourceSystem ?? "unknown").toLowerCase()}:${list[0].id}`,
+        kind,
+        title: `${list.length}${list.length >= fetchCap ? "+" : ""} ${kind === "account" ? "accounts" : "contacts"} added`,
+        detail: sourceLabel(list[0].sourceSystem),
+        at: newest,
+        href: listHref,
+      });
+    } else {
+      for (const r of list) {
+        const src = sourceLabel(r.sourceSystem);
+        out.push({
+          id: `${kind === "account" ? "company" : "contact"}:${r.id}`,
+          kind,
+          title: r.name,
+          detail: src ? `${single} · ${src}` : single,
+          at: r.at,
+          href: `${listHref}/${r.id}`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** "45s" under a minute; "6m" / "6m12" above. */
+export function formatCallDuration(sec: number | null | undefined): string | null {
+  if (sec == null || sec <= 0) return null;
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s ? `${m}m${String(s).padStart(2, "0")}` : `${m}m`;
 }
 
 // ── À faire (genuine human work only — no agent reflexes) ───────────

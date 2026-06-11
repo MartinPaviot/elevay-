@@ -3,6 +3,9 @@ import {
   buildNeedsYou,
   buildKpis,
   buildActualites,
+  aggregateOpens,
+  groupAdds,
+  formatCallDuration,
   isTestLabel,
   money,
   type ReplyInput,
@@ -11,6 +14,8 @@ import {
   type TaskInput,
   type KpiMetrics,
   type Actualite,
+  type OpenRow,
+  type AddRow,
 } from "@/lib/home/up-next";
 
 function reply(over: Partial<ReplyInput> & { conversationKey: string }): ReplyInput {
@@ -129,5 +134,106 @@ describe("buildActualites", () => {
       2,
     );
     expect(feed.map((f) => f.title)).toEqual(["Récent", "Vieux"]); // c dropped (test), b deduped, capped 2
+  });
+  it("caps chatty kinds (opens ≤ 3) while replies stay uncapped", () => {
+    const opens = [1, 2, 3, 4, 5].map((n) =>
+      ev({ id: `o${n}`, at: `2026-06-11T1${n}:00:00Z`, kind: "open", title: `Contact ${n} opened your email` }),
+    );
+    const replies = [1, 2, 3, 4].map((n) =>
+      ev({ id: `r${n}`, at: `2026-06-10T0${n}:00:00Z`, title: `Prospect ${n} replied` }),
+    );
+    const feed = buildActualites([...opens, ...replies], 12);
+    expect(feed.filter((f) => f.kind === "open").map((f) => f.id)).toEqual(["o5", "o4", "o3"]); // newest win the cap
+    expect(feed.filter((f) => f.kind === "reply")).toHaveLength(4);
+  });
+});
+
+describe("aggregateOpens", () => {
+  function row(over: Partial<OpenRow> & { id: string }): OpenRow {
+    return { contactId: "c1", name: "Marie Dupont", at: "2026-06-11T08:00:00.000Z", ...over };
+  }
+  it("one line per contact: counts emails, keeps the newest timestamp", () => {
+    const out = aggregateOpens([
+      row({ id: "o1" }),
+      row({ id: "o2", at: "2026-06-11T10:00:00.000Z" }),
+      row({ id: "o3", contactId: "c2", name: "Jean Petit" }),
+    ]);
+    expect(out).toHaveLength(2);
+    const marie = out.find((o) => o.id === "open:c1")!;
+    expect(marie.title).toBe("Marie Dupont opened your email");
+    expect(marie.detail).toBe("2 emails opened"); // first-open-per-email semantics, never "opened 2×"
+    expect(marie.at).toBe("2026-06-11T10:00:00.000Z");
+    expect(marie.href).toBe("/contacts/c1");
+    expect(out.find((o) => o.id === "open:c2")!.detail).toBeNull();
+  });
+  it("skips unattributable and test-named rows", () => {
+    const out = aggregateOpens([
+      row({ id: "o1", contactId: null }),
+      row({ id: "o2", contactId: "c9", name: "E2E Tester" }),
+    ]);
+    expect(out).toHaveLength(0);
+  });
+});
+
+describe("groupAdds", () => {
+  function add(over: Partial<AddRow> & { id: string }): AddRow {
+    return { name: "Acme SA", sourceSystem: "apollo", at: "2026-06-11T08:00:00.000Z", ...over };
+  }
+  it("collapses a bulk import into one grouped line with provenance", () => {
+    const out = groupAdds(
+      [
+        add({ id: "a1" }),
+        add({ id: "a2", name: "Beta SA", at: "2026-06-11T09:00:00.000Z" }),
+        add({ id: "a3", name: "Gamma SA", at: "2026-06-11T07:00:00.000Z" }),
+      ],
+      "account",
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe("3 accounts added");
+    expect(out[0].detail).toBe("Apollo");
+    expect(out[0].at).toBe("2026-06-11T09:00:00.000Z");
+    expect(out[0].href).toBe("/accounts");
+  });
+  it("keeps a trickle individual, each line carrying its provenance", () => {
+    const out = groupAdds(
+      [add({ id: "a1", name: "Marie Dupont" }), add({ id: "a2", name: "Jean Petit", sourceSystem: null })],
+      "contact",
+    );
+    expect(out).toHaveLength(2);
+    expect(out.find((o) => o.id === "contact:a1")!.detail).toBe("contact added · Apollo");
+    expect(out.find((o) => o.id === "contact:a1")!.href).toBe("/contacts/a1");
+    expect(out.find((o) => o.id === "contact:a2")!.detail).toBe("contact added");
+  });
+  it("marks a group that saturates the fetch window as truncated (25+)", () => {
+    const rows = Array.from({ length: 25 }, (_, i) => add({ id: `a${i}`, name: `Company ${i}` }));
+    const out = groupAdds(rows, "contact", 3, 25);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toBe("25+ contacts added"); // a 600-row import must never read as exactly 25
+    expect(out[0].detail).toBe("Apollo");
+  });
+  it("groups per source independently and drops test rows before counting", () => {
+    const out = groupAdds(
+      [
+        add({ id: "a1" }),
+        add({ id: "a2", name: "Beta SA" }),
+        add({ id: "a3", name: "Gamma SA" }),
+        add({ id: "m1", sourceSystem: "manual", name: "Solo SA" }),
+        add({ id: "t1", name: "Test Workspace Co" }),
+      ],
+      "account",
+    );
+    expect(out).toHaveLength(2);
+    expect(out.find((o) => o.title === "3 accounts added")).toBeTruthy(); // t1 excluded from the apollo group
+    expect(out.find((o) => o.title === "Solo SA")!.detail).toBe("account added · manual");
+  });
+});
+
+describe("formatCallDuration", () => {
+  it("formats seconds / minutes / null", () => {
+    expect(formatCallDuration(45)).toBe("45s");
+    expect(formatCallDuration(360)).toBe("6m");
+    expect(formatCallDuration(372)).toBe("6m12");
+    expect(formatCallDuration(0)).toBeNull();
+    expect(formatCallDuration(null)).toBeNull();
   });
 });
