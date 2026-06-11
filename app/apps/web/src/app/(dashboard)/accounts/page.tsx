@@ -1269,7 +1269,7 @@ export default function AccountsPage() {
       return litSignalCount(b) - litSignalCount(a);
     });
 
-  // Per-tab counts shown in parentheses (All / Prospects / Manual). The server
+  // Per-tab counts shown in parentheses (All / Sourced / Added). The server
   // counts reflect the active column/search/score filters but are independent
   // of the selected tab, so the badges evolve with the filters and add up
   // (all === tam + manual). Fall back to the loaded rows until page 1 lands.
@@ -1461,13 +1461,20 @@ export default function AccountsPage() {
         <div className="flex gap-0.5">
           {(["all", "tam", "manual"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)}
+              title={
+                f === "all"
+                  ? "Every account in this workspace"
+                  : f === "tam"
+                    ? "Sourced by Elevay: found by the engine from your ICP"
+                    : "Added by you: created manually or imported"
+              }
               className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
               style={{
                 background: filter === f ? "var(--color-accent-soft)" : "transparent",
                 color: filter === f ? "var(--color-accent)" : "var(--color-text-tertiary)",
               }}
             >
-              {f === "all" ? `All (${tabCounts.all})` : f === "tam" ? `Prospects (${tabCounts.tam})` : `Manual (${tabCounts.manual})`}
+              {f === "all" ? `All (${tabCounts.all})` : f === "tam" ? `Sourced (${tabCounts.tam})` : `Added (${tabCounts.manual})`}
             </button>
           ))}
         </div>
