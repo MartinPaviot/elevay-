@@ -559,6 +559,22 @@ export function shouldAutoCreateContact(
 
 // ── ICP Helpers ──
 
+/**
+ * Does the tenant have enough of an ICP to target a search? Reads the flat
+ * target* keys — since icp-unification Phase 1 these are the mirror written
+ * by the rank-1 ICP profile's save, so this covers both legacy flat-ICP
+ * tenants and unified-profile tenants without touching the icps table.
+ */
+export function hasUsableIcp(settings: TenantSettings): boolean {
+  return Boolean(
+    settings.targetIndustries?.length ||
+      settings.targetKeywords?.length ||
+      settings.targetGeographies?.length ||
+      settings.targetRoles ||
+      settings.targetSeniorities?.length,
+  );
+}
+
 /** Parse targetCompanySizes into a numeric [min, max] range for scoring. */
 export function parseSizeRange(settings: TenantSettings): [number, number] | null {
   const sizes = settings.targetCompanySizes;

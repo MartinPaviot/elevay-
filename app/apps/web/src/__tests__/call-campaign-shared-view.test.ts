@@ -51,12 +51,9 @@ vi.mock("@/lib/voice/campaign", () => ({
   parseGoalPhrase: vi.fn(),
 }));
 
-vi.mock("@/lib/voice/source-prospects", () => ({
-  hasUsableIcp: vi.fn(() => true),
-}));
-
 vi.mock("@/lib/config/tenant-settings", () => ({
   getTenantSettings: vi.fn(async () => ({})),
+  hasUsableIcp: vi.fn(() => true),
 }));
 
 vi.mock("@/inngest/client", () => ({
