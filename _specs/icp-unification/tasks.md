@@ -21,8 +21,8 @@
   *Test:* `ui-state-roundtrip.test`, `mirror-write-through.test`.
 - [ ] **T1.2 Reorder endpoint.** `POST /api/icps/reorder { orderedIds }` → priority = index, recompute event.
   *Test:* priorities persisted; primary resolution follows new order.
-- [ ] **T1.3 Unified page** at `/settings/icp`: list (drag-reorder, fitCount, status chip, Source companies, Archive view) + guided editor (sections/widgets per mapping §B, importance control, sourcing-only labels, Advanced disclosure, no-uiState fallback to Advanced). Reuse the legacy widgets (`MultiSelectDropdown`, `ChipInput`, `AmountField` — extract to `components/icp/`).
-  *Test:* RTL component tests for importance mapping + advanced fallback. *Verify:* Playwright walkthrough, screenshots.
+- [ ] **T1.3 Unified page** at `/settings/icp`: list (drag-reorder, fitCount, status chip, Source companies, Archive view) + guided editor (sections/widgets per mapping §B, importance control, sourcing-only labels, Advanced disclosure, no-uiState fallback to Advanced). Extract the legacy widgets into the `CriterionList` primitive (`components/icp/criterion-list.tsx`, design §6) used by every section AND every Advanced row (R4.3b).
+  *Test:* RTL component tests for importance mapping + advanced fallback + "no comma-separated text input anywhere" (every `in` value renders as removable tags). *Verify:* Playwright walkthrough, screenshots.
 - [ ] **T1.4 Diff-after-save.** `GET /api/icps/recompute-status` (reads `lastIcpRecompute`); editor polls 3 s post-save, shows "N regraded (X up, Y down), Z unowned"; TAM estimate via existing `/api/tam/estimate`.
   *Verify:* live save on dev tenant shows a non-empty diff.
 - [ ] **T1.5 Product & Voice.** `/settings/product` page + slim `api/settings/product` (4 keys); strip those fields from the ICP surface.

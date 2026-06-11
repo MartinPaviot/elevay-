@@ -116,6 +116,7 @@ step "summary"     → diff vs snapshot → tenants.settings.lastIcpRecompute
 ## 6. Pages & navigation (R4)
 
 - `/settings/icp` → the unified page (list + editor as described in `_audit/2026-06-11-icp-unification-mapping.md` §B and the UX sketch in the conversation of 2026-06-11). `/settings/icp-profiles/page.tsx` → `redirect("/settings/icp")`.
+- **Tag-list primitive (R4.3b).** Extract the legacy page's `MultiSelectDropdown`, `ChipInput`, `Tag` into `components/icp/criterion-list.tsx`: one `CriterionList` component (props: taxonomy | freeText, values, onChange) used by every guided section AND by every Advanced row — `in`-operator values are tag lists everywhere, never comma-separated text. A criterion always reads as "a named list the user fills", which is the legacy page's interaction promoted to the whole editor.
 - `/settings/product` ("Product & Voice"): the 4 product fields, `SettingsHeader` convention, same settings keys, PUT via a slim `api/settings/product` route (clone of the surviving half of `api/settings/icp`).
 - Sidebar (`settings-sidebar.tsx:65-66`): one "ICP" entry (Target icon) + "Product & Voice". CTA links updated: `accounts/page.tsx:824`, `TAMRevealNotification.tsx:121`.
 
