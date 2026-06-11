@@ -7,6 +7,8 @@ import { inngest } from "@/inngest/client";
 import { sendWelcomeEmail } from "@/lib/emails/welcome";
 import { logger } from "@/lib/observability/logger";
 import { posthogEvents } from "@/lib/analytics/analytics";
+import { upsertRankOneProfileFromUiState } from "@/lib/icp/profile-upsert";
+import { EMPTY_UI_STATE } from "@/lib/icp/ui-state";
 
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();
@@ -141,6 +143,52 @@ export async function POST(req: Request) {
   }
 
   await updateTenantSettings(authCtx.tenantId, updates);
+
+  // Phase 1 (_specs/icp-unification R5.4): the ICP step also creates /
+  // updates the tenant's rank-1 ICP profile, so the unified ICP page is
+  // never empty and the profile — not the flats — is the targeting
+  // source of truth from day 1. The helper re-mirrors the flats from
+  // the same uiState (idempotent with the updates written above).
+  if (data.step === "icp") {
+    const strs = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    try {
+      await upsertRankOneProfileFromUiState({
+        tenantId: authCtx.tenantId,
+        appUserId: authCtx.appUserId,
+        name: "Default",
+        uiState: {
+          ...EMPTY_UI_STATE,
+          importance: {},
+          industries: strs(data.industries),
+          companySizes: strs(data.companySizes),
+          geographies: strs(data.geographies),
+          seniorities: strs(data.targetSeniorities),
+          keywords: strs(data.keywords),
+          technologies: strs(data.technologies),
+          hiringTitles: strs(data.hiringTitles),
+          revenueMin: num(data.revenueMin),
+          revenueMax: num(data.revenueMax),
+          totalFundingMin: num(data.totalFundingMin),
+          totalFundingMax: num(data.totalFundingMax),
+          minJobOpenings: num(data.minJobOpenings),
+        },
+        sourcingFilters: {
+          excludeGeographies: strs(data.excludeGeographies),
+          fundingRecencyDays: num(data.fundingRecencyDays),
+        },
+      });
+    } catch (err) {
+      // Never fail the onboarding save over the profile — the flats are
+      // already written; the profile can be (re)created from
+      // /settings/icp later.
+      logger.error("onboarding.icp_profile_upsert_failed", {
+        tenantId: authCtx.tenantId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Fire onboarding/completed event to trigger auto-TAM + enrichment
   if (data.step === "complete") {

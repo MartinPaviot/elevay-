@@ -12,6 +12,9 @@
  */
 
 import { criteriaToApolloParams } from "./to-apollo-params";
+import { flatFiltersToHardApollo } from "./flat-filters-to-apollo";
+import { parseUiState, parseSourcingFilters } from "./ui-state";
+import { sizesToApolloRanges } from "@/lib/config/icp-constants";
 import type { Criterion } from "./criteria-engine";
 import type { OrgSearchParams } from "@/lib/integrations/apollo-client";
 
@@ -27,12 +30,37 @@ export type TamStrategy = {
  * the caller should surface "this ICP has no sourceable criteria"
  * rather than firing an unfiltered Apollo search that returns the
  * whole database).
+ *
+ * Phase 1 (_specs/icp-unification R6.2/R6.3): when the profile carries
+ * editor metadata, sourcing gets higher fidelity than the criteria —
+ *   - exact size labels from uiState replace the between-ENVELOPE the
+ *     scoring criteria use (selecting "11-50" + "501-1,000" sources
+ *     those two bands, not everything from 11 to 1,000);
+ *   - sourcingFilters (exclude geographies, funding recency) apply as
+ *     hard Apollo params, computed live so the recency window never
+ *     goes stale.
  */
 export function icpToStrategy(
   icpName: string,
   criteria: Criterion[],
+  metadata?: Record<string, unknown> | null,
 ): TamStrategy | null {
   const { params } = criteriaToApolloParams(criteria);
+
+  const meta = metadata ?? {};
+  const ui = meta.uiState != null ? parseUiState(meta.uiState) : null;
+  if (ui?.ok && ui.value.companySizes.length > 0) {
+    params.organization_num_employees_ranges = sizesToApolloRanges(ui.value.companySizes);
+  }
+  const sf = meta.sourcingFilters != null ? parseSourcingFilters(meta.sourcingFilters) : null;
+  if (sf?.ok) {
+    const hard = flatFiltersToHardApollo({
+      excludeGeographies: sf.value.excludeGeographies,
+      fundingRecencyDays: sf.value.fundingRecencyDays,
+    });
+    Object.assign(params, hard);
+  }
+
   if (Object.keys(params).length === 0) return null;
   return {
     label: `ICP: ${icpName}`,

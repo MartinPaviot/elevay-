@@ -1,3 +1,14 @@
+/**
+ * GET /api/settings/icp — READ-ONLY since Phase 1
+ * (_specs/icp-unification R5.3/R8.2).
+ *
+ * The flat target* keys are now a mirror written exclusively by the
+ * rank-1 ICP profile's save (lib/icp/mirror.ts). The PUT that let this
+ * surface write them directly is gone — the legacy "ICP & Product"
+ * form it served no longer exists. GET survives until the last in-app
+ * reader of this endpoint is confirmed gone.
+ */
+
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
 import { tenants } from "@/db/schema";
@@ -44,41 +55,3 @@ export async function GET() {
   }
 }
 
-export async function PUT(req: Request) {
-  const authCtx = await getAuthContext();
-  if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  // ICP is a workspace-level setting any team member configures (it drives
-  // scoring / targeting / coaching) — not an admin-only surface. The
-  // previous requireAdmin gate made non-admins fill the whole form then hit
-  // a silent 403 "Failed to save". Removed.
-
-  try {
-    const body = await req.json();
-    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, authCtx.tenantId)).limit(1);
-    if (!tenant) return Response.json({ error: "Workspace not found" }, { status: 404 });
-
-    const current = (tenant.settings || {}) as Record<string, unknown>;
-    const updates = { ...current };
-
-    const fields = [
-      "productDescription", "salesMotion", "primaryChallenge", "aiTone",
-      "targetIndustries", "targetCompanySizes", "targetRoles", "targetGeographies",
-      // Full Apollo filter surface (parity with onboarding card). Numeric
-      // fields accept null to clear them.
-      "targetKeywords", "targetRevenueMin", "targetRevenueMax",
-      "targetTechnologies", "excludeGeographies", "fundingRecencyDays",
-      "totalFundingMin", "totalFundingMax", "minJobOpenings", "hiringTitles",
-    ];
-    for (const f of fields) {
-      if (body[f] !== undefined) updates[f] = body[f];
-    }
-
-    await db.update(tenants).set({ settings: updates, updatedAt: new Date() }).where(eq(tenants.id, authCtx.tenantId));
-
-    return Response.json({ success: true });
-  } catch (error) {
-    console.error("Failed to update ICP settings:", error);
-    return Response.json({ error: "Failed to update settings" }, { status: 500 });
-  }
-}
