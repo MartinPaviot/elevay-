@@ -9,7 +9,7 @@ import { CompanyDossier } from "@/components/company-dossier";
 import { AccountCallIntel } from "@/components/call-intel";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge, IndustryBadge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
@@ -369,7 +369,11 @@ export default function AccountDetailPage() {
                   onClick={() => { setEditingField(field.key); setEditValue(field.value || ""); }}
                   title="Click to edit"
                 >
-                  {field.value || `Set ${field.label.toLowerCase()}`}
+                  {field.key === "industry" && field.value ? (
+                    <IndustryBadge value={field.value} />
+                  ) : (
+                    field.value || `Set ${field.label.toLowerCase()}`
+                  )}
                 </p>
               )}
             </div>

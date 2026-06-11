@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { getGrade } from "@/lib/scoring/scoring";
+import { industryStyle } from "@/lib/ui/industry-style";
 
 type BadgeVariant = "success" | "warning" | "error" | "info" | "neutral";
 type BadgeSize = "sm" | "md";
@@ -124,6 +125,31 @@ export function PropertyBadge({ value, className = "" }: PropertyBadgeProps) {
       }}
     >
       {value}
+    </span>
+  );
+}
+
+/* ── Industry Badge (sector icon + theme-aware sector hue) ── */
+interface IndustryBadgeProps {
+  value: string;
+  className?: string;
+}
+
+export function IndustryBadge({ value, className = "" }: IndustryBadgeProps) {
+  const s = industryStyle(value);
+  const Icon = s.icon;
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${className}`}
+      style={{
+        background: s.bg,
+        color: s.color,
+        border: `1px solid color-mix(in srgb, ${s.color} 25%, transparent)`,
+      }}
+      title={value}
+    >
+      <Icon size={11} strokeWidth={1.75} aria-hidden className="shrink-0" style={{ opacity: 0.85 }} />
+      <span className="truncate">{value}</span>
     </span>
   );
 }
