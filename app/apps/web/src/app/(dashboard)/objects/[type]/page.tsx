@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
-import { Badge, PropertyBadge } from "@/components/ui/badge";
+import { Badge, IndustryBadge, PropertyBadge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -369,7 +369,11 @@ export default function CustomObjectRecordsPage() {
           </a>
         );
       case "select":
-        return <PropertyBadge value={String(value)} />;
+        return field.id === "industry" ? (
+          <IndustryBadge value={String(value)} />
+        ) : (
+          <PropertyBadge value={String(value)} />
+        );
       case "date":
         try {
           return new Date(String(value)).toLocaleDateString();

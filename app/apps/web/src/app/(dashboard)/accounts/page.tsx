@@ -25,7 +25,7 @@ import type { CustomFieldDef } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { PersonaSearch } from "./_persona-search";
 import { Button } from "@/components/ui/button";
-import { PropertyBadge } from "@/components/ui/badge";
+import { IndustryBadge, PropertyBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -2001,10 +2001,10 @@ export default function AccountsPage() {
                       })())}
                     </td>
 
-                    {/* Industry -- auto-colored badge */}
+                    {/* Industry -- sector icon + sector-hued badge */}
                     <td>
                       {renderEnrichable(account.id, "industry", !!account.industry, account.industry ? (
-                        <PropertyBadge value={account.industry} />
+                        <IndustryBadge value={account.industry} className="max-w-[220px]" />
                       ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>)}
                     </td>
 
@@ -2508,7 +2508,7 @@ export default function AccountsPage() {
               <PropertyRow label="Last Interaction" value={
                 a.lastInteraction ? `${timeAgo(a.lastInteraction.date)}${a.lastInteraction.summary ? ` — ${a.lastInteraction.summary}` : ""}` : "—"
               } />
-              <PropertyRow label="Industry" value={a.industry} />
+              <PropertyRow label="Industry" value={a.industry ? <IndustryBadge value={a.industry} /> : null} />
               <PropertyRow label="Size" value={a.size} />
               <PropertyRow label="Revenue" value={a.revenue} />
               <PropertyRow label="Stage" value={

@@ -32,6 +32,7 @@ import {
 import {
   CriterionList, AmountField, ImportanceSelect, SourcingOnlyHint,
 } from "@/components/icp/criterion-list";
+import { industryIcon } from "@/lib/ui/industry-style";
 import {
   INDUSTRIES, COMPANY_SIZES, GEOGRAPHIES, JOB_SENIORITIES,
 } from "@/lib/config/icp-constants";
@@ -808,7 +809,7 @@ function ProfileEditor({
               <>
                 <SectionTitle>Who they are</SectionTitle>
                 <Row icon={<Factory size={13} />} label="Industries" importance={impOf("industries")} onImportance={(v) => setImp("industries", v)}>
-                  <CriterionList values={ui.industries} onChange={(v) => setUi({ industries: v })} options={INDUSTRIES} placeholder="Search industries…" />
+                  <CriterionList values={ui.industries} onChange={(v) => setUi({ industries: v })} options={INDUSTRIES} placeholder="Search industries…" iconFor={industryIcon} />
                 </Row>
                 <Row icon={<Users size={13} />} label="Company size" importance={impOf("companySizes")} onImportance={(v) => setImp("companySizes", v)}>
                   <div className="flex flex-wrap gap-2">

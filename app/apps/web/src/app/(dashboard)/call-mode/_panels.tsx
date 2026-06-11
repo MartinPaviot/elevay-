@@ -49,6 +49,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { industryIcon } from "@/lib/ui/industry-style";
 import { Avatar } from "@/components/ui/avatar";
 import {
   careerEntryLabel,
@@ -621,7 +622,7 @@ export function PreCallBrief({
       {/* Société : secteur · taille · géographie · heure locale — grounded context up
           front, plus a direct way to enrich the person. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {company?.industry && <ContextChip icon={Building2}>{company.industry}</ContextChip>}
+        {company?.industry && <ContextChip icon={industryIcon(company.industry)}>{company.industry}</ContextChip>}
         {company?.sizeBand && <ContextChip icon={Users}>{company.sizeBand}</ContextChip>}
         {geo && <ContextChip icon={Globe}>{geo}</ContextChip>}
         {selected.localTime && <ContextChip icon={Clock}>{selected.localTime} (heure locale)</ContextChip>}

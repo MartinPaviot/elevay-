@@ -101,6 +101,37 @@
   --color-info: #2C6BED;
   --color-info-soft: rgba(44, 107, 237, 0.08);
 
+  /* Industry sector families (lib/ui/industry-style.ts) — text/icon color +
+     soft tint pairs, AA contrast on light surfaces */
+  --ind-tech: #4F46E5;
+  --ind-tech-bg: rgba(79, 70, 229, 0.08);
+  --ind-services: #2563EB;
+  --ind-services-bg: rgba(37, 99, 235, 0.08);
+  --ind-finance: #047857;
+  --ind-finance-bg: rgba(4, 120, 87, 0.08);
+  --ind-health: #E11D48;
+  --ind-health-bg: rgba(225, 29, 72, 0.07);
+  --ind-public: #475569;
+  --ind-public-bg: rgba(71, 85, 105, 0.08);
+  --ind-nonprofit: #9333EA;
+  --ind-nonprofit-bg: rgba(147, 51, 234, 0.07);
+  --ind-education: #B45309;
+  --ind-education-bg: rgba(180, 83, 9, 0.08);
+  --ind-manufacturing: #C2410C;
+  --ind-manufacturing-bg: rgba(194, 65, 12, 0.07);
+  --ind-energy: #0F766E;
+  --ind-energy-bg: rgba(15, 118, 110, 0.08);
+  --ind-agrifood: #4D7C0F;
+  --ind-agrifood-bg: rgba(77, 124, 15, 0.08);
+  --ind-transport: #0369A1;
+  --ind-transport-bg: rgba(3, 105, 161, 0.08);
+  --ind-construction: #8A5A2B;
+  --ind-construction-bg: rgba(138, 90, 43, 0.09);
+  --ind-consumer: #DB2777;
+  --ind-consumer-bg: rgba(219, 39, 119, 0.07);
+  --ind-media: #A21CAF;
+  --ind-media-bg: rgba(162, 28, 175, 0.07);
+
   /* Shadows */
   --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
@@ -170,6 +201,36 @@
   --color-error-soft: rgba(248, 113, 113, 0.12);
   --color-info: #60A5FA;
   --color-info-soft: rgba(96, 165, 250, 0.12);
+
+  /* Industry sector families — lifted text colors + denser tints for dark */
+  --ind-tech: #A5B4FC;
+  --ind-tech-bg: rgba(99, 102, 241, 0.16);
+  --ind-services: #93C5FD;
+  --ind-services-bg: rgba(59, 130, 246, 0.15);
+  --ind-finance: #6EE7B7;
+  --ind-finance-bg: rgba(16, 185, 129, 0.14);
+  --ind-health: #FDA4AF;
+  --ind-health-bg: rgba(244, 63, 94, 0.14);
+  --ind-public: #CBD5E1;
+  --ind-public-bg: rgba(148, 163, 184, 0.14);
+  --ind-nonprofit: #D8B4FE;
+  --ind-nonprofit-bg: rgba(168, 85, 247, 0.15);
+  --ind-education: #FCD34D;
+  --ind-education-bg: rgba(245, 158, 11, 0.14);
+  --ind-manufacturing: #FDBA74;
+  --ind-manufacturing-bg: rgba(249, 115, 22, 0.14);
+  --ind-energy: #5EEAD4;
+  --ind-energy-bg: rgba(20, 184, 166, 0.14);
+  --ind-agrifood: #BEF264;
+  --ind-agrifood-bg: rgba(132, 204, 22, 0.13);
+  --ind-transport: #7DD3FC;
+  --ind-transport-bg: rgba(14, 165, 233, 0.15);
+  --ind-construction: #DDB892;
+  --ind-construction-bg: rgba(180, 130, 70, 0.16);
+  --ind-consumer: #F9A8D4;
+  --ind-consumer-bg: rgba(236, 72, 153, 0.14);
+  --ind-media: #F0ABFC;
+  --ind-media-bg: rgba(217, 70, 239, 0.14);
 
   --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);

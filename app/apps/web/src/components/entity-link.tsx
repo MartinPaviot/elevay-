@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
+import { IndustryBadge } from "./ui/badge";
 import { SlideOver, PropertyRow } from "./slide-over";
 import { GeneratedCompanyAvatar } from "./ui/generated-company-avatar";
 
@@ -166,7 +167,7 @@ export function EntityLink({ type, id, name }: EntityLinkProps) {
         {entityData && type === "account" && (
           <div>
             <PropertyRow label="Domain" value={entityData.domain as string} />
-            <PropertyRow label="Industry" value={entityData.industry as string} />
+            <PropertyRow label="Industry" value={entityData.industry ? <IndustryBadge value={entityData.industry as string} /> : null} />
             <PropertyRow label="Size" value={entityData.size as string} />
             <PropertyRow label="Revenue" value={entityData.revenue as string} />
             <PropertyRow label="Score" value={String(entityData.score ?? "—")} />

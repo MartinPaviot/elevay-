@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tag } from "@/components/ui/badge";
 import type { Importance } from "@/lib/icp/ui-state";
@@ -28,6 +29,7 @@ export function CriterionList({
   options,
   allowFreeText,
   disabled,
+  iconFor,
 }: {
   values: string[];
   onChange: (next: string[]) => void;
@@ -40,6 +42,9 @@ export function CriterionList({
    *  Swiss cantons / French regions are not in the list). */
   allowFreeText?: boolean;
   disabled?: boolean;
+  /** Optional per-value leading icon (e.g. industryIcon) shown in
+   *  chips and dropdown rows — monochrome, inherits the row color. */
+  iconFor?: (value: string) => LucideIcon;
 }) {
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
@@ -62,14 +67,18 @@ export function CriterionList({
     <div className="relative">
       {values.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
-          {values.map((item) => (
-            <Tag
-              key={item}
-              onRemove={disabled ? undefined : () => onChange(values.filter((x) => x !== item))}
-            >
-              {item}
-            </Tag>
-          ))}
+          {values.map((item) => {
+            const Icon = iconFor?.(item);
+            return (
+              <Tag
+                key={item}
+                onRemove={disabled ? undefined : () => onChange(values.filter((x) => x !== item))}
+              >
+                {Icon && <Icon size={10} strokeWidth={1.75} aria-hidden className="shrink-0" style={{ opacity: 0.7 }} />}
+                {item}
+              </Tag>
+            );
+          })}
         </div>
       )}
       <Input
@@ -105,24 +114,28 @@ export function CriterionList({
             border: "1px solid var(--color-border-default)",
           }}
         >
-          {filtered.slice(0, 20).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className="block w-full px-3 py-1.5 text-left text-[13px] transition-colors"
-              style={{ color: "var(--color-text-secondary)" }}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => add(item)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--color-bg-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              {item}
-            </button>
-          ))}
+          {filtered.slice(0, 20).map((item) => {
+            const Icon = iconFor?.(item);
+            return (
+              <button
+                key={item}
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] transition-colors"
+                style={{ color: "var(--color-text-secondary)" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => add(item)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--color-bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {Icon && <Icon size={12} strokeWidth={1.75} aria-hidden className="shrink-0" style={{ opacity: 0.6 }} />}
+                {item}
+              </button>
+            );
+          })}
         </div>
       )}
       {isTaxonomy && open && (
