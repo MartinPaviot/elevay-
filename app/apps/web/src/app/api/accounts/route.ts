@@ -4,6 +4,7 @@ import { getAuthContext } from "@/lib/auth/auth-utils";
 import { and, eq, sql, desc, isNull, isNotNull, or, ilike, inArray, gte, lte, type SQL } from "drizzle-orm";
 import { matchIndustries } from "@/lib/search/industry-match";
 import { parseExcludedMode, parseAccountListFilters, GRADE_RANGES } from "@/lib/accounts/list-filters";
+import { EFFECTIVE_LIFECYCLE_STAGE_SQL } from "@/lib/accounts/lifecycle-stage";
 import { inngest } from "@/inngest/client";
 import { apiError } from "@/lib/infra/api-errors";
 import { paginatedResponse } from "@/lib/infra/api-response";
@@ -96,7 +97,7 @@ export async function GET(req: Request) {
     if (f.sizes.length) refineConds.push(sql`${companies.size} = ANY(${anyArr(f.sizes)})`);
     if (f.revenues.length) refineConds.push(sql`${companies.revenue} = ANY(${anyArr(f.revenues)})`);
     if (f.geographies.length) refineConds.push(sql`btrim(${companies.properties}->>'country') = ANY(${anyArr(f.geographies)})`);
-    if (f.stages.length) refineConds.push(sql`COALESCE(${companies.properties}->>'lifecycleStage', 'new') = ANY(${anyArr(f.stages)})`);
+    if (f.stages.length) refineConds.push(sql`${sql.raw(EFFECTIVE_LIFECYCLE_STAGE_SQL)} = ANY(${anyArr(f.stages)})`);
     if (f.grades.length) {
       // A grade only applies once the row is enriched (matches displayScore,
       // which returns "Not scored" otherwise), then it's a score band.
@@ -189,7 +190,7 @@ export async function GET(req: Request) {
             COALESCE(array_agg(DISTINCT btrim(properties->>'country')) FILTER (WHERE btrim(properties->>'country') IS NOT NULL AND btrim(properties->>'country') <> ''), '{}') AS geographies,
             COALESCE(array_agg(DISTINCT size) FILTER (WHERE size IS NOT NULL AND size <> ''), '{}') AS sizes,
             COALESCE(array_agg(DISTINCT revenue) FILTER (WHERE revenue IS NOT NULL AND revenue <> ''), '{}') AS revenues,
-            COALESCE(array_agg(DISTINCT COALESCE(properties->>'lifecycleStage','new')), '{}') AS stages
+            COALESCE(array_agg(DISTINCT ${sql.raw(EFFECTIVE_LIFECYCLE_STAGE_SQL)}), '{}') AS stages
           FROM companies
           WHERE tenant_id = ${authCtx.tenantId} AND ${deletedSql} AND ${excludedSql}
         `);
@@ -237,6 +238,9 @@ export async function GET(req: Request) {
           scoreReasons: companies.scoreReasons,
           ownerId: companies.ownerId,
           properties: companies.properties,
+          // Effective stage (manual override > deal-derived > 'new'), computed
+          // by the same expression the fStage filter and the facets use.
+          lifecycleStage: sql<string>`${sql.raw(EFFECTIVE_LIFECYCLE_STAGE_SQL)}`.as("lifecycle_stage"),
           createdAt: companies.createdAt,
           updatedAt: companies.updatedAt,
           tenantId: companies.tenantId,

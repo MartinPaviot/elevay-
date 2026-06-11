@@ -32,7 +32,7 @@ export interface AccountListFilters {
   geographies: string[]; // matches properties.country
   sizes: string[];
   revenues: string[];
-  stages: string[]; // matches properties.lifecycleStage ("new" default)
+  stages: string[]; // matches the EFFECTIVE stage (manual override > deal-derived > "new")
   grades: string[]; // A+ | A | B | C | D | F
   linkedin: "has" | "empty" | null;
   name: string | null; // substring match

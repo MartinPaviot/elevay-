@@ -12,7 +12,7 @@ import {
   tenants,
   users,
 } from "@/db/schema";
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   getTenantSettings,
@@ -329,43 +329,59 @@ export function buildUpdateTools(ctx: ToolContext) {
 
     updateAccountLifecycle: makeTool({
       description:
-        "Set an account's lifecycle stage (prospect, customer, churned, etc.). Use when the user says 'mark Acme as a customer', 'move X to churned', 'they're a lead now'.",
+        "Set an account's lifecycle stage MANUAL OVERRIDE, or clear it with 'auto'. By default the stage follows the account's deals (won → customer, open → opportunity, lost-only → nurture, none → new); an override pins it. Use when the user says 'mark Acme as a customer', 'disqualify X', 'put them back on auto'.",
       inputSchema: z.object({
         accountId: z.string().describe("Account/company ID"),
         stage: z
           .string()
           .describe(
-            "Lifecycle stage — one of the workspace's configured LIFECYCLE_STAGES (e.g. lead, prospect, customer, churned, lost)"
+            "One of: new, prospecting, opportunity, customer, disqualified, inbound, nurture — or 'auto' to clear the override and follow the deals again"
           ),
       }),
       execute: async (input) => {
-        const { LIFECYCLE_STAGES } = await import("@/lib/analytics/lifecycle");
-        if (!(LIFECYCLE_STAGES as readonly string[]).includes(input.stage)) {
-          return { error: `Invalid lifecycle stage. Valid: ${LIFECYCLE_STAGES.join(", ")}` };
+        const { normalizeLifecycleStage, LIFECYCLE_STAGES, LIFECYCLE_AUTO, EFFECTIVE_LIFECYCLE_STAGE_SQL } =
+          await import("@/lib/accounts/lifecycle-stage");
+        const stage = normalizeLifecycleStage(input.stage);
+        if (!stage) {
+          return { error: `Invalid lifecycle stage. Valid: ${LIFECYCLE_STAGES.join(", ")}, or 'auto'` };
         }
 
         const [company] = await db
-          .select()
+          .select({ id: companies.id, name: companies.name, properties: companies.properties })
           .from(companies)
-          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)))
+          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId), isNull(companies.deletedAt)))
           .limit(1);
         if (!company) return { error: "Account not found" };
 
-        const currentProps = (company.properties || {}) as Record<string, unknown>;
+        const oldOverride =
+          ((company.properties || {}) as Record<string, unknown>).lifecycleStage ?? null;
+        // Atomic jsonb merge — a read-modify-write spread would clobber
+        // concurrent property writes. Also drops the dead 'lifecycle' key an
+        // earlier version wrote.
         await db
           .update(companies)
           .set({
-            properties: { ...currentProps, lifecycle: input.stage },
+            properties:
+              stage === LIFECYCLE_AUTO
+                ? sql`(COALESCE("companies"."properties", '{}'::jsonb) - 'lifecycle' - 'lifecycleStage')`
+                : sql`(COALESCE("companies"."properties", '{}'::jsonb) - 'lifecycle') || ${JSON.stringify({ lifecycleStage: stage })}::jsonb`,
             updatedAt: new Date(),
           })
-          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId)));
+          .where(and(eq(companies.id, input.accountId), eq(companies.tenantId, tenantId), isNull(companies.deletedAt)));
+
+        // Report the stage the user will actually SEE — for 'auto' that is the
+        // deal-derived value, not the cleared override.
+        const [effRow] = await db.execute(
+          sql`SELECT ${sql.raw(EFFECTIVE_LIFECYCLE_STAGE_SQL)} AS stage FROM companies WHERE id = ${input.accountId} AND tenant_id = ${tenantId}`,
+        ) as unknown as Array<{ stage: string }>;
 
         return {
           updated: {
             accountId: input.accountId,
             name: company.name,
-            oldStage: currentProps.lifecycle ?? null,
-            newStage: input.stage,
+            oldOverride: (oldOverride as string | undefined) ?? null,
+            override: stage === LIFECYCLE_AUTO ? null : stage,
+            effectiveStage: effRow?.stage ?? (stage === LIFECYCLE_AUTO ? "new" : stage),
           },
         };
       },

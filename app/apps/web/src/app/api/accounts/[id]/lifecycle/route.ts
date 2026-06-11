@@ -1,9 +1,19 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
 import { companies } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
-import { LIFECYCLE_STAGES, LIFECYCLE_COLORS, type LifecycleStage } from "@/lib/analytics/lifecycle";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  normalizeLifecycleStage,
+  LIFECYCLE_STAGES,
+  LIFECYCLE_AUTO,
+  EFFECTIVE_LIFECYCLE_STAGE_SQL,
+} from "@/lib/accounts/lifecycle-stage";
 
+/**
+ * Set (or clear, with stage="auto") the account's manual lifecycle override.
+ * The effective stage otherwise follows the account's deals — see
+ * lib/accounts/lifecycle-stage.ts.
+ */
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -17,20 +27,20 @@ export async function POST(
 
   try {
     const body = await req.json();
-    const { stage } = body;
+    const stage = typeof body.stage === "string" ? normalizeLifecycleStage(body.stage) : null;
 
-    if (!stage || !LIFECYCLE_STAGES.includes(stage)) {
+    if (!stage) {
       return Response.json(
         {
           error: "Invalid lifecycle stage",
-          validStages: LIFECYCLE_STAGES,
+          validStages: [...LIFECYCLE_STAGES, LIFECYCLE_AUTO],
         },
         { status: 400 }
       );
     }
 
     const [company] = await db
-      .select()
+      .select({ id: companies.id })
       .from(companies)
       .where(
         and(
@@ -45,11 +55,16 @@ export async function POST(
       return Response.json({ error: "Account not found" }, { status: 404 });
     }
 
-    const currentProperties = (company.properties || {}) as Record<string, unknown>;
+    // Atomic jsonb merge — a read-modify-write spread would clobber concurrent
+    // property writes. Also drops the dead 'lifecycle' key an earlier version
+    // wrote.
     await db
       .update(companies)
       .set({
-        properties: { ...currentProperties, lifecycle: stage },
+        properties:
+          stage === LIFECYCLE_AUTO
+            ? sql`(COALESCE("companies"."properties", '{}'::jsonb) - 'lifecycle' - 'lifecycleStage')`
+            : sql`(COALESCE("companies"."properties", '{}'::jsonb) - 'lifecycle') || ${JSON.stringify({ lifecycleStage: stage })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
@@ -60,10 +75,14 @@ export async function POST(
         ),
       );
 
+    const [effRow] = await db.execute(
+      sql`SELECT ${sql.raw(EFFECTIVE_LIFECYCLE_STAGE_SQL)} AS stage FROM companies WHERE id = ${id} AND tenant_id = ${authCtx.tenantId}`,
+    ) as unknown as Array<{ stage: string }>;
+
     return Response.json({
       success: true,
-      stage,
-      colors: LIFECYCLE_COLORS[stage as LifecycleStage],
+      override: stage === LIFECYCLE_AUTO ? null : stage,
+      effectiveStage: effRow?.stage ?? "new",
     });
   } catch (error) {
     console.error("Failed to update lifecycle stage:", error);
