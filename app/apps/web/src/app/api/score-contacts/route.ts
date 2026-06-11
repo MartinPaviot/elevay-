@@ -24,8 +24,14 @@ import {
   CONTACT_SCORE_BATCH_SIZE,
 } from "@/lib/scoring/contact-icp-fit";
 
-/** Hard ceiling on an explicit id list (5 server batches). Callers that
- *  want everything should send { all: true } instead of a giant array. */
+// Tenant-wide runs walk every contact in SQL batches; give the route
+// the same budget as the other long synchronous routes (tam/build,
+// enrich/stream) instead of the platform default.
+export const maxDuration = 300;
+
+/** Hard ceiling on an explicit id list (5 server batches). Larger sets
+ *  are REJECTED — never silently truncated — callers that want
+ *  everything send { all: true }. */
 const MAX_EXPLICIT_IDS = CONTACT_SCORE_BATCH_SIZE * 5;
 
 export async function POST(req: Request) {
@@ -53,6 +59,14 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
+    if (!all && contactIds && contactIds.length > MAX_EXPLICIT_IDS) {
+      return Response.json(
+        {
+          error: `Too many ids (${contactIds.length} > ${MAX_EXPLICIT_IDS}). Send all:true to score every contact.`,
+        },
+        { status: 400 },
+      );
+    }
 
     // Same spirit as the company guard (R3.4), but contact-scoped:
     // person_seniorities counts as scorable here. Tell the user what
@@ -73,16 +87,8 @@ export async function POST(req: Request) {
       return Response.json({ success: true, scored: r.scored, total: r.total });
     }
 
-    const ids = contactIds!.slice(0, MAX_EXPLICIT_IDS);
-    let scored = 0;
-    for (let i = 0; i < ids.length; i += CONTACT_SCORE_BATCH_SIZE) {
-      const r = await scoreContactIcpBatch(
-        authCtx.tenantId,
-        ids.slice(i, i + CONTACT_SCORE_BATCH_SIZE),
-        activeIcps,
-      );
-      scored += r.scored;
-    }
+    const ids = contactIds!;
+    const { scored } = await scoreContactIcpBatch(authCtx.tenantId, ids, activeIcps);
     return Response.json({ success: true, scored, total: ids.length });
   } catch (error) {
     console.error("Contact scoring failed:", error);

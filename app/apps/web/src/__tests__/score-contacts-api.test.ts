@@ -124,4 +124,14 @@ describe("POST /api/score-contacts", () => {
     expect(res.status).toBe(200);
     expect(scoreContactIcpBatch).toHaveBeenCalledWith("t1", ["a", "b"], ICPS);
   });
+
+  it("rejects oversized explicit id lists instead of truncating", async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => `c${i}`);
+    const res = await POST(makeReq({ contactIds: ids }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/all:true/);
+    expect(scoreContactIcpBatch).not.toHaveBeenCalled();
+    expect(scoreAllContactsIcp).not.toHaveBeenCalled();
+  });
 });

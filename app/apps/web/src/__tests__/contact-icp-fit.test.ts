@@ -61,7 +61,7 @@ describe("buildContactContext", () => {
   it("adds person_seniorities from enriched properties", () => {
     const ctx = buildContactContext(
       { industry: "software" },
-      { title: "CEO", properties: { seniority: "c_suite" } },
+      { properties: { seniority: "c_suite" } },
     );
     expect(ctx.person_seniorities).toEqual(["c_suite"]);
     expect(ctx.industry).toBe("software");

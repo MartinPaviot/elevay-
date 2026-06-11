@@ -54,7 +54,6 @@ export const CONTACT_SOURCING_ONLY: ReadonlySet<string> = new Set(
 );
 
 export type ContactRowForFit = {
-  title?: string | null;
   properties?: Record<string, unknown> | null;
 };
 
@@ -90,12 +89,31 @@ export function hasContactScorableCriteria(activeIcps: ActiveIcp[]): boolean {
 export type ContactScoreBatchResult = { scored: number };
 
 /**
- * Score one batch of contacts against every active ICP and persist:
- * contacts.score (0-100 mirror of the primary fit), score_reasons, and
+ * Score contacts against every active ICP and persist: contacts.score
+ * (0-100 mirror of the primary fit), score_reasons, and
  * properties.icp_fit { primaryIcpId, cells, scoredAt } + score_grade.
- * Three queries per batch: contacts, their companies, one bulk UPDATE.
+ * Self-chunks into CONTACT_SCORE_BATCH_SIZE slices — callers may pass
+ * any id-list size. Three queries per chunk: contacts, their
+ * companies, one bulk UPDATE.
  */
 export async function scoreContactIcpBatch(
+  tenantId: string,
+  contactIds: string[],
+  activeIcps: ActiveIcp[],
+): Promise<ContactScoreBatchResult> {
+  let scored = 0;
+  for (let i = 0; i < contactIds.length; i += CONTACT_SCORE_BATCH_SIZE) {
+    const r = await scoreContactIcpChunk(
+      tenantId,
+      contactIds.slice(i, i + CONTACT_SCORE_BATCH_SIZE),
+      activeIcps,
+    );
+    scored += r.scored;
+  }
+  return { scored };
+}
+
+async function scoreContactIcpChunk(
   tenantId: string,
   contactIds: string[],
   activeIcps: ActiveIcp[],
@@ -105,7 +123,6 @@ export async function scoreContactIcpBatch(
   const rows = await db
     .select({
       id: contacts.id,
-      title: contacts.title,
       properties: contacts.properties,
       companyId: contacts.companyId,
     })
@@ -166,7 +183,6 @@ export async function scoreContactIcpBatch(
         })
       : {};
     const ctx = buildContactContext(companyCtx, {
-      title: contact.title,
       properties: contact.properties as Record<string, unknown> | null,
     });
 
@@ -191,7 +207,9 @@ export async function scoreContactIcpBatch(
     if (primary) {
       reasons.push(`ICP fit: ${icpNameById.get(primary.icpId) ?? "profile"} (${score}/100)`);
     } else {
-      reasons.push("No ICP profile fits at 50% or more");
+      reasons.push(
+        `No ICP profile fits at ${Math.round(PRIMARY_FIT_THRESHOLD * 100)}% or more`,
+      );
     }
     if (!company) {
       reasons.push("No company linked — company criteria can't be verified");
@@ -249,14 +267,6 @@ export async function scoreAllContactsIcp(
   activeIcps: ActiveIcp[],
 ): Promise<{ scored: number; total: number }> {
   const ids = await listContactIds(tenantId);
-  let scored = 0;
-  for (let i = 0; i < ids.length; i += CONTACT_SCORE_BATCH_SIZE) {
-    const r = await scoreContactIcpBatch(
-      tenantId,
-      ids.slice(i, i + CONTACT_SCORE_BATCH_SIZE),
-      activeIcps,
-    );
-    scored += r.scored;
-  }
+  const { scored } = await scoreContactIcpBatch(tenantId, ids, activeIcps);
   return { scored, total: ids.length };
 }
