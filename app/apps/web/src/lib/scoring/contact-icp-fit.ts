@@ -111,9 +111,11 @@ export async function scoreContactIcpBatch(
   activeIcps: ActiveIcp[],
 ): Promise<ContactScoreBatchResult> {
   // Persona vocabulary + its hash are per-run constants (editing an
-  // ICP mid-run is picked up by the NEXT run via hash mismatch).
+  // ICP mid-run is picked up by the NEXT run via hash mismatch). The
+  // memo shares resolutions ACROSS chunks: the same unknown title on
+  // contacts in chunk 1 and chunk 5 costs one LLM round-trip, not two.
   const vocab = personaVocabulary(activeIcps);
-  const persona = { vocab, hash: vocabHash(vocab) };
+  const persona = { vocab, hash: vocabHash(vocab), memo: new Map<string, string[]>() };
 
   let scored = 0;
   for (let i = 0; i < contactIds.length; i += CONTACT_SCORE_BATCH_SIZE) {
@@ -132,7 +134,7 @@ async function scoreContactIcpChunk(
   tenantId: string,
   contactIds: string[],
   activeIcps: ActiveIcp[],
-  persona: { vocab: string[]; hash: string },
+  persona: { vocab: string[]; hash: string; memo: Map<string, string[]> },
 ): Promise<ContactScoreBatchResult> {
   if (contactIds.length === 0 || activeIcps.length === 0) return { scored: 0 };
 
@@ -197,6 +199,7 @@ async function scoreContactIcpChunk(
     for (const row of rows) {
       const title = row.title?.trim();
       if (!title) continue;
+      const key = norm(title);
       const cached = readCachedPersonas(
         row.properties as Record<string, unknown> | null,
         persona.hash,
@@ -205,13 +208,21 @@ async function scoreContactIcpChunk(
         personasByContact.set(row.id, cached);
         continue;
       }
-      if (vocabNorm.has(norm(title))) {
-        // The title IS one of the persona labels — no LLM needed.
-        personasByContact.set(row.id, [title]);
+      const memoHit = persona.memo.get(key);
+      if (memoHit) {
+        // Resolved for an earlier chunk this run — reuse, write through.
+        personasByContact.set(row.id, memoHit);
         freshResolution.add(row.id);
         continue;
       }
-      needLlm.set(norm(title), title);
+      if (vocabNorm.has(key)) {
+        // The title IS one of the persona labels — no LLM needed.
+        personasByContact.set(row.id, [title]);
+        freshResolution.add(row.id);
+        persona.memo.set(key, [title]);
+        continue;
+      }
+      needLlm.set(key, title);
     }
     if (needLlm.size > 0) {
       const resolved = await resolveTitles(
@@ -219,6 +230,7 @@ async function scoreContactIcpChunk(
         persona.vocab,
         tenantId,
       );
+      for (const [k, v] of resolved) persona.memo.set(k, v);
       for (const row of rows) {
         if (personasByContact.has(row.id)) continue;
         const title = row.title?.trim();
@@ -309,6 +321,9 @@ async function scoreContactIcpChunk(
       reasons,
       props: {
         icp_fit: { primaryIcpId: primary?.icpId ?? null, cells: cellMeta, scoredAt: now },
+        // `personas` is always set when the id is in freshResolution —
+        // the second conjunct only narrows the type. Cached hits are
+        // deliberately NOT rewritten (the jsonb merge would be a no-op).
         ...(freshResolution.has(contact.id) && personas
           ? { title_personas: { h: persona.hash, p: personas } }
           : {}),
