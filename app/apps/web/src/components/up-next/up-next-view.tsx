@@ -3,24 +3,28 @@
 /**
  * Up Next — the founder's dashboard.
  *
- * KPIs (the metrics that matter) + Actualités (a cross-page feed of REAL events,
- * incl. deal updates from transcript/email analysis) + À faire (genuine human
- * work only — replies to answer, calls to prep, live deals at risk). No
- * reflexive agent actions. Reads /api/home/up-next. DNA: dense data, 0.5px
- * borders, lucide icons, one accent, no emoji (design-language.md).
+ * KPIs (the metrics that matter) + Actualités (a cross-page feed of REAL events:
+ * replies, email opens, inbound forms, calls with outcomes, deal lifecycle
+ * events, meetings, adds with provenance) + À faire (genuine human work only —
+ * replies to answer, calls to prep, live deals at risk). No reflexive agent
+ * actions. Reads /api/home/up-next. DNA: dense data, 0.5px borders, lucide
+ * icons, one accent, no emoji (design-language.md).
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Mail, AlertTriangle, Calendar, CheckSquare, CheckCircle2, CalendarPlus,
+  Mail, MailOpen, AlertTriangle, Calendar, CheckSquare, CheckCircle2, CalendarPlus,
   Building2, UserPlus, TrendingUp, ArrowRight, ArrowUpRight, Loader2, Send,
+  Inbox, Phone, BadgeCheck, XCircle,
 } from "lucide-react";
 import { EmailComposerPanel } from "@/components/email-composer-panel";
 import type { EmailComposerDraft } from "@/components/email-composer-panel";
 
 interface Kpi { key: string; label: string; value: string; sub: string | null; delta: number | null; }
-type ActualiteKind = "deal" | "reply" | "meeting_booked" | "meeting_done" | "account" | "contact" | "campaign";
+type ActualiteKind =
+  | "deal" | "deal_won" | "deal_lost" | "reply" | "open" | "form" | "call"
+  | "meeting_booked" | "meeting_done" | "account" | "contact" | "campaign";
 interface Actualite { id: string; kind: ActualiteKind; title: string; detail: string | null; at: string | null; href: string | null; }
 type TodoKind = "reply" | "deal_risk" | "meeting" | "task";
 interface Todo {
@@ -31,11 +35,14 @@ interface Todo {
 interface Payload { greeting: string; firstName: string | null; kpis: Kpi[]; actualites: Actualite[]; todos: Todo[]; }
 
 const ACT_ICON: Record<ActualiteKind, typeof Mail> = {
-  deal: TrendingUp, reply: Mail, meeting_booked: CalendarPlus, meeting_done: CheckCircle2,
+  deal: TrendingUp, deal_won: BadgeCheck, deal_lost: XCircle, reply: Mail, open: MailOpen,
+  form: Inbox, call: Phone, meeting_booked: CalendarPlus, meeting_done: CheckCircle2,
   account: Building2, contact: UserPlus, campaign: Send,
 };
 const ACT_TINT: Record<ActualiteKind, string> = {
-  deal: "var(--color-success)", reply: "var(--color-accent)", meeting_booked: "var(--color-badge-1)",
+  deal: "var(--color-success)", deal_won: "var(--color-success)", deal_lost: "var(--color-error)",
+  reply: "var(--color-accent)", open: "var(--color-badge-4)", form: "var(--color-warning)",
+  call: "var(--color-badge-7)", meeting_booked: "var(--color-badge-1)",
   meeting_done: "var(--color-text-tertiary)", account: "var(--color-info)", contact: "var(--color-badge-3)",
   campaign: "var(--color-warning)",
 };
