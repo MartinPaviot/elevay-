@@ -56,6 +56,8 @@ interface Activity {
   summary: string | null;
   occurredAt: string;
   metadata: Record<string, unknown>;
+  /** Member who performed the action (user activities only); null otherwise. */
+  actorName?: string | null;
 }
 
 export default function ContactDetailPage() {
@@ -298,6 +300,11 @@ export default function ContactDetailPage() {
                         <span className="text-xs font-medium uppercase text-[var(--color-text-secondary)]">
                           {activity.activityType.replace(/_/g, " ")}
                         </span>
+                        {activity.actorName && (
+                          <span className="text-xs text-[var(--color-text-tertiary)]">
+                            · {activity.actorName}
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-[var(--color-text-tertiary)]">
                         {new Date(activity.occurredAt).toLocaleDateString()}
