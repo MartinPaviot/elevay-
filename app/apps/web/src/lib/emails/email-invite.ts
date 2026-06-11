@@ -25,15 +25,13 @@ export async function sendInviteEmail(p: InviteEmailParams): Promise<{ sent: boo
   const subject = `${p.inviterName} invited you to join ${p.workspaceName} on Elevay`;
   const expiresStr = p.expiresAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const safeUrl = escapeHtml(p.acceptUrl);
-  // Absolute logo URL on the same origin as the accept link (canonical
-  // https://www.elevay.dev in prod). Email clients block SVG <img>, so we
-  // ship a raster logo-Elevay.png in /public for this.
-  let logoUrl = "https://www.elevay.dev/logo-Elevay.png";
-  try {
-    logoUrl = `${new URL(p.acceptUrl).origin}/logo-Elevay.png`;
-  } catch {
-    /* keep the canonical default */
-  }
+  // The logo is a static asset on the CANONICAL prod domain — hardcode it,
+  // never derive it from the accept-link origin. Mail image proxies fetch
+  // anonymously and do NOT follow redirects, and the apex
+  // elevay.dev/logo-Elevay.png 307-redirects to www → the client renders a
+  // broken image (the blue "?"). www.elevay.dev serves the PNG directly (200).
+  // Email clients also block SVG <img>, which is why this is a raster /public/png.
+  const logoUrl = "https://www.elevay.dev/logo-Elevay.png";
   // Brand palette (matches the app's --gradient-shimmer + --color-accent):
   // teal #17C3B2 → blue #2C6BED → orange #FF7A3D, accent blue #2C6BED.
   const html = `<!doctype html>
