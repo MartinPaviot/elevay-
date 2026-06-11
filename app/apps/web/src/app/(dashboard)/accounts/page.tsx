@@ -1797,7 +1797,7 @@ export default function AccountsPage() {
             <thead>
               <tr>
                 {/* Select-all checkbox */}
-                <th className="check" style={{ width: 36 }}>
+                <th className="check">
                   <input
                     type="checkbox"
                     aria-label="Select all accounts"
@@ -1809,7 +1809,7 @@ export default function AccountsPage() {
                       if (e.target.checked) void selectAllMatching();
                       else setSelectedRows(new Set());
                     }}
-                    className="h-3.5 w-3.5 rounded"
+                    className="h-3 w-3 rounded"
                   />
                 </th>
                 {([
@@ -1888,7 +1888,7 @@ export default function AccountsPage() {
                   <React.Fragment key={account.id}>
                   <tr className="group" data-selected={selectedRows.has(account.id) ? "true" : undefined}>
                     {/* Row checkbox */}
-                    <td className="check" style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                    <td className="check" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`Select ${account.name || account.domain || "account"}`}
@@ -1898,7 +1898,7 @@ export default function AccountsPage() {
                           if (e.target.checked) next.add(account.id); else next.delete(account.id);
                           setSelectedRows(next);
                         }}
-                        className="h-3.5 w-3.5 rounded"
+                        className="h-3 w-3 rounded"
                       />
                     </td>
                     {/* Account name with logo */}
