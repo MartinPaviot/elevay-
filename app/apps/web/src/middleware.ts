@@ -45,6 +45,13 @@ export default auth((req) => {
   const publicPaths = [
     "/sign-in",
     "/sign-up",
+    // Invite acceptance must be reachable WITHOUT a session — an invitee is
+    // logged out by definition when they click the emailed link. Without
+    // this the middleware bounced /accept-invite to /sign-in (307) and
+    // dropped the token + invite context, so the email button looked dead.
+    // The page reads the invite (public GET /api/auth/invite/[token]) and
+    // handles sign-in itself, preserving the token as the callbackUrl.
+    "/accept-invite",
     // Password reset must be reachable WITHOUT a session — the user is
     // logged out by definition. /forgot-password (request a link) +
     // /reset-password (consume the emailed token). Without these the
