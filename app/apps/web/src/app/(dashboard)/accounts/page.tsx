@@ -1811,7 +1811,9 @@ export default function AccountsPage() {
                 {([
                   { label: "Account", icon: Building2, filterKey: "name" },
                   { label: "Website", icon: Globe, filterKey: "domain" },
-                  { label: "LinkedIn", icon: null, filterKey: "linkedin" },
+                  // Icon-only header: keeps the LinkedIn column as narrow as
+                  // its content (the icon link); the filter stays available.
+                  { label: "", icon: null, filterKey: "linkedin" },
                   { label: "Industry", icon: Factory, filterKey: "industry" },
                   { label: "Geography", icon: MapPin, filterKey: "geography" },
                   { label: "Size", icon: Ruler, filterKey: "size" },
@@ -1846,7 +1848,7 @@ export default function AccountsPage() {
                   <th key={i}>
                     <span className="flex items-center gap-1.5">
                       {col.icon && <col.icon size={12} style={{ opacity: 0.5 }} />}
-                      {col.label === "LinkedIn" && <span style={{ opacity: 0.5 }}><LinkedInIcon size={12} /></span>}
+                      {col.filterKey === "linkedin" && <span style={{ opacity: 0.5 }} title="LinkedIn"><LinkedInIcon size={12} /></span>}
                       {col.label}
                       {col.filterKey && fcfg && (
                         <ColumnFilter
@@ -1974,11 +1976,12 @@ export default function AccountsPage() {
                           href={`https://${account.domain}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[12px] transition-colors hover:underline"
+                          className="inline-flex max-w-[140px] items-center gap-1 text-[12px] transition-colors hover:underline"
                           style={{ color: "var(--color-accent)" }}
+                          title={account.domain}
                         >
-                          {account.domain}
-                          <ExternalLink size={10} style={{ opacity: 0.5 }} />
+                          <span className="min-w-0 truncate">{account.domain}</span>
+                          <ExternalLink size={10} className="shrink-0" style={{ opacity: 0.5 }} />
                         </a>
                       ) : (
                         <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>
@@ -1995,11 +1998,12 @@ export default function AccountsPage() {
                             href={linkedIn.startsWith("http") ? linkedIn : `https://${linkedIn}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[12px] transition-colors hover:underline"
+                            className="inline-flex items-center transition-opacity hover:opacity-70"
                             style={{ color: "#0A66C2" }}
+                            title="Open LinkedIn profile"
+                            aria-label="Open LinkedIn profile"
                           >
                             <LinkedInIcon size={13} />
-                            <span>Profile</span>
                           </a>
                         );
                       })())}
@@ -2016,12 +2020,17 @@ export default function AccountsPage() {
                     <td>
                       {renderEnrichable(account.id, "geography", !!formatGeography(account), (() => {
                         const geo = formatGeography(account);
-                        return geo ? (
-                          <span className="inline-flex items-center gap-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                            <MapPin size={11} style={{ color: "var(--color-text-muted)" }} />
-                            {geo}
+                        if (!geo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        // Compact display: city + country only (state adds
+                        // noise like "Zürich, Zurich"); full string on hover.
+                        const geoParts = geo.split(", ");
+                        const geoCompact = geoParts.length > 2 ? `${geoParts[0]}, ${geoParts[geoParts.length - 1]}` : geo;
+                        return (
+                          <span className="inline-flex max-w-[170px] items-center gap-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }} title={geo}>
+                            <MapPin size={11} className="shrink-0" style={{ color: "var(--color-text-muted)" }} />
+                            <span className="min-w-0 truncate">{geoCompact}</span>
                           </span>
-                        ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        );
                       })())}
                     </td>
 
