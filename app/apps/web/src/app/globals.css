@@ -543,6 +543,20 @@
    (table[data-selecting="true"]). Opt-in per table via the .check cell
    class. Hide with opacity (never display/width): the gutter keeps its
    width so columns never shift, and the control stays focusable. */
+.ls-table th.check,
+.ls-table td.check {
+  /* Tight gutter: the hover-revealed boxes read as dead width at 36-40px.
+     One rule so Accounts, Contacts and DataTable stay identical. */
+  width: 26px;
+  padding-left: 8px;
+  padding-right: 4px;
+}
+.ls-table :is(th.check, td.check) button[role="checkbox"] {
+  /* The shared Checkbox is 16px elsewhere; inside a selection gutter it
+     matches the 12px raw inputs. */
+  width: 12px;
+  height: 12px;
+}
 .ls-table th.check > *,
 .ls-table td.check > * {
   opacity: 0;

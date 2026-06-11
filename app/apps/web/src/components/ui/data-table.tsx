@@ -109,7 +109,7 @@ export function DataTable<T>({
         <thead>
           <tr>
             {selectable && (
-              <th className="check" style={{ width: 40, padding: "8px" }}>
+              <th className="check">
                 <Checkbox checked={!!allSelected} onChange={toggleAll} />
               </th>
             )}
@@ -141,7 +141,7 @@ export function DataTable<T>({
                 style={{ cursor: onRowClick ? "pointer" : undefined }}
               >
                 {selectable && (
-                  <td className="check" style={{ width: 40, padding: "0 8px" }} onClick={(e) => e.stopPropagation()}>
+                  <td className="check" onClick={(e) => e.stopPropagation()}>
                     <Checkbox checked={!!selected} onChange={() => toggleRow(id)} />
                   </td>
                 )}
