@@ -373,6 +373,27 @@ export default function AccountsPage() {
     return renderEnrichable(account.id, refKey, hasValue, node);
   };
 
+  // ── ICP profile picker for sourcing (Phase 1, _specs/icp-unification
+  // R6.1): "Find more accounts" sources from a profile's criteria
+  // (rank 1 by default) instead of the legacy LLM planner over flat
+  // settings. Tenants with no usable profile keep the legacy path.
+  const [sourceProfiles, setSourceProfiles] = useState<
+    Array<{ id: string; name: string; criteriaCount: number; status: string }>
+  >([]);
+  const [sourceIcpId, setSourceIcpId] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/icps")
+      .then((r) => (r.ok ? r.json() : { icps: [] }))
+      .then((data) => {
+        const usable = ((data.icps ?? []) as Array<{ id: string; name: string; criteriaCount: number; status: string }>)
+          .filter((i) => i.status === "active" && i.criteriaCount > 0);
+        setSourceProfiles(usable);
+        // /api/icps orders by priority — first usable = rank 1.
+        setSourceIcpId((cur) => cur ?? usable[0]?.id ?? null);
+      })
+      .catch(() => {});
+  }, []);
+
   const startTamBuild = useCallback(async () => {
     setStreamBanner(true);
     // Push the active sector/geography facets straight into the Apollo
@@ -384,8 +405,12 @@ export default function AccountsPage() {
     if (indVals.length > 0) apolloOverrides.industries = indVals;
     if (geoVals.length > 0) apolloOverrides.geographies = geoVals;
     const hasOverrides = !!apolloOverrides.industries || !!apolloOverrides.geographies;
-    await tamStream.start({ targetCount: 300, ...(hasOverrides ? { apolloOverrides } : {}) });
-  }, [tamStream, columnFilters]);
+    await tamStream.start({
+      targetCount: 300,
+      ...(sourceIcpId ? { icpId: sourceIcpId } : {}),
+      ...(hasOverrides ? { apolloOverrides } : {}),
+    });
+  }, [tamStream, columnFilters, sourceIcpId]);
 
   // Single "popover open" selector shared across all signal chips in
   // the table. Ensures only one popover is open at a time and it
@@ -1364,6 +1389,25 @@ export default function AccountsPage() {
         >
           Describe ICP
         </Button>
+        {sourceProfiles.length > 0 && (
+          <select
+            value={sourceIcpId ?? ""}
+            onChange={(e) => setSourceIcpId(e.target.value || null)}
+            title="Which ICP profile to source from"
+            className="h-8 rounded-md border px-2 text-[12px]"
+            style={{
+              borderColor: "var(--color-border-default)",
+              background: "var(--color-bg-card)",
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            {sourceProfiles.map((p, i) => (
+              <option key={p.id} value={p.id}>
+                Source from: {p.name}{i === 0 ? " (primary)" : ""}
+              </option>
+            ))}
+          </select>
+        )}
         <Button
           variant="outline"
           size="sm"

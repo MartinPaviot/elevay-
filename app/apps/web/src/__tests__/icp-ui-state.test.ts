@@ -138,8 +138,9 @@ describe("mirrorFromUiState — the R5.2 flat key list", () => {
       targetKeywords: FULL_UI.keywords,
       targetTechnologies: FULL_UI.technologies,
       targetRevenueMin: 1_000_000,
-      targetRevenueMax: null,
-      totalFundingMin: null,
+      // numeric blanks are undefined (dropped at serialization = cleared)
+      targetRevenueMax: undefined,
+      totalFundingMin: undefined,
       totalFundingMax: 5_000_000,
       minJobOpenings: 2,
       hiringTitles: FULL_UI.hiringTitles,

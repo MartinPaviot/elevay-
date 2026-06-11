@@ -261,7 +261,7 @@ export async function POST(req: Request) {
         let icpName: string | null = null;
         if (body.icpId) {
           const [icp] = await db
-            .select({ id: icps.id, name: icps.name })
+            .select({ id: icps.id, name: icps.name, metadata: icps.metadata })
             .from(icps)
             .where(and(eq(icps.id, body.icpId), eq(icps.tenantId, authCtx.tenantId), isNull(icps.deletedAt)))
             .limit(1);
@@ -286,7 +286,11 @@ export async function POST(req: Request) {
             weight: r.weight,
             isRequired: r.isRequired,
           }));
-          icpStrategy = icpToStrategy(icp.name, criteria);
+          icpStrategy = icpToStrategy(
+            icp.name,
+            criteria,
+            icp.metadata as Record<string, unknown> | null,
+          );
           if (!icpStrategy) {
             send({
               type: "error",

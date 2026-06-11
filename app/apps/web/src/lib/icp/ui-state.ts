@@ -345,14 +345,17 @@ export function mirrorFromUiState(
     targetRoles: ui.personTitles.join(", "),
     targetKeywords: ui.keywords,
     targetTechnologies: ui.technologies,
-    targetRevenueMin: ui.revenueMin,
-    targetRevenueMax: ui.revenueMax,
-    totalFundingMin: ui.totalFundingMin,
-    totalFundingMax: ui.totalFundingMax,
-    minJobOpenings: ui.minJobOpenings,
+    // TenantSettings types numerics as `number | undefined`; undefined
+    // keys are dropped at JSON serialization, which IS the clear
+    // semantics the legacy readers expect (they all `?? null` / `||`).
+    targetRevenueMin: ui.revenueMin ?? undefined,
+    targetRevenueMax: ui.revenueMax ?? undefined,
+    totalFundingMin: ui.totalFundingMin ?? undefined,
+    totalFundingMax: ui.totalFundingMax ?? undefined,
+    minJobOpenings: ui.minJobOpenings ?? undefined,
     hiringTitles: ui.hiringTitles,
     excludeGeographies: sourcing.excludeGeographies,
-    fundingRecencyDays: sourcing.fundingRecencyDays,
+    fundingRecencyDays: sourcing.fundingRecencyDays ?? undefined,
   };
 }
 

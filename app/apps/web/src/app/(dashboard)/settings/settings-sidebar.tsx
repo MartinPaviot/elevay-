@@ -29,6 +29,7 @@ import {
   DollarSign,
   Radio,
   Inbox,
+  Package,
 } from "lucide-react";
 import { BILLING_PAGE_ENABLED } from "@/lib/billing/page-visibility";
 
@@ -63,8 +64,8 @@ const settingsNav: NavSection[] = [
     label: "Workspace",
     items: [
       { label: "General", href: "/settings/workspace", icon: Building },
-      { label: "ICP & Product", href: "/settings/icp", icon: Target },
-      { label: "ICP Profiles", href: "/settings/icp-profiles", icon: Target },
+      { label: "ICP", href: "/settings/icp", icon: Target },
+      { label: "Product & Voice", href: "/settings/product", icon: Package },
       { label: "Mail & Calendar", href: "/settings/mail-calendar", icon: Mail },
       { label: "Capture approvals", href: "/settings/capture-approvals", icon: Inbox },
       { label: "Members", href: "/settings/members", icon: Users },
