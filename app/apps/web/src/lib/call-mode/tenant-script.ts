@@ -60,6 +60,32 @@ export function filterGroundedProblems(
 
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
 
+/**
+ * The founder's editable cold-call playbook, read from tenant Knowledge
+ * (Settings → Knowledge): entries with category "process" whose title
+ * starts with "Cold call". Returns a capped prompt block, or "" when no
+ * such entries exist — the hardcoded methodology alone then governs.
+ * The block refines wording/phases; the grounding rules (evidence
+ * citations, fail-closed filter) always take precedence. Pure + tested.
+ */
+export function buildPlaybookBlock(
+  entries: Array<{ topic: string; content: string; category: string }>,
+  cap = 3500,
+): string {
+  const rules = entries.filter(
+    (e) => e.category === "process" && /^cold[\s-]?call/i.test(e.topic.trim()),
+  );
+  if (rules.length === 0) return "";
+  let body = "";
+  for (const e of rules) {
+    const next = `\n- ${e.topic.trim()}: ${e.content.replace(/\s+/g, " ").trim()}`;
+    if (body.length + next.length > cap) break;
+    body += next;
+  }
+  if (!body) return "";
+  return `\n\nFOUNDER COLD-CALL PLAYBOOK (the tenant's own methodology, editable in Settings → Knowledge — follow its phases and wording wherever it is more specific than the methodology above; it NEVER overrides the grounding rules):${body}`;
+}
+
 export interface StoredScript extends ScriptFields {
   sector: string;
   origin: string;
@@ -143,6 +169,17 @@ export async function generateCallScript(
   if (!model) return null;
 
   const s = await getTenantSettings(tenantId);
+
+  // Founder playbook from tenant Knowledge — fail-soft: absent table,
+  // empty tenant or read error all degrade to the hardcoded methodology.
+  let playbookBlock = "";
+  try {
+    const { getTenantKnowledge } = await import("@/lib/knowledge/get-tenant-knowledge");
+    playbookBlock = buildPlaybookBlock(await getTenantKnowledge(tenantId));
+  } catch {
+    playbookBlock = "";
+  }
+
   const sector = (opts.sector ?? (s.targetIndustries ?? [])[0] ?? "").toString().trim();
   const evidence = opts.evidence ?? [];
   const posture = s.scriptPosture === "challenger" ? "challenger" : "consultative";
@@ -198,7 +235,7 @@ SALES MOTION: ${ctx.salesMotion || "(n/a)"}
 KEY CHALLENGE WE SOLVE: ${ctx.challenge || "(n/a)"}
 TARGET SEGMENT — sector: ${ctx.sector || "(générique)"}; sizes: ${ctx.sizes.join(", ") || "n/a"}; geographies: ${ctx.geographies.join(", ") || "n/a"}; persona/roles: ${ctx.persona || "décideur"}; tech in place we replace: ${ctx.technologies.join(", ") || "n/a"}.${evidenceBlock}
 
-Methodology (strict, permission-based — locked by the founder): the cold call is short (2-3 min); its ONLY job is to earn a YES to a ~45-min deep-dive. Flow: (1) opener = a permission gate — greeting + who you are + "vous avez 2 minutes ?", NO pitch and NO listed problems; (2) then present ONE enjeu at a time as a hypothesis the prospect validates ("est-ce un sujet chez vous ?"), the rep iterates up to 3 until one lands; (3) propose the meeting with day/time options. ${postureLine} Talk to decision-makers first. Use "vous". No emojis. Sound natural, like a peer with one real reason to call — never a stack of techniques. Never claim a certification the company doesn't have. The opener MUST keep the {name} placeholder so it interpolates per call (do not put {sector}/{geo} in the opener).`,
+Methodology (strict, permission-based — locked by the founder): the cold call is short (2-3 min); its ONLY job is to earn a YES to a ~45-min deep-dive. Flow: (1) opener = a permission gate — greeting + who you are + "vous avez 2 minutes ?", NO pitch and NO listed problems; (2) then present ONE enjeu at a time as a hypothesis the prospect validates ("est-ce un sujet chez vous ?"), the rep iterates up to 3 until one lands; (3) propose the meeting with day/time options. ${postureLine} Talk to decision-makers first. Use "vous". No emojis. Sound natural, like a peer with one real reason to call — never a stack of techniques. Never claim a certification the company doesn't have. The opener MUST keep the {name} placeholder so it interpolates per call (do not put {sector}/{geo} in the opener).${playbookBlock}`,
       _trace: { agentId: "call-script-generate", tenantId, inputPreview: `${sector.slice(0, 60)}|ev:${evidence.length}|${posture}` },
     });
 

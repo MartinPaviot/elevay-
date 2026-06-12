@@ -205,7 +205,7 @@ export function formatKnowledgeForPrompt(entries: RetrievedKnowledge[]): string 
       `### ${e.title} (${e.category})\n${e.content}`
   );
 
-  return `## Business Knowledge\n\nThe following is knowledge that the user has defined about their business. Use it to ground your responses.\n\n${sections.join("\n\n---\n\n")}`;
+  return `## Business Knowledge\n\nThe following is knowledge that the user has defined about their business. Use it to ground your responses. When an entry covers the topic at hand (a methodology, a playbook, a process — e.g. cold calling, list building, objection handling), prefer its documented approach over generic advice and propose its solutions first.\n\n${sections.join("\n\n---\n\n")}`;
 }
 
 /**
