@@ -5,6 +5,7 @@ import { eq, and, or, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { embedKnowledgeEntry } from "@/lib/knowledge/retrieval";
 import { effectiveStages, sanitizeStages } from "@/lib/knowledge/stages";
+import { classifyStages } from "@/lib/knowledge/auto-stage";
 
 const STALENESS_DAYS = 90;
 
@@ -97,6 +98,14 @@ export async function POST(req: Request) {
       .update(content.trim())
       .digest("hex");
 
+    // "Write normally": no curated stages on the request → the entry
+    // routes itself from its content (fail-soft to category/title derive).
+    const curated = sanitizeStages(stages);
+    const entryStages =
+      curated.length > 0
+        ? curated
+        : await classifyStages(title.trim(), content.trim(), authCtx.tenantId, cat);
+
     const [entry] = await db
       .insert(knowledgeEntries)
       .values({
@@ -106,7 +115,7 @@ export async function POST(req: Request) {
         title: title.trim(),
         category: cat,
         content: content.trim(),
-        stages: sanitizeStages(stages),
+        stages: entryStages,
         contentHash,
       })
       .returning();

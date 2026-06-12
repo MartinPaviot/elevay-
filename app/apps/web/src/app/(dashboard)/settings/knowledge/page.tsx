@@ -12,14 +12,10 @@ interface KnowledgeTopic {
   id: string;
   topic: string;
   content: string;
-  /** Free, user-creatable label (canonical ones are mere suggestions). */
-  category: string;
-  /** Consumption stages (lib/knowledge/stages.ts) — drives the grouping below. */
+  /** Consumption stages (lib/knowledge/stages.ts) — assigned automatically
+   * from the content on save; the chips are optional refinement only. */
   stages: string[];
 }
-
-/** Canonical categories offered as typing suggestions — not a gate. */
-const CATEGORY_SUGGESTIONS = ["icp", "competitors", "objections", "product", "process", "context", "custom"];
 
 export default function KnowledgeSettingsPage() {
   const [topics, setTopics] = useState<KnowledgeTopic[]>([]);
@@ -35,11 +31,10 @@ export default function KnowledgeSettingsPage() {
         // API speaks `title`; this page's local shape is `topic`.
         setTopics(
           (data.knowledge || []).map(
-            (k: { id: string; title?: string; topic?: string; content?: string; category?: string; stages?: string[] }) => ({
+            (k: { id: string; title?: string; topic?: string; content?: string; stages?: string[] }) => ({
               id: k.id,
               topic: k.title ?? k.topic ?? "",
               content: k.content ?? "",
-              category: k.category ?? "custom",
               stages: Array.isArray(k.stages) ? k.stages : [],
             }),
           ),
@@ -91,7 +86,7 @@ export default function KnowledgeSettingsPage() {
   }, [fetchTopics]);
 
   async function addTopic() {
-    const newTopic = { id: "temp-" + Date.now(), topic: "", content: "", category: "custom", stages: ["global"] };
+    const newTopic = { id: "temp-" + Date.now(), topic: "", content: "", stages: [] };
     setTopics([...topics, newTopic]);
   }
 
@@ -125,7 +120,9 @@ export default function KnowledgeSettingsPage() {
         const res = await fetch("/api/settings/knowledge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: topic.topic, content: topic.content, category: topic.category, stages: topic.stages }),
+          // No stages sent: the server classifies the entry from its
+          // content ("write normally" — auto-stage, fail-soft).
+          body: JSON.stringify({ title: topic.topic, content: topic.content }),
         });
         if (res.ok) {
           await fetchTopics();
@@ -136,7 +133,7 @@ export default function KnowledgeSettingsPage() {
         await fetch("/api/settings/knowledge", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: topic.id, title: topic.topic, content: topic.content, category: topic.category, stages: topic.stages }),
+          body: JSON.stringify({ id: topic.id, title: topic.topic, content: topic.content, stages: topic.stages }),
         });
       }
     } catch {
@@ -175,7 +172,7 @@ export default function KnowledgeSettingsPage() {
     }
   }
 
-  function updateTopic(id: string, field: "topic" | "content" | "category", value: string) {
+  function updateTopic(id: string, field: "topic" | "content", value: string) {
     setTopics(topics.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
   }
 
@@ -196,23 +193,12 @@ export default function KnowledgeSettingsPage() {
               Unsaved
             </span>
           )}
-          <div className="grid grid-cols-[1fr_200px] gap-3">
-            <Input
-              label="Topic"
-              value={topic.topic}
-              onChange={(e) => updateTopic(topic.id, "topic", e.target.value)}
-              placeholder="Title of topic"
-            />
-            <div>
-              <Input
-                label="Category"
-                value={topic.category}
-                onChange={(e) => updateTopic(topic.id, "category", e.target.value)}
-                placeholder="free label"
-                list="knowledge-category-suggestions"
-              />
-            </div>
-          </div>
+          <Input
+            label="Topic"
+            value={topic.topic}
+            onChange={(e) => updateTopic(topic.id, "topic", e.target.value)}
+            placeholder="Title of topic"
+          />
           <div className="mt-3">
             <Textarea
               label="Content"
@@ -222,7 +208,13 @@ export default function KnowledgeSettingsPage() {
               rows={4}
             />
           </div>
-          {/* Consumption stages — where the product pulls this entry. */}
+          {/* Consumption stages — assigned automatically on save; the chips
+              are optional refinement, never a required step. */}
+          {topic.id.startsWith("temp-") ? (
+            <p className="mt-3 text-[11px] text-[var(--color-text-tertiary)]">
+              Where this gets used is assigned automatically when you save.
+            </p>
+          ) : (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] text-[var(--color-text-tertiary)]">Used in:</span>
             {KNOWLEDGE_STAGES.map((s) => {
@@ -252,6 +244,7 @@ export default function KnowledgeSettingsPage() {
               );
             })}
           </div>
+          )}
           <div className="mt-3 flex gap-2">
             <Button
               variant="gradient"
@@ -346,13 +339,6 @@ export default function KnowledgeSettingsPage() {
           })
         )}
       </div>
-
-      {/* Typing suggestions for the free Category field (canonical + existing). */}
-      <datalist id="knowledge-category-suggestions">
-        {[...new Set([...CATEGORY_SUGGESTIONS, ...topics.map((t) => t.category).filter(Boolean)])].map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
 
       <ConfirmDialog
         open={removeTopicId !== null}

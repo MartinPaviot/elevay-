@@ -62,6 +62,10 @@ vi.mock("@/lib/knowledge/retrieval", () => ({
   embedKnowledgeEntry: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/knowledge/auto-stage", () => ({
+  classifyStages: vi.fn().mockResolvedValue(["global"]),
+}));
+
 import { auth } from "@/auth";
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
