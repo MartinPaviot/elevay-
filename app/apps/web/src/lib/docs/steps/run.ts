@@ -160,14 +160,19 @@ export const runSteps: DocStep[] = [
       },
       {
         type: "example",
-        title: "Example: an Elevay first touch (61 words)",
+        title: "Example: an Elevay first touch (72 words)",
         lines: [
           "Subject: your sdr posting",
-          "Hi Lena, saw you opened a Founding SDR role last week (the posting mentions list building and follow-ups).",
-          "Before paying a salary for that: most of it is machine work now. Curious how you planned to split it?",
-          "Two founders at your stage run their whole pipeline through Elevay solo, around 6 hours a week.",
-          "Worth a look while you interview?",
+          "Hi Lena, your Founding SDR posting went up this week, the one listing prospecting, list building and follow-ups.",
+          "Before that salary is committed: which half of the role do you actually want a human for, the lists or the conversations?",
+          "A 9-person founder we work with kept the conversations, automated the rest, and runs the same pipeline in about 6 hours a week, without the hire.",
+          "Worth a conversation while you interview?",
         ],
+      },
+      {
+        type: "p",
+        text:
+          "Read it against the four rules: line one is the trigger, dated and specific, with nothing about us. Line two makes her think about **her** decision, and never pitches (the product is not even named: naming it in a first email is pitching). Line three is one peer plus one number. Line four asks for interest, not for calendar. Seventy-two words, one question mark she can answer in one line.",
       },
       {
         type: "callout",

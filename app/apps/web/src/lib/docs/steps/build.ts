@@ -111,7 +111,7 @@ export const buildSteps: DocStep[] = [
           "Goal: 20 new customers this year through outbound.",
           "At the median chain: 20 deals x ~700 contacts = ~14,000 contacted prospects. At 2 to 3 contacts per account, that is 5,000 to 7,000 accounts: more than the real universe of in-ICP startups in reach. The median chain is not good enough; the plan cannot be \"send more\".",
           "At a signal-led chain (10 percent reply, the rest improving accordingly): roughly 200 to 250 contacts per deal, so ~5,000 contacts and **1,700 to 2,500 accounts**. That is a buildable TAM, and it sets the quality bar: this plan only works if Step 6 and Step 7 are done properly.",
-          "Sanity check the other way: 20 deals at ~22 percent proposal close needs ~90 proposals, ~130 qualified opportunities, ~300 held meetings: about 6 a week. Feasible for one founder, barely: which is the real constraint (below).",
+          "Sanity check the other way: 20 deals at ~22 percent proposal close needs ~90 proposals, ~130 qualified opportunities, ~300 booked meetings of which ~240 are held: about 5 a week. Feasible for one founder, barely: which is the real constraint (below).",
         ],
       },
       { type: "h2", text: "The hidden cap: founder capacity" },
@@ -187,7 +187,7 @@ export const buildSteps: DocStep[] = [
         lines: [
           "A 9-person developer-tools startup, Series A announced 3 weeks ago, posting for a \"Founding SDR\", founder active on social. Fit: matches every ICP criterion. Heat: two live signals stacked (fundraise + sales hiring).",
           "Buyers: the CEO (economic buyer, sender of the eventual contract) and the cofounder running go-to-market day to day (champion). Both with verified emails, one with a direct line.",
-          "Treatment: tier A. The founder sends the first touch personally, built on the SDR job post: Elevay automates most of what that role would do, which makes the timing argument for them, not for us.",
+          "Treatment: tier A. The founder sends the first touch personally, built on the SDR job post: the posting itself makes the timing argument, so the message can ask about her hire instead of pitching our product (Step 9 shows that exact email).",
         ],
       },
       { type: "h2", text: "The quality bar before anything sends" },
