@@ -1,6 +1,8 @@
 # Playbook cold call FONDATEUR — structuré par phases d'appel (v1 — 2026-06-12)
 
-**Statut : LE playbook opérationnel, régime fondateur assumé** (Martin est fondateur, salesMotion = founder-led). Générique avec slots [EN MAJUSCULES] — l'adaptation Pilae (remplissage des slots, segment par segment) est l'étape suivante, à faire ensemble. Ce doc formalise par phases ce que `cold-call-playbook-douablin-2026-06.md` posait par thèmes ; en cas de doute, ce doc fait foi.
+**Statut : LE playbook opérationnel, régime fondateur assumé** (Martin est fondateur, salesMotion = founder-led). Ce doc formalise par phases ce que `cold-call-playbook-douablin-2026-06.md` posait par thèmes ; en cas de doute, ce doc fait foi.
+
+**Adaptation Pilae — premier passage fait le 2026-06-12** : modèle économique ~50 % projet d'implémentation + ~50 % abonnement d'opération (site : pilae-cloud.pages.dev, sauvé en raw) → la sortie (a) du pivot est un PRÉ-DIAGNOSTIC à chaud, jamais un close en ligne (détail en Phase 4). Le playbook est **seedé comme knowledge produit** : 10 entrées tenant (8 « Cold call — … » process + offre product + objections) éditables dans Settings → Knowledge, consommées par le chat, la génération de script (`generateCallScript`) et la construction de listes TAM. Restent à remplir ensemble : récits-pairs réels et FAQ au mot près (slots 3 et 5) — directement dans ces entrées.
 
 Clés de citation :
 - **[SF mm:ss]** = Benjamin Douablin, vidéo « cold call fondateur » (coworking San Francisco, avec Greg) — `_research/raw/douablin-founder-coldcall-video-transcript.md`. Le volet FONDATEUR.
@@ -102,6 +104,8 @@ C'est ici que le fondateur diverge du SDR. Le SDR booke mécaniquement (« tu po
 **(a) CLOSER MAINTENANT** — ça mord fort, l'interlocuteur a le temps (ceux qui disent « 2 minutes » ont parfois 30 minutes devant eux [CC 36:30]), le compte est clairement ICP.
 → Continuer là : mini-discovery, répondre à TOUTES les questions instantanément, jusqu'à ~15 minutes, et envoyer la propale dans la foulée — « ça m'est arrivé de faire des calls de 15 minutes, j'envoyais la propale à la fin et ça signait dans la foulée » [SF 11:56-12:04].
 → Condition : la FAQ maîtrisée au mot près. « Attends, il faut que j'en parle à mon CTO » = le signal qu'il faut passer en (b) [SF 11:03-11:19]. Raccourcir un cycle ≠ mettre la pression (« je ne mets jamais la pression à quelqu'un pour acheter » [SF 11:03]) ; raccourcir = tout répondre au moment où la question tombe [SF 10:48].
+
+> **Adaptation Pilae (2026-06-12)** : FullEnrich est un SaaS self-serve peu cher — le « ça signait dans la foulée » tient pour CE modèle-là. L'offre Pilae = ~50 % projet d'implémentation + ~50 % abonnement d'opération : un close en ligne n'est pas réaliste. Chez nous, la sortie (a) devient **ÉTENDRE À CHAUD** — 10-15 minutes de pré-diagnostic au téléphone (outils en place, volumes, échéances, qui décide) pour arriver au rendez-vous de cadrage avec un dossier à moitié rempli et un cycle raccourci. Tout le reste de la sortie (a) (FAQ instantanée, jamais de pression, signal « j'en parle à mon CTO » → (b)) s'applique tel quel.
 
 **(b) BOOKER LE RDV** — ça mord, mais le cadre est court, ou il manque un décideur, ou le sujet mérite la séance complète.
 → Le RDV ~45 min avec livrable annoncé (canon). Garde-fou : ne pas trop en dire — « tu lui donnes suffisamment à manger pour qu'elle n'ait plus la nécessité de prendre le rendez-vous » [CC 37:02]. On amorce, on ne déballe pas.
