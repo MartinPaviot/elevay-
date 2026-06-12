@@ -50,6 +50,7 @@ const TOOL_GROUPS: Record<string, string> = {
   runBasicReport: "query",
   getCallList: "query",
   proposeCallSprint: "query",
+  getKnowledge: "query",
   getNoteBody: "query",
   getCallRecording: "query",
   getEmailContent: "query",

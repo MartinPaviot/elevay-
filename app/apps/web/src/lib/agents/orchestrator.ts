@@ -60,7 +60,7 @@ const TOOL_GROUP_MAP: Record<string, string> = {
   queryTasks: "query", whoami: "query", listWorkspaceMembers: "query",
   searchMeetings: "query", searchEmailsByMetadata: "query",
   runBasicReport: "query", getNoteBody: "query", getCallRecording: "query",
-  getCallList: "query", proposeCallSprint: "query",
+  getCallList: "query", proposeCallSprint: "query", getKnowledge: "query",
   getEmailContent: "query", semanticSearchNotes: "query",
   semanticSearchEmails: "query", semanticSearchCallRecordings: "query",
   getRecordsByIds: "query", listComments: "query", listCommentReplies: "query",

@@ -21,6 +21,7 @@ import { buildEnrichmentTools } from "./enrichment";
 import { buildCallTools } from "./calls";
 import { buildNavigationTools } from "./navigation";
 import { buildReadGapTools } from "./read-gaps";
+import { buildKnowledgeTools } from "./knowledge";
 
 export type { ToolContext } from "./context";
 export { makeTool } from "./context";
@@ -49,5 +50,6 @@ export function buildAllChatTools(ctx: ToolContext) {
     ...buildCallTools(ctx),
     ...buildNavigationTools(ctx),
     ...buildReadGapTools(ctx),
+    ...buildKnowledgeTools(ctx),
   };
 }

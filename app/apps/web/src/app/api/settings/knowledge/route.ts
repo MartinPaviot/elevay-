@@ -78,16 +78,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const validCategories = [
-      "icp",
-      "competitors",
-      "objections",
-      "product",
-      "process",
-      "context",
-      "custom",
-    ];
-    const cat = validCategories.includes(category) ? category : "custom";
+    // Categories are USER-CREATABLE: any short label works (the canonical
+    // icp/competitors/objections/product/process/context are suggestions,
+    // not a gate). Machine routing never depends on the category — the
+    // stages do — so a free label costs nothing and reads naturally.
+    const cat =
+      typeof category === "string" && category.trim()
+        ? category.trim().toLowerCase().slice(0, 40)
+        : "custom";
 
     const entryScope = scope === "user" ? "user" : "workspace";
     if (entryScope === "workspace") {
@@ -177,7 +175,10 @@ export async function PUT(req: Request) {
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title.trim();
-    if (category !== undefined) updates.category = category;
+    // Free-form category (user-creatable label); empty string keeps current.
+    if (typeof category === "string" && category.trim()) {
+      updates.category = category.trim().toLowerCase().slice(0, 40);
+    }
     // Stage curation: an explicit array (even empty = "back to derived").
     if (Array.isArray(stages)) updates.stages = sanitizeStages(stages);
 
