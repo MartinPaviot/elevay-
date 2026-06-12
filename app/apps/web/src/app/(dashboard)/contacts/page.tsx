@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, GitMerge, Trash2, Archive, RotateCcw, Loader2, type LucideIcon } from "lucide-react";
+import { Users, Search, Plus, Zap, X, Upload, Mail, Briefcase, Factory, Phone, Gauge, ExternalLink, Clock, ChevronDown, ChevronUp, History, GitMerge, Trash2, Archive, RotateCcw, Loader2, type LucideIcon } from "lucide-react";
 import { SmartImport } from "@/components/smart-import";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { displayScore, ENRICHMENT_COLORS } from "@/lib/util/ui-utils";
@@ -10,7 +10,7 @@ import { useCustomFields } from "@/hooks/use-custom-fields";
 import { getCustomFieldValue, formatFieldValue } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Badge, PropertyBadge } from "@/components/ui/badge";
+import { Badge, TitleBadge, IndustryBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,8 @@ import { applyFilters } from "@/lib/search/filters";
 import type { FilterCondition } from "@/lib/search/filters";
 import { ColumnFilter, isColumnFilterActive, type ColumnFilterKind, type ColumnFilterState } from "@/components/ui/column-filter";
 import { CascadeDeleteModal, type CascadeOption } from "@/components/ui/cascade-delete-modal";
+import { chunkedBulkCall } from "@/lib/infra/chunk-bulk";
+import { selectAllMatchingIds } from "@/lib/infra/select-all-matching";
 
 function LinkedInIcon({ size = 13 }: { size?: number }) {
   return (
@@ -41,6 +43,7 @@ interface Contact {
   companyId: string | null;
   companyName: string | null;
   companyDomain: string | null;
+  companyIndustry: string | null;
   score: number | null;
   scoreReasons: string[] | null;
   properties: Record<string, unknown> | null;
@@ -110,6 +113,12 @@ export default function ContactsPage() {
   // just the loaded 50-row page. Company options also come from the server.
   const [debouncedColumnFilters, setDebouncedColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [serverCompanyOptions, setServerCompanyOptions] = useState<string[]>([]);
+  // Distinct titles (frequency-ordered) across ALL contacts — the Title
+  // header filter offers them as clickable values instead of free text.
+  const [serverTitleOptions, setServerTitleOptions] = useState<string[]>([]);
+  // Distinct company industries (frequency-ordered, with contact counts) —
+  // options for the Industry column filter, Accounts-parity.
+  const [serverIndustryOptions, setServerIndustryOptions] = useState<Array<{ industry: string; count: number }>>([]);
   // Deletes — single row AND the checkbox selection — go through the cascade
   // modal (lets the user also delete the contacts' activities/notes/tasks in
   // one step). Everything is soft-delete, recoverable from Archive.
@@ -131,11 +140,14 @@ export default function ContactsPage() {
     const pres = (k: string) => cf[k]?.presence;
     if (txt("contact")) params.set("fName", txt("contact")!);
     if (txt("email")) params.set("fEmail", txt("email")!);
-    if (txt("title")) params.set("fTitle", txt("title")!);
+    if (vals("title").length) params.set("fTitleIn", vals("title").join(","));
     if (vals("companyName").length) params.set("fCompany", vals("companyName").join(","));
     if (vals("score").length) params.set("fGrade", vals("score").join(","));
     if (pres("linkedin")) params.set("fLinkedin", pres("linkedin")!);
     if (pres("phone")) params.set("fPhone", pres("phone")!);
+    // Industry column filter -> the contact's company industry (server-side,
+    // same subquery shape as fCompany).
+    if (vals("industry").length) params.set("fIndustry", vals("industry").join(","));
     // Smart-filter score threshold -> server (parity with accounts) so the
     // count reflects it; any residual non-score conditions stay client-side.
     for (const c of smartFilters) {
@@ -168,6 +180,8 @@ export default function ContactsPage() {
         setCurrentPage(data.pagination?.page ?? page);
         setTotalContacts(data.pagination?.total ?? batch.length);
         if (data.filterOptions?.companies) setServerCompanyOptions(data.filterOptions.companies);
+        if (data.filterOptions?.titles) setServerTitleOptions(data.filterOptions.titles);
+        if (data.filterOptions?.industries) setServerIndustryOptions(data.filterOptions.industries);
       }
     } catch (e) {
       console.warn("contacts: list fetch failed", e);
@@ -192,6 +206,8 @@ export default function ContactsPage() {
         if (p === pagesToLoad) {
           setTotalContacts(data.pagination?.total ?? all.length);
           if (data.filterOptions?.companies) setServerCompanyOptions(data.filterOptions.companies);
+          if (data.filterOptions?.titles) setServerTitleOptions(data.filterOptions.titles);
+          if (data.filterOptions?.industries) setServerIndustryOptions(data.filterOptions.industries);
         }
       }
       setContacts(all);
@@ -281,7 +297,8 @@ export default function ContactsPage() {
       const res = await fetch("/api/enrich-contacts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contactIds: [id] }) });
       setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
       if (res.ok) await refetchLoadedContacts();
-    } catch { setEnrichStatus((prev) => ({ ...prev, [id]: "failed" })); }
+      else toast("Enrichment failed.", "error");
+    } catch { setEnrichStatus((prev) => ({ ...prev, [id]: "failed" })); toast("Enrichment failed.", "error"); }
   }
 
 
@@ -356,13 +373,20 @@ export default function ContactsPage() {
       ["tasks", "Tasks"],
     ];
     try {
-      const res = await fetch("/api/contacts/related-counts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { counts?: Record<string, number> };
-      const counts = data.counts ?? {};
+      // The endpoint counts at most 500 ids per call — chunk and sum so the
+      // modal's numbers stay truthful for select-all-sized selections.
+      const counts: Record<string, number> = {};
+      for (let i = 0; i < ids.length; i += 500) {
+        const res = await fetch("/api/contacts/related-counts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(i, i + 500) }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { counts?: Record<string, number> };
+        for (const [key, value] of Object.entries(data.counts ?? {})) {
+          counts[key] = (counts[key] ?? 0) + (value ?? 0);
+        }
+      }
       setCascadeCounts(labels.map(([key, text]) => ({ key, label: text, count: counts[key] ?? 0 })));
     } catch {
       setCascadeCounts(labels.map(([key, text]) => ({ key, label: text, count: 0 })));
@@ -385,6 +409,9 @@ export default function ContactsPage() {
   // Soft-delete the targeted contacts plus any related sets the user ticked.
   // Per-contact requests so each keeps its own delete timestamp (symmetric
   // restore) and a 409 (active sequence enrollment) only blocks that contact.
+  // Requests run in small parallel waves — with "select all matching" a
+  // selection can be the whole base, and strictly sequential round-trips
+  // would take minutes.
   async function performCascadeDelete(selectedKeys: string[]) {
     if (!cascadeTarget) return;
     setCascadeBusy(true);
@@ -392,27 +419,32 @@ export default function ContactsPage() {
     let errors = 0;
     let extra = 0;
     let firstError: string | null = null;
-    for (const id of cascadeTarget.ids) {
-      try {
-        const res = await fetch(`/api/contacts/${id}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cascade: selectedKeys }),
-        });
-        if (res.ok) {
-          deleted++;
-          const data = (await res.json().catch(() => ({}))) as { cascaded?: Record<string, number> };
-          extra += Object.values(data.cascaded ?? {}).reduce<number>((a, b) => a + (b ?? 0), 0);
-        } else {
-          errors++;
-          if (!firstError) {
-            const data = (await res.json().catch(() => ({}))) as { error?: string };
-            firstError = data.error ?? null;
+    const WAVE = 6;
+    for (let i = 0; i < cascadeTarget.ids.length; i += WAVE) {
+      await Promise.all(
+        cascadeTarget.ids.slice(i, i + WAVE).map(async (id) => {
+          try {
+            const res = await fetch(`/api/contacts/${id}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cascade: selectedKeys }),
+            });
+            if (res.ok) {
+              deleted++;
+              const data = (await res.json().catch(() => ({}))) as { cascaded?: Record<string, number> };
+              extra += Object.values(data.cascaded ?? {}).reduce<number>((a, b) => a + (b ?? 0), 0);
+            } else {
+              errors++;
+              if (!firstError) {
+                const data = (await res.json().catch(() => ({}))) as { error?: string };
+                firstError = data.error ?? null;
+              }
+            }
+          } catch {
+            errors++;
           }
-        }
-      } catch {
-        errors++;
-      }
+        }),
+      );
     }
     setCascadeBusy(false);
     setCascadeTarget(null);
@@ -435,23 +467,36 @@ export default function ContactsPage() {
     const ids = Array.from(selectedRows);
     if (ids.length === 0) return;
     for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "enriching" }));
-    try {
-      const res = await fetch("/api/enrich-contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactIds: ids }),
-      });
-      for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: res.ok ? "done" : "failed" }));
-      if (res.ok) {
-        await refetchLoadedContacts();
-        toast(`Enriched ${ids.length} contact${ids.length === 1 ? "" : "s"}.`, "success");
-      } else {
-        toast("Bulk enrichment failed.", "error");
-      }
-    } catch (e) {
-      for (const id of ids) setEnrichStatus((prev) => ({ ...prev, [id]: "failed" }));
+    // The endpoint enriches at most 20 contacts per call (provider rate
+    // guard) — fan out in 20-id chunks so EVERY selected contact is actually
+    // processed. One POST with 990 ids used to enrich the first 20 and toast
+    // "Enriched 990 contacts."
+    const result = await chunkedBulkCall({
+      ids,
+      chunkSize: 20,
+      endpoint: "/api/enrich-contacts",
+      buildPayload: (chunk) => ({ contactIds: chunk }),
+      onProgress: (done, total) => {
+        if (total > 20) toast(`Enriching ${Math.min(done, total)} / ${total}…`, "info");
+      },
+    });
+    const failedIds = new Set(result.errors.flatMap((e) => e.ids));
+    setEnrichStatus((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = failedIds.has(id) ? "failed" : "done";
+      return next;
+    });
+    if (result.succeeded > 0) {
+      await refetchLoadedContacts();
+      toast(
+        result.failed === 0
+          ? `Enriched ${result.succeeded} contact${result.succeeded === 1 ? "" : "s"}.`
+          : `Enriched ${result.succeeded} of ${result.total} — ${result.failed} failed.`,
+        result.failed === 0 ? "success" : "warning",
+      );
+    } else {
       toast("Bulk enrichment failed.", "error");
-      console.warn("contacts: bulk enrich selected failed", e);
+      console.warn("contacts: bulk enrich selected failed", result.errors);
     }
   }
 
@@ -479,20 +524,49 @@ export default function ContactsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast(data?.error || "FullEnrich isn't available.", "error");
+        toast(data?.error || "Deep enrichment isn't available.", "error");
         return;
       }
+      // The deep pass runs at most 100 contacts per submission — say so
+      // instead of silently dropping the rest of a select-all selection.
+      const requested = data.requested ?? Math.min(ids.length, 100);
       toast(
-        `FullEnrich is searching ${data.requested ?? ids.length} contact${(data.requested ?? ids.length) === 1 ? "" : "s"} — phones and emails appear as they're found.`,
-        "success",
+        ids.length > 100
+          ? `Deep enrichment runs 100 contacts at a time — searching ${requested} of ${ids.length} now. Run it again for the rest.`
+          : `Searching ${requested} contact${requested === 1 ? "" : "s"} in depth — phones and emails appear as they're found.`,
+        ids.length > 100 ? "warning" : "success",
       );
       setSelectedRows(new Set());
     } catch (e) {
-      toast("FullEnrich request failed.", "error");
+      toast("Deep enrichment request failed.", "error");
       console.warn("contacts: fullenrich find-mobile failed", e);
     }
   }
 
+  // Header-checkbox "select all": select EVERY contact matching the active
+  // search/filters — the server resolves the full id set with the exact WHERE
+  // the list and its count use — not just the loaded page. The loaded rows
+  // are selected instantly for feedback; the full set replaces them when the
+  // ids arrive. Residual non-score NL smart filters only exist client-side
+  // (the server can't compute "all matching" for them), so with one active
+  // the selection honestly stays the visible rows.
+  async function selectAllMatching() {
+    const visibleIds = filteredContacts.map((c) => c.id);
+    setSelectedRows(new Set(visibleIds));
+    if (smartFilters.some((c) => c.field !== "score")) return;
+    if (contacts.length >= totalContacts) return; // every matching row is already loaded
+    const result = await selectAllMatchingIds({
+      endpoint: "/api/contacts",
+      params: serializeContactFilters(),
+      visibleIds,
+    });
+    setSelectedRows(result.ids);
+    if (result.failed) {
+      toast(`Couldn't load the full list — selected the ${visibleIds.length} loaded contacts.`, "warning");
+    } else if (result.truncated && result.total != null) {
+      toast(`Selected the first ${result.ids.size.toLocaleString()} of ${result.total.toLocaleString()} matching contacts.`, "warning");
+    }
+  }
 
   // Header column-filter config — label + kind drive the <ColumnFilter>
   // dropdowns. The filtering itself runs server-side (see fetchContacts ->
@@ -500,8 +574,13 @@ export default function ContactsPage() {
   const FILTER_COLUMNS: Record<string, { label: string; kind: ColumnFilterKind }> = {
     contact: { label: "Contact", kind: "text" },
     companyName: { label: "Company", kind: "enum" },
+    // The contact's company sector — clickable industry values, like the
+    // Accounts Industry column.
+    industry: { label: "Industry", kind: "enum" },
     email: { label: "Email", kind: "text" },
-    title: { label: "Title", kind: "text" },
+    // Titles are clickable values (frequency-ordered, server-sourced) — the
+    // user picks the precise roles instead of guessing a substring.
+    title: { label: "Title", kind: "enum" },
     linkedin: { label: "LinkedIn", kind: "presence" },
     phone: { label: "Phone", kind: "presence" },
     score: { label: "Score", kind: "enum" },
@@ -512,8 +591,10 @@ export default function ContactsPage() {
   // still filter on), and grades are a fixed scale.
   const columnOptions = useMemo<Record<string, string[]>>(() => ({
     companyName: serverCompanyOptions,
+    title: serverTitleOptions,
+    industry: serverIndustryOptions.map((o) => o.industry),
     score: ["A+", "A", "B", "C", "D", "F"],
-  }), [serverCompanyOptions]);
+  }), [serverCompanyOptions, serverTitleOptions, serverIndustryOptions]);
 
   // Column filters now run server-side (see fetchContacts -> /api/contacts), so
   // `contacts` is already the filtered + paginated set. Only the NL smart
@@ -542,6 +623,12 @@ export default function ContactsPage() {
     const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
     return sortDir === "asc" ? cmp : -cmp;
   });
+
+  // Header checkbox state: checked when every visible row is selected (the
+  // selection may hold MORE than the visible rows after a select-all-matching),
+  // indeterminate when only part of it is.
+  const allVisibleSelected =
+    filteredContacts.length > 0 && filteredContacts.every((c) => selectedRows.has(c.id));
 
   return (
     <div className="flex h-full flex-col animate-content-in">
@@ -602,14 +689,47 @@ export default function ContactsPage() {
       </PageHeader>
 
       <FilterBar>
-        {/* One intelligent search: type a name/email -> instant server search
-            (spans all contacts); press Enter -> natural-language smart filters. */}
-        <div className="flex-1">
+        {/* "All (N)" — Accounts-style anchor tab. N is the server total under
+            the ACTIVE filters (search, column filters, smart filters), so it
+            shrinks as the list narrows. Clicking it resets the list view. */}
+        <button
+          type="button"
+          onClick={() => {
+            setColumnFilters({});
+            setSmartFilters([]);
+            setSmartMeta(null);
+            setSearchQuery("");
+          }}
+          className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
+          style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+          title="Show all contacts — clears the active filters"
+        >
+          All ({totalContacts})
+        </button>
+        {(() => {
+          const activeKeys = Object.keys(columnFilters).filter((k) => isColumnFilterActive(columnFilters[k]));
+          if (activeKeys.length === 0) return null;
+          return (
+            <button
+              type="button"
+              onClick={() => setColumnFilters({})}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors"
+              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+            >
+              <X size={12} />
+              {activeKeys.length} column filter{activeKeys.length === 1 ? "" : "s"} — clear
+            </button>
+          );
+        })()}
+        {/* One intelligent search, compact + right-aligned (parity with
+            Accounts): type a name/email -> instant server search (spans all
+            contacts); press Enter -> natural-language smart filters. */}
+        <div className="ml-auto w-80 shrink-0">
           <SmartSearchBar
             resourceType="contact"
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search a name or email — or describe and press Enter (e.g. CTOs at fintech in Geneva)"
+            placeholder="Search contacts — or describe and press Enter (e.g. CTOs at fintech)"
             className="w-full"
             onFilters={(filters, meta) => {
               setSmartFilters(filters);
@@ -629,21 +749,6 @@ export default function ContactsPage() {
             onError={(msg) => toast(msg, "error")}
           />
         </div>
-        {(() => {
-          const activeKeys = Object.keys(columnFilters).filter((k) => isColumnFilterActive(columnFilters[k]));
-          if (activeKeys.length === 0) return null;
-          return (
-            <button
-              type="button"
-              onClick={() => setColumnFilters({})}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors"
-              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
-            >
-              <X size={12} />
-              {activeKeys.length} column filter{activeKeys.length === 1 ? "" : "s"} — clear
-            </button>
-          );
-        })()}
       </FilterBar>
       <ActiveFiltersChips
         filters={smartFilters}
@@ -709,29 +814,30 @@ export default function ContactsPage() {
           )
         ) : (
           <>
-          <table className="ls-table">
+          <table className="ls-table" data-selecting={selectedRows.size > 0 ? "true" : undefined}>
             <thead>
               <tr>
-                <th style={{ width: 36 }}>
+                <th className="check">
                   <input
                     type="checkbox"
                     aria-label="Select all contacts"
-                    checked={selectedRows.size > 0 && selectedRows.size === filteredContacts.length}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedRows(new Set(filteredContacts.map((c) => c.id)));
-                      } else {
-                        setSelectedRows(new Set());
-                      }
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedRows.size > 0 && !allVisibleSelected;
                     }}
-                    className="h-3.5 w-3.5 rounded"
+                    onChange={(e) => {
+                      if (e.target.checked) void selectAllMatching();
+                      else setSelectedRows(new Set());
+                    }}
+                    className="h-3 w-3 rounded"
                   />
                 </th>
                 {([
                   { label: "Contact", icon: Users, field: "firstName", filterKey: "contact" },
-                  { label: "Company", icon: Briefcase, field: "companyName", filterKey: "companyName" },
-                  { label: "Email", icon: Mail, field: "email", filterKey: "email" },
                   { label: "Title", icon: Briefcase, field: "title", filterKey: "title" },
+                  { label: "Company", icon: Briefcase, field: "companyName", filterKey: "companyName" },
+                  { label: "Industry", icon: Factory, field: "companyIndustry", filterKey: "industry" },
+                  { label: "Email", icon: Mail, field: "email", filterKey: "email" },
                   { label: "LinkedIn", icon: null as LucideIcon | null, field: null, filterKey: "linkedin" },
                   { label: "Phone", icon: Phone, field: null, filterKey: "phone" },
                   { label: "Score", icon: Gauge, field: "score", filterKey: "score" },
@@ -780,10 +886,6 @@ export default function ContactsPage() {
             <tbody>
               {filteredContacts.map((contact) => {
                 const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—";
-                const statusColor = enrichStatus[contact.id] === "enriching" ? "var(--color-warning)"
-                  : isEnriched(contact) ? "var(--color-success)"
-                  : enrichStatus[contact.id] === "failed" ? "var(--color-error)"
-                  : "var(--color-text-muted)";
 
                 return (
                   <tr
@@ -793,7 +895,7 @@ export default function ContactsPage() {
                     onClick={() => router.push(`/contacts/${contact.id}`)}
                   >
                     {/* Selection checkbox */}
-                    <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                    <td className="check" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`Select ${[contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email || contact.id}`}
@@ -804,13 +906,12 @@ export default function ContactsPage() {
                           else next.delete(contact.id);
                           setSelectedRows(next);
                         }}
-                        className="h-3.5 w-3.5 rounded"
+                        className="h-3 w-3 rounded"
                       />
                     </td>
-                    {/* Contact name with avatar + status */}
+                    {/* Contact name with avatar */}
                     <td onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2.5">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${enrichStatus[contact.id] === "enriching" ? "animate-pulse" : ""}`} style={{ background: statusColor }} />
                         <CompanyLogo domain={contact.companyDomain} name={contact.firstName || contact.email || "?"} size={24} />
                         <div className="min-w-0">
                           <button onClick={() => router.push(`/contacts/${contact.id}`)} className="truncate text-left text-[13px] font-medium transition-colors hover:underline" style={{ color: "var(--color-text-primary)" }}>
@@ -818,6 +919,17 @@ export default function ContactsPage() {
                           </button>
                         </div>
                       </div>
+                    </td>
+
+                    {/* Title -- seniority-tier icon + hue (from Apollo enrichment) */}
+                    <td>
+                      {contact.title ? (
+                        <TitleBadge
+                          title={contact.title}
+                          seniority={(contact.properties as Record<string, unknown> | null)?.seniority as string | undefined}
+                          className="max-w-[180px]"
+                        />
+                      ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>}
                     </td>
 
                     {/* Company */}
@@ -833,17 +945,18 @@ export default function ContactsPage() {
                         </div>
                       ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>}
                     </td>
+                    {/* Industry — the company's sector, same badge as Accounts */}
+                    <td>
+                      {contact.companyIndustry ? (
+                        <IndustryBadge value={contact.companyIndustry} className="max-w-[180px]" />
+                      ) : (
+                        <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>
+                      )}
+                    </td>
 
                     {/* Email */}
                     <td className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
                       {contact.email || "—"}
-                    </td>
-
-                    {/* Title */}
-                    <td>
-                      {contact.title ? (
-                        <PropertyBadge value={contact.title} className="max-w-[180px] truncate" />
-                      ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>}
                     </td>
 
                     {/* LinkedIn */}
@@ -903,12 +1016,17 @@ export default function ContactsPage() {
                       );
                     })}
 
-                    {/* Actions */}
-                    <td className="actions" onClick={(e) => e.stopPropagation()}>
+                    {/* Actions — forced visible while enriching so the in-flight
+                        spinner (the row's only live feedback) can't hide. */}
+                    <td className="actions" style={enrichStatus[contact.id] === "enriching" ? { opacity: 1 } : undefined} onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        {!isEnriched(contact) && enrichStatus[contact.id] !== "enriching" && (
+                        {enrichStatus[contact.id] === "enriching" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                            <Loader2 size={12} className="animate-spin" /> Enriching…
+                          </span>
+                        ) : (!isEnriched(contact) && (
                           <Button variant="ghost" size="sm" onClick={() => enrichSingle(contact.id)} className="!px-2 !py-0.5">Enrich</Button>
-                        )}
+                        ))}
                         <button
                           type="button"
                           aria-label={`Delete ${name}`}

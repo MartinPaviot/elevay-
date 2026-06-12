@@ -101,6 +101,47 @@
   --color-info: #2C6BED;
   --color-info-soft: rgba(44, 107, 237, 0.08);
 
+  /* Industry sector families (lib/ui/industry-style.ts) — text/icon color +
+     soft tint pairs, AA contrast on light surfaces */
+  --ind-tech: #4F46E5;
+  --ind-tech-bg: rgba(79, 70, 229, 0.08);
+  --ind-services: #2563EB;
+  --ind-services-bg: rgba(37, 99, 235, 0.08);
+  --ind-finance: #047857;
+  --ind-finance-bg: rgba(4, 120, 87, 0.08);
+  --ind-health: #E11D48;
+  --ind-health-bg: rgba(225, 29, 72, 0.07);
+  --ind-public: #475569;
+  --ind-public-bg: rgba(71, 85, 105, 0.08);
+  --ind-nonprofit: #9333EA;
+  --ind-nonprofit-bg: rgba(147, 51, 234, 0.07);
+  --ind-education: #B45309;
+  --ind-education-bg: rgba(180, 83, 9, 0.08);
+  --ind-manufacturing: #C2410C;
+  --ind-manufacturing-bg: rgba(194, 65, 12, 0.07);
+  --ind-energy: #0F766E;
+  --ind-energy-bg: rgba(15, 118, 110, 0.08);
+  --ind-agrifood: #4D7C0F;
+  --ind-agrifood-bg: rgba(77, 124, 15, 0.08);
+  --ind-transport: #0369A1;
+  --ind-transport-bg: rgba(3, 105, 161, 0.08);
+  --ind-construction: #8A5A2B;
+  --ind-construction-bg: rgba(138, 90, 43, 0.09);
+  --ind-consumer: #DB2777;
+  --ind-consumer-bg: rgba(219, 39, 119, 0.07);
+  --ind-media: #A21CAF;
+  --ind-media-bg: rgba(162, 28, 175, 0.07);
+
+  /* Seniority tiers (lib/ui/title-style.ts) — power ramp for title chips */
+  --sen-exec: #B45309;
+  --sen-exec-bg: rgba(217, 119, 6, 0.10);
+  --sen-lead: #4F46E5;
+  --sen-lead-bg: rgba(79, 70, 229, 0.08);
+  --sen-mgmt: #0F766E;
+  --sen-mgmt-bg: rgba(15, 118, 110, 0.08);
+  --sen-team: #475569;
+  --sen-team-bg: rgba(71, 85, 105, 0.08);
+
   /* Shadows */
   --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
@@ -170,6 +211,46 @@
   --color-error-soft: rgba(248, 113, 113, 0.12);
   --color-info: #60A5FA;
   --color-info-soft: rgba(96, 165, 250, 0.12);
+
+  /* Industry sector families — lifted text colors + denser tints for dark */
+  --ind-tech: #A5B4FC;
+  --ind-tech-bg: rgba(99, 102, 241, 0.16);
+  --ind-services: #93C5FD;
+  --ind-services-bg: rgba(59, 130, 246, 0.15);
+  --ind-finance: #6EE7B7;
+  --ind-finance-bg: rgba(16, 185, 129, 0.14);
+  --ind-health: #FDA4AF;
+  --ind-health-bg: rgba(244, 63, 94, 0.14);
+  --ind-public: #CBD5E1;
+  --ind-public-bg: rgba(148, 163, 184, 0.14);
+  --ind-nonprofit: #D8B4FE;
+  --ind-nonprofit-bg: rgba(168, 85, 247, 0.15);
+  --ind-education: #FCD34D;
+  --ind-education-bg: rgba(245, 158, 11, 0.14);
+  --ind-manufacturing: #FDBA74;
+  --ind-manufacturing-bg: rgba(249, 115, 22, 0.14);
+  --ind-energy: #5EEAD4;
+  --ind-energy-bg: rgba(20, 184, 166, 0.14);
+  --ind-agrifood: #BEF264;
+  --ind-agrifood-bg: rgba(132, 204, 22, 0.13);
+  --ind-transport: #7DD3FC;
+  --ind-transport-bg: rgba(14, 165, 233, 0.15);
+  --ind-construction: #DDB892;
+  --ind-construction-bg: rgba(180, 130, 70, 0.16);
+  --ind-consumer: #F9A8D4;
+  --ind-consumer-bg: rgba(236, 72, 153, 0.14);
+  --ind-media: #F0ABFC;
+  --ind-media-bg: rgba(217, 70, 239, 0.14);
+
+  /* Seniority tiers — lifted text colors + denser tints for dark */
+  --sen-exec: #FCD34D;
+  --sen-exec-bg: rgba(245, 158, 11, 0.15);
+  --sen-lead: #A5B4FC;
+  --sen-lead-bg: rgba(99, 102, 241, 0.16);
+  --sen-mgmt: #5EEAD4;
+  --sen-mgmt-bg: rgba(20, 184, 166, 0.14);
+  --sen-team: #CBD5E1;
+  --sen-team-bg: rgba(148, 163, 184, 0.14);
 
   --shadow-button: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -456,6 +537,59 @@
 }
 .ls-table tbody tr:hover td.actions {
   opacity: 1;
+}
+/* Selection checkboxes — hidden at rest, revealed on row hover, keyboard
+   focus, when the row is checked, or while any selection is in progress
+   (table[data-selecting="true"]). Opt-in per table via the .check cell
+   class. Hide with opacity (never display/width): the gutter keeps its
+   width so columns never shift, and the control stays focusable. */
+.ls-table th.check,
+.ls-table td.check {
+  /* Tight gutter, box dead-centered on both axes. One rule so Accounts,
+     Contacts and DataTable stay identical. The table over-constrains its
+     columns, so the symmetric padding (not width) is what actually sets
+     the rendered gutter: 3px + 12px box + 3px ≈ 19px. */
+  width: 20px;
+  padding: 0 3px;
+  text-align: center;
+  vertical-align: middle;
+}
+.ls-table :is(th.check, td.check) input[type="checkbox"] {
+  /* Block + auto margins: centering that doesn't depend on inline
+     baseline quirks; the cell's vertical-align centers the block. */
+  display: block;
+  margin: 0 auto;
+}
+.ls-table :is(th.check, td.check) > label {
+  /* Same treatment for the shared Checkbox's label wrapper (an empty
+     checkbox button has no baseline, which sank it ~4px when inline). */
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+}
+.ls-table :is(th.check, td.check) button[role="checkbox"] {
+  /* The shared Checkbox is 16px elsewhere; inside a selection gutter it
+     matches the 12px raw inputs. */
+  width: 12px;
+  height: 12px;
+}
+.ls-table th.check > *,
+.ls-table td.check > * {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.ls-table tbody tr:hover td.check > *,
+.ls-table thead tr:hover th.check > *,
+.ls-table tbody tr[data-selected="true"] td.check > *,
+.ls-table[data-selecting="true"] :is(th.check, td.check) > *,
+.ls-table :is(th.check, td.check):has(:focus-visible) > * {
+  opacity: 1;
+}
+/* Touch devices have no hover to discover the gutter — keep them visible. */
+@media (hover: none) {
+  .ls-table :is(th.check, td.check) > * {
+    opacity: 1;
+  }
 }
 
 /* ================================================================

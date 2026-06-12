@@ -12,6 +12,7 @@ import { ContactCalls } from "./_calls";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { OwnerSelect } from "@/components/owner-select";
 import { useToast } from "@/components/ui/toast";
 import { ContactCallProfile } from "@/components/call-intel";
 
@@ -45,6 +46,7 @@ interface Contact {
   phone: string | null;
   linkedinUrl: string | null;
   companyId: string | null;
+  ownerId: string | null;
   properties: Record<string, unknown>;
 }
 
@@ -56,6 +58,8 @@ interface Activity {
   summary: string | null;
   occurredAt: string;
   metadata: Record<string, unknown>;
+  /** Member who performed the action (user activities only); null otherwise. */
+  actorName?: string | null;
 }
 
 export default function ContactDetailPage() {
@@ -208,6 +212,19 @@ export default function ContactDetailPage() {
   }, [contactId]);
 
   if (loading) return <DetailPageSkeleton avatar="circle" />;
+  async function reassignContactOwner(ownerId: string | null) {
+    setContact((prev) => (prev ? { ...prev, ownerId } : prev)); // optimistic
+    try {
+      await fetch(`/api/contacts/${contactId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId }),
+      });
+    } catch {
+      /* optimistic; the select already reflects the choice */
+    }
+  }
+
   if (!contact) return <p className="p-6 text-sm text-red-400">Contact not found</p>;
 
   const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || "Unknown";
@@ -224,6 +241,11 @@ export default function ContactDetailPage() {
             { label: name },
           ]}
         />
+
+        <div className="mt-3 flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+          <span>Owner</span>
+          <OwnerSelect value={contact.ownerId} onChange={reassignContactOwner} className="h-7" ariaLabel="Contact owner" />
+        </div>
 
         <div className="mt-4 flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-accent)] text-lg font-bold text-white">
@@ -298,6 +320,11 @@ export default function ContactDetailPage() {
                         <span className="text-xs font-medium uppercase text-[var(--color-text-secondary)]">
                           {activity.activityType.replace(/_/g, " ")}
                         </span>
+                        {activity.actorName && (
+                          <span className="text-xs text-[var(--color-text-tertiary)]">
+                            · {activity.actorName}
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-[var(--color-text-tertiary)]">
                         {new Date(activity.occurredAt).toLocaleDateString()}

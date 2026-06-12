@@ -22,7 +22,7 @@ import {
 } from "@/lib/integrations/apollo-client";
 import { flatFiltersToHardApollo } from "@/lib/icp/flat-filters-to-apollo";
 import { sizesToApolloRanges, senioritiesToApollo } from "@/lib/config/icp-constants";
-import { getTenantSettings, parseRoleKeywords } from "@/lib/config/tenant-settings";
+import { getTenantSettings, hasUsableIcp, parseRoleKeywords } from "@/lib/config/tenant-settings";
 import { filterAllowed, filterAllowedContacts } from "@/lib/accounts/suppression";
 import { inngest } from "@/inngest/client";
 
@@ -31,17 +31,6 @@ export interface SourceResult {
   reason?: "apollo_unavailable" | "no_icp" | "no_orgs";
   companiesAdded: number;
   contactsAdded: number;
-}
-
-/** Does the tenant have enough of an ICP to target a search? */
-export function hasUsableIcp(settings: Awaited<ReturnType<typeof getTenantSettings>>): boolean {
-  return Boolean(
-    settings.targetIndustries?.length ||
-      settings.targetKeywords?.length ||
-      settings.targetGeographies?.length ||
-      settings.targetRoles ||
-      settings.targetSeniorities?.length,
-  );
 }
 
 /** Build an Apollo org-search from the tenant's ICP settings. */

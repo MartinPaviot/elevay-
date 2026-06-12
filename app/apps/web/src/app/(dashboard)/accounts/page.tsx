@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Building2, Search, Filter, Plus, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, type LucideIcon } from "lucide-react";
+import { Building2, Search, Filter, Plus, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, SlidersHorizontal, Layers, type LucideIcon } from "lucide-react";
 import { useTamStream } from "@/hooks/use-tam-stream";
 import { TamBuildProgress } from "@/components/tam-build-progress";
 import { SignalChip } from "@/components/signal-chip";
@@ -25,13 +25,14 @@ import type { CustomFieldDef } from "@/lib/context/custom-fields";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { PersonaSearch } from "./_persona-search";
 import { Button } from "@/components/ui/button";
-import { PropertyBadge } from "@/components/ui/badge";
+import { IndustryBadge, PropertyBadge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { chunkedBulkCall } from "@/lib/infra/chunk-bulk";
+import { selectAllMatchingIds } from "@/lib/infra/select-all-matching";
 import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
 import { SmartSearchBar, ActiveFiltersChips } from "@/components/ui/smart-search-bar";
 import { applyFilters } from "@/lib/search/filters";
@@ -41,8 +42,10 @@ import { CascadeDeleteModal, type CascadeOption } from "@/components/ui/cascade-
 import { EnrichMenu } from "@/components/ui/enrich-menu";
 import { useEnrichStream, type EnrichCellState } from "@/hooks/use-enrich-stream";
 import { ColumnPicker, type PickerCategory } from "@/components/ui/column-picker";
+import { MoreMenu } from "@/components/ui/more-menu";
 import { COLUMN_CATEGORIES, DEFAULT_VISIBLE_CATEGORY_KEYS, getColumnCategory } from "@/lib/accounts/column-categories";
 import { TAM_PROPOSALS_ENTRY_ENABLED } from "@/lib/tam/entry-visibility";
+import { deriveAccountTabCounts } from "@/lib/accounts/tab-counts";
 
 /** Firmographic-extra category columns (founded year, tech, funding,
  * keywords) — addable via the Categories picker, filled by the same
@@ -74,6 +77,8 @@ interface Account {
   score: number | null;
   scoreReasons: string[] | null;
   properties: Record<string, unknown> | null;
+  /** Effective stage computed server-side (manual override > deal-derived > 'new'). */
+  lifecycleStage?: string | null;
   lastInteraction: { date: string; summary: string | null } | null;
 }
 
@@ -190,6 +195,9 @@ export default function AccountsPage() {
   // Archive view toggle. true = show only soft-deleted (removed) accounts so
   // they can be reviewed and restored. Mutually exclusive with viewExcluded.
   const [viewDeleted, setViewDeleted] = useState(false);
+  // Categories column-picker panel — opened from the header More menu
+  // (the picker's own trigger is hidden there).
+  const [showCategoriesPanel, setShowCategoriesPanel] = useState(false);
   // Count of pending TAM proposals — drives the header entry point into
   // the review surface so the living-TAM loops are never a dead-end.
   const [proposalCount, setProposalCount] = useState(0);
@@ -258,6 +266,9 @@ export default function AccountsPage() {
         toast("No accounts need enrichment.", "info");
         return;
       }
+      // Any size — the hook chains batches of 100 (the endpoint's
+      // per-request cap) into one continuous run, so a select-all-sized
+      // selection enriches end to end with a single click.
       enrichStream.start({ companyIds: targetIds, criteria });
     },
     [accounts, enrichStream, toast],
@@ -389,8 +400,10 @@ export default function AccountsPage() {
         const usable = ((data.icps ?? []) as Array<{ id: string; name: string; criteriaCount: number; status: string }>)
           .filter((i) => i.status === "active" && i.criteriaCount > 0);
         setSourceProfiles(usable);
-        // /api/icps orders by priority — first usable = rank 1.
-        setSourceIcpId((cur) => cur ?? usable[0]?.id ?? null);
+        // Default to "all" (source from EVERY profile) when there are 2+;
+        // with a single profile "all" is redundant so default to it directly.
+        // (/api/icps orders by priority; first usable = rank 1.)
+        setSourceIcpId((cur) => cur ?? (usable.length > 1 ? "all" : usable[0]?.id ?? null));
       })
       .catch(() => {});
   }, []);
@@ -408,10 +421,16 @@ export default function AccountsPage() {
     const hasOverrides = !!apolloOverrides.industries || !!apolloOverrides.geographies;
     await tamStream.start({
       targetCount: 300,
-      ...(sourceIcpId ? { icpId: sourceIcpId } : {}),
+      // "all" → source from every profile (send the full id list); a specific
+      // id → that one profile; neither → legacy tenant-wide planner.
+      ...(sourceIcpId === "all"
+        ? { icpIds: sourceProfiles.map((p) => p.id) }
+        : sourceIcpId
+          ? { icpId: sourceIcpId }
+          : {}),
       ...(hasOverrides ? { apolloOverrides } : {}),
     });
-  }, [tamStream, columnFilters, sourceIcpId]);
+  }, [tamStream, columnFilters, sourceIcpId, sourceProfiles]);
 
   // Single "popover open" selector shared across all signal chips in
   // the table. Ensures only one popover is open at a time and it
@@ -471,6 +490,19 @@ export default function AccountsPage() {
     return p;
   }, [filter, debouncedColumnFilters, smartFilters]);
 
+  /** The COMPLETE filter state /api/accounts understands — view toggles
+   *  (excluded/deleted) + search + tab/column/score filters. Single source
+   *  for the page fetch, the refetch and select-all-matching, so they can
+   *  never drift apart. */
+  const listFilterParams = useCallback((): URLSearchParams => {
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (viewExcluded) params.set("excluded", "true");
+    if (viewDeleted) params.set("deleted", "true");
+    for (const [k, v] of serializeAccountFilters()) params.set(k, v);
+    return params;
+  }, [debouncedSearch, viewExcluded, viewDeleted, serializeAccountFilters]);
+
   /** Fetch a single page of accounts.
    *  - page=1, append=false → initial load (replaces list)
    *  - page>1, append=true  → "Load more" click
@@ -481,11 +513,9 @@ export default function AccountsPage() {
     try {
       if (page === 1 && !append) setLoading(true);
       else setLoadingMore(true);
-      const params = new URLSearchParams({ pageSize: "200", page: String(page) });
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      if (viewExcluded) params.set("excluded", "true");
-      if (viewDeleted) params.set("deleted", "true");
-      for (const [k, v] of serializeAccountFilters()) params.set(k, v);
+      const params = listFilterParams();
+      params.set("pageSize", "200");
+      params.set("page", String(page));
       const res = await fetch(`/api/accounts?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -507,7 +537,7 @@ export default function AccountsPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [debouncedSearch, viewExcluded, viewDeleted, serializeAccountFilters]);
+  }, [listFilterParams]);
 
   /** Reload all pages that have been loaded so far. Used after mutations
    *  (enrich, score, create) so the user doesn't snap back to page 1. */
@@ -516,11 +546,9 @@ export default function AccountsPage() {
       const pagesToLoad = Math.max(currentPage, 1);
       let all: Account[] = [];
       for (let p = 1; p <= pagesToLoad; p++) {
-        const params = new URLSearchParams({ pageSize: "200", page: String(p) });
-        if (debouncedSearch) params.set("search", debouncedSearch);
-        if (viewExcluded) params.set("excluded", "true");
-        if (viewDeleted) params.set("deleted", "true");
-        for (const [k, v] of serializeAccountFilters()) params.set(k, v);
+        const params = listFilterParams();
+        params.set("pageSize", "200");
+        params.set("page", String(p));
         const res = await fetch(`/api/accounts?${params.toString()}`);
         if (!res.ok) break;
         const data = await res.json();
@@ -536,7 +564,7 @@ export default function AccountsPage() {
     } catch (e) {
       console.warn("accounts: refetch failed", e);
     }
-  }, [currentPage, debouncedSearch, viewExcluded, viewDeleted, serializeAccountFilters]);
+  }, [currentPage, listFilterParams]);
 
   const loadMoreAccounts = useCallback(() => {
     if (loadingMore || currentPage >= totalPages) return;
@@ -614,6 +642,18 @@ export default function AccountsPage() {
     }
   }, [enrichStream.terminated, enrichStream.summary, refetchLoadedAccounts, toast]);
 
+  // A transport failure mid-run (endpoint unreachable, rate-limited…)
+  // stops the batch chain — say where it stopped, and pull whatever DID
+  // land, instead of ending silently.
+  useEffect(() => {
+    if (enrichStream.terminated !== "error") return;
+    refetchLoadedAccounts();
+    toast(
+      `Enrichment stopped early — ${enrichStream.processed} of ${enrichStream.total} account${enrichStream.total === 1 ? "" : "s"} processed.`,
+      "warning",
+    );
+  }, [enrichStream.terminated, enrichStream.processed, enrichStream.total, refetchLoadedAccounts, toast]);
+
   // Fetch warm-intro paths in a single batched call once accounts
   // are loaded. Keeps the "Connected to" column off the critical
   // render path and avoids N+1 requests.
@@ -687,13 +727,15 @@ export default function AccountsPage() {
 
   // Bulk score the current selection (or all unscored when nothing is
   // selected). Enrichment now runs through the streaming EnrichMenu.
+  // The selection is used AS IS — after select-all-matching it can hold ids
+  // beyond the loaded rows, and the score endpoint only needs ids; filtering
+  // through `accounts` here would silently drop the unloaded ones.
   async function bulkScoreSelected() {
-    const targets =
+    const ids =
       selectedRows.size > 0
-        ? accounts.filter((a) => selectedRows.has(a.id))
-        : accounts.filter((a) => a.score == null);
-    if (targets.length === 0) return;
-    const ids = targets.map((t) => t.id);
+        ? Array.from(selectedRows)
+        : accounts.filter((a) => a.score == null).map((a) => a.id);
+    if (ids.length === 0) return;
     try {
       const r = await chunkedBulkCall({
         ids,
@@ -749,20 +791,34 @@ export default function AccountsPage() {
     if (ids.length === 0) return;
     setExtractingContacts(true);
     toast(`Extracting contacts for ${ids.length} account${ids.length === 1 ? "" : "s"}…`, "info");
+    // The endpoint processes at most 50 accounts per call (it silently slices
+    // beyond that) — fan out in 50-id chunks so EVERY selected account gets
+    // sourced. The first failed chunk aborts the rest: its cause (sourcing
+    // key missing, rate limit) would fail them all the same way.
+    let totalCreated = 0;
+    let accountsProcessed = 0;
     try {
-      const res = await fetch("/api/accounts/extract-contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountIds: ids }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast(data?.error || "Failed to extract contacts.", "error");
-        return;
+      for (let i = 0; i < ids.length; i += 50) {
+        if (ids.length > 50 && i > 0) {
+          toast(`Extracting contacts ${Math.min(i + 50, ids.length)} / ${ids.length}…`, "info");
+        }
+        const res = await fetch("/api/accounts/extract-contacts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountIds: ids.slice(i, i + 50) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (totalCreated > 0) break; // partial run — report what landed below
+          toast(data?.error || "Failed to extract contacts.", "error");
+          return;
+        }
+        totalCreated += data.totalCreated ?? 0;
+        accountsProcessed += data.accountsProcessed ?? 0;
       }
-      if (data.totalCreated > 0) {
+      if (totalCreated > 0) {
         toast(
-          `Added ${data.totalCreated} contact${data.totalCreated === 1 ? "" : "s"} across ${data.accountsProcessed} account${data.accountsProcessed === 1 ? "" : "s"}.`,
+          `Added ${totalCreated} contact${totalCreated === 1 ? "" : "s"} across ${accountsProcessed} account${accountsProcessed === 1 ? "" : "s"}.`,
           "success",
         );
       } else {
@@ -864,29 +920,28 @@ export default function AccountsPage() {
   async function bulkSetExclusion(action: "exclude" | "include") {
     const ids = Array.from(selectedRows);
     if (ids.length === 0) return;
-    try {
-      const res = await fetch("/api/accounts/exclude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, action }),
-      });
-      if (!res.ok) {
-        toast(action === "exclude" ? "Couldn't exclude." : "Couldn't restore.", "error");
-        return;
-      }
-      const data = await res.json().catch(() => ({ changed: ids.length }));
-      toast(
-        action === "exclude"
-          ? `Marked ${data.changed} account${data.changed === 1 ? "" : "s"} as not a fit.`
-          : `Restored ${data.changed} account${data.changed === 1 ? "" : "s"}.`,
-        "success",
-      );
-      setSelectedRows(new Set());
-      await refetchLoadedAccounts();
-    } catch (e) {
-      console.warn("accounts: bulk exclusion failed", e);
-      toast("Action failed.", "error");
+    // The endpoint validates at most 1000 ids per call (rejects beyond, not
+    // truncates) — chunk at 500 so a select-all-sized selection still lands
+    // in one or a few requests instead of a hard 400.
+    const result = await chunkedBulkCall({
+      ids,
+      chunkSize: 500,
+      endpoint: "/api/accounts/exclude",
+      buildPayload: (chunk) => ({ ids: chunk, action }),
+    });
+    if (result.succeeded === 0) {
+      console.warn("accounts: bulk exclusion failed", result.errors);
+      toast(action === "exclude" ? "Couldn't exclude." : "Couldn't restore.", "error");
+      return;
     }
+    toast(
+      action === "exclude"
+        ? `Marked ${result.succeeded} account${result.succeeded === 1 ? "" : "s"} as not a fit.${result.failed > 0 ? ` ${result.failed} failed.` : ""}`
+        : `Restored ${result.succeeded} account${result.succeeded === 1 ? "" : "s"}.${result.failed > 0 ? ` ${result.failed} failed.` : ""}`,
+      result.failed > 0 ? "warning" : "success",
+    );
+    setSelectedRows(new Set());
+    await refetchLoadedAccounts();
   }
 
   async function rowSetExclusion(id: string, action: "exclude" | "include") {
@@ -905,6 +960,32 @@ export default function AccountsPage() {
     } catch (e) {
       console.warn("accounts: row exclusion failed", e);
       toast("Action failed.", "error");
+    }
+  }
+
+  // Header-checkbox "select all": select EVERY account matching the active
+  // view + filters — the server resolves the full id set with the exact WHERE
+  // the list and its count use — not just the loaded page. The loaded rows
+  // are selected instantly for feedback; the full set replaces them when the
+  // ids arrive (the union also keeps mid-stream TAM rows the server may not
+  // have persisted yet). Residual non-score NL smart filters only exist
+  // client-side (the server can't compute "all matching" for them), so with
+  // one active the selection honestly stays the visible rows.
+  async function selectAllMatching() {
+    const visibleIds = filteredAccounts.map((a) => a.id);
+    setSelectedRows(new Set(visibleIds));
+    if (smartFilters.some((c) => c.field !== "score")) return;
+    if (accounts.length >= totalAccounts) return; // every matching row is already loaded
+    const result = await selectAllMatchingIds({
+      endpoint: "/api/accounts",
+      params: listFilterParams(),
+      visibleIds,
+    });
+    setSelectedRows(result.ids);
+    if (result.failed) {
+      toast(`Couldn't load the full list — selected the ${visibleIds.length} loaded accounts.`, "warning");
+    } else if (result.truncated && result.total != null) {
+      toast(`Selected the first ${result.ids.size.toLocaleString()} of ${result.total.toLocaleString()} matching accounts.`, "warning");
     }
   }
 
@@ -949,13 +1030,20 @@ export default function AccountsPage() {
       ["tasks", "Tasks"],
     ];
     try {
-      const res = await fetch("/api/accounts/related-counts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { counts?: Record<string, number> };
-      const counts = data.counts ?? {};
+      // The endpoint counts at most 500 ids per call — chunk and sum so the
+      // modal's numbers stay truthful for select-all-sized selections.
+      const counts: Record<string, number> = {};
+      for (let i = 0; i < ids.length; i += 500) {
+        const res = await fetch("/api/accounts/related-counts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(i, i + 500) }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { counts?: Record<string, number> };
+        for (const [key, value] of Object.entries(data.counts ?? {})) {
+          counts[key] = (counts[key] ?? 0) + (value ?? 0);
+        }
+      }
       setCascadeCounts(labels.map(([key, text]) => ({ key, label: text, count: counts[key] ?? 0 })));
     } catch {
       setCascadeCounts(labels.map(([key, text]) => ({ key, label: text, count: 0 })));
@@ -1072,7 +1160,9 @@ export default function AccountsPage() {
 
   function isEnriched(account: Account): boolean { return !!(account.industry && account.description); }
   function isTAM(account: Account): boolean { return (account.properties as Record<string, unknown>)?.source === "tam"; }
-  function getLifecycleStage(account: Account): string { return ((account.properties as Record<string, unknown>)?.lifecycleStage as string) || "new"; }
+  // Prefer the server-computed effective stage (manual override > deal-derived);
+  // the properties fallback covers streamed rows that bypass the list API.
+  function getLifecycleStage(account: Account): string { return account.lifecycleStage || ((account.properties as Record<string, unknown>)?.lifecycleStage as string) || "new"; }
 
   interface Signal { type: string; title: string; description: string; relevance: string; reasoning?: string; sources?: Array<{ url: string; title: string }>; }
   function getSignals(account: Account): Signal[] { return ((account.properties as Record<string, unknown>)?.signals as Signal[]) || []; }
@@ -1268,10 +1358,20 @@ export default function AccountsPage() {
       return litSignalCount(b) - litSignalCount(a);
     });
 
-  // Prefer the server's tenant-wide working-set counts (true totals,
-  // independent of the active filters); fall back to the loaded rows until the
-  // first response lands.
-  const tamCount = serverCounts ? serverCounts.tam : accounts.filter(isTAM).length;
+  // Header checkbox state: checked when every visible row is selected (the
+  // selection may hold MORE than the visible rows after a select-all-matching),
+  // indeterminate when only part of it is.
+  const allVisibleSelected =
+    filteredAccounts.length > 0 && filteredAccounts.every((a) => selectedRows.has(a.id));
+
+  // Per-tab counts shown in parentheses (All / Sourced / Added). The server
+  // counts reflect the active column/search/score filters but are independent
+  // of the selected tab, so the badges evolve with the filters and add up
+  // (all === tam + manual). Fall back to the loaded rows until page 1 lands.
+  const tabCounts = deriveAccountTabCounts(
+    serverCounts,
+    accounts.map((a) => ({ isTam: isTAM(a) })),
+  );
 
   // G27: Collect unique signal types across all accounts for individual columns
   const signalTypeColumns = Array.from(
@@ -1347,68 +1447,92 @@ export default function AccountsPage() {
       >
         {/* Per-account actions (Enrich, Score, Detect signals) live in the
             selection bar — they only make sense once accounts are checked.
-            The toolbar keeps only workspace-level actions. */}
-        {TAM_PROPOSALS_ENTRY_ENABLED && proposalCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<Sparkles size={13} />}
-            onClick={() => { window.location.href = "/tam/review"; }}
-            title="Review proposed TAM changes (add / refresh / exclude)"
-          >
-            Proposals ({proposalCount})
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          icon={viewExcluded ? <RotateCcw size={13} /> : <Ban size={13} />}
-          onClick={() => { setSelectedRows(new Set()); setViewDeleted(false); setViewExcluded((v) => !v); }}
-          title={viewExcluded ? "Back to the active working set" : "Review accounts marked as not a fit"}
-        >
-          {viewExcluded ? "Back to active" : "Excluded"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          icon={viewDeleted ? <RotateCcw size={13} /> : <Archive size={13} />}
-          onClick={() => { setSelectedRows(new Set()); setViewExcluded(false); setViewDeleted((v) => !v); }}
-          title={viewDeleted ? "Back to the active working set" : "Review removed accounts and restore them"}
-        >
-          {viewDeleted ? "Back to active" : "Archive"}
-        </Button>
+            Secondary workspace controls (views, pickers, setup, sourcing
+            config) group behind ONE "More" menu: five wide buttons burned
+            the header's width (founder request 2026-06-11). The sourcing
+            CTA and Create stay visible — they're the primaries, and "Find
+            more accounts" carries live build state a menu would hide. */}
+        <MoreMenu
+          label="More"
+          items={[
+            ...(TAM_PROPOSALS_ENTRY_ENABLED && proposalCount > 0
+              ? [{
+                  label: `Proposals (${proposalCount})`,
+                  icon: <Sparkles size={13} />,
+                  onClick: () => { window.location.href = "/tam/review"; },
+                }]
+              : []),
+            {
+              label: "Excluded",
+              icon: <Ban size={13} />,
+              checked: viewExcluded,
+              onClick: () => { setSelectedRows(new Set()); setViewDeleted(false); setViewExcluded((v) => !v); },
+            },
+            {
+              label: "Archive",
+              icon: <Archive size={13} />,
+              checked: viewDeleted,
+              onClick: () => { setSelectedRows(new Set()); setViewExcluded(false); setViewDeleted((v) => !v); },
+            },
+            {
+              label: "Categories",
+              icon: <SlidersHorizontal size={13} />,
+              divider: true,
+              onClick: () => setShowCategoriesPanel(true),
+            },
+            {
+              label: "Describe ICP",
+              icon: <Target size={13} />,
+              onClick: () => setShowPersona(true),
+            },
+            ...(sourceProfiles.length > 0
+              ? [{
+                  label: "Source from",
+                  hint: sourceIcpId === "all"
+                    ? "All profiles"
+                    : (sourceProfiles.find((p) => p.id === sourceIcpId)?.name ?? sourceProfiles[0]?.name ?? ""),
+                  icon: <Layers size={13} />,
+                  submenu: [
+                    ...(sourceProfiles.length > 1
+                      ? [{
+                          label: "All profiles",
+                          checked: sourceIcpId === "all",
+                          onClick: () => setSourceIcpId("all"),
+                        }]
+                      : []),
+                    ...sourceProfiles.map((p, i) => ({
+                      label: `${p.name}${i === 0 ? " (primary)" : ""}`,
+                      checked: sourceIcpId === p.id,
+                      onClick: () => setSourceIcpId(p.id),
+                    })),
+                  ],
+                }]
+              : []),
+          ]}
+        />
+        {/* Categories panel — controlled, anchored beside the More trigger;
+            opened by the menu item above, dismisses itself. */}
         <ColumnPicker
           categories={pickerCategories}
           visible={visibleCategories}
           onToggle={toggleCategory}
           onReset={resetCategories}
+          open={showCategoriesPanel}
+          onOpenChange={setShowCategoriesPanel}
+          hideTrigger
         />
-        <Button
-          variant="outline"
-          size="sm"
-          icon={<Target size={13} />}
-          onClick={() => setShowPersona(true)}
-        >
-          Describe ICP
-        </Button>
-        {sourceProfiles.length > 0 && (
-          <select
-            value={sourceIcpId ?? ""}
-            onChange={(e) => setSourceIcpId(e.target.value || null)}
-            title="Which ICP profile to source from"
-            className="h-8 rounded-md border px-2 text-[12px]"
-            style={{
-              borderColor: "var(--color-border-default)",
-              background: "var(--color-bg-card)",
-              color: "var(--color-text-secondary)",
-            }}
+        {/* Leaving a special view stays ONE visible click — never buried
+            in the menu. Renders only inside the Excluded/Archive views. */}
+        {(viewExcluded || viewDeleted) && (
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<RotateCcw size={13} />}
+            onClick={() => { setSelectedRows(new Set()); setViewExcluded(false); setViewDeleted(false); }}
+            title="Back to the active working set"
           >
-            {sourceProfiles.map((p, i) => (
-              <option key={p.id} value={p.id}>
-                Source from: {p.name}{i === 0 ? " (primary)" : ""}
-              </option>
-            ))}
-          </select>
+            Back to active
+          </Button>
         )}
         <Button
           variant="outline"
@@ -1456,13 +1580,20 @@ export default function AccountsPage() {
         <div className="flex gap-0.5">
           {(["all", "tam", "manual"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)}
+              title={
+                f === "all"
+                  ? "Every account in this workspace"
+                  : f === "tam"
+                    ? "Sourced by Elevay: found by the engine from your ICP"
+                    : "Added by you: created manually or imported"
+              }
               className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
               style={{
                 background: filter === f ? "var(--color-accent-soft)" : "transparent",
                 color: filter === f ? "var(--color-accent)" : "var(--color-text-tertiary)",
               }}
             >
-              {f === "all" ? "All" : f === "tam" ? `Prospects (${tamCount})` : "Manual"}
+              {f === "all" ? `All (${tabCounts.all})` : f === "tam" ? `Sourced (${tabCounts.tam})` : `Added (${tabCounts.manual})`}
             </button>
           ))}
         </div>
@@ -1662,28 +1793,31 @@ export default function AccountsPage() {
           />
         ) : (
           <>
-          <table className="ls-table">
+          <table className="ls-table" data-selecting={selectedRows.size > 0 ? "true" : undefined}>
             <thead>
               <tr>
                 {/* Select-all checkbox */}
-                <th style={{ width: 36 }}>
+                <th className="check">
                   <input
                     type="checkbox"
-                    checked={selectedRows.size > 0 && selectedRows.size === filteredAccounts.length}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedRows(new Set(filteredAccounts.map((a: any) => a.id)));
-                      } else {
-                        setSelectedRows(new Set());
-                      }
+                    aria-label="Select all accounts"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedRows.size > 0 && !allVisibleSelected;
                     }}
-                    className="h-3.5 w-3.5 rounded"
+                    onChange={(e) => {
+                      if (e.target.checked) void selectAllMatching();
+                      else setSelectedRows(new Set());
+                    }}
+                    className="h-3 w-3 rounded"
                   />
                 </th>
                 {([
                   { label: "Account", icon: Building2, filterKey: "name" },
                   { label: "Website", icon: Globe, filterKey: "domain" },
-                  { label: "LinkedIn", icon: null, filterKey: "linkedin" },
+                  // Icon-only header: keeps the LinkedIn column as narrow as
+                  // its content (the icon link); the filter stays available.
+                  { label: "", icon: null, filterKey: "linkedin" },
                   { label: "Industry", icon: Factory, filterKey: "industry" },
                   { label: "Geography", icon: MapPin, filterKey: "geography" },
                   { label: "Size", icon: Ruler, filterKey: "size" },
@@ -1718,7 +1852,7 @@ export default function AccountsPage() {
                   <th key={i}>
                     <span className="flex items-center gap-1.5">
                       {col.icon && <col.icon size={12} style={{ opacity: 0.5 }} />}
-                      {col.label === "LinkedIn" && <span style={{ opacity: 0.5 }}><LinkedInIcon size={12} /></span>}
+                      {col.filterKey === "linkedin" && <span style={{ opacity: 0.5 }} title="LinkedIn"><LinkedInIcon size={12} /></span>}
                       {col.label}
                       {col.filterKey && fcfg && (
                         <ColumnFilter
@@ -1754,19 +1888,20 @@ export default function AccountsPage() {
                   <React.Fragment key={account.id}>
                   <tr className="group" data-selected={selectedRows.has(account.id) ? "true" : undefined}>
                     {/* Row checkbox */}
-                    <td style={{ width: 36 }} onClick={(e) => e.stopPropagation()}>
+                    <td className="check" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
+                        aria-label={`Select ${account.name || account.domain || "account"}`}
                         checked={selectedRows.has(account.id)}
                         onChange={(e) => {
                           const next = new Set(selectedRows);
                           if (e.target.checked) next.add(account.id); else next.delete(account.id);
                           setSelectedRows(next);
                         }}
-                        className="h-3.5 w-3.5 rounded"
+                        className="h-3 w-3 rounded"
                       />
                     </td>
-                    {/* Account name with logo + status */}
+                    {/* Account name with logo */}
                     <td>
                       <div className="flex items-center gap-2.5">
                         {/* Expand contacts chevron */}
@@ -1788,28 +1923,6 @@ export default function AccountsPage() {
                         >
                           {expandedAccountId === account.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         </button>
-                        {/* Status dot — driven by the live enrichment stream. */}
-                        {(() => {
-                          const active = enrichStream.active.has(account.id);
-                          const streamStatus = enrichStream.companyStatus.get(account.id);
-                          const color = active
-                            ? "var(--color-warning)"
-                            : isEnriched(account)
-                              ? "var(--color-success)"
-                              : streamStatus === "no-data"
-                                ? "var(--color-warning)"
-                                : streamStatus === "error"
-                                  ? "var(--color-error)"
-                                  : "var(--color-text-muted)";
-                          return (
-                            <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full${active ? " animate-pulse" : ""}`}
-                              style={{ background: color }}
-                              title={active ? "Enriching…" : streamStatus === "no-data" ? "No data found" : undefined}
-                            />
-                          );
-                        })()}
-
                         {/* Logo */}
                         <CompanyLogo
                           domain={account.domain}
@@ -1845,11 +1958,12 @@ export default function AccountsPage() {
                           href={`https://${account.domain}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[12px] transition-colors hover:underline"
+                          className="inline-flex max-w-[140px] items-center gap-1 text-[12px] transition-colors hover:underline"
                           style={{ color: "var(--color-accent)" }}
+                          title={account.domain}
                         >
-                          {account.domain}
-                          <ExternalLink size={10} style={{ opacity: 0.5 }} />
+                          <span className="min-w-0 truncate">{account.domain}</span>
+                          <ExternalLink size={10} className="shrink-0" style={{ opacity: 0.5 }} />
                         </a>
                       ) : (
                         <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>
@@ -1866,20 +1980,21 @@ export default function AccountsPage() {
                             href={linkedIn.startsWith("http") ? linkedIn : `https://${linkedIn}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[12px] transition-colors hover:underline"
+                            className="inline-flex items-center transition-opacity hover:opacity-70"
                             style={{ color: "#0A66C2" }}
+                            title="Open LinkedIn profile"
+                            aria-label="Open LinkedIn profile"
                           >
                             <LinkedInIcon size={13} />
-                            <span>Profile</span>
                           </a>
                         );
                       })())}
                     </td>
 
-                    {/* Industry -- auto-colored badge */}
+                    {/* Industry -- sector icon + sector-hued badge */}
                     <td>
                       {renderEnrichable(account.id, "industry", !!account.industry, account.industry ? (
-                        <PropertyBadge value={account.industry} />
+                        <IndustryBadge value={account.industry} className="max-w-[220px]" />
                       ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>)}
                     </td>
 
@@ -1887,12 +2002,17 @@ export default function AccountsPage() {
                     <td>
                       {renderEnrichable(account.id, "geography", !!formatGeography(account), (() => {
                         const geo = formatGeography(account);
-                        return geo ? (
-                          <span className="inline-flex items-center gap-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                            <MapPin size={11} style={{ color: "var(--color-text-muted)" }} />
-                            {geo}
+                        if (!geo) return <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        // Compact display: city + country only (state adds
+                        // noise like "Zürich, Zurich"); full string on hover.
+                        const geoParts = geo.split(", ");
+                        const geoCompact = geoParts.length > 2 ? `${geoParts[0]}, ${geoParts[geoParts.length - 1]}` : geo;
+                        return (
+                          <span className="inline-flex max-w-[170px] items-center gap-1 text-[12px]" style={{ color: "var(--color-text-secondary)" }} title={geo}>
+                            <MapPin size={11} className="shrink-0" style={{ color: "var(--color-text-muted)" }} />
+                            <span className="min-w-0 truncate">{geoCompact}</span>
                           </span>
-                        ) : <span className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>—</span>;
+                        );
                       })())}
                     </td>
 
@@ -2356,7 +2476,7 @@ export default function AccountsPage() {
         {slideOverAccount && (() => {
           const a = slideOverAccount;
           const scoreInfo = displayScore(a.score, isEnriched(a));
-          const lc = ((a.properties as Record<string, unknown>)?.lifecycleStage as string) || "new";
+          const lc = getLifecycleStage(a);
           const lcStyle = getLifecycleStyle(lc);
           return (
             <div>
@@ -2383,7 +2503,7 @@ export default function AccountsPage() {
               <PropertyRow label="Last Interaction" value={
                 a.lastInteraction ? `${timeAgo(a.lastInteraction.date)}${a.lastInteraction.summary ? ` — ${a.lastInteraction.summary}` : ""}` : "—"
               } />
-              <PropertyRow label="Industry" value={a.industry} />
+              <PropertyRow label="Industry" value={a.industry ? <IndustryBadge value={a.industry} /> : null} />
               <PropertyRow label="Size" value={a.size} />
               <PropertyRow label="Revenue" value={a.revenue} />
               <PropertyRow label="Stage" value={

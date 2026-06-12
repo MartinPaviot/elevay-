@@ -49,6 +49,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { industryIcon } from "@/lib/ui/industry-style";
 import { Avatar } from "@/components/ui/avatar";
 import {
   careerEntryLabel,
@@ -61,6 +62,7 @@ import { countryFromTimezone } from "@/lib/call-mode/geo";
 import { pickReplaceableTools } from "@/lib/tech-detect/replaceable";
 import { scoreTranscriptLevers, DRILL_COPY } from "@/lib/voice/lever-scoring";
 import { CompanyLogo } from "@/components/ui/company-logo";
+import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
 
 // lucide dropped brand glyphs — inline the LinkedIn mark (same path the
 // Accounts page uses) so the Direction section stays on-brand.
@@ -102,6 +104,7 @@ export interface BrainActivity {
   direction: string | null;
   occurredAt: string;
   summary: string | null;
+  actorName?: string | null;
 }
 interface BrainCompany {
   id: string;
@@ -560,6 +563,10 @@ export function PreCallBrief({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-6">
+      {/* Collision heads-up: a teammate already worked this prospect recently
+          (soft, non-blocking — informs, never gates the call). */}
+      <ContactCollisionNotice contactId={selected.contactId} lang="fr" />
+
       {/* ── Expert brief: situational intelligence (the script lives on the right) ── */}
       <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
         <div
@@ -621,7 +628,7 @@ export function PreCallBrief({
       {/* Société : secteur · taille · géographie · heure locale — grounded context up
           front, plus a direct way to enrich the person. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {company?.industry && <ContextChip icon={Building2}>{company.industry}</ContextChip>}
+        {company?.industry && <ContextChip icon={industryIcon(company.industry)}>{company.industry}</ContextChip>}
         {company?.sizeBand && <ContextChip icon={Users}>{company.sizeBand}</ContextChip>}
         {geo && <ContextChip icon={Globe}>{geo}</ContextChip>}
         {selected.localTime && <ContextChip icon={Clock}>{selected.localTime} (heure locale)</ContextChip>}
@@ -703,7 +710,7 @@ export function PreCallBrief({
                       {a.summary ?? a.type.replace(/_/g, " ")}
                     </p>
                     <p className="text-[11px] text-zinc-400">
-                      {a.direction ? `${a.direction} · ` : ""}{relTime(a.occurredAt)}
+                      {a.actorName ? `${a.actorName} · ` : ""}{a.direction ? `${a.direction} · ` : ""}{relTime(a.occurredAt)}
                     </p>
                   </div>
                 </li>

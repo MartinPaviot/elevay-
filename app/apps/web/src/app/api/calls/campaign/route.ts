@@ -20,8 +20,7 @@ import {
   parseGoalPhrase,
   type GoalSpec,
 } from "@/lib/voice/campaign";
-import { hasUsableIcp } from "@/lib/voice/source-prospects";
-import { getTenantSettings } from "@/lib/config/tenant-settings";
+import { getTenantSettings, hasUsableIcp } from "@/lib/config/tenant-settings";
 import { inngest } from "@/inngest/client";
 
 /** Count contacts that can actually be dialed (have a phone). */

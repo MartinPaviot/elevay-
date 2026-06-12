@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
+import { IndustryBadge, TitleBadge } from "./ui/badge";
 import { SlideOver, PropertyRow } from "./slide-over";
 import { GeneratedCompanyAvatar } from "./ui/generated-company-avatar";
 
@@ -159,14 +160,19 @@ export function EntityLink({ type, id, name }: EntityLinkProps) {
         {entityData && type === "contact" && (
           <div>
             <PropertyRow label="Email" value={entityData.email as string} />
-            <PropertyRow label="Title" value={entityData.title as string} />
+            <PropertyRow label="Title" value={entityData.title ? (
+              <TitleBadge
+                title={entityData.title as string}
+                seniority={(entityData.properties as Record<string, unknown> | null)?.seniority as string | undefined}
+              />
+            ) : null} />
             <PropertyRow label="Phone" value={entityData.phone as string} />
           </div>
         )}
         {entityData && type === "account" && (
           <div>
             <PropertyRow label="Domain" value={entityData.domain as string} />
-            <PropertyRow label="Industry" value={entityData.industry as string} />
+            <PropertyRow label="Industry" value={entityData.industry ? <IndustryBadge value={entityData.industry as string} /> : null} />
             <PropertyRow label="Size" value={entityData.size as string} />
             <PropertyRow label="Revenue" value={entityData.revenue as string} />
             <PropertyRow label="Score" value={String(entityData.score ?? "—")} />
