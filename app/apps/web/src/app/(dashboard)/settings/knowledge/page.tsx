@@ -6,11 +6,14 @@ import { SettingsHeader } from "@/components/ui/settings-header";
 import { Input, Textarea } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { KNOWLEDGE_STAGES } from "@/lib/knowledge/stages";
 
 interface KnowledgeTopic {
   id: string;
   topic: string;
   content: string;
+  /** Consumption stages (lib/knowledge/stages.ts) — drives the grouping below. */
+  stages: string[];
 }
 
 export default function KnowledgeSettingsPage() {
@@ -26,11 +29,14 @@ export default function KnowledgeSettingsPage() {
         const data = await res.json();
         // API speaks `title`; this page's local shape is `topic`.
         setTopics(
-          (data.knowledge || []).map((k: { id: string; title?: string; topic?: string; content?: string }) => ({
-            id: k.id,
-            topic: k.title ?? k.topic ?? "",
-            content: k.content ?? "",
-          })),
+          (data.knowledge || []).map(
+            (k: { id: string; title?: string; topic?: string; content?: string; stages?: string[] }) => ({
+              id: k.id,
+              topic: k.title ?? k.topic ?? "",
+              content: k.content ?? "",
+              stages: Array.isArray(k.stages) ? k.stages : [],
+            }),
+          ),
         );
       }
     } catch {
@@ -79,8 +85,28 @@ export default function KnowledgeSettingsPage() {
   }, [fetchTopics]);
 
   async function addTopic() {
-    const newTopic = { id: "temp-" + Date.now(), topic: "", content: "" };
+    const newTopic = { id: "temp-" + Date.now(), topic: "", content: "", stages: ["global"] };
     setTopics([...topics, newTopic]);
+  }
+
+  /** Toggle a consumption stage on an entry — persisted immediately for
+   * saved entries; temp rows carry it into their first POST. */
+  async function toggleStage(topic: KnowledgeTopic, stageKey: string) {
+    const next = topic.stages.includes(stageKey)
+      ? topic.stages.filter((s) => s !== stageKey)
+      : [...topic.stages, stageKey];
+    setTopics((prev) => prev.map((t) => (t.id === topic.id ? { ...t, stages: next } : t)));
+    if (!topic.id.startsWith("temp-")) {
+      try {
+        await fetch("/api/settings/knowledge", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: topic.id, stages: next }),
+        });
+      } catch {
+        setError("Failed to update stages");
+      }
+    }
   }
 
   async function saveTopic(topic: KnowledgeTopic) {
@@ -93,7 +119,7 @@ export default function KnowledgeSettingsPage() {
         const res = await fetch("/api/settings/knowledge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: topic.topic, content: topic.content }),
+          body: JSON.stringify({ title: topic.topic, content: topic.content, stages: topic.stages }),
         });
         if (res.ok) {
           await fetchTopics();
@@ -104,7 +130,7 @@ export default function KnowledgeSettingsPage() {
         await fetch("/api/settings/knowledge", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: topic.id, title: topic.topic, content: topic.content }),
+          body: JSON.stringify({ id: topic.id, title: topic.topic, content: topic.content, stages: topic.stages }),
         });
       }
     } catch {
@@ -145,6 +171,87 @@ export default function KnowledgeSettingsPage() {
 
   function updateTopic(id: string, field: "topic" | "content", value: string) {
     setTopics(topics.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  }
+
+  function renderTopicCard(topic: KnowledgeTopic) {
+    return (
+      <Card key={topic.id}>
+        <CardBody>
+          {/* N14 — unsaved indicator. Topics created via "+ Add"
+              keep a `temp-` id until the first successful POST. */}
+          {topic.id.startsWith("temp-") && (
+            <span
+              className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{
+                background: "var(--color-warning-soft)",
+                color: "var(--color-warning)",
+              }}
+            >
+              Unsaved
+            </span>
+          )}
+          <Input
+            label="Topic"
+            value={topic.topic}
+            onChange={(e) => updateTopic(topic.id, "topic", e.target.value)}
+            placeholder="Title of topic"
+          />
+          <div className="mt-3">
+            <Textarea
+              label="Content"
+              value={topic.content}
+              onChange={(e) => updateTopic(topic.id, "content", e.target.value)}
+              placeholder="Content of topic"
+              rows={4}
+            />
+          </div>
+          {/* Consumption stages — where the product pulls this entry. */}
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-[var(--color-text-tertiary)]">Used in:</span>
+            {KNOWLEDGE_STAGES.map((s) => {
+              const active = topic.stages.includes(s.key);
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => toggleStage(topic, s.key)}
+                  title={s.description}
+                  className="rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors"
+                  style={
+                    active
+                      ? {
+                          borderColor: "var(--color-text-secondary)",
+                          color: "var(--color-text-primary)",
+                          background: "var(--color-bg-hover)",
+                        }
+                      : {
+                          borderColor: "var(--color-border)",
+                          color: "var(--color-text-tertiary)",
+                        }
+                  }
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="gradient"
+              size="sm"
+              onClick={() => saveTopic(topic)}
+              disabled={saving === topic.id || !topic.topic.trim() || !topic.content.trim()}
+              loading={saving === topic.id}
+            >
+              {saving === topic.id ? "Saving..." : "Save changes"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => removeTopic(topic.id)}>
+              Remove
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+    );
   }
 
   return (
@@ -199,57 +306,27 @@ export default function KnowledgeSettingsPage() {
             </div>
           </Card>
         ) : (
-          topics.map((topic) => (
-            <Card key={topic.id}>
-              <CardBody>
-                {/* N14 — unsaved indicator. Topics created via "+ Add"
-                    keep a `temp-` id until the first successful POST.
-                    The id never renders, but a small badge tells the
-                    user the row only exists locally so they don't
-                    assume "Add" already saved it. */}
-                {topic.id.startsWith("temp-") && (
-                  <span
-                    className="mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      background: "var(--color-warning-soft)",
-                      color: "var(--color-warning)",
-                    }}
-                  >
-                    Unsaved
-                  </span>
-                )}
-                <Input
-                  label="Topic"
-                  value={topic.topic}
-                  onChange={(e) => updateTopic(topic.id, "topic", e.target.value)}
-                  placeholder="Title of topic"
-                />
-                <div className="mt-3">
-                  <Textarea
-                    label="Content"
-                    value={topic.content}
-                    onChange={(e) => updateTopic(topic.id, "content", e.target.value)}
-                    placeholder="Content of topic"
-                    rows={4}
-                  />
+          // Organised by CONSUMPTION STAGE (where the product pulls the
+          // entry), not by topic. An entry shows under its primary stage;
+          // the chips on each card curate all its stages.
+          KNOWLEDGE_STAGES.map((stage) => {
+            const inStage = topics.filter((t) => (t.stages[0] ?? "global") === stage.key);
+            if (inStage.length === 0) return null;
+            return (
+              <section key={stage.key}>
+                <div className="mb-2 mt-6 first:mt-0">
+                  <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    {stage.label}
+                    <span className="ml-2 text-[11px] font-normal text-[var(--color-text-tertiary)]">
+                      {inStage.length}
+                    </span>
+                  </h2>
+                  <p className="text-[12px] text-[var(--color-text-tertiary)]">{stage.description}</p>
                 </div>
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    variant="gradient"
-                    size="sm"
-                    onClick={() => saveTopic(topic)}
-                    disabled={saving === topic.id || !topic.topic.trim() || !topic.content.trim()}
-                    loading={saving === topic.id}
-                  >
-                    {saving === topic.id ? "Saving..." : "Save changes"}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => removeTopic(topic.id)}>
-                    Remove
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
-          ))
+                <div className="space-y-4">{inStage.map((topic) => renderTopicCard(topic))}</div>
+              </section>
+            );
+          })
         )}
       </div>
 

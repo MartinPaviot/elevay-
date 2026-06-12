@@ -4,6 +4,7 @@ import { knowledgeEntries } from "@/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { embedKnowledgeEntry } from "@/lib/knowledge/retrieval";
+import { effectiveStages, sanitizeStages } from "@/lib/knowledge/stages";
 
 const STALENESS_DAYS = 90;
 
@@ -41,6 +42,8 @@ export async function GET() {
         title: r.title,
         category: r.category,
         content: r.content,
+        // Effective consumption stages (stored when curated, else derived).
+        stages: effectiveStages(r.stages, r.category, r.title),
         scope: r.scope,
         isEditable:
           r.createdBy === authCtx.userId || authCtx.role === "admin",
@@ -66,7 +69,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { title, content, category, scope } = body;
+    const { title, content, category, scope, stages } = body;
 
     if (!title?.trim() || !content?.trim()) {
       return Response.json(
@@ -105,6 +108,7 @@ export async function POST(req: Request) {
         title: title.trim(),
         category: cat,
         content: content.trim(),
+        stages: sanitizeStages(stages),
         contentHash,
       })
       .returning();
@@ -137,11 +141,12 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { id, title, content, category } = body as {
+    const { id, title, content, category, stages } = body as {
       id?: string;
       title?: string;
       content?: string;
       category?: string;
+      stages?: unknown;
     };
 
     if (!id) {
@@ -173,6 +178,8 @@ export async function PUT(req: Request) {
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title.trim();
     if (category !== undefined) updates.category = category;
+    // Stage curation: an explicit array (even empty = "back to derived").
+    if (Array.isArray(stages)) updates.stages = sanitizeStages(stages);
 
     let contentChanged = false;
     if (content !== undefined) {

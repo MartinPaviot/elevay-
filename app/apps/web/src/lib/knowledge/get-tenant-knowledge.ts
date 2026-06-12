@@ -1,12 +1,19 @@
 import { db } from "@/db";
 import { knowledgeEntries } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import {
+  effectiveStages,
+  entryMatchesStage,
+  type KnowledgeStage,
+} from "./stages";
 
 export interface TenantKnowledgeEntry {
   id: string;
   topic: string;
   content: string;
   category: string;
+  /** Effective consumption stages (stored when curated, else derived). */
+  stages: KnowledgeStage[];
 }
 
 /**
@@ -29,6 +36,7 @@ export async function getTenantKnowledge(
         title: knowledgeEntries.title,
         content: knowledgeEntries.content,
         category: knowledgeEntries.category,
+        stages: knowledgeEntries.stages,
       })
       .from(knowledgeEntries)
       .where(
@@ -47,10 +55,11 @@ export async function getTenantKnowledge(
         topic: r.title,
         content: r.content,
         category: r.category,
+        stages: effectiveStages(r.stages, r.category, r.title),
       }));
     }
   } catch {
-    // Table may not exist yet — fall through to legacy
+    // Table (or the stages column) may not exist yet — fall through to legacy
   }
 
   // Legacy fallback: read from settings.knowledge JSONB
@@ -63,10 +72,29 @@ export async function getTenantKnowledge(
       topic: k.topic,
       content: k.content,
       category: "custom",
+      stages: effectiveStages([], "custom", k.topic),
     }));
   } catch {
     return [];
   }
+}
+
+/**
+ * The entries one product STAGE should consume — stored/derived stages,
+ * `global` entries included by default (they are wanted everywhere).
+ * This is the precision seam: TAM pulls "sourcing", script generation
+ * pulls "cold_call", email drafting pulls "outreach" — instead of every
+ * consumer ingesting the whole knowledge base.
+ */
+export async function getTenantKnowledgeForStage(
+  tenantId: string,
+  stage: KnowledgeStage,
+  options?: { limit?: number; includeGlobal?: boolean },
+): Promise<TenantKnowledgeEntry[]> {
+  const all = await getTenantKnowledge(tenantId, { limit: options?.limit ?? 50 });
+  return all.filter((e) =>
+    entryMatchesStage(e.stages, stage, { includeGlobal: options?.includeGlobal }),
+  );
 }
 
 /**

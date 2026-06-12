@@ -61,23 +61,25 @@ export function filterGroundedProblems(
 const norm = (s?: string | null) => (s ?? "").trim().toLowerCase();
 
 /**
- * The founder's editable cold-call playbook, read from tenant Knowledge
- * (Settings → Knowledge): entries with category "process" whose title
- * starts with "Cold call". Returns a capped prompt block, or "" when no
- * such entries exist — the hardcoded methodology alone then governs.
- * The block refines wording/phases; the grounding rules (evidence
- * citations, fail-closed filter) always take precedence. Pure + tested.
+ * Format the founder's editable cold-call playbook into a capped prompt
+ * block. The caller passes the STAGE-selected entries (the "cold_call"
+ * pull from tenant Knowledge, global excluded — company context already
+ * rides in via tenant settings). "" when nothing is given — the hardcoded
+ * methodology alone then governs. The block refines wording/phases; the
+ * grounding rules (evidence citations, fail-closed filter) always take
+ * precedence. Pure + tested.
  */
 export function buildPlaybookBlock(
-  entries: Array<{ topic: string; content: string; category: string }>,
+  entries: Array<{ topic: string; content: string }>,
   cap = 3500,
 ): string {
-  const rules = entries.filter(
-    (e) => e.category === "process" && /^cold[\s-]?call/i.test(e.topic.trim()),
-  );
-  if (rules.length === 0) return "";
+  if (entries.length === 0) return "";
+  const seen = new Set<string>();
   let body = "";
-  for (const e of rules) {
+  for (const e of entries) {
+    const key = e.topic.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     const next = `\n- ${e.topic.trim()}: ${e.content.replace(/\s+/g, " ").trim()}`;
     if (body.length + next.length > cap) break;
     body += next;
@@ -170,12 +172,15 @@ export async function generateCallScript(
 
   const s = await getTenantSettings(tenantId);
 
-  // Founder playbook from tenant Knowledge — fail-soft: absent table,
-  // empty tenant or read error all degrade to the hardcoded methodology.
+  // Founder playbook from tenant Knowledge — the "cold_call" stage pull
+  // (lib/knowledge/stages.ts). Fail-soft: absent table, empty tenant or
+  // read error all degrade to the hardcoded methodology.
   let playbookBlock = "";
   try {
-    const { getTenantKnowledge } = await import("@/lib/knowledge/get-tenant-knowledge");
-    playbookBlock = buildPlaybookBlock(await getTenantKnowledge(tenantId));
+    const { getTenantKnowledgeForStage } = await import("@/lib/knowledge/get-tenant-knowledge");
+    playbookBlock = buildPlaybookBlock(
+      await getTenantKnowledgeForStage(tenantId, "cold_call", { includeGlobal: false }),
+    );
   } catch {
     playbookBlock = "";
   }

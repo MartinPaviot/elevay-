@@ -21,6 +21,7 @@ import {
   pickCandidateLinks,
   pageToText,
 } from "@/lib/knowledge/company-intake";
+import { isKnowledgeStage } from "@/lib/knowledge/stages";
 
 const FETCHED = ["https://pilae.ch", "https://pilae.ch/about"];
 const LONG = "x".repeat(120);
@@ -40,6 +41,7 @@ describe("validateIntakeEntries", () => {
     expect(out).toHaveLength(1);
     expect(out[0].category).toBe("product"); // forced from the canonical map
     expect(out[0].sourceUrls).toEqual(["https://pilae.ch"]);
+    expect(out[0].stages).toEqual(["global"]); // from the section map
   });
 
   it("drops unknown titles, short/oversized content, and duplicate sections", () => {
@@ -60,6 +62,13 @@ describe("validateIntakeEntries", () => {
   it("every canonical section has a valid knowledge category", () => {
     const allowed = new Set(["icp", "competitors", "objections", "product", "process", "context", "custom"]);
     for (const s of INTAKE_SECTIONS) expect(allowed.has(s.category), s.title).toBe(true);
+  });
+
+  it("every canonical section flows to at least one valid stage", () => {
+    for (const s of INTAKE_SECTIONS) {
+      expect(s.stages.length, s.title).toBeGreaterThan(0);
+      for (const st of s.stages) expect(isKnowledgeStage(st), `${s.title}:${st}`).toBe(true);
+    }
   });
 });
 

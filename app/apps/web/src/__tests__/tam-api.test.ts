@@ -70,6 +70,7 @@ vi.mock("@/lib/icp/apollo-technology-uids", () => ({
 
 vi.mock("@/lib/knowledge/get-tenant-knowledge", () => ({
   getTenantKnowledge: vi.fn(() => Promise.resolve([])),
+  getTenantKnowledgeForStage: vi.fn(() => Promise.resolve([])),
   formatKnowledgeBlock: vi.fn(() => ""),
 }));
 

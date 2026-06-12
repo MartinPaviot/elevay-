@@ -24,7 +24,7 @@ import {
   parseSizeRange,
 } from "@/lib/config/tenant-settings";
 import { getIcpPersonTargeting } from "@/lib/icp/person-targeting";
-import { getTenantKnowledge, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
+import { getTenantKnowledgeForStage, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
 import { sizesToApolloRanges } from "@/lib/config/icp-constants";
 import { runPerCompanyPipeline } from "@/lib/tam-stream/per-company";
 import { inngest } from "@/inngest/client";
@@ -584,7 +584,8 @@ async function planStrategies(args: {
     ? sizesToApolloRanges(settings.targetCompanySizes).join(", ")
     : "";
 
-  const knowledgeEntries = await getTenantKnowledge(tenantId);
+  // Stage pull: TAM building consumes the "sourcing" knowledge (+ global).
+  const knowledgeEntries = await getTenantKnowledgeForStage(tenantId, "sourcing");
   const knowledgeBlock = formatKnowledgeBlock(knowledgeEntries);
 
   const businessContext = [

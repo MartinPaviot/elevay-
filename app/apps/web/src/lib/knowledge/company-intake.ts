@@ -34,18 +34,21 @@ import { anthropic } from "@/lib/ai/ai-provider";
 import { assertPublicUrl } from "@/lib/infra/ssrf-guard";
 import { embedKnowledgeEntry } from "./retrieval";
 import logger from "@/lib/observability/logger";
+import type { KnowledgeStage } from "./stages";
 
-/** Canonical FDAE sections — stable titles (idempotent upserts) + forced category. */
-export const INTAKE_SECTIONS: ReadonlyArray<{ title: string; category: string; hint: string }> = [
-  { title: "Company — Identity & legal", category: "context", hint: "Legal entity, locations, founding facts, who is behind the company." },
-  { title: "Company — Offer & packaging", category: "product", hint: "What is sold, the modules/services, how it is delivered." },
-  { title: "Company — Pricing & commercial model", category: "product", hint: "Pricing structure, billing currency/shape, contract model — only as stated." },
-  { title: "Company — Customers & segments served", category: "icp", hint: "Observed customers, segments, use cases (logos, testimonials, case studies)." },
-  { title: "Company — Proof points", category: "context", hint: "Numbers, SLAs, named customers, awards — exactly as the site claims them." },
-  { title: "Company — Differentiation & alternatives", category: "competitors", hint: "Positioning, what it replaces, competitors/alternatives mentioned or implied." },
-  { title: "Company — Sales process & CTAs", category: "process", hint: "How a deal starts: CTAs, demo/review offers, onboarding steps described." },
-  { title: "Company — Delivery, support & SLAs", category: "process", hint: "Support model, response times, operational promises." },
-  { title: "Company — Compliance & hosting posture", category: "context", hint: "Data residency, certifications CLAIMED (or explicitly not claimed), legal posture." },
+/** Canonical FDAE sections — stable titles (idempotent upserts), forced
+ * category, and the default consumption stages (lib/knowledge/stages.ts)
+ * each section flows to. Founder-editable afterwards. */
+export const INTAKE_SECTIONS: ReadonlyArray<{ title: string; category: string; hint: string; stages: KnowledgeStage[] }> = [
+  { title: "Company — Identity & legal", category: "context", hint: "Legal entity, locations, founding facts, who is behind the company.", stages: ["global"] },
+  { title: "Company — Offer & packaging", category: "product", hint: "What is sold, the modules/services, how it is delivered.", stages: ["global"] },
+  { title: "Company — Pricing & commercial model", category: "product", hint: "Pricing structure, billing currency/shape, contract model — only as stated.", stages: ["objections", "meetings"] },
+  { title: "Company — Customers & segments served", category: "icp", hint: "Observed customers, segments, use cases (logos, testimonials, case studies).", stages: ["sourcing"] },
+  { title: "Company — Proof points", category: "context", hint: "Numbers, SLAs, named customers, awards — exactly as the site claims them.", stages: ["global"] },
+  { title: "Company — Differentiation & alternatives", category: "competitors", hint: "Positioning, what it replaces, competitors/alternatives mentioned or implied.", stages: ["objections", "outreach"] },
+  { title: "Company — Sales process & CTAs", category: "process", hint: "How a deal starts: CTAs, demo/review offers, onboarding steps described.", stages: ["cold_call", "meetings"] },
+  { title: "Company — Delivery, support & SLAs", category: "process", hint: "Support model, response times, operational promises.", stages: ["meetings", "objections"] },
+  { title: "Company — Compliance & hosting posture", category: "context", hint: "Data residency, certifications CLAIMED (or explicitly not claimed), legal posture.", stages: ["global"] },
 ];
 
 const SECTION_BY_TITLE = new Map(INTAKE_SECTIONS.map((s) => [s.title, s]));
@@ -60,6 +63,8 @@ export interface IntakeEntry {
   category: string;
   content: string;
   sourceUrls: string[];
+  /** Default consumption stages, from the section map. */
+  stages: KnowledgeStage[];
 }
 
 export interface IntakeGap {
@@ -272,7 +277,7 @@ export function validateIntakeEntries(
       ? [...new Set(e.sourceUrls.filter((u): u is string => typeof u === "string" && allowedUrls.has(u)))]
       : [];
     seen.add(title);
-    out.push({ title, category: section.category, content, sourceUrls });
+    out.push({ title, category: section.category, content, sourceUrls, stages: [...section.stages] });
   }
   return out;
 }
@@ -345,7 +350,7 @@ async function upsertIntakeEntry(
     if (existing.contentHash === contentHash) return "unchanged";
     await db
       .update(knowledgeEntries)
-      .set({ content: content.trim(), category: entry.category, contentHash, isActive: true, updatedAt: new Date() })
+      .set({ content: content.trim(), category: entry.category, stages: entry.stages, contentHash, isActive: true, updatedAt: new Date() })
       .where(eq(knowledgeEntries.id, existing.id));
     embedKnowledgeEntry(tenantId, existing.id, entry.title, content).catch(() => {});
     return "updated";
@@ -360,6 +365,7 @@ async function upsertIntakeEntry(
       title: entry.title,
       category: entry.category,
       content: content.trim(),
+      stages: entry.stages,
       contentHash,
     })
     .returning();

@@ -18,7 +18,7 @@ import {
   type OrgSearchOrganization,
 } from "@/lib/integrations/apollo-client";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
-import { getTenantKnowledge, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
+import { getTenantKnowledgeForStage, formatKnowledgeBlock } from "@/lib/knowledge/get-tenant-knowledge";
 import { sizesToApolloRanges } from "@/lib/config/icp-constants";
 import { flatFiltersToHardApollo } from "@/lib/icp/flat-filters-to-apollo";
 
@@ -163,8 +163,8 @@ export async function POST(req: Request) {
       existing.map((c) => c.domain?.toLowerCase()).filter(Boolean)
     );
 
-    // Build context for the LLM
-    const knowledgeEntries = await getTenantKnowledge(authCtx.tenantId);
+    // Build context for the LLM — "sourcing" stage knowledge (+ global).
+    const knowledgeEntries = await getTenantKnowledgeForStage(authCtx.tenantId, "sourcing");
     const knowledgeBlock = formatKnowledgeBlock(knowledgeEntries);
     const businessContext = [
       settings.onboardingCompanyName && `Company: ${settings.onboardingCompanyName}`,
