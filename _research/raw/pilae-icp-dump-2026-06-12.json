@@ -1,0 +1,995 @@
+{
+  "dumpedAt": "2026-06-12T11:41:10.081Z",
+  "tenant": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+  "icps": [
+    {
+      "id": "13ae029d-50f1-49aa-a609-345f0d7a8471",
+      "tenant_id": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+      "name": "Scale-up Tech / SaaS B2B",
+      "description": "Éditeur logiciel / produit digital, 50-150 FTE (cœur ; widen 30-200), Suisse romande + France, founder/CTO-led, avec dépense SaaS remplaçable structurelle.",
+      "status": "active",
+      "priority": 0,
+      "metadata": {
+        "source": "pilae_icp_v2"
+      },
+      "created_by_user_id": null,
+      "created_at": "2026-06-02T05:44:37.096Z",
+      "updated_at": "2026-06-10T23:08:08.939Z",
+      "deleted_at": "2026-06-10T23:08:08.939Z"
+    },
+    {
+      "id": "0625310d-c736-4428-8288-30ac87beaf3d",
+      "tenant_id": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+      "name": "Suisse romande — large",
+      "description": "Le filet de sourcing : tout le tissu romand 100-1000 FTE, tous secteurs.",
+      "status": "active",
+      "priority": 0,
+      "metadata": {
+        "uiState": {
+          "keywords": [],
+          "importance": {
+            "industries": "nice",
+            "geographies": "must",
+            "companySizes": "important"
+          },
+          "industries": [
+            "Information Technology & Services",
+            "Higher Education",
+            "Nonprofit Organization Management",
+            "Hospital & Health Care",
+            "Research",
+            "Individual & Family Services",
+            "Management Consulting",
+            "Banking",
+            "Consumer Goods",
+            "Real Estate",
+            "Medical Devices",
+            "Financial Services",
+            "Machinery",
+            "Civic & Social Organization",
+            "Retail",
+            "Government Administration",
+            "Construction",
+            "Investment Management",
+            "Architecture & Planning",
+            "Primary/Secondary Education",
+            "Hospitality",
+            "Professional Training & Coaching",
+            "Logistics & Supply Chain",
+            "Electrical/Electronic Manufacturing",
+            "International Affairs",
+            "Capital Markets",
+            "Marketing & Advertising",
+            "Luxury Goods & Jewelry",
+            "Automotive",
+            "Staffing & Recruiting",
+            "Wholesale",
+            "Information Services",
+            "Transportation/Trucking/Railroad",
+            "Health, Wellness & Fitness",
+            "Sports",
+            "Mechanical or Industrial Engineering",
+            "Environmental Services",
+            "Media Production",
+            "Food Production",
+            "Maritime",
+            "Utilities",
+            "Restaurants",
+            "Aviation & Aerospace",
+            "Education Management",
+            "Chemicals",
+            "Philanthropy",
+            "International Trade & Development",
+            "Legal Services",
+            "Oil & Energy",
+            "Mining & Metals",
+            "Facilities Services",
+            "Recreational Facilities & Services",
+            "Events Services",
+            "Food & Beverages",
+            "Civil Engineering",
+            "Telecommunications",
+            "Airlines/Aviation",
+            "Leisure, Travel & Tourism"
+          ],
+          "revenueMax": null,
+          "revenueMin": null,
+          "geographies": [
+            "Vaud",
+            "Geneva",
+            "Neuchâtel",
+            "Fribourg",
+            "Valais",
+            "Jura",
+            "Suisse romande",
+            "Canton of Neuchatel",
+            "Canton of Fribourg",
+            "Wallis"
+          ],
+          "seniorities": [],
+          "companySizes": [
+            "1-10",
+            "11-50",
+            "51-200",
+            "201-500",
+            "501-1,000"
+          ],
+          "hiringTitles": [],
+          "personTitles": [
+            "CEO",
+            "Founder",
+            "Owner",
+            "Managing Director",
+            "General Manager",
+            "President",
+            "Executive Director",
+            "Secretary General",
+            "CTO",
+            "CIO",
+            "IT Director",
+            "Head of IT",
+            "IT Manager"
+          ],
+          "technologies": [],
+          "minJobOpenings": null,
+          "totalFundingMax": null,
+          "totalFundingMin": null
+        },
+        "sourcingFilters": {
+          "excludeGeographies": [],
+          "fundingRecencyDays": null
+        }
+      },
+      "created_by_user_id": null,
+      "created_at": "2026-06-11T13:40:15.361Z",
+      "updated_at": "2026-06-12T07:45:04.035Z",
+      "deleted_at": null
+    },
+    {
+      "id": "b87a1a6e-58b9-4e4b-ae79-1ed12acde9d0",
+      "tenant_id": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+      "name": "Finance suisse tech-native",
+      "description": "Services financiers hors banque tier-1 / privée traditionnelle — fintech, crypto/DLT, gestion d'actifs digitale, 30-150 FTE, Genève/Vaud/Zoug/Zurich, founder/CTO-led.",
+      "status": "active",
+      "priority": 1,
+      "metadata": {
+        "source": "pilae_icp_v2"
+      },
+      "created_by_user_id": null,
+      "created_at": "2026-06-02T05:44:38.016Z",
+      "updated_at": "2026-06-10T23:08:08.939Z",
+      "deleted_at": "2026-06-10T23:08:08.939Z"
+    },
+    {
+      "id": "cc162300-9f8c-4a53-a75a-b60a97055f0e",
+      "tenant_id": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+      "name": "Coeur romand — fondations, santé & parapublic",
+      "description": null,
+      "status": "active",
+      "priority": 1,
+      "metadata": {
+        "uiState": {
+          "keywords": [
+            "fondation"
+          ],
+          "importance": {},
+          "industries": [
+            "Hospital & Health Care",
+            "Non-Profit Organization Management",
+            "Government Administration",
+            "Education Management",
+            "Insurance"
+          ],
+          "revenueMax": null,
+          "revenueMin": null,
+          "geographies": [
+            "Vaud",
+            "Geneva",
+            "Neuchâtel",
+            "Fribourg",
+            "Valais",
+            "Suisse romande"
+          ],
+          "seniorities": [],
+          "companySizes": [
+            "51-200",
+            "201-500",
+            "501-1,000"
+          ],
+          "hiringTitles": [],
+          "personTitles": [],
+          "technologies": [],
+          "minJobOpenings": null,
+          "totalFundingMax": null,
+          "totalFundingMin": null
+        },
+        "sourcingFilters": {
+          "excludeGeographies": [],
+          "fundingRecencyDays": null
+        }
+      },
+      "created_by_user_id": "e98c45b9-4080-4000-abaf-e8b4a884ca9b",
+      "created_at": "2026-06-11T13:03:51.411Z",
+      "updated_at": "2026-06-11T14:00:07.668Z",
+      "deleted_at": "2026-06-11T14:00:07.668Z"
+    },
+    {
+      "id": "b50ae8c1-a58e-4cc8-8c5f-642d243fcd4f",
+      "tenant_id": "47dca783-dac0-45a5-85cb-d217b2a3174d",
+      "name": "France — prospection initiale",
+      "description": "La vague de prospection française d'origine (Île-de-France en tête) — majoritairement hors cœur de cible.",
+      "status": "active",
+      "priority": 2,
+      "metadata": {
+        "uiState": {
+          "keywords": [],
+          "importance": {
+            "industries": "nice",
+            "geographies": "must",
+            "companySizes": "important"
+          },
+          "industries": [
+            "Information Technology & Services",
+            "Financial Services",
+            "Professional Training & Coaching",
+            "Management Consulting",
+            "Environmental Services",
+            "Higher Education",
+            "Construction",
+            "Health, Wellness & Fitness",
+            "Automotive",
+            "Marketing & Advertising"
+          ],
+          "revenueMax": null,
+          "revenueMin": null,
+          "geographies": [
+            "France",
+            "Île-de-France",
+            "Auvergne-Rhône-Alpes",
+            "Occitanie"
+          ],
+          "seniorities": [],
+          "companySizes": [
+            "1-10",
+            "11-50",
+            "51-200",
+            "201-500"
+          ],
+          "hiringTitles": [],
+          "personTitles": [
+            "CEO",
+            "Founder",
+            "Owner",
+            "Managing Director",
+            "General Manager",
+            "President",
+            "Executive Director",
+            "Secretary General",
+            "CTO",
+            "CIO",
+            "IT Director",
+            "Head of IT",
+            "IT Manager"
+          ],
+          "technologies": [],
+          "minJobOpenings": null,
+          "totalFundingMax": null,
+          "totalFundingMin": null
+        },
+        "sourcingFilters": {
+          "excludeGeographies": [],
+          "fundingRecencyDays": null
+        }
+      },
+      "created_by_user_id": null,
+      "created_at": "2026-06-11T13:52:51.372Z",
+      "updated_at": "2026-06-12T07:45:03.381Z",
+      "deleted_at": null
+    }
+  ],
+  "criteriaByIcp": {
+    "Scale-up Tech / SaaS B2B": [
+      {
+        "field_key": "employee_count",
+        "operator": "between",
+        "value": {
+          "max": 150,
+          "min": 50
+        }
+      },
+      {
+        "field_key": "geography",
+        "operator": "in",
+        "value": [
+          "Vaud",
+          "Geneva",
+          "Neuchâtel",
+          "Fribourg",
+          "Valais",
+          "Île-de-France",
+          "Auvergne-Rhône-Alpes",
+          "Occitanie",
+          "Nouvelle-Aquitaine"
+        ]
+      },
+      {
+        "field_key": "industry",
+        "operator": "in",
+        "value": [
+          "Computer Software",
+          "Information Technology and Services",
+          "Internet"
+        ]
+      },
+      {
+        "field_key": "keywords",
+        "operator": "in",
+        "value": [
+          "SaaS",
+          "B2B",
+          "API",
+          "cloud-native",
+          "platform"
+        ]
+      },
+      {
+        "field_key": "latest_funding_stage",
+        "operator": "in",
+        "value": [
+          "seed",
+          "series_a",
+          "series_b"
+        ]
+      },
+      {
+        "field_key": "person_seniorities",
+        "operator": "in",
+        "value": [
+          "c_suite",
+          "founder",
+          "vp",
+          "director"
+        ]
+      },
+      {
+        "field_key": "person_titles",
+        "operator": "in",
+        "value": [
+          "CTO",
+          "Chief Technology Officer",
+          "VP Engineering",
+          "Head of Engineering",
+          "Head of Platform",
+          "Head of Infrastructure",
+          "Co-Founder",
+          "Founder",
+          "CEO"
+        ]
+      },
+      {
+        "field_key": "technologies",
+        "operator": "in",
+        "value": [
+          "Datadog",
+          "New Relic",
+          "Snowflake",
+          "Okta",
+          "Auth0",
+          "Segment",
+          "Vercel",
+          "LaunchDarkly",
+          "PagerDuty",
+          "Looker",
+          "Tableau",
+          "MongoDB Atlas",
+          "Confluent"
+        ]
+      }
+    ],
+    "Suisse romande — large": [
+      {
+        "field_key": "employee_count",
+        "operator": "between",
+        "value": {
+          "max": 1000,
+          "min": 1
+        }
+      },
+      {
+        "field_key": "geography",
+        "operator": "in",
+        "value": [
+          "Vaud",
+          "Geneva",
+          "Neuchâtel",
+          "Fribourg",
+          "Valais",
+          "Jura",
+          "Suisse romande",
+          "Canton of Neuchatel",
+          "Canton of Fribourg",
+          "Wallis"
+        ]
+      },
+      {
+        "field_key": "industry",
+        "operator": "in",
+        "value": [
+          "Information Technology & Services",
+          "Higher Education",
+          "Nonprofit Organization Management",
+          "Hospital & Health Care",
+          "Research",
+          "Individual & Family Services",
+          "Management Consulting",
+          "Banking",
+          "Consumer Goods",
+          "Real Estate",
+          "Medical Devices",
+          "Financial Services",
+          "Machinery",
+          "Civic & Social Organization",
+          "Retail",
+          "Government Administration",
+          "Construction",
+          "Investment Management",
+          "Architecture & Planning",
+          "Primary/Secondary Education",
+          "Hospitality",
+          "Professional Training & Coaching",
+          "Logistics & Supply Chain",
+          "Electrical/Electronic Manufacturing",
+          "International Affairs",
+          "Capital Markets",
+          "Marketing & Advertising",
+          "Luxury Goods & Jewelry",
+          "Automotive",
+          "Staffing & Recruiting",
+          "Wholesale",
+          "Information Services",
+          "Transportation/Trucking/Railroad",
+          "Health, Wellness & Fitness",
+          "Sports",
+          "Mechanical or Industrial Engineering",
+          "Environmental Services",
+          "Media Production",
+          "Food Production",
+          "Maritime",
+          "Utilities",
+          "Restaurants",
+          "Aviation & Aerospace",
+          "Education Management",
+          "Chemicals",
+          "Philanthropy",
+          "International Trade & Development",
+          "Legal Services",
+          "Oil & Energy",
+          "Mining & Metals",
+          "Facilities Services",
+          "Recreational Facilities & Services",
+          "Events Services",
+          "Food & Beverages",
+          "Civil Engineering",
+          "Telecommunications",
+          "Airlines/Aviation",
+          "Leisure, Travel & Tourism"
+        ]
+      },
+      {
+        "field_key": "person_titles",
+        "operator": "in",
+        "value": [
+          "CEO",
+          "Founder",
+          "Owner",
+          "Managing Director",
+          "General Manager",
+          "President",
+          "Executive Director",
+          "Secretary General",
+          "CTO",
+          "CIO",
+          "IT Director",
+          "Head of IT",
+          "IT Manager"
+        ]
+      }
+    ],
+    "Finance suisse tech-native": [
+      {
+        "field_key": "employee_count",
+        "operator": "between",
+        "value": {
+          "max": 150,
+          "min": 30
+        }
+      },
+      {
+        "field_key": "geography",
+        "operator": "in",
+        "value": [
+          "Geneva",
+          "Vaud",
+          "Zug",
+          "Zurich"
+        ]
+      },
+      {
+        "field_key": "industry",
+        "operator": "in",
+        "value": [
+          "Financial Services",
+          "Banking",
+          "Investment Management",
+          "Capital Markets"
+        ]
+      },
+      {
+        "field_key": "keywords",
+        "operator": "in",
+        "value": [
+          "fintech",
+          "crypto",
+          "blockchain",
+          "digital assets",
+          "tokenization",
+          "DLT",
+          "wealthtech",
+          "asset management",
+          "payments",
+          "neobank",
+          "FINMA",
+          "regulated"
+        ]
+      },
+      {
+        "field_key": "latest_funding_stage",
+        "operator": "in",
+        "value": [
+          "seed",
+          "series_a",
+          "series_b"
+        ]
+      },
+      {
+        "field_key": "person_seniorities",
+        "operator": "in",
+        "value": [
+          "c_suite",
+          "founder"
+        ]
+      },
+      {
+        "field_key": "person_titles",
+        "operator": "in",
+        "value": [
+          "CTO",
+          "Co-Founder",
+          "Founder",
+          "CEO",
+          "Head of Engineering",
+          "Head of Infrastructure",
+          "CISO",
+          "Head of Compliance"
+        ]
+      },
+      {
+        "field_key": "technologies",
+        "operator": "in",
+        "value": [
+          "Okta",
+          "Auth0",
+          "AWS",
+          "Azure",
+          "Segment"
+        ]
+      }
+    ],
+    "Coeur romand — fondations, santé & parapublic": [
+      {
+        "field_key": "employee_count",
+        "operator": "between",
+        "value": {
+          "max": 1000,
+          "min": 51
+        }
+      },
+      {
+        "field_key": "geography",
+        "operator": "in",
+        "value": [
+          "Vaud",
+          "Geneva",
+          "Neuchâtel",
+          "Fribourg",
+          "Valais",
+          "Suisse romande"
+        ]
+      },
+      {
+        "field_key": "industry",
+        "operator": "in",
+        "value": [
+          "Hospital & Health Care",
+          "Non-Profit Organization Management",
+          "Government Administration",
+          "Education Management",
+          "Insurance"
+        ]
+      },
+      {
+        "field_key": "keywords",
+        "operator": "in",
+        "value": [
+          "fondation"
+        ]
+      }
+    ],
+    "France — prospection initiale": [
+      {
+        "field_key": "employee_count",
+        "operator": "between",
+        "value": {
+          "max": 500,
+          "min": 1
+        }
+      },
+      {
+        "field_key": "geography",
+        "operator": "in",
+        "value": [
+          "France",
+          "Île-de-France",
+          "Auvergne-Rhône-Alpes",
+          "Occitanie"
+        ]
+      },
+      {
+        "field_key": "industry",
+        "operator": "in",
+        "value": [
+          "Information Technology & Services",
+          "Financial Services",
+          "Professional Training & Coaching",
+          "Management Consulting",
+          "Environmental Services",
+          "Higher Education",
+          "Construction",
+          "Health, Wellness & Fitness",
+          "Automotive",
+          "Marketing & Advertising"
+        ]
+      },
+      {
+        "field_key": "person_titles",
+        "operator": "in",
+        "value": [
+          "CEO",
+          "Founder",
+          "Owner",
+          "Managing Director",
+          "General Manager",
+          "President",
+          "Executive Director",
+          "Secretary General",
+          "CTO",
+          "CIO",
+          "IT Director",
+          "Head of IT",
+          "IT Manager"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "productDescription": "",
+    "salesMotion": "Founder-led sales",
+    "aiTone": "Direct",
+    "primaryChallenge": "",
+    "targetRoles": "CEO, Founder, Owner, Managing Director, General Manager, President, Executive Director, Secretary General, CTO, CIO, IT Director, Head of IT, IT Manager",
+    "targetSeniorities": [],
+    "targetIndustries": [
+      "Information Technology & Services",
+      "Higher Education",
+      "Nonprofit Organization Management",
+      "Hospital & Health Care",
+      "Research",
+      "Individual & Family Services",
+      "Management Consulting",
+      "Banking",
+      "Consumer Goods",
+      "Real Estate",
+      "Medical Devices",
+      "Financial Services",
+      "Machinery",
+      "Civic & Social Organization",
+      "Retail",
+      "Government Administration",
+      "Construction",
+      "Investment Management",
+      "Architecture & Planning",
+      "Primary/Secondary Education",
+      "Hospitality",
+      "Professional Training & Coaching",
+      "Logistics & Supply Chain",
+      "Electrical/Electronic Manufacturing",
+      "International Affairs",
+      "Capital Markets",
+      "Marketing & Advertising",
+      "Luxury Goods & Jewelry",
+      "Automotive",
+      "Staffing & Recruiting",
+      "Wholesale",
+      "Information Services",
+      "Transportation/Trucking/Railroad",
+      "Health, Wellness & Fitness",
+      "Sports",
+      "Mechanical or Industrial Engineering",
+      "Environmental Services",
+      "Media Production",
+      "Food Production",
+      "Maritime",
+      "Utilities",
+      "Restaurants",
+      "Aviation & Aerospace",
+      "Education Management",
+      "Chemicals",
+      "Philanthropy",
+      "International Trade & Development",
+      "Legal Services",
+      "Oil & Energy",
+      "Mining & Metals",
+      "Facilities Services",
+      "Recreational Facilities & Services",
+      "Events Services",
+      "Food & Beverages",
+      "Civil Engineering",
+      "Telecommunications",
+      "Airlines/Aviation",
+      "Leisure, Travel & Tourism"
+    ],
+    "targetGeographies": [
+      "Vaud",
+      "Geneva",
+      "Neuchâtel",
+      "Fribourg",
+      "Valais",
+      "Jura",
+      "Suisse romande",
+      "Canton of Neuchatel",
+      "Canton of Fribourg",
+      "Wallis"
+    ],
+    "targetCompanySizes": [
+      "1-10",
+      "11-50",
+      "51-200",
+      "201-500",
+      "501-1,000"
+    ],
+    "targetKeywords": []
+  },
+  "industryMix": [
+    {
+      "industry": "information technology & services",
+      "n": 75
+    },
+    {
+      "industry": "higher education",
+      "n": 48
+    },
+    {
+      "industry": "nonprofit organization management",
+      "n": 42
+    },
+    {
+      "industry": "hospital & health care",
+      "n": 36
+    },
+    {
+      "industry": "management consulting",
+      "n": 28
+    },
+    {
+      "industry": "individual & family services",
+      "n": 26
+    },
+    {
+      "industry": "research",
+      "n": 25
+    },
+    {
+      "industry": "financial services",
+      "n": 24
+    },
+    {
+      "industry": "real estate",
+      "n": 23
+    },
+    {
+      "industry": "consumer goods",
+      "n": 23
+    },
+    {
+      "industry": "other",
+      "n": 22
+    },
+    {
+      "industry": "banking",
+      "n": 21
+    },
+    {
+      "industry": "civic & social organization",
+      "n": 19
+    },
+    {
+      "industry": "machinery",
+      "n": 19
+    },
+    {
+      "industry": "medical devices",
+      "n": 19
+    },
+    {
+      "industry": "construction",
+      "n": 19
+    },
+    {
+      "industry": "professional training & coaching",
+      "n": 18
+    },
+    {
+      "industry": "government administration",
+      "n": 18
+    },
+    {
+      "industry": "architecture & planning",
+      "n": 15
+    },
+    {
+      "industry": "primary/secondary education",
+      "n": 15
+    },
+    {
+      "industry": "logistics & supply chain",
+      "n": 14
+    },
+    {
+      "industry": "hospitality",
+      "n": 14
+    },
+    {
+      "industry": "retail",
+      "n": 14
+    },
+    {
+      "industry": "automotive",
+      "n": 13
+    },
+    {
+      "industry": "investment management",
+      "n": 13
+    },
+    {
+      "industry": "electrical/electronic manufacturing",
+      "n": 12
+    },
+    {
+      "industry": "wholesale",
+      "n": 12
+    },
+    {
+      "industry": "information services",
+      "n": 11
+    },
+    {
+      "industry": "marketing & advertising",
+      "n": 10
+    },
+    {
+      "industry": "capital markets",
+      "n": 10
+    },
+    {
+      "industry": "environmental services",
+      "n": 10
+    },
+    {
+      "industry": "international affairs",
+      "n": 10
+    },
+    {
+      "industry": "transportation/trucking/railroad",
+      "n": 9
+    },
+    {
+      "industry": "sports",
+      "n": 9
+    },
+    {
+      "industry": "food production",
+      "n": 9
+    },
+    {
+      "industry": "staffing & recruiting",
+      "n": 9
+    },
+    {
+      "industry": "media production",
+      "n": 7
+    },
+    {
+      "industry": "mechanical or industrial engineering",
+      "n": 7
+    },
+    {
+      "industry": "legal services",
+      "n": 7
+    },
+    {
+      "industry": "insurance",
+      "n": 6
+    }
+  ],
+  "personaMix": [
+    {
+      "persona": "CEO",
+      "n": 48
+    },
+    {
+      "persona": "Managing Director",
+      "n": 37
+    },
+    {
+      "persona": "President",
+      "n": 26
+    },
+    {
+      "persona": "Owner",
+      "n": 21
+    },
+    {
+      "persona": "CTO",
+      "n": 16
+    },
+    {
+      "persona": "Head of IT",
+      "n": 10
+    },
+    {
+      "persona": "Executive Director",
+      "n": 8
+    },
+    {
+      "persona": "Secretary General",
+      "n": 7
+    },
+    {
+      "persona": "IT Director",
+      "n": 5
+    },
+    {
+      "persona": "IT Manager",
+      "n": 5
+    },
+    {
+      "persona": "CIO",
+      "n": 5
+    },
+    {
+      "persona": "General Manager",
+      "n": 2
+    },
+    {
+      "persona": "Founder",
+      "n": 1
+    }
+  ],
+  "contactCoverage": [
+    {
+      "live": 212,
+      "with_phone": 2,
+      "persona_resolved": 210
+    }
+  ]
+}
