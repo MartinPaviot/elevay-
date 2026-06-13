@@ -396,19 +396,28 @@ export default function LandingPage() {
           <Animate><div className="mt-7"><IntegrationsStrip /></div></Animate>
           {/* Trust / control band — honest anxiety-reducers (MECLABS A).
               Every claim is true today: see the FAQ (encryption, OAuth,
-              revoke) and the human-in-the-loop principle. */}
-          <Animate>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5">
-              {[
-                { icon: Lock, t: "Encrypted in transit and at rest" },
-                { icon: Key, t: "OAuth login, never your password" },
-                { icon: RotateCcw, t: "Revoke access anytime" },
-                { icon: UserCheck, t: "Nothing sends without you" },
-              ].map((c) => { const Icon = c.icon; return (
-                <span key={c.t} className="inline-flex items-center gap-1.5 text-[12px] text-gray-500"><Icon size={13} className="text-gray-400" /> {c.t}</span>
-              ); })}
-            </div>
-          </Animate>
+              revoke) and the human-in-the-loop principle. Each chip settles
+              in on its own small stagger (opacity + y, GPU-safe). */}
+          <motion.div
+            className="mt-9 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5"
+            variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
+          >
+            {[
+              { icon: Lock, t: "Encrypted in transit and at rest" },
+              { icon: Key, t: "OAuth login, never your password" },
+              { icon: RotateCcw, t: "Revoke access anytime" },
+              { icon: UserCheck, t: "Nothing sends without you" },
+            ].map((c) => { const Icon = c.icon; return (
+              <motion.span
+                key={c.t}
+                variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}
+                transition={{ duration: 0.35, ease: [0.22, 0.61, 0.36, 1] }}
+                className="inline-flex items-center gap-1.5 text-[12px] text-gray-500"
+              >
+                <Icon size={13} className="text-gray-400" /> {c.t}
+              </motion.span>
+            ); })}
+          </motion.div>
         </div>
       </Section>
 
@@ -559,17 +568,18 @@ export default function LandingPage() {
         </div>
       </Section>
 
-      {/* FAQ */}
+      {/* FAQ — each row settles in on its own small stagger, then expands
+          with a real height animation when opened. */}
       <Section className="pt-32">
         <div className="mx-auto max-w-3xl px-6">
           <Animate><h2 className="text-3xl font-bold tracking-tight text-gray-900">Questions</h2></Animate>
-          <Animate>
-            <div className="mt-8">
-              {faqs.map((faq) => (
-                <FAQItem key={faq.q} q={faq.q} a={faq.a} />
-              ))}
-            </div>
-          </Animate>
+          <motion.div className="mt-8" variants={{ visible: { transition: { staggerChildren: 0.05 } } }}>
+            {faqs.map((faq) => (
+              <Animate key={faq.q}>
+                <FAQItem q={faq.q} a={faq.a} />
+              </Animate>
+            ))}
+          </motion.div>
         </div>
       </Section>
 

@@ -77,41 +77,58 @@ const steps: { label: string; headline: string; body: string; Phase?: Phase; h?:
 ];
 
 /**
- * A faithful product page that fades and settles into place as its step
- * reaches the viewport, then plays its own intro animation once. Each frame is
- * sized to its scene so it fits in one view — no inner scroll, no auto-pan
- * (a long list like the TAM is the one exception). Off under reduced-motion.
+ * The one entrance every product surface shares: it fades, lifts, and settles
+ * (scale 0.97 -> 1) into place when it reaches the viewport — once. Strand-proof
+ * like the page sections (a hard timeout forces it visible if the observer ever
+ * misfires) and off under reduced-motion. Exposes `live` via render-prop so the
+ * surface can also start its own scripted animation the moment it settles.
+ *
+ * Used by BOTH the half-width Phase surfaces (AnimatedSurface) and the
+ * full-width Call Mode cockpit, so every step enters identically — no surface
+ * "just appears" while its neighbours glide in.
  */
-function AnimatedSurface({ Phase, h }: { Phase: Phase; h: number }) {
+function RevealOnView({ children, className = "" }: { children: (live: boolean, reduced: boolean) => React.ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion() ?? false;
   const inView = useInView(ref, { margin: "-80px 0px" });
   const [live, setLive] = useState(false);
   useEffect(() => { if (inView) setLive(true); }, [inView]);
-  // Safety net: the fade-in is gated on the observer, so a misfire (fast
-  // scroll, restored scroll position, full-page render) could leave a step
-  // stranded at opacity 0. Force it visible after a few seconds no matter
-  // what, so a surface can never stay invisible.
   useEffect(() => {
     const t = setTimeout(() => setLive(true), 6000);
     return () => clearTimeout(t);
   }, []);
-
   return (
     <motion.div
       ref={ref}
+      className={className}
       initial={reduced ? false : { opacity: 0, y: 22, scale: 0.97 }}
       animate={live ? { opacity: 1, y: 0, scale: 1 } : undefined}
       transition={{ duration: reduced ? 0 : 0.6, ease: [0.22, 0.61, 0.36, 1] }}
     >
-      <ScaleToFit designWidth={460}>
-        <AppFrame>
-          <div style={{ height: h }} className="overflow-hidden bg-[#FAFAFA]">
-            {live ? <Phase key="live" reduced={reduced} /> : <Phase key="static" reduced />}
-          </div>
-        </AppFrame>
-      </ScaleToFit>
+      {children(live, reduced)}
     </motion.div>
+  );
+}
+
+/**
+ * A faithful product page that fades and settles into place as its step
+ * reaches the viewport, then plays its own intro animation once. Each frame is
+ * sized to its scene so it fits in one view — no inner scroll, no auto-pan
+ * (a long list like the TAM is the one exception).
+ */
+function AnimatedSurface({ Phase, h }: { Phase: Phase; h: number }) {
+  return (
+    <RevealOnView>
+      {(live, reduced) => (
+        <ScaleToFit designWidth={460}>
+          <AppFrame>
+            <div style={{ height: h }} className="overflow-hidden bg-[#FAFAFA]">
+              {live ? <Phase key="live" reduced={reduced} /> : <Phase key="static" reduced />}
+            </div>
+          </AppFrame>
+        </ScaleToFit>
+      )}
+    </RevealOnView>
   );
 }
 
@@ -171,18 +188,26 @@ function StepHeading({ i, label, headline, body, centered }: { i: number; label:
 
 export function ProcessSteps() {
   // Numbering skips nothing: the wide cockpit step keeps its place in the
-  // sequence, it just breaks out of the two-column rhythm.
+  // sequence, it just spans full width (a 3-column cockpit can't read at half
+  // width). Its heading is left-aligned and its frame fades-and-settles in on
+  // the SAME entrance as every other surface — so it's a member of the
+  // sequence, not an outlier.
   let visualIdx = 0;
   return (
     <div className="space-y-16 md:space-y-24">
       {steps.map((s, i) => {
         if (s.wide) {
+          // The heading shares the same left edge (x) as every other step
+          // heading (no inset); the cockpit is left-aligned right under it at
+          // its natural ~1100px width (wider gets sparse in the centre). A
+          // deliberate full-width feature, anchored to the column — not a
+          // centred outlier.
           return (
             <div key={s.headline}>
-              <StepHeading i={i} label={s.label} headline={s.headline} body={s.body} centered />
-              <div className="mx-auto mt-8 max-w-[1100px]">
-                <CallModeDemo />
-              </div>
+              <StepHeading i={i} label={s.label} headline={s.headline} body={s.body} />
+              <RevealOnView className="mt-8 max-w-[1100px]">
+                {() => <CallModeDemo />}
+              </RevealOnView>
             </div>
           );
         }
