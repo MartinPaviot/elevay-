@@ -181,7 +181,7 @@ export interface BriefContext {
   /** Live LinkedIn verification of the role (null until the auto-check runs):
    *  confirmed → show the verified role; left → handled upstream (dropped). */
   roleVerification?: RoleVerification | null;
-  latestSignal: { type: string; label: string } | null;
+  latestSignal: { type: string; label: string; observedAt?: string | null } | null;
 }
 
 // ── Formatting helpers ──────────────────────────────────────────

@@ -21,6 +21,8 @@
  * Pure + unit-tested; no I/O, no React.
  */
 
+import { isSignalFresh } from "@/lib/signals/freshness";
+
 export type OpeningReasonSource = "signal" | "hiring" | "funding";
 
 export interface OpeningReason {
@@ -79,8 +81,11 @@ export function isVoiceableSignal(type?: string | null): boolean {
 }
 
 export interface OpeningReasonInput {
-  /** Freshest signal as {type,label}. Used ONLY if the type is voiceable. */
-  signal?: { type: string; label: string } | null;
+  /** Freshest signal as {type,label}. Used ONLY if the type is voiceable AND
+   *  still within its shelf life — a stale trigger said aloud on a cold call
+   *  is the tell of automation (see lib/signals/freshness.ts). `observedAt`
+   *  is the signal's detection date; absent → kept (cannot prove staleness). */
+  signal?: { type: string; label: string; observedAt?: string | null } | null;
   /** Top hiring role from the research dossier (a voiceable event). */
   hiringRole?: string | null;
   /** Last funding round from the dossier (a voiceable event). */
@@ -136,8 +141,15 @@ export function mergeTechStacks(
  * live signal → hiring → funding. Returns null when nothing sayable is known
  * (never fabricates, never voices an internal signal or a strategy note).
  */
-export function deriveOpeningReason(input: OpeningReasonInput): OpeningReason | null {
-  if (input.signal && isVoiceableSignal(input.signal.type)) {
+export function deriveOpeningReason(
+  input: OpeningReasonInput,
+  now: Date = new Date(),
+): OpeningReason | null {
+  if (
+    input.signal &&
+    isVoiceableSignal(input.signal.type) &&
+    isSignalFresh(input.signal.type, input.signal.observedAt ?? null, now)
+  ) {
     const label = clean(input.signal.label);
     if (label) return { fact: label, source: "signal", sourceLabel: SOURCE_LABEL.signal };
   }

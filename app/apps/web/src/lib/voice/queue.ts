@@ -37,13 +37,13 @@ export interface QueueItem {
   lastEnrichedAt: string | null;
   /** Live LinkedIn verification of the role, or null if not yet checked. */
   roleVerification: RoleVerification | null;
-  latestSignal: { type: string; label: string } | null;
+  latestSignal: { type: string; label: string; observedAt?: string | null } | null;
 }
 
 interface ContactProperties {
   timezone?: string | null;
   phoneType?: "mobile" | "direct" | "switchboard" | null;
-  latestSignal?: { type: string; label: string } | null;
+  latestSignal?: { type: string; label: string; observedAt?: string | null } | null;
   [key: string]: unknown;
 }
 

@@ -29,6 +29,21 @@ describe("deriveOpeningReason", () => {
     expect(r).toEqual({ fact: "Série A levée en mai", source: "signal", sourceLabel: "Signal temps réel" });
   });
 
+  it("IGNORES a signal past its shelf life and falls through to a real event", () => {
+    const stale = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(); // 60d, hiring TTL 30d
+    const r = deriveOpeningReason({
+      signal: { type: "hiring", label: "Recrute un SDR", observedAt: stale },
+      fundingLastRound: "Série B",
+    });
+    expect(r?.source).toBe("funding"); // stale signal skipped, falls through
+  });
+
+  it("uses a fresh voiceable signal even with a dated observedAt", () => {
+    const fresh = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const r = deriveOpeningReason({ signal: { type: "hiring", label: "Recrute un SDR", observedAt: fresh } });
+    expect(r?.source).toBe("signal");
+  });
+
   it("IGNORES an internal signal and falls through to a real event (the fix)", () => {
     const r = deriveOpeningReason({ signal: { type: "engagement_spike", label: "Pic d'engagement détecté" }, hiringRole: "Responsable IT" });
     expect(r?.source).toBe("hiring");

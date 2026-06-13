@@ -73,7 +73,7 @@ interface QueueItem {
   localTimezone: string;
   lastEnrichedAt?: string | null;
   roleVerification?: RoleVerification | null;
-  latestSignal: { type: string; label: string } | null;
+  latestSignal: { type: string; label: string; observedAt?: string | null } | null;
 }
 
 interface VoiceConfig {
