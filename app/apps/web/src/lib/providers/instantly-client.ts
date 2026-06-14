@@ -173,6 +173,55 @@ export async function listInstantlyAccounts(
 }
 
 /**
+ * List Unibox emails (campaign sends, replies, manual) on the connected
+ * workspace, paginating the v2 cursor. Returns raw email objects so the
+ * ingestion can detect inbound replies + map them defensively — the exact
+ * field set is confirmed against the first live response.
+ */
+export async function listInstantlyEmails(
+  options: InstantlyClientOptions & { startingAfter?: string; limit?: number },
+): Promise<{
+  ok: boolean;
+  status: number;
+  emails: Record<string, unknown>[];
+  nextStartingAfter?: string;
+  errorMessage?: string;
+}> {
+  const base = options.baseUrl ?? DEFAULT_BASE_URL;
+  const limit = options.limit ?? 100;
+  const url = new URL(`${base}/api/v2/emails`);
+  url.searchParams.set("limit", String(limit));
+  if (options.startingAfter) url.searchParams.set("starting_after", options.startingAfter);
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      url.toString(),
+      { method: "GET", headers: buildHeaders(options.apiKey) },
+      TIMEOUT_MS,
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      emails: [],
+      errorMessage: err instanceof Error ? err.message : "unknown fetch error",
+    };
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    return { ok: false, status: res.status, emails: [], errorMessage: body.slice(0, 300) || `HTTP ${res.status}` };
+  }
+  const data = (await res.json().catch(() => ({}))) as {
+    items?: unknown[];
+    emails?: unknown[];
+    next_starting_after?: string;
+  };
+  const emails = (data.items ?? data.emails ?? []) as Record<string, unknown>[];
+  return { ok: true, status: 200, emails, nextStartingAfter: data.next_starting_after };
+}
+
+/**
  * Dispatch a single email through Instantly. Not yet wired into
  * `email-send-worker.ts` — that integration ships when Martin has
  * verified the connection flow end-to-end with a live Hypergrowth

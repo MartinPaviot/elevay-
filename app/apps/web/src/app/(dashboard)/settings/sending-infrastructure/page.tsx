@@ -174,6 +174,34 @@ export default function SendingInfrastructurePage() {
     }
   }
 
+  // Pull the Instantly Unibox (replies) into the inbox now. The 15-min cron
+  // runs the same path; this is the on-demand trigger.
+  async function runInstantlyUniboxSync() {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        "/api/settings/sending-infra/providers/instantly/sync",
+        { method: "POST" },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        inserted?: number;
+        inbound?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast(data.error ?? "Sync failed", "error");
+        return;
+      }
+      const n = data.inserted ?? 0;
+      toast(`Synced — ${n} new repl${n === 1 ? "y" : "ies"} pulled into the inbox`, "success");
+    } catch (err) {
+      console.warn("sending-infra: instantly unibox sync failed", err);
+      toast("Couldn't sync the Instantly inbox", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function requestManaged() {
     setSaving(true);
     try {
@@ -309,6 +337,14 @@ export default function SendingInfrastructurePage() {
                     disabled={saving}
                   >
                     Import mailboxes
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void runInstantlyUniboxSync()}
+                    disabled={saving}
+                  >
+                    Sync inbox
                   </Button>
                   <Button
                     size="sm"
