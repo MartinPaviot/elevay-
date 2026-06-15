@@ -38,7 +38,13 @@ export interface BookResult {
   eventId: string;
   joinUrl: string;
   calendarLink: string | null;
+  /** The Jitsi room name — persisted on the activity so the sovereign
+   *  recording webhook can correlate a finalized recording to this meeting. */
+  roomName: string;
 }
+
+/** What a per-provider writer returns; bookSovereignMeeting adds `roomName`. */
+type WriteResult = Omit<BookResult, "roomName">;
 
 interface EventCore {
   contactEmail: string;
@@ -85,8 +91,18 @@ export async function bookSovereignMeeting(opts: {
     joinUrl: meeting.joinUrl,
   };
 
+  const written = await writeToConnectedCalendar(opts, core, meeting.roomName);
+  return { ...written, roomName: meeting.roomName };
+}
+
+/** Resolve the user's calendar backend (CalDAV -> Microsoft -> Google) and write. */
+async function writeToConnectedCalendar(
+  opts: { userId: string; tenantId: string },
+  core: EventCore,
+  roomName: string,
+): Promise<WriteResult> {
   const caldav = await findCalDavMailbox(opts.userId, opts.tenantId);
-  if (caldav) return writeCalDavEvent(caldav, core, meeting.roomName);
+  if (caldav) return writeCalDavEvent(caldav, core, roomName);
 
   const msToken = await getMicrosoftAccessToken(opts.userId);
   if (msToken) return writeMicrosoftEvent(msToken, core);
@@ -104,7 +120,7 @@ export async function bookSovereignMeeting(opts: {
 async function writeGoogleEvent(
   calendar: calendar_v3.Calendar,
   core: EventCore,
-): Promise<BookResult> {
+): Promise<WriteResult> {
   const end = new Date(core.startTime.getTime() + core.durationMinutes * 60_000);
   const event = await calendar.events.insert({
     calendarId: "primary",
@@ -130,7 +146,7 @@ async function writeGoogleEvent(
 /*  Microsoft Graph                                                    */
 /* ------------------------------------------------------------------ */
 
-async function writeMicrosoftEvent(token: string, core: EventCore): Promise<BookResult> {
+async function writeMicrosoftEvent(token: string, core: EventCore): Promise<WriteResult> {
   const end = new Date(core.startTime.getTime() + core.durationMinutes * 60_000);
   const res = await fetch("https://graph.microsoft.com/v1.0/me/events", {
     method: "POST",
@@ -225,7 +241,7 @@ async function writeCalDavEvent(
   box: CalDavBox,
   core: EventCore,
   roomName: string,
-): Promise<BookResult> {
+): Promise<WriteResult> {
   const end = new Date(core.startTime.getTime() + core.durationMinutes * 60_000);
   const uid = `${roomName}@elevay.dev`;
   const ics = buildIcs({

@@ -538,6 +538,7 @@ RULES:
             joinUrl: booking.joinUrl,
             meetLink: booking.joinUrl,
             calendarProvider: booking.provider,
+            roomName: booking.roomName,
             startTime: input.startTime,
             durationMinutes: input.durationMinutes || 30,
           },

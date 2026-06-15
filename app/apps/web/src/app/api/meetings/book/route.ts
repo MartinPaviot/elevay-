@@ -155,6 +155,8 @@ export async function POST(req: Request) {
         // Back-compat: older readers keyed on `meetLink`.
         meetLink: booking.joinUrl,
         calendarProvider: booking.provider,
+        // Correlates the sovereign recording webhook back to this meeting.
+        roomName: booking.roomName,
         startTime,
         durationMinutes: durationMinutes || 30,
         meetingType,
