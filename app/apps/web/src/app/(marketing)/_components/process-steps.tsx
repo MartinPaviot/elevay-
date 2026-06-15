@@ -18,11 +18,12 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 import { AppFrame, ScaleToFit } from "./product-mockups";
 import { CallModeDemo } from "./call-mode-demo";
-import { RealAccounts, RealOpportunities, RealCampaigns, RealMeetings } from "./real-surfaces";
+import { CampaignsDemo } from "./campaigns-demo";
+import { RealAccounts, RealOpportunities, RealMeetings } from "./real-surfaces";
 
 // `h` = the natural content height shown in the shot (before scaling); the rest
 // of the page is clipped with a fade, so each shot ends cleanly on a few rows.
-const steps: { label: string; headline: string; body: string; Real?: ComponentType; h?: number; wide?: boolean }[] = [
+const steps: { label: string; headline: string; body: string; Real?: ComponentType; Demo?: ComponentType; h?: number; wide?: boolean }[] = [
   {
     label: "Find demand",
     headline: "Your target list builds itself",
@@ -34,8 +35,7 @@ const steps: { label: string; headline: string; body: string; Real?: ComponentTy
     label: "Engage",
     headline: "Outreach drafted from real context",
     body: "Multi-touch sequences drafted from each account's signals and notes, never from a template with a first name in it. Nothing leaves your domain until you approve it.",
-    Real: RealCampaigns,
-    h: 600,
+    Demo: CampaignsDemo,
   },
   {
     label: "Engage",
@@ -182,14 +182,18 @@ export function ProcessSteps() {
         }
         const flip = visualIdx % 2 === 1;
         visualIdx += 1;
-        const Real = s.Real as ComponentType;
+        const Demo = s.Demo;
         return (
           <div key={s.headline} className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
             <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
               <StepHeading i={i} label={s.label} headline={s.headline} body={s.body} />
             </div>
             <div className={`min-w-0 ${flip ? "lg:order-1" : ""}`}>
-              <RealShot Real={Real} h={s.h ?? 620} />
+              {Demo ? (
+                <RevealOnView>{() => <Demo />}</RevealOnView>
+              ) : (
+                <RealShot Real={s.Real as ComponentType} h={s.h ?? 620} />
+              )}
             </div>
           </div>
         );
