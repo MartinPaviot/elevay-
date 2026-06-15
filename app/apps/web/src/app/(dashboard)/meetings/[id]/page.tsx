@@ -456,7 +456,8 @@ export default function MeetingDetailPage() {
   const { meeting, notes, followUpDraft, tasks: linkedTasks } = data;
   const meetingDate = new Date(meeting.date);
   const isPast = meetingDate < new Date();
-  const isAutoTranscribed = data.transcriptSource === "recall_bot";
+  const isAutoTranscribed =
+    data.transcriptSource === "recall_bot" || data.transcriptSource === "jibri";
   const needsReview = notes && !linkedTasks.length && !followUpDraft && isAutoTranscribed;
 
   return (
@@ -674,6 +675,12 @@ export default function MeetingDetailPage() {
             </span>
           ))}
         </div>
+      )}
+
+      {data.transcriptSource === "jibri" && (
+        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+          Visio souveraine — enregistrée et transcrite sur votre infrastructure.
+        </p>
       )}
 
       {/* Notes or Upload */}
