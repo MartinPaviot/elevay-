@@ -20,6 +20,29 @@ describe("video-meeting — sovereign visio links", () => {
     expect(m.joinUrl).not.toMatch(/jit\.si|google|teams|zoom|8x8/i);
   });
 
+  it("makes the prospect's join frictionless (no mobile app interstitial)", () => {
+    const m = createSovereignMeeting({ prefix: "pilae", env: CH });
+    // disableDeepLinking → joins straight in the browser, no app, no account.
+    expect(m.joinUrl).toContain("#config.disableDeepLinking=true");
+    // The room name itself stays clean (it's the ICS UID / idempotency handle).
+    expect(m.roomName).not.toContain("#");
+  });
+
+  it("lets the join config be overridden or cleared via env", () => {
+    const cleared = createSovereignMeeting({
+      env: { VIDEO_MEET_BASE_URL: "https://visio.pilae.ch", VIDEO_MEET_JOIN_CONFIG: "" },
+    });
+    expect(cleared.joinUrl).not.toContain("#");
+
+    const custom = createSovereignMeeting({
+      env: {
+        VIDEO_MEET_BASE_URL: "https://visio.pilae.ch",
+        VIDEO_MEET_JOIN_CONFIG: "config.disableDeepLinking=true&config.prejoinConfig.enabled=false",
+      },
+    });
+    expect(custom.joinUrl).toContain("#config.disableDeepLinking=true&config.prejoinConfig.enabled=false");
+  });
+
   it("does not collide across many rapid mints (high entropy)", () => {
     const seen = new Set<string>();
     for (let i = 0; i < 5000; i++) {

@@ -46,7 +46,29 @@ const DEFAULT_SOVEREIGN_BASE_URL = "https://visio.pilae.ch";
 
 /** Minimal env shape we read — `process.env` satisfies it, and tests can pass
  *  a plain object without supplying every NodeJS.ProcessEnv key. */
-type EnvLike = { VIDEO_MEET_BASE_URL?: string; NODE_ENV?: string };
+type EnvLike = {
+  VIDEO_MEET_BASE_URL?: string;
+  VIDEO_MEET_JOIN_CONFIG?: string;
+  NODE_ENV?: string;
+};
+
+/**
+ * Client config appended to the join URL as a fragment. The prospect must be
+ * able to join with zero friction: `disableDeepLinking=true` stops Jitsi's
+ * mobile "open in the app" interstitial, so a phone joins straight in the
+ * browser — no install, no account, no password (the unguessable room name is
+ * the only guard). Desktop is browser-native already.
+ *
+ * Set VIDEO_MEET_JOIN_CONFIG to override (e.g. add `&config.prejoinConfig.enabled=false`)
+ * or to "" to drop the fragment once the instance enforces this server-side.
+ */
+const DEFAULT_JOIN_CONFIG = "config.disableDeepLinking=true";
+
+function joinConfigFragment(env: EnvLike): string {
+  const cfg = env.VIDEO_MEET_JOIN_CONFIG ?? DEFAULT_JOIN_CONFIG;
+  const trimmed = cfg.trim();
+  return trimmed ? `#${trimmed}` : "";
+}
 
 export interface SovereignMeeting {
   /** Full join URL the prospect clicks. */
@@ -116,7 +138,14 @@ export function createSovereignMeeting(opts?: {
   prefix?: string;
   env?: EnvLike;
 }): SovereignMeeting {
-  const base = getVideoMeetBaseUrl(opts?.env);
+  const env = opts?.env ?? process.env;
+  const base = getVideoMeetBaseUrl(env);
+  // roomName stays clean (it's the ICS UID / idempotency handle); the join URL
+  // carries the no-friction client config fragment the prospect clicks.
   const roomName = `${sanitisePrefix(opts?.prefix)}-${highEntropyRoomId()}`;
-  return { joinUrl: `${base}/${roomName}`, roomName, provider: "jitsi" };
+  return {
+    joinUrl: `${base}/${roomName}${joinConfigFragment(env)}`,
+    roomName,
+    provider: "jitsi",
+  };
 }
