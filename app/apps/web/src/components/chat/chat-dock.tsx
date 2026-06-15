@@ -17,6 +17,7 @@ import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { CopyButton } from "@/components/chat/copy-button";
 import { EmailComposerPanel, type EmailComposerDraft } from "@/components/email-composer-panel";
 import { trackEvent } from "@/components/posthog-provider";
+import { useToast } from "@/components/ui/toast";
 import { deriveSurface, type SurfaceIcon } from "@/lib/chat/surface-from-path";
 import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
 import type { UiDirective } from "@/lib/chat/ui-directives";
@@ -84,16 +85,37 @@ export function ChatDock() {
   const [localInput, setLocalInput] = useState("");
   const [emailComposer, setEmailComposer] = useState<EmailComposerDraft | null>(null);
 
+  // Persistence: the dock writes its conversation to a chat thread so it shows
+  // up in the sidebar "Recent chats" history and survives a reload — the same
+  // mechanism the full /chat page uses. Without this the dock was purely
+  // in-memory: nothing ever reached chatThreads, so dock chats never appeared
+  // in history and were lost on reload. threadId is created lazily on the first
+  // completed exchange; threadIdRef mirrors it so the transport body (a stable
+  // closure) and the async save path read the live value.
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const threadIdRef = useRef<string | null>(null);
+  threadIdRef.current = threadId;
+  const [lastSavedCount, setLastSavedCount] = useState(0);
+  const savingRef = useRef(false);
+  const { toast } = useToast();
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         credentials: "include",
         // Resolvable body — re-evaluated on every request so the chat is
-        // scoped to whatever page the user is on right now.
+        // scoped to whatever page the user is on right now, and carries the
+        // live threadId (once created) so /api/chat can run memory extraction.
         body: () => {
           const s = surfaceRef.current;
-          return s.contextType ? { contextType: s.contextType, contextId: s.contextId } : {};
+          const payload: Record<string, unknown> = {};
+          if (s.contextType) {
+            payload.contextType = s.contextType;
+            payload.contextId = s.contextId;
+          }
+          if (threadIdRef.current) payload.threadId = threadIdRef.current;
+          return payload;
         },
       }),
     [],
@@ -162,6 +184,87 @@ export function ChatDock() {
     el.style.overflowY = el.scrollHeight > MAX ? "auto" : "hidden";
   }, [localInput]);
 
+  // Persist the conversation to a thread after the assistant finishes. Creates
+  // the thread on the first exchange (scoped to the current page context), then
+  // appends each new turn — identical to the /chat page's saveMessages, reusing
+  // the same /api/chat/threads endpoints. Failures are non-fatal: the dock keeps
+  // working in-memory and we surface a quiet toast.
+  const saveMessages = useCallback(async () => {
+    if (chat.status === "streaming") return;
+    if (chat.messages.length <= lastSavedCount) return;
+    // Re-entrancy guard — a double-invoked save (React StrictMode in dev, or a
+    // rapid re-render before lastSavedCount commits) would persist the same
+    // exchange twice. Serialize so each turn is written exactly once.
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const newMessages = chat.messages.slice(lastSavedCount);
+      if (newMessages.length === 0) return;
+
+      const messagesToSave = newMessages.map((m) => ({
+        role: m.role,
+        content: partsToText(m.parts),
+      }));
+
+      const firstUserMsg = chat.messages.find((m) => m.role === "user");
+      const title = firstUserMsg ? partsToText(firstUserMsg.parts).slice(0, 100) : undefined;
+
+      if (!threadIdRef.current) {
+        // Create the thread, scoped to whatever page the dock was on.
+        const s = surfaceRef.current;
+        const res = await fetch("/api/chat/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, contextType: s.contextType, contextId: s.contextId }),
+        });
+        if (!res.ok) {
+          toast("Couldn't save this chat to your history.", "warning");
+          console.warn("chat-dock: create thread failed", { status: res.status });
+          return;
+        }
+        const data = await res.json();
+        const newThreadId = data.thread.id as string;
+        threadIdRef.current = newThreadId; // sync ref now so the next send carries it
+        setThreadId(newThreadId);
+
+        const appendRes = await fetch(`/api/chat/threads/${newThreadId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: messagesToSave, title }),
+        });
+        if (!appendRes.ok) {
+          toast("Chat started but messages didn't save to history.", "warning");
+          console.warn("chat-dock: append-to-new-thread failed", { status: appendRes.status });
+          return;
+        }
+      } else {
+        const res = await fetch(`/api/chat/threads/${threadIdRef.current}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: messagesToSave }),
+        });
+        if (!res.ok) {
+          toast("New messages failed to save to your history.", "warning");
+          console.warn("chat-dock: append-to-existing-thread failed", { status: res.status });
+          return;
+        }
+      }
+
+      setLastSavedCount(chat.messages.length);
+    } catch (err) {
+      console.warn("chat-dock: saveMessages threw", err);
+    } finally {
+      savingRef.current = false;
+    }
+  }, [chat.messages, chat.status, lastSavedCount, toast]);
+
+  // Trigger the save once streaming completes and there are unsaved turns.
+  useEffect(() => {
+    if (chat.status === "ready" && chat.messages.length > lastSavedCount) {
+      saveMessages();
+    }
+  }, [chat.status, chat.messages.length, lastSavedCount, saveMessages]);
+
   function send(text: string) {
     const t = text.trim();
     if (!t || chat.status === "streaming") return;
@@ -182,6 +285,9 @@ export function ChatDock() {
   function newChat() {
     chat.setMessages([]);
     setLocalInput("");
+    setThreadId(null);
+    threadIdRef.current = null;
+    setLastSavedCount(0);
     inputRef.current?.focus();
   }
 
@@ -260,7 +366,7 @@ export function ChatDock() {
               </button>
             )}
             <button
-              onClick={() => router.push("/chat")}
+              onClick={() => router.push(threadId ? `/chat?thread=${threadId}` : "/chat")}
               aria-label="Open full chat"
               title="Open full chat"
               className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
