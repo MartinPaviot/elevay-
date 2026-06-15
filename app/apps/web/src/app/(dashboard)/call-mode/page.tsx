@@ -51,6 +51,7 @@ import { EditCampaignModal } from "./_edit-campaign-modal";
 import { CampaignFunnelBar } from "./_funnel-bar";
 import { readSprintAudience } from "@/lib/voice/sprint-audience";
 import { CallScriptPanel } from "./_call-script";
+import { CallListSelector, type CallListsData, type SystemListEntry } from "./_list-selector";
 import { isVoiceableSignal, mergeTechStacks } from "@/lib/call-mode/live-script";
 import { speakableGeo } from "@/lib/call-mode/geo";
 import { pickReplaceableTools } from "@/lib/tech-detect/replaceable";
@@ -69,6 +70,8 @@ interface QueueItem {
   intentScore: number;
   accessibilityScore: number;
   dealValueWeight: number;
+  /** Attempts so far (campaign queue) — drives the by-day system views. */
+  attemptCount?: number;
   localTime: string;
   localTimezone: string;
   lastEnrichedAt?: string | null;
@@ -266,7 +269,16 @@ export default function CallModePage() {
     },
   );
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [filter, setFilter] = useState<"all" | "high_intent" | "trial_expiring" | "reply_received">("all");
+  // By-day system view (client-side filter over the loaded queue), persisted.
+  const [selectedSystemId, setSelectedSystemId] = useState<SystemListEntry["id"]>(() => {
+    if (typeof window === "undefined") return "today";
+    const v = window.localStorage.getItem("elevay.callmode.systemView");
+    return v === "callbacks_due" || v === "new" ? v : "today";
+  });
+  // Selector data (system by-day + sector lists), loaded in campaign mode.
+  const [listsData, setListsData] = useState<CallListsData | null>(null);
+  const [busySectorId, setBusySectorId] = useState<string | null>(null);
+  const [creatingList, setCreatingList] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [softphone, setSoftphone] = useState<SoftphoneState>({ kind: "idle" });
   const [transcript, setTranscript] = useState<TranscriptChunk[]>([]);
@@ -343,7 +355,11 @@ export default function CallModePage() {
         } else {
           // Default: the goal-driven campaign drives today's list. No campaign
           // yet -> first-visit onboarding.
-          const [cfgRes, campRes] = await Promise.all([cfgP, fetch("/api/calls/campaign")]);
+          const [cfgRes, campRes, listsRes] = await Promise.all([
+            cfgP,
+            fetch("/api/calls/campaign"),
+            fetch("/api/calls/lists"),
+          ]);
           if (cancelled) return;
           if (cfgRes.ok) setConfig(await cfgRes.json());
           if (campRes.ok) {
@@ -354,6 +370,7 @@ export default function CallModePage() {
               setCampaign(data.campaign ?? null);
               setQueue(data.calls ?? []);
               if ((data.calls ?? []).length > 0) setSelectedId(data.calls[0].contactId);
+              if (listsRes.ok) setListsData(await listsRes.json());
             }
           }
         }
@@ -463,12 +480,33 @@ export default function CallModePage() {
     [toast],
   );
 
+  // The by-day system view is a pure client filter over the loaded queue:
+  // Callbacks due = attempted before (>0), New = never attempted (=0), Today = all.
   const filteredQueue = useMemo(() => {
-    if (filter === "high_intent") {
-      return queue.filter((q) => q.intentScore >= 0.7);
+    if (selectedSystemId === "callbacks_due") {
+      return queue.filter((q) => (q.attemptCount ?? 0) > 0);
+    }
+    if (selectedSystemId === "new") {
+      return queue.filter((q) => (q.attemptCount ?? 0) === 0);
     }
     return queue;
-  }, [queue, filter]);
+  }, [queue, selectedSystemId]);
+
+  // Live by-day counts derived from the loaded queue (FR labels), so the
+  // selector stays in sync as dispositions remove rows — the sector counts
+  // stay server-sourced (countSprintAudience).
+  const liveSystemLists = useMemo<SystemListEntry[]>(
+    () => {
+      const callbacks = queue.filter((q) => (q.attemptCount ?? 0) > 0).length;
+      const fresh = queue.filter((q) => (q.attemptCount ?? 0) === 0).length;
+      return [
+        { id: "today", name: "Aujourd'hui", count: queue.length },
+        { id: "callbacks_due", name: "Rappels dus", count: callbacks },
+        { id: "new", name: "Nouveaux", count: fresh },
+      ];
+    },
+    [queue],
+  );
 
   // Last script context the panel reported — stamped on the call at dial time
   // so outcomes can be segmented by script variant (ref: no re-renders).
@@ -806,6 +844,92 @@ export default function CallModePage() {
     [softphone, queue, selectedId, toast],
   );
 
+  // ── Call-list selector (T5) ──────────────────────────────────
+  // Reload the campaign queue + selector counts after the active audience changes.
+  const reloadCampaignQueue = useCallback(async () => {
+    try {
+      const [campRes, listsRes] = await Promise.all([
+        fetch("/api/calls/campaign"),
+        fetch("/api/calls/lists"),
+      ]);
+      if (campRes.ok) {
+        const data = await campRes.json();
+        const calls = (data.calls ?? []) as QueueItem[];
+        setQueue(calls);
+        setSelectedId(calls.length > 0 ? calls[0].contactId : null);
+      }
+      if (listsRes.ok) setListsData(await listsRes.json());
+    } catch {
+      toast("Impossible de rafraîchir la liste.", "error");
+    }
+  }, [toast]);
+
+  // By-day view = pure client filter; persist the choice.
+  const handleSelectSystem = useCallback((id: SystemListEntry["id"]) => {
+    setSelectedSystemId(id);
+    if (typeof window !== "undefined") window.localStorage.setItem("elevay.callmode.systemView", id);
+  }, []);
+
+  // Activate a sector list → the server regenerates the top-up from its segment.
+  const handleActivateSector = useCallback(
+    async (id: string) => {
+      setBusySectorId(id);
+      try {
+        const res = await fetch(`/api/calls/lists/${id}/activate`, { method: "POST" });
+        if (!res.ok) {
+          toast("Impossible de basculer sur cette liste.", "error");
+          return;
+        }
+        await reloadCampaignQueue();
+      } finally {
+        setBusySectorId(null);
+      }
+    },
+    [toast, reloadCampaignQueue],
+  );
+
+  const handleActivateAll = useCallback(async () => {
+    setBusySectorId("all");
+    try {
+      const res = await fetch("/api/calls/lists/all/activate", { method: "POST" });
+      if (!res.ok) {
+        toast("Impossible de revenir à tout l'ICP.", "error");
+        return;
+      }
+      await reloadCampaignQueue();
+    } finally {
+      setBusySectorId(null);
+    }
+  }, [toast, reloadCampaignQueue]);
+
+  // Create a sector list from a phrase, then activate it so it drives the queue.
+  const handleCreateList = useCallback(
+    async (phrase: string) => {
+      setCreatingList(true);
+      try {
+        const res = await fetch("/api/calls/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phrase }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast(body?.message ?? "Impossible de créer la liste.", "error");
+          return;
+        }
+        const newId = body?.list?.id as string | undefined;
+        if (newId) await handleActivateSector(newId);
+        else await reloadCampaignQueue();
+        toast("Liste créée.", "success");
+      } catch {
+        toast("Impossible de créer la liste.", "error");
+      } finally {
+        setCreatingList(false);
+      }
+    },
+    [toast, handleActivateSector, reloadCampaignQueue],
+  );
+
   // ── Render ────────────────────────────────────────────────────
   // Every state lives inside the same shell as the other tabs: a flush
   // PageHeader bar (height var(--header-height)) above a flex-1 body.
@@ -976,34 +1100,25 @@ export default function CallModePage() {
           }`}
           style={{ width: colW.left }}
         >
-        <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            To call now
-          </h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            {filteredQueue.length} contact{filteredQueue.length === 1 ? "" : "s"}
-          </p>
-          <div className="flex gap-1.5 mt-2 flex-wrap">
-            {(
-              [
-                ["all", "All"],
-                ["high_intent", "High intent"],
-              ] as const
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setFilter(k)}
-                className={`px-2 py-0.5 text-[11px] rounded-full border transition ${
-                  filter === k
-                    ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
-                    : "bg-transparent text-zinc-600 border-zinc-200 dark:text-zinc-400 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        {listsData ? (
+          <CallListSelector
+            data={{ ...listsData, system: liveSystemLists }}
+            selectedSystemId={selectedSystemId}
+            busySectorId={busySectorId}
+            onSelectSystem={handleSelectSystem}
+            onActivateSector={handleActivateSector}
+            onActivateAll={handleActivateAll}
+            onCreate={handleCreateList}
+            creating={creatingList}
+          />
+        ) : (
+          <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">To call now</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {filteredQueue.length} contact{filteredQueue.length === 1 ? "" : "s"}
+            </p>
           </div>
-        </div>
+        )}
         {accountScope > 0 && (
           <div className="flex items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/60 px-4 py-2 text-[12px] dark:border-indigo-900/40 dark:bg-indigo-950/30">
             <span className="text-indigo-700 dark:text-indigo-300">
