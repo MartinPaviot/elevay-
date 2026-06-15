@@ -85,6 +85,12 @@ import { cronInstantlyUnibox } from "@/inngest/instantly-unibox-cron";
 // Register task executors so Inngest runner can dispatch by type
 import("@/lib/import/agentic-executor").then((m) => m.registerImportExecutor()).catch(() => {});
 
+// Pin the function to the full standard Vercel duration (300s). Some Inngest
+// steps (calendar/email sweeps, enrichment) run long and a step exceeding the
+// platform default 504s out; this gives every invocation the max standard
+// budget. If 504s persist, the culprit step needs to be chunked, not extended.
+export const maxDuration = 300;
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
