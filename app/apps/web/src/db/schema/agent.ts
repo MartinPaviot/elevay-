@@ -12,6 +12,7 @@ import {
   boolean,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { tenants } from "./core";
 import { authUsers } from "./auth";
 
@@ -270,6 +271,9 @@ export const knowledgeEntries = pgTable(
     title: text("title").notNull(),
     category: text("category").notNull().default("custom"),
     content: text("content").notNull(),
+    /** Product moments this entry feeds (lib/knowledge/stages.ts).
+     * Empty array = not curated → consumers derive from category/title. */
+    stages: text("stages").array().notNull().default(sql`'{}'::text[]`),
     contentHash: text("content_hash").notNull(),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

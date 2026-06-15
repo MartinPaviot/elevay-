@@ -30,8 +30,10 @@ import {
   Radio,
   Inbox,
   Package,
+  Send,
 } from "lucide-react";
 import { BILLING_PAGE_ENABLED } from "@/lib/billing/page-visibility";
+import { EVALS_PAGE_ENABLED, MCP_PAGE_ENABLED } from "@/lib/settings/admin-tools-visibility";
 
 interface NavItem {
   label: string;
@@ -67,6 +69,7 @@ const settingsNav: NavSection[] = [
       { label: "ICP", href: "/settings/icp", icon: Target },
       { label: "Product & Voice", href: "/settings/product", icon: Package },
       { label: "Mail & Calendar", href: "/settings/mail-calendar", icon: Mail },
+      { label: "Sending infrastructure", href: "/settings/sending-infrastructure", icon: Send },
       { label: "Capture approvals", href: "/settings/capture-approvals", icon: Inbox },
       { label: "Members", href: "/settings/members", icon: Users },
       { label: "Knowledge", href: "/settings/knowledge", icon: BookOpen },
@@ -87,9 +90,11 @@ const settingsNav: NavSection[] = [
     label: "Admin",
     adminOnly: true,
     items: [
-      { label: "Evaluations", href: "/settings/evals", icon: FlaskConical },
+      // Dev-only: internal tooling, 404s in production builds
+      // (admin-tools-visibility.ts).
+      { label: "Evaluations", href: "/settings/evals", icon: FlaskConical, ready: EVALS_PAGE_ENABLED },
       { label: "LLM Budget", href: "/settings/llm-budget", icon: DollarSign },
-      { label: "MCP Integration", href: "/settings/mcp", icon: Plug },
+      { label: "MCP Integration", href: "/settings/mcp", icon: Plug, ready: MCP_PAGE_ENABLED },
     ],
   },
   {

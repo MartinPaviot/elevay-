@@ -9,10 +9,12 @@ import {
   ArrowLeft, Calendar, Clock, MapPin, Users, ExternalLink,
   FileText, Upload, CheckCircle2, AlertTriangle,
   ChevronDown, ChevronRight, Send, Plus, Loader2, MessageSquare,
-  Edit2, Check, X, Trash2,
+  Edit2, Check, X, Trash2, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveExtraction } from "@/components/live-extraction";
+import { MeddpiccScorecard, AccountCallIntel, ContactCallProfile } from "@/components/call-intel";
+import { MeetingRecorder } from "./_meeting-recorder";
 import { useToast } from "@/components/ui/toast";
 
 interface MeetingNotes {
@@ -56,6 +58,19 @@ interface MeetingData {
   followUpSentAt: string | null;
   tasks: Array<{ id: string; title: string; status: string }>;
   matchedContacts: Array<{ name: string; contactId: string | null }>;
+  crm?: {
+    deal: { id: string; properties: Record<string, unknown> } | null;
+    company: { id: string; properties: Record<string, unknown> } | null;
+    contact: { id: string; properties: Record<string, unknown> } | null;
+  };
+  coaching?: {
+    score: number | null;
+    category: string;
+    summary: string;
+    detail: string;
+    suggestion: string | null;
+    createdAt: string;
+  } | null;
 }
 
 function SentimentBadge({ sentiment }: { sentiment: string }) {
@@ -100,6 +115,53 @@ function BuyingSignalCard({ label, value }: { label: string; value: string | str
       <div className="text-sm text-gray-900 dark:text-gray-100">
         {Array.isArray(value) ? value.join(", ") : value}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Post-meeting coaching debrief — surfaces the `coachingInsights` row that
+ * scoreInteraction wrote for this meeting (orphaned until now). Read-only:
+ * how the rep ran the meeting, distinct from the prospect-side CRM intel above.
+ */
+function CoachingSection({ coaching }: { coaching: NonNullable<MeetingData["coaching"]> }) {
+  const pct = typeof coaching.score === "number" ? Math.round(coaching.score * 100) : null;
+  const tone =
+    pct == null
+      ? "var(--color-text-tertiary)"
+      : pct >= 75
+        ? "var(--color-success)"
+        : pct >= 50
+          ? "var(--color-warning)"
+          : "var(--color-error)";
+  return (
+    <div className="rounded-xl p-4" style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}>
+      <div className="mb-2 flex items-center gap-2">
+        <Sparkles className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+          Coaching debrief
+        </h3>
+        {pct != null && (
+          <span
+            className="ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
+            style={{ background: "var(--color-bg-page)", color: tone, border: `1px solid ${tone}` }}
+          >
+            {pct}/100
+          </span>
+        )}
+      </div>
+      <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>{coaching.summary}</p>
+      {coaching.detail && (
+        <div className="mt-2 whitespace-pre-wrap text-[12px] leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+          {coaching.detail}
+        </div>
+      )}
+      {coaching.suggestion && (
+        <div className="mt-3 rounded-md p-2.5" style={{ background: "var(--color-accent-soft, rgba(37,99,235,0.08))", border: "1px solid var(--color-border-default)" }}>
+          <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>Suggested next move</p>
+          <p className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>{coaching.suggestion}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -150,6 +212,9 @@ export default function MeetingDetailPage() {
 
   // M2 — send follow-up.
   const [sendingFollowUp, setSendingFollowUp] = useState(false);
+
+  // Share the summary to Slack (reuses the workspace Slack webhook).
+  const [sharingSlack, setSharingSlack] = useState(false);
 
   const fetchMeeting = useCallback(async () => {
     try {
@@ -342,6 +407,23 @@ export default function MeetingDetailPage() {
       toast("Failed to send follow-up — network error.", "error");
     } finally {
       setSendingFollowUp(false);
+    }
+  }
+
+  async function shareToSlack() {
+    setSharingSlack(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/share-slack`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast((body as { error?: string }).error || "Couldn't share to Slack.", "error");
+        return;
+      }
+      toast("Shared to Slack.", "success");
+    } catch {
+      toast("Couldn't share to Slack — network error.", "error");
+    } finally {
+      setSharingSlack(false);
     }
   }
 
@@ -555,6 +637,11 @@ export default function MeetingDetailPage() {
                 </Button>
               </a>
             )}
+            {notes && (
+              <Button variant="outline" size="sm" onClick={shareToSlack} disabled={sharingSlack} loading={sharingSlack}>
+                <Send className="mr-1 h-4 w-4" /> Share to Slack
+              </Button>
+            )}
             {notes && <SentimentBadge sentiment={notes.sentiment} />}
           </div>
         </div>
@@ -628,6 +715,22 @@ export default function MeetingDetailPage() {
               </div>
             )}
           </CollapsibleSection>
+
+          {/* Qualification + CRM enrichment — the SAME MEDDPICC scorecard,
+              account intel and contact profile the call path renders, now fed
+              from the recorded meeting. Each self-returns null when empty; in
+              review mode an inline Approve/Dismiss bar posts to
+              /api/call-intel/review. */}
+          {data.crm?.deal && (
+            <MeddpiccScorecard properties={data.crm.deal.properties} entityId={data.crm.deal.id} />
+          )}
+          {data.crm?.company && (
+            <AccountCallIntel properties={data.crm.company.properties} entityId={data.crm.company.id} />
+          )}
+          {data.crm?.contact && (
+            <ContactCallProfile properties={data.crm.contact.properties} entityId={data.crm.contact.id} />
+          )}
+          {data.coaching && <CoachingSection coaching={data.coaching} />}
 
           {/* Key Points — inline editable (M1) */}
           <CollapsibleSection title={`Key Points (${notes.keyPoints.length})`} icon={FileText}>
@@ -903,6 +1006,10 @@ export default function MeetingDetailPage() {
         /* Upload Zone for past meetings */
         <div className="space-y-4">
           <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">Add Meeting Notes</h2>
+
+          {/* Record in-browser — feeds the same audio → Whisper → notes → CRM
+              pipeline as a file upload, for in-person meetings with no bot. */}
+          <MeetingRecorder onRecorded={(file) => handleFileUpload(file)} disabled={uploading} />
 
           {/* Drag & Drop */}
           <div

@@ -193,7 +193,10 @@ export function buildSkillsTools(ctx: ToolContext) {
           {
             companyDomain: input.companyDomain,
             targetTitles: input.targetTitles,
-            targetSeniorities: input.targetSeniorities ?? ["c_suite", "vp", "director"],
+            // Pass through: the skill handler defaults seniorities ONLY
+            // when no titles are given (Apollo ANDs the facets —
+            // materializing a default here excluded titled targets).
+            targetSeniorities: input.targetSeniorities,
           },
           { tenantId, dryRun: false }
         );
@@ -304,10 +307,16 @@ export function buildSkillsTools(ctx: ToolContext) {
     }),
 
     prepSalesCall: makeTool({
-      description: `Deep pre-call preparation: person insights, company intel, competitive landscape, call strategy, opening hook, discovery questions, objection handlers. Use when user asks "prep for call with X", "call strategy for X", "how to approach this meeting".`,
+      description: `Deep pre-call preparation, specialized to the moment of the deal — a discovery brief differs from a demo, proposal, or close brief. The moment is inferred automatically from the deal; pass momentHint ONLY if the user states which call it is. Use when user asks "prep for call with X", "call strategy for X", "how to approach this meeting".`,
       inputSchema: z.object({
         contactId: z.string().describe("Contact ID for the call"),
-        dealId: z.string().optional().describe("Associated deal ID"),
+        dealId: z.string().optional().describe("Associated deal ID — the moment is derived from its stage"),
+        momentHint: z
+          .string()
+          .optional()
+          .describe(
+            "Only when the user says which call it is (e.g. 'discovery', 'demo', 'proposal', 'negotiation', 'close'); otherwise leave empty and the moment is inferred from the deal",
+          ),
         callType: z
           .enum(["discovery", "demo", "follow_up", "negotiation", "close"])
           .optional(),
@@ -320,6 +329,7 @@ export function buildSkillsTools(ctx: ToolContext) {
           {
             contactId: input.contactId,
             dealId: input.dealId,
+            momentHint: input.momentHint,
             callType: input.callType ?? "discovery",
           },
           { tenantId, dryRun: false }
@@ -329,7 +339,7 @@ export function buildSkillsTools(ctx: ToolContext) {
     }),
 
     qualifyLeads: makeTool({
-      description: `Batch-qualify contacts against ICP: seniority, engagement, sentiment, fit scoring. Use when user asks "qualify these leads", "score my contacts", "which leads are worth pursuing?", "rank contacts by fit".`,
+      description: `Batch-qualify contacts against the ICP profiles (stored ICP-fit score: company criteria + persona match, refreshed before reading). Use when user asks "qualify these leads", "score my contacts", "which leads are worth pursuing?", "rank contacts by fit".`,
       inputSchema: z.object({
         contactIds: z.array(z.string()).describe("Contact IDs to qualify"),
         minScoreThreshold: z

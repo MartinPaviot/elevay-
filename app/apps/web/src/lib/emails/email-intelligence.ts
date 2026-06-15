@@ -23,7 +23,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { getModelForTask } from "@/lib/ai/ai-provider";
 import { truncateForLLM } from "@/lib/enrichment/email-extract";
-import { getTenantKnowledge, type TenantKnowledgeEntry } from "@/lib/knowledge/get-tenant-knowledge";
+import { getTenantKnowledgeForStage, type TenantKnowledgeEntry } from "@/lib/knowledge/get-tenant-knowledge";
 import type { TenantSettings } from "@/lib/config/tenant-settings";
 
 // ── Public Types ──────────────────────────────────────────────
@@ -129,8 +129,9 @@ export async function extractThreadIntelligence(
     return `[${i + 1}] ${dateStr} | ${dir} | From: ${e.from}\nSubject: ${e.subject}\n${body}`;
   }).join("\n\n---\n\n");
 
-  // Extract known competitor names from tenant knowledge base
-  const knowledge = tenantId ? await getTenantKnowledge(tenantId) : [];
+  // Extract known competitor names from the "outreach" stage knowledge
+  // (competitors derive into outreach/objections — lib/knowledge/stages.ts).
+  const knowledge = tenantId ? await getTenantKnowledgeForStage(tenantId, "outreach") : [];
   const competitorHint = extractCompetitorHint(knowledge);
   const productHint = tenantSettings.productDescription
     ? `\nOur product: ${tenantSettings.productDescription}`

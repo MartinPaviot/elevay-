@@ -1,0 +1,373 @@
+﻿
+Pilae Cloud · The simplest sovereign cloud you've ever run
+/
+Cloud
+Product
+Marketplace
+Hosting
+Docs
+Start a project
+The simplest
+sovereign
+cloud you've ever run.
+A curated catalog of open source, shipped as fully managed pods across sovereign regions in Switzerland, France and Germany. Patches, backups, SLAs and named on-call, all in one console.
+Start a project
+Book a 20-min review
+One pane. The whole operation.
+Health, spend, uptime against SLA, and the operational story behind every deploy, patch, scaling event, certificate and backup. No tab-switching, no aggregator licences.
+app.pilae.cloud/orgs/atelier-zr/overview
+CET · CHF
+AZ
+Atelier Zürich
+production · ch-zh1
+Workspace
+Overview
+Projects
+4
+Pods
+17
+Marketplace
+Operations
+Activity
+Incidents
+0
+SLA
+Documents
+23
+Tickets
+2
+workspace / overview
+Operations · May 11, 2026
+Last 30 days
++ New pod
+Health
+0
+%
+17 / 17 pods passing
+Uptime · SLA
+0
+%
+target 99.95 · +0.042
+Spend MTD
+0
+CHF
+forecast 4,120 · +6%
+Tickets open
+0
+avg reply 14m
+Pods
+17 deployed · 4 projects
+pod
+plane
+uptime
+cost
+openwebui-prod
+chat.atelier-zr.ch
+pilae · ch-zh1
+99.99%
+412 CHF
+n8n-orchestrator
+flow.internal
+pilae · ch-zh1
+99.97%
+186 CHF
+postgres-warehouse
+deploying · v16.4
+on-prem · zr-dc2
+n/a
+included
+grafana-observability
+obs.atelier-zr.ch
+pilae · ch-zh1
+100.00%
+98 CHF
+superset-bi
+patch pending · v4.0.1
+pilae · ch-gv1
+99.92%
+241 CHF
+Activity
+last 48h
+openwebui-prod
+deployed v0.6.2
+by ops@pilae · zero-downtime · ch-zh1
+14m
+Certificate renewed 
+chat.atelier-zr.ch
+Let's Encrypt · valid 90d
+3h
+Backup verified 
+postgres-warehouse
+offsite ZH1 → GV1 · restore drill 12m
+9h
+Scaled 
+n8n-orchestrator
+2 → 4
+autoscale · CPU 71%
+22h
+CVE-2026-1184 patch applied · 
+5 pods
+curated by Pilae · changelog #284
+1d
+One platform. The operation that follows it.
+Seven commitments. The things you'd otherwise hire a platform team to build, run and answer for.
+Health, spend, SLA. One pane.
+live
+Health
+0
+/17 pods
+Uptime
+0
+%
+SLA target 99.95
+Spend
+0
+CHF · MTD
+History
+deploy 
+v0.6.2
+cert renewed
+CVE-1184 · 5 pods
+scaled n8n 2→4
+backup verified
+deploy 
+v0.6.1
+cert issued
+restore drill 12m
+deploy 
+v0.6.2
+cert renewed
+CVE-1184 · 5 pods
+scaled n8n 2→4
+backup verified
+deploy 
+v0.6.1
+cert issued
+restore drill 12m
+every change, logged
+European regions, or your own infrastructure.
+Mix Pilae-operated regions with hardware you already run. Same console, same SLA framework, same on-call.
+Pilae regions
+CH · FR · DE
+or
+Your infra
+on-prem · VPC
+Swiss company.
+European sovereignty.
+Operated by a Swiss SA, with workloads resident in the European region of your choice.
+Projects and pods, structured.
+Domain, telemetry and region — carried by every pod.
+acme-prod
+openwebui
+ch-zh1
+n8n
+fr-pa1
+superset
+de-fr1
+Named SREs, in CET.
+A person, not a queue. Sat with the pod.
+ML
+Marc Leclerc
+SRE · on-call
+CET 09:42
+JD
+Julia Dürr
+SRE · Zürich
+AP
+Antoine Petit
+SRE · Paris
+First response
+< 15 min
+Languages
+EN · FR · DE
+Coverage
+24/7 paged
+A curated marketplace.
+Battle-tested open source for AI, automation, data and observability. Hardened, version-pinned and operated to a sovereign residency line. You request; we provision and run.
+Contracts and runbooks, with the workloads.
+Filed alongside the pod they describe.
+Runbooks
+Sub-processors
+SLA
+MSA
+A shortlist we'd run ourselves.
+Every shortlisted app is reviewed, hardened, version-pinned and shipped with a runbook.
+You request provisioning; we operate it.
+All 
+AI & LLM 
+Workflow 
+Data & BI 
+Observability 
+Collaboration 
+Business 
+Open WebUI
+AI & LLM
+User-friendly, extensible interface for any large language model.
+136k 
+·
+BSD-3 (variant)
+→
+n8n
+Workflow
+Workflow automation with 400+ integrations. Self-hosted, source-available.
+187k 
+·
+Sustainable Use
+→
+Grafana
+Observability
+Metrics, logs and traces in one place. Dashboards pre-wired per pod.
+74k 
+·
+AGPL-3.0
+→
+Apache Superset
+BI
+SQL-first business intelligence. Connect Postgres, ClickHouse, BigQuery.
+73k 
+·
+Apache-2.0
+→
+Supabase
+Backend
+Postgres-based development platform. Auth, storage, edge functions.
+102k 
+·
+Apache-2.0
+→
+NocoDB
+Data
+Turn any SQL database into a smart spreadsheet. Airtable, self-hosted.
+63k 
+·
+AGPL-3.0
+→
+Metabase
+BI
+Ask questions of your data, build dashboards, share with the team.
+47k 
+·
+AGPL-3.0
+→
+Plane
+Project management
+Open-source issues, projects, cycles and modules. Jira-shaped, sovereign.
+49k 
+·
+AGPL-3.0
+→
+Vaultwarden
+Secrets
+Bitwarden-compatible password manager, lightweight and self-hosted.
+60k 
+·
+AGPL-3.0
+→
+Mattermost
+Collaboration
+Self-hosted team chat. Replace Slack while keeping conversations resident.
+37k 
+·
+MIT (server)
+→
+Nextcloud
+Collaboration
+Files, mail, calendar, talk. A sovereign workspace for the team.
+35k 
+·
+AGPL-3.0
+→
+Keycloak
+Identity
+Single sign-on, OIDC and SAML. The identity layer for the rest of the stack.
+34k 
+·
+Apache-2.0
+→
+Run on our regions, on yours, or both.
+Choose per workload. Either way, you get the same console, the same SLA framework and the same on-call team.
+Pilae-managed
+Sovereign regions across CH, FR & DE.
+European datacenters, operated end-to-end. Encryption, dedicated VLANs, optional CH-resident HSM.
+ch-zh1
+ready
+fr-pa1
+ready
+de-fr1
+ready
+SLA
+Production-grade, per workload
+Backup
+Offsite, cross-region
+Patch
+Upstream tracked · CVEs prioritised
+Billing
+CHF or EUR · capped per project
+Customer / on-prem
+Your infrastructure, our operators.
+Your datacenter or cloud. A Pilae agent runs inside; you keep custody. Same console, same runbooks.
+your perimeter
+pilae-agent
+v0.6
+telemetry →
+Stack
+Kubernetes · airgapped option
+Telemetry
+Read-only · scoped exports
+SLA
+Custom, scoped to your infra
+Drill
+Restore drills · written report
+The questions we get on the first call.
+If yours isn't here, the operations team will answer it in writing within one CET business day.
+What does "sovereign" mean on Pilae Cloud, concretely?
+Your workloads run on infrastructure operated by a Swiss company under Swiss law, in Swiss datacenters, with the option of CH-resident key custody. You can also keep workloads entirely on your own infrastructure and have us operate them in place. We don't claim certifications we don't hold. Current artifacts live in your Documents drawer.
+Can I bring my own datacenter?
+Yes. The hybrid plane is designed for it. We deploy a Pilae agent into your cluster or VPC, you keep custody of data and credentials, and you get the same console, runbooks and on-call.
+What if an app isn't in the marketplace?
+Request it. Curation means we say no to noisy or unmaintained projects, not that the list is closed. If the software is open source, has a healthy upstream, and runs cleanly under our hardening, we'll evaluate, package and operate it.
+How is billing structured?
+Flat operations fee per tier, in CHF, plus the workloads you actually run (compute, storage, egress), all visible on the Overview before the invoice. No spot pricing, no surprise meters. EU customers can invoice in EUR.
+Who is on the other end of a ticket?
+Named SREs based in Switzerland, operating during CET hours, with a 24/7 on-call rotation for production incidents. Tickets live alongside your workloads, with status, history and the engineers’ real names. Not a queue and a bot.
+Cloud you can 
+point at
+on a map.
+Start in an afternoon: spin up a project, request an app from the marketplace, watch us provision it. Cancel anytime. Your data exits with you.
+Start a project
+Book a 20-min review
+/
+Cloud
+The application cloud from Pilae SA. Curated open source, operated on sovereign Swiss & European infrastructure.
+PRODUCT
+Dashboard
+Marketplace
+Hosting
+PILAE GROUP
+pilae.ch ↗
+Infrastructure
+AI & Data
+Custom workflows
+About
+Contact
+SOCIAL
+LinkedIn
+© 2026 Pilae SA
+Privacy
+Legal notice
+FAQ
+Start a project
+We onboard one client at a time.
+01
+You tell us what you want to run.
+02
+We scope regions, SLA and timeline together.
+03
+We provision, operate, and hand you the console.
+Leave your email — a person on our team will reach out within one business day.
+Continue
+Thanks — we have your email.
+We'll be in touch within one business day from 
+contact@pilae.ch
+.
+

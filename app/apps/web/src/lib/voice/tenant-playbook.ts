@@ -85,6 +85,7 @@ const bankSchema = z.object({
 async function generateBank(
   settings: TenantSettings,
   deps: Required<Pick<TenantPlaybookDeps, "model">> & TenantPlaybookDeps,
+  knowledgeBlock = "",
 ): Promise<StoredObjectionEntry[] | null> {
   const generate = deps.generate ?? generateObject;
   const product = settings.productDescription?.trim();
@@ -93,10 +94,13 @@ async function generateBank(
     const { object } = await generate({
       model: deps.model,
       schema: bankSchema,
-      system: `You write live cold-call objection responses a rep whispers mid-call. French, "vous" register, one breath each (≤ 2 short sentences). Methodology: acknowledge → one calibrated question → de-risk the meeting. NEVER invent prices, certifications, metrics or competitor names that are not in PRODUCT. No hype.`,
+      system: `You write live cold-call objection responses a rep whispers mid-call. French, "vous" register, one breath each (≤ 2 short sentences). Methodology: acknowledge → one calibrated question → de-risk the meeting. NEVER invent prices, certifications, metrics or competitor names that are not in PRODUCT or the tenant knowledge. No hype.`,
       prompt: `PRODUCT: ${product}
 SALES MOTION: ${settings.salesMotion ?? "n/a"}
-ICP: industries ${settings.targetIndustries?.join(", ") || "n/a"}; sizes ${settings.targetCompanySizes?.join(", ") || "n/a"}; roles ${settings.targetRoles || "décideur"}.
+ICP: industries ${settings.targetIndustries?.join(", ") || "n/a"}; sizes ${settings.targetCompanySizes?.join(", ") || "n/a"}; roles ${settings.targetRoles || "décideur"}.${knowledgeBlock ? `
+
+TENANT OBJECTION KNOWLEDGE (the founder's own documented responses — ground yours in these when they cover the class):
+${knowledgeBlock}` : ""}
 
 For each objection class (${CLASSES.join(", ")}), write 2 responses grounded in THIS product. Return { bank: [{ objectionClass, responses }] }.`,
     });
@@ -147,7 +151,20 @@ export async function getTenantPlaybook(
     const settings = await loadSettings(tenantId);
     let overrides = parseObjectionBank(settings.objectionBank);
     if (!overrides && model) {
-      const generated = await generateBank(settings, { ...deps, model });
+      // "objections" stage knowledge grounds the one-shot generation.
+      // Fail-soft: any read error just means a less-grounded bank.
+      let knowledgeBlock = "";
+      try {
+        const { getTenantKnowledgeForStage } = await import("@/lib/knowledge/get-tenant-knowledge");
+        const entries = await getTenantKnowledgeForStage(tenantId, "objections", { includeGlobal: false });
+        knowledgeBlock = entries
+          .map((e) => `- ${e.topic}: ${e.content.replace(/\s+/g, " ").trim()}`)
+          .join("\n")
+          .slice(0, 2000);
+      } catch {
+        knowledgeBlock = "";
+      }
+      const generated = await generateBank(settings, { ...deps, model }, knowledgeBlock);
       if (generated) {
         overrides = parseObjectionBank(generated);
         if (overrides) await saveBank(tenantId, generated).catch(() => {});

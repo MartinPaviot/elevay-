@@ -27,6 +27,7 @@ import {
   type RetrievedResult,
 } from "@/lib/evals/rag-quality";
 import { retrieveKnowledge, formatKnowledgeForPrompt } from "@/lib/knowledge/retrieval";
+import { formatKnowledgeIndex } from "@/lib/knowledge/get-tenant-knowledge";
 import { recordTrace } from "@/lib/observability/observability";
 import { allocateContextBudget, formatBudgetSummary, type RagResult } from "@/lib/ai/context-budget";
 
@@ -502,19 +503,18 @@ export async function POST(req: Request) {
     getEntityContext(contextType, contextId, authCtx.tenantId),
     (async () => {
       try {
-        if (lastUserText) {
-          const entries = await retrieveKnowledge(lastUserText, authCtx.tenantId, {
-            userId: authCtx.userId,
-            limit: 8,
-          });
-          if (entries.length > 0) return "\n\n" + formatKnowledgeForPrompt(entries);
-        }
-        // Fallback: load all active entries when no user message for semantic match
+        // Always-on Knowledge Index: the model sees WHAT is documented on
+        // EVERY turn (workspace + its own user-scope entries, titles grouped
+        // by sales moment) and fetches full content deliberately via the
+        // getKnowledge tool. The semantic top-hits still ride along as
+        // pre-fetched detail for the current message — index + tool remove
+        // the dependence on embedding luck.
         const rows = await db
           .select({
             title: knowledgeEntries.title,
+            category: knowledgeEntries.category,
+            stages: knowledgeEntries.stages,
             content: knowledgeEntries.content,
-            scope: knowledgeEntries.scope,
           })
           .from(knowledgeEntries)
           .where(
@@ -531,10 +531,22 @@ export async function POST(req: Request) {
             )
           )
           .orderBy(desc(knowledgeEntries.updatedAt))
-          .limit(20);
-        if (rows.length === 0) return "";
-        return "\n\n## Your Knowledge Base\n" +
-          rows.map((k) => `### ${k.title}\n${k.content}`).join("\n\n");
+          .limit(60);
+        const indexBlock = rows.length > 0 ? "\n\n" + formatKnowledgeIndex(rows) : "";
+
+        let detail = "";
+        if (lastUserText) {
+          const entries = await retrieveKnowledge(lastUserText, authCtx.tenantId, {
+            userId: authCtx.userId,
+            limit: 8,
+          });
+          if (entries.length > 0) detail = "\n\n" + formatKnowledgeForPrompt(entries);
+        } else if (rows.length > 0) {
+          detail =
+            "\n\n## Your Knowledge Base\n" +
+            rows.slice(0, 20).map((k) => `### ${k.title}\n${k.content}`).join("\n\n");
+        }
+        return indexBlock + detail;
       } catch {
         return "";
       }

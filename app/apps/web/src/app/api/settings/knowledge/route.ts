@@ -4,6 +4,8 @@ import { knowledgeEntries } from "@/db/schema";
 import { eq, and, or, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { embedKnowledgeEntry } from "@/lib/knowledge/retrieval";
+import { effectiveStages, sanitizeStages } from "@/lib/knowledge/stages";
+import { classifyStages } from "@/lib/knowledge/auto-stage";
 
 const STALENESS_DAYS = 90;
 
@@ -41,6 +43,8 @@ export async function GET() {
         title: r.title,
         category: r.category,
         content: r.content,
+        // Effective consumption stages (stored when curated, else derived).
+        stages: effectiveStages(r.stages, r.category, r.title),
         scope: r.scope,
         isEditable:
           r.createdBy === authCtx.userId || authCtx.role === "admin",
@@ -66,7 +70,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { title, content, category, scope } = body;
+    const { title, content, category, scope, stages } = body;
 
     if (!title?.trim() || !content?.trim()) {
       return Response.json(
@@ -75,16 +79,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const validCategories = [
-      "icp",
-      "competitors",
-      "objections",
-      "product",
-      "process",
-      "context",
-      "custom",
-    ];
-    const cat = validCategories.includes(category) ? category : "custom";
+    // Categories are USER-CREATABLE: any short label works (the canonical
+    // icp/competitors/objections/product/process/context are suggestions,
+    // not a gate). Machine routing never depends on the category — the
+    // stages do — so a free label costs nothing and reads naturally.
+    const cat =
+      typeof category === "string" && category.trim()
+        ? category.trim().toLowerCase().slice(0, 40)
+        : "custom";
 
     const entryScope = scope === "user" ? "user" : "workspace";
     if (entryScope === "workspace") {
@@ -96,6 +98,14 @@ export async function POST(req: Request) {
       .update(content.trim())
       .digest("hex");
 
+    // "Write normally": no curated stages on the request → the entry
+    // routes itself from its content (fail-soft to category/title derive).
+    const curated = sanitizeStages(stages);
+    const entryStages =
+      curated.length > 0
+        ? curated
+        : await classifyStages(title.trim(), content.trim(), authCtx.tenantId, cat);
+
     const [entry] = await db
       .insert(knowledgeEntries)
       .values({
@@ -105,6 +115,7 @@ export async function POST(req: Request) {
         title: title.trim(),
         category: cat,
         content: content.trim(),
+        stages: entryStages,
         contentHash,
       })
       .returning();
@@ -137,11 +148,12 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { id, title, content, category } = body as {
+    const { id, title, content, category, stages } = body as {
       id?: string;
       title?: string;
       content?: string;
       category?: string;
+      stages?: unknown;
     };
 
     if (!id) {
@@ -172,7 +184,12 @@ export async function PUT(req: Request) {
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title.trim();
-    if (category !== undefined) updates.category = category;
+    // Free-form category (user-creatable label); empty string keeps current.
+    if (typeof category === "string" && category.trim()) {
+      updates.category = category.trim().toLowerCase().slice(0, 40);
+    }
+    // Stage curation: an explicit array (even empty = "back to derived").
+    if (Array.isArray(stages)) updates.stages = sanitizeStages(stages);
 
     let contentChanged = false;
     if (content !== undefined) {

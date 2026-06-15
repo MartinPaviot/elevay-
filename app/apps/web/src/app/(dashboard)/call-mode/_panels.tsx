@@ -48,6 +48,7 @@ import {
   Target,
   ChevronDown,
   ChevronRight,
+  BadgeCheck,
 } from "lucide-react";
 import { industryIcon } from "@/lib/ui/industry-style";
 import { Avatar } from "@/components/ui/avatar";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/call-mode/prospect-brief-core";
 import { isVoiceableSignal, mergeTechStacks } from "@/lib/call-mode/live-script";
 import { countryFromTimezone } from "@/lib/call-mode/geo";
+import { relativeFr, type RoleVerification } from "@/lib/contacts/role-status";
 import { pickReplaceableTools } from "@/lib/tech-detect/replaceable";
 import { scoreTranscriptLevers, DRILL_COPY } from "@/lib/voice/lever-scoring";
 import { CompanyLogo } from "@/components/ui/company-logo";
@@ -175,6 +177,10 @@ export interface BriefContext {
   dealValueWeight: number;
   localTime: string;
   localTimezone: string;
+  lastEnrichedAt?: string | null;
+  /** Live LinkedIn verification of the role (null until the auto-check runs):
+   *  confirmed → show the verified role; left → handled upstream (dropped). */
+  roleVerification?: RoleVerification | null;
   latestSignal: { type: string; label: string } | null;
 }
 
@@ -472,14 +478,41 @@ export function PreCallBrief({
   brainLoading,
   onEnrich,
   enriching,
+  onRoleObsolete,
 }: {
   selected: BriefContext;
   brain: ContactBrainJSON | null | undefined;
   brainLoading: boolean;
   onEnrich?: () => void;
   enriching?: boolean;
+  /** Called after the rep flags this contact as having left the role, so the
+   *  cockpit can drop them from the queue. */
+  onRoleObsolete?: (contactId: string) => void;
 }) {
   const focal = brain?.focalContact;
+  // Honest freshness: the title/company is sourced data, never re-verified, so
+  // we let the rep flag "a quitté ce poste" — removes them from the list.
+  const [markingLeft, setMarkingLeft] = useState(false);
+  async function markRoleObsolete() {
+    setMarkingLeft(true);
+    try {
+      await fetch(`/api/contacts/${selected.contactId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roleObsolete: true }),
+      });
+      onRoleObsolete?.(selected.contactId);
+    } catch {
+      setMarkingLeft(false);
+    }
+  }
+  // Live LinkedIn verification: when confirmed, the verified title is the
+  // truth to display (over the possibly-stale sourced title).
+  const verification = selected.roleVerification ?? null;
+  const displayTitle =
+    verification?.status === "confirmed" && verification.title
+      ? verification.title
+      : focal?.title ?? selected.title;
   const deals = brain?.ownedDeals ?? [];
   const activities = brain?.directActivities ?? [];
   const dossier = brain?.cachedDossier ?? null;
@@ -582,10 +615,34 @@ export function PreCallBrief({
             <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Autorité</div>
             <p className="truncate text-[13px] font-medium leading-snug text-zinc-800 dark:text-zinc-100">
               {authorityLabel}
-              {(focal?.title ?? selected.title) && (
-                <span className="font-normal text-zinc-500"> · {focal?.title ?? selected.title}</span>
+              {displayTitle && (
+                <span className="font-normal text-zinc-500"> · {displayTitle}</span>
               )}
             </p>
+            {/* We verify the role ourselves on LinkedIn (no "à confirmer"
+                label). Confirmed → a verified badge; left → the LinkedIn truth
+                (these are normally dropped from the list upstream). The manual
+                "a quitté ce poste" stays as an override. */}
+            <div className="mt-0.5 flex items-center gap-2">
+              {verification?.status === "confirmed" ? (
+                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                  <BadgeCheck className="h-3 w-3" />
+                  poste vérifié sur LinkedIn{verification.at ? ` · ${relativeFr(verification.at)}` : ""}
+                </span>
+              ) : verification?.status === "left" ? (
+                <span className="text-[10px] text-rose-600 dark:text-rose-400">
+                  a quitté ce poste{verification.company ? ` — désormais ${verification.title ? `${verification.title}, ` : ""}${verification.company} (LinkedIn)` : " (LinkedIn)"}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={markRoleObsolete}
+                disabled={markingLeft}
+                className="text-[10px] font-medium text-zinc-400 underline-offset-2 transition-colors hover:text-rose-600 hover:underline disabled:opacity-50"
+              >
+                {markingLeft ? "…" : "a quitté ce poste"}
+              </button>
+            </div>
           </div>
           {focal?.intentTrend && <IntentTrend trend={focal.intentTrend} />}
         </div>

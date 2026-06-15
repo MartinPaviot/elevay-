@@ -49,6 +49,8 @@ const TOOL_GROUPS: Record<string, string> = {
   searchEmailsByMetadata: "query",
   runBasicReport: "query",
   getCallList: "query",
+  proposeCallSprint: "query",
+  getKnowledge: "query",
   getNoteBody: "query",
   getCallRecording: "query",
   getEmailContent: "query",
@@ -138,6 +140,8 @@ const TOOL_GROUPS: Record<string, string> = {
   deleteComment: "action",
   deleteSequenceStep: "action",
   mergeContacts: "action",
+  applyCallSprint: "action",
+  enrichCallSprint: "action",
 
   // intelligence (intelligence.ts)
   getDealCoaching: "intelligence",
@@ -322,6 +326,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\breply\b/,
       /\bsequence\b/,
       /\bcampaign\b/,
+      /\bsprint\b/,
       /\benroll\b/,
       /\boutreach\b/,
       /\binvite\b/,
