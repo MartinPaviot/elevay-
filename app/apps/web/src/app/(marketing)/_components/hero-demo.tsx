@@ -192,9 +192,9 @@ export function HeroDemo() {
           composite on some GPUs and smear into a solid green/teal band that
           breaks the whole hero layout. Keep the stage plain. */}
       <div ref={frameRef} className="relative z-10">
-        <ScaleToFit designWidth={460}>
+        <ScaleToFit designWidth={1280}>
         <AppFrame>
-          <div className="flex" style={{ height: 460 }}>
+          <div className="flex" style={{ height: 720 }}>
             <Sidebar active={phases[phase].nav} />
             <div className="flex min-w-0 flex-1 flex-col" style={{ background: T.page }}>
               {/* Top toolbar locked to the sidebar's Elevay-logo header
@@ -204,7 +204,7 @@ export function HeroDemo() {
                   <span key={i} className="h-1.5 rounded-full transition-all duration-300" style={{ width: i === phase ? 18 : 6, background: i === phase ? T.accent : "#D9DCE4" }} />
                 ))}
               </div>
-              <div ref={viewportRef} className="relative min-h-0 flex-1 overflow-hidden">
+              <div ref={viewportRef} className="no-scrollbars relative min-h-0 flex-1 overflow-hidden">
                 <AnimatePresence mode="wait">
                   <motion.div key={phase} className="h-full" initial={reduced ? false : { opacity: 0, y: 12, scale: 0.992 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.992 }} transition={{ duration: reduced ? 0 : 0.42, ease: [0.22, 0.61, 0.36, 1] }}>
                     <PhaseEl />
