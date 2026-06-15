@@ -1,19 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { resolveConferencing } from "@/lib/integrations/calendar-write";
 
-describe("resolveConferencing — native vs sovereign", () => {
-  it("honours native on Google (Meet) and Microsoft (Teams)", () => {
-    expect(resolveConferencing("native", "google")).toBe("native");
-    expect(resolveConferencing("native", "microsoft")).toBe("native");
+describe("resolveConferencing — Visio / Meet / Teams / Zoom", () => {
+  it("Teams only on Microsoft, else falls back to sovereign", () => {
+    expect(resolveConferencing("teams", "microsoft", false)).toBe("teams");
+    expect(resolveConferencing("teams", "google", false)).toBe("sovereign");
+    expect(resolveConferencing("teams", "caldav", false)).toBe("sovereign");
   });
 
-  it("falls back to sovereign on CalDAV (no native conferencing)", () => {
-    expect(resolveConferencing("native", "caldav")).toBe("sovereign");
+  it("Google Meet only on Google, else falls back to sovereign", () => {
+    expect(resolveConferencing("google_meet", "google", false)).toBe("google_meet");
+    expect(resolveConferencing("google_meet", "microsoft", false)).toBe("sovereign");
   });
 
-  it("keeps sovereign when sovereign is requested, whatever the provider", () => {
-    expect(resolveConferencing("sovereign", "google")).toBe("sovereign");
-    expect(resolveConferencing("sovereign", "microsoft")).toBe("sovereign");
-    expect(resolveConferencing("sovereign", "caldav")).toBe("sovereign");
+  it("Zoom only when Zoom is configured (any calendar), else sovereign", () => {
+    expect(resolveConferencing("zoom", "microsoft", true)).toBe("zoom");
+    expect(resolveConferencing("zoom", "caldav", true)).toBe("zoom");
+    expect(resolveConferencing("zoom", "microsoft", false)).toBe("sovereign");
+  });
+
+  it("sovereign stays sovereign on every provider", () => {
+    expect(resolveConferencing("sovereign", "google", true)).toBe("sovereign");
+    expect(resolveConferencing("sovereign", "microsoft", true)).toBe("sovereign");
+    expect(resolveConferencing("sovereign", "caldav", true)).toBe("sovereign");
   });
 });

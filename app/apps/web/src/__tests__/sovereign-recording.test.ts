@@ -23,6 +23,9 @@ describe("sovereign-recording helpers", () => {
     expect(isSovereignVisioUrl("https://teams.microsoft.com/l/meetup", CH)).toBe(false);
     expect(isSovereignVisioUrl(null, CH)).toBe(false);
     expect(isSovereignVisioUrl("not a url", CH)).toBe(false);
+    // No explicit host configured → the meet.jit.si fallback is NOT "ours"
+    // (so Recall is not skipped for it).
+    expect(isSovereignVisioUrl("https://meet.jit.si/rdv-abc", {})).toBe(false);
   });
 
   it("verifies a valid Jibri signature and rejects tampering", () => {

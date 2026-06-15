@@ -36,9 +36,11 @@ export function MeetingSchedulerCard({
   const [duration, setDuration] = useState(45);
   const [title, setTitle] = useState("");
   const [booking, setBooking] = useState(false);
-  // Sovereign Jitsi by default; "native" = Google Meet / Teams when the
-  // prospect needs it (the backend picks per the connected calendar).
-  const [conferencing, setConferencing] = useState<"sovereign" | "native">("sovereign");
+  // Sovereign Jitsi by default; Google Meet / Teams / Zoom when the prospect
+  // needs it (the backend honours it per the connected calendar / config).
+  const [conferencing, setConferencing] = useState<
+    "sovereign" | "google_meet" | "teams" | "zoom"
+  >("sovereign");
   // Once booked, surface the join link (the API returned it but the cockpit
   // never showed it before).
   const [booked, setBooked] = useState<{ joinUrl: string | null; conferencing: string } | null>(null);
@@ -123,7 +125,7 @@ export function MeetingSchedulerCard({
         <div className="space-y-2">
           <p className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
             Invitation envoyée à {firstName || "le prospect"} avec le lien de visio
-            {booked.conferencing === "native" ? "." : " souveraine."}
+            {booked.conferencing === "sovereign" ? " souveraine." : "."}
           </p>
           {booked.joinUrl && (
             <div className="flex items-center gap-1.5">
@@ -174,11 +176,13 @@ export function MeetingSchedulerCard({
         ))}
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Visio</span>
         {([
-          { key: "sovereign", label: "Souveraine" },
-          { key: "native", label: "Teams / Meet" },
+          { key: "sovereign", label: "Visio" },
+          { key: "google_meet", label: "Google Meet" },
+          { key: "teams", label: "Teams" },
+          { key: "zoom", label: "Zoom" },
         ] as const).map((opt) => (
           <button
             key={opt.key}
@@ -210,9 +214,9 @@ export function MeetingSchedulerCard({
         </Button>
       </div>
       <p className="mt-1.5 text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
-        {conferencing === "native"
-          ? "Crée une réunion Teams (Outlook) ou Google Meet (Gmail) selon votre agenda connecté, et invite le contact."
-          : "Ajoute l'événement à votre agenda connecté avec un lien de visio souveraine, et invite le contact."}
+        {conferencing === "sovereign"
+          ? "Ajoute l'événement à votre agenda connecté avec un lien de visio souveraine, et invite le contact."
+          : "Crée la réunion (Google Meet / Teams / Zoom) selon votre choix et votre agenda connecté, et invite le contact."}
       </p>
       </>
       )}

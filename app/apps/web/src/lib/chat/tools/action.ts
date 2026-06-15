@@ -484,10 +484,10 @@ RULES:
         durationMinutes: z.number().optional().describe("Duration in minutes (default 30)"),
         title: z.string().optional().describe("Meeting title (default 'Meeting with <contact>')"),
         conferencing: z
-          .enum(["sovereign", "native"])
+          .enum(["sovereign", "google_meet", "teams", "zoom"])
           .optional()
           .describe(
-            "'sovereign' (default) = open-source Jitsi visio on our host; 'native' = Google Meet (Google) or Teams (Microsoft) when the prospect needs it",
+            "'sovereign' (default) = open-source Jitsi visio; 'google_meet' / 'teams' = the calendar's native conference; 'zoom' = Zoom if configured. Unavailable choices fall back to sovereign.",
           ),
       }),
       execute: async (input) => {

@@ -59,26 +59,20 @@ describe("video-meeting — sovereign visio links", () => {
     expect(m.joinUrl.startsWith("https://visio.pilae.ch/pilae-sales-")).toBe(true);
   });
 
-  it("falls back to the intended sovereign host when env is unset", () => {
-    expect(getVideoMeetBaseUrl({})).toBe("https://visio.pilae.ch");
+  it("falls back to public meet.jit.si when env is unset (works without DNS)", () => {
+    expect(getVideoMeetBaseUrl({})).toBe("https://meet.jit.si");
   });
 
-  it("rejects a non-sovereign host (meet.jit.si) in production", () => {
-    expect(() =>
-      getVideoMeetBaseUrl({
-        NODE_ENV: "production",
-        VIDEO_MEET_BASE_URL: "https://meet.jit.si",
-      }),
-    ).toThrow(/non-sovereign/);
-  });
-
-  it("allows meet.jit.si outside production (dev placeholder only)", () => {
+  it("does not throw on a non-sovereign host in production (warns, still works)", () => {
     expect(
-      getVideoMeetBaseUrl({
-        NODE_ENV: "development",
-        VIDEO_MEET_BASE_URL: "https://meet.jit.si",
-      }),
+      getVideoMeetBaseUrl({ NODE_ENV: "production", VIDEO_MEET_BASE_URL: "https://meet.jit.si" }),
     ).toBe("https://meet.jit.si");
+  });
+
+  it("honours an explicit sovereign host", () => {
+    expect(getVideoMeetBaseUrl({ VIDEO_MEET_BASE_URL: "https://visio.pilae.ch" })).toBe(
+      "https://visio.pilae.ch",
+    );
   });
 
   it("throws on an invalid base URL", () => {

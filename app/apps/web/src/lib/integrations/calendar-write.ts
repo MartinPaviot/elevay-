@@ -26,9 +26,11 @@ import { decryptSecret } from "@/lib/crypto/settings-encryption";
 import { buildIcs } from "./ics";
 import { sendViaSmtp } from "./smtp-send";
 import { createSovereignMeeting } from "./video-meeting";
+import { createZoomMeeting, zoomConfigured } from "./zoom";
 
 export type CalendarProvider = "google" | "microsoft" | "caldav";
-export type Conferencing = "sovereign" | "native";
+/** "sovereign" = Jitsi visio (default); the rest are opt-in "si besoin". */
+export type Conferencing = "sovereign" | "google_meet" | "teams" | "zoom";
 
 export class CalendarNotConnectedError extends Error {
   constructor() {
@@ -59,14 +61,21 @@ interface EventCore {
   title: string;
 }
 
-/** Native conferencing (Teams/Meet) only exists on Google/Microsoft. */
+/**
+ * Resolve the effective conferencing for the connected calendar:
+ *  - "teams" only on Microsoft, "google_meet" only on Google (native to that
+ *    calendar); requesting the wrong one falls back to the sovereign visio.
+ *  - "zoom" needs Zoom S2S OAuth configured; otherwise falls back to sovereign.
+ *  - "sovereign" (Jitsi) works on any calendar.
+ */
 export function resolveConferencing(
   requested: Conferencing,
   provider: CalendarProvider,
+  zoomOk: boolean,
 ): Conferencing {
-  if (requested === "native" && (provider === "google" || provider === "microsoft")) {
-    return "native";
-  }
+  if (requested === "teams") return provider === "microsoft" ? "teams" : "sovereign";
+  if (requested === "google_meet") return provider === "google" ? "google_meet" : "sovereign";
+  if (requested === "zoom") return zoomOk ? "zoom" : "sovereign";
   return "sovereign";
 }
 
@@ -94,7 +103,7 @@ export async function bookSovereignMeeting(opts: {
   title: string;
   /** Room-name prefix (e.g. tenant slug "pilae"). */
   roomPrefix?: string;
-  /** "sovereign" (default) = Jitsi; "native" = Google Meet / Teams. */
+  /** "sovereign" (default) = Jitsi; or "google_meet" / "teams" / "zoom". */
   conferencing?: Conferencing;
 }): Promise<BookResult> {
   const requested = opts.conferencing ?? "sovereign";
@@ -107,36 +116,61 @@ export async function bookSovereignMeeting(opts: {
     title: opts.title,
   };
 
-  // CalDAV: no native conferencing → always sovereign Jitsi.
+  // Resolve the connected calendar backend (CalDAV -> Microsoft -> Google).
   const caldav = await findCalDavMailbox(opts.userId, opts.tenantId);
+  let provider: CalendarProvider;
+  let msToken: string | null = null;
+  let google: calendar_v3.Calendar | null = null;
   if (caldav) {
-    const w = await writeCalDavEvent(caldav, core, meeting.joinUrl, meeting.roomName);
-    return { ...w, conferencing: "sovereign", roomName: meeting.roomName };
+    provider = "caldav";
+  } else {
+    msToken = await getMicrosoftAccessToken(opts.userId);
+    if (msToken) {
+      provider = "microsoft";
+    } else {
+      google = await getCalendarClient(opts.userId);
+      if (google) {
+        provider = "google";
+      } else {
+        throw new CalendarNotConnectedError();
+      }
+    }
   }
 
-  const msToken = await getMicrosoftAccessToken(opts.userId);
-  if (msToken) {
-    const conf = resolveConferencing(requested, "microsoft");
-    const w = await writeMicrosoftEvent(
-      msToken,
+  const mode = resolveConferencing(requested, provider, zoomConfigured());
+
+  // Non-native modes inject a link: the sovereign Jitsi room, or a Zoom meeting.
+  // Native modes (Google Meet / Teams) let the calendar mint its own.
+  const injectLink =
+    mode === "zoom"
+      ? await createZoomMeeting({
+          topic: core.title,
+          startTime: core.startTime,
+          durationMinutes: core.durationMinutes,
+        })
+      : meeting.joinUrl;
+  // Only a sovereign Jitsi room is recorded by Jibri (correlated by roomName).
+  const recordingRoom = mode === "sovereign" ? meeting.roomName : null;
+
+  let w: WriteResult;
+  if (provider === "caldav") {
+    // CalDAV can't host Meet/Teams; it always carries an injected link.
+    w = await writeCalDavEvent(caldav!, core, injectLink, meeting.roomName);
+  } else if (provider === "microsoft") {
+    w = await writeMicrosoftEvent(
+      msToken!,
       core,
-      conf === "native" ? { native: true } : { native: false, link: meeting.joinUrl },
+      mode === "teams" ? { native: true } : { native: false, link: injectLink },
     );
-    return { ...w, conferencing: conf, roomName: conf === "sovereign" ? meeting.roomName : null };
-  }
-
-  const google = await getCalendarClient(opts.userId);
-  if (google) {
-    const conf = resolveConferencing(requested, "google");
-    const w = await writeGoogleEvent(
-      google,
+  } else {
+    w = await writeGoogleEvent(
+      google!,
       core,
-      conf === "native" ? { native: true } : { native: false, link: meeting.joinUrl },
+      mode === "google_meet" ? { native: true } : { native: false, link: injectLink },
     );
-    return { ...w, conferencing: conf, roomName: conf === "sovereign" ? meeting.roomName : null };
   }
 
-  throw new CalendarNotConnectedError();
+  return { ...w, conferencing: mode, roomName: recordingRoom };
 }
 
 /** Sovereign: inject the provided Jitsi link. Native: let the provider mint its own. */

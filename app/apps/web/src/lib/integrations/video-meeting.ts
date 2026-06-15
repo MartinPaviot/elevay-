@@ -10,11 +10,11 @@
  * no API key and no account to provision — so creating a meeting here is pure,
  * dependency-free string construction.
  *
- * VIDEO_MEET_BASE_URL must point at a Jitsi instance you control on EU/CH
- * infrastructure (e.g. https://visio.pilae.ch). It must NOT point at
- * meet.jit.si in production: that public instance is operated by 8x8 (US),
- * which would defeat the sovereignty guarantee — `getVideoMeetBaseUrl` rejects
- * it there. The link is injected into the calendar event's standard fields
+ * VIDEO_MEET_BASE_URL should point at a Jitsi instance you control on EU/CH
+ * infrastructure (e.g. https://visio.pilae.ch) for the sovereign guarantee.
+ * When unset it falls back to the public meet.jit.si so the visio works with
+ * zero setup (no DNS, no account) — non-sovereign, so getVideoMeetBaseUrl
+ * warns in prod. The link is injected into the calendar event's standard fields
  * (location / description / URL) so every calendar — Google, Outlook,
  * Infomaniak, Apple — renders it as a first-class meeting with a join link,
  * exactly like a native Meet/Teams invite, minus the proprietary widget.
@@ -40,9 +40,11 @@ const ROOM_ID_LENGTH = 18;
  */
 const NON_SOVEREIGN_HOSTS = ["meet.jit.si", "8x8.vc"];
 
-/** The host we intend to stand up; used as the stable default so link shapes
- *  are correct before DNS is wired. Override via VIDEO_MEET_BASE_URL. */
-const DEFAULT_SOVEREIGN_BASE_URL = "https://visio.pilae.ch";
+/** Default when VIDEO_MEET_BASE_URL is unset: the public Jitsi, which works
+ *  with ZERO setup (no DNS, no account, browser join) so the visio is usable
+ *  before you stand up your own host. meet.jit.si is operated by 8x8 (US) —
+ *  set VIDEO_MEET_BASE_URL to a Jitsi instance you control for sovereignty. */
+const DEFAULT_BASE_URL = "https://meet.jit.si";
 
 /** Minimal env shape we read — `process.env` satisfies it, and tests can pass
  *  a plain object without supplying every NodeJS.ProcessEnv key. */
@@ -105,7 +107,7 @@ function sanitisePrefix(prefix: string | undefined): string {
  */
 export function getVideoMeetBaseUrl(env: EnvLike = process.env): string {
   const raw = (env.VIDEO_MEET_BASE_URL || "").trim().replace(/\/+$/, "");
-  const base = raw || DEFAULT_SOVEREIGN_BASE_URL;
+  const base = raw || DEFAULT_BASE_URL;
 
   let host: string;
   try {
@@ -114,14 +116,16 @@ export function getVideoMeetBaseUrl(env: EnvLike = process.env): string {
     throw new Error(`VIDEO_MEET_BASE_URL is not a valid URL: "${base}"`);
   }
 
-  const isProd = env.NODE_ENV === "production";
+  // Non-sovereign host (the meet.jit.si default, or 8x8) → warn but proceed:
+  // the visio must still work before a sovereign host is configured.
+  // Sovereignty = setting VIDEO_MEET_BASE_URL to your own EU/CH Jitsi instance.
   if (
-    isProd &&
+    env.NODE_ENV === "production" &&
     NON_SOVEREIGN_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))
   ) {
-    throw new Error(
-      `VIDEO_MEET_BASE_URL points at a non-sovereign host (${host}). ` +
-        `Point it at a Jitsi instance you control on EU/CH infrastructure.`,
+    console.warn(
+      `[video-meeting] using non-sovereign host ${host}. Set VIDEO_MEET_BASE_URL ` +
+        `to a Jitsi instance you control on EU/CH infrastructure for the sovereign guarantee.`,
     );
   }
 

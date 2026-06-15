@@ -31,9 +31,13 @@ const bookMeetingSchema = z.object({
   // The dashboard badge will surface the saturation regardless, so the
   // goulot stays visible after override.
   override: z.boolean().optional().default(false),
-  // Default sovereign Jitsi; "native" creates Google Meet (Google) or Teams
-  // (Microsoft) when the prospect needs it. Falls back to sovereign on CalDAV.
-  conferencing: z.enum(["sovereign", "native"]).optional().default("sovereign"),
+  // Default sovereign Jitsi. "google_meet"/"teams" use the calendar's native
+  // conference; "zoom" uses Zoom (if configured). Unavailable choices fall
+  // back to sovereign.
+  conferencing: z
+    .enum(["sovereign", "google_meet", "teams", "zoom"])
+    .optional()
+    .default("sovereign"),
 });
 
 export async function POST(req: Request) {

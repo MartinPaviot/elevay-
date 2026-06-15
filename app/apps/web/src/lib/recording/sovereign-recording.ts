@@ -13,7 +13,6 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { getVideoMeetBaseUrl } from "@/lib/integrations/video-meeting";
 
 // NODE_ENV (a declared NodeJS.ProcessEnv member) lets `= process.env` satisfy
 // this otherwise all-optional type while tests can pass plain objects.
@@ -29,12 +28,16 @@ export function isSovereignRecordingEnabled(env: FlagEnv = process.env): boolean
  */
 export function isSovereignVisioUrl(
   url: string | null | undefined,
-  env: Parameters<typeof getVideoMeetBaseUrl>[0] = process.env,
+  env: { VIDEO_MEET_BASE_URL?: string; NODE_ENV?: string } = process.env,
 ): boolean {
   if (!url) return false;
+  // Only an EXPLICITLY configured host counts as "ours" (Jibri-enabled). The
+  // meet.jit.si fallback is not our host, so we must NOT skip Recall for it.
+  const configured = (env.VIDEO_MEET_BASE_URL || "").trim();
+  if (!configured) return false;
   try {
     const host = new URL(url).host.toLowerCase();
-    const baseHost = new URL(getVideoMeetBaseUrl(env)).host.toLowerCase();
+    const baseHost = new URL(configured).host.toLowerCase();
     return host === baseHost;
   } catch {
     return false;
