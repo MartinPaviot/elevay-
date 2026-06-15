@@ -25,7 +25,7 @@ const MeetingsPageReal = dynamic(() => import("@/app/(dashboard)/meetings/page")
 export function RealUpNext() {
   return (
     <DemoSurface routes={{ "/api/home/up-next": UP_NEXT_DEMO }}>
-      <div className="h-full overflow-auto px-5 py-5" style={{ background: "var(--color-bg-page)" }}>
+      <div className="h-full overflow-hidden px-5 py-5" style={{ background: "var(--color-bg-page)" }}>
         <UpNextView />
       </div>
     </DemoSurface>
