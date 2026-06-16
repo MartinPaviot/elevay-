@@ -20,6 +20,7 @@ import {
   type Actualite,
 } from "@/lib/home/up-next";
 import { isExcludedAsLead } from "@/lib/inbound/lead-status";
+import { classifyInboundSender } from "@/lib/inbound/lead-classification";
 
 /**
  * `/api/home/up-next` — the founder's dashboard in one read: KPIs + a cross-page
@@ -317,6 +318,13 @@ async function loadActualites(tenantId: string): Promise<Actualite[]> {
     const items: Actualite[] = [];
 
     for (const a of acts) {
+      // Skip automated/role inbound (noreply@, notifications@…) — a "reply"
+      // from a service the user subscribes to is not a feed-worthy event
+      // (inbound-lead audit, tranche 3).
+      if (a.activityType === "email_received") {
+        const from = String((a.metadata as Record<string, unknown> | null)?.from ?? "");
+        if (from && classifyInboundSender({ fromHeader: from }).isMachineSent) continue;
+      }
       const who = a.entityType === "contact" && a.entityId ? nameMap.get(a.entityId) ?? null : null;
       const href = a.entityType === "contact" && a.entityId ? `/contacts/${a.entityId}` : null;
       if (a.activityType === "email_received" || a.activityType === "email_replied") {
