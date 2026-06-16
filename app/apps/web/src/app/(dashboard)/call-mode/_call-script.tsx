@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CalendarClock, Phone, Pencil, Sparkles, Loader2, X, Plus, Trash2, AlertTriangle, ChevronRight, ChevronDown, ShieldQuestion } from "lucide-react";
-import { interpolateOpener, defaultScriptFields, splitGuidance, withNoResponse, lineFor, lineForKey, peerLeadFor, resolveBranches, type ScriptFields } from "@/lib/call-mode/call-scripts";
+import { interpolateOpener, defaultScriptFields, splitGuidance, withNoResponse, lineFor, lineForKey, peerLeadFor, resolveBranches, personaEnjeuIndex, type ScriptFields } from "@/lib/call-mode/call-scripts";
 import { deriveOpeningReason, type OpeningReasonInput } from "@/lib/call-mode/live-script";
 import { planProblems } from "@/lib/call-mode/match-problem";
 import { checkScriptMethod } from "@/lib/call-mode/script-levers";
@@ -35,6 +35,7 @@ const SECTOR_LABEL: Record<string, string> = {
 
 export function CallScriptPanel({
   contactName,
+  contactTitle,
   companyName,
   companyDomain,
   contactId,
@@ -46,6 +47,9 @@ export function CallScriptPanel({
   onContext,
 }: {
   contactName?: string | null;
+  /** The contact's title — floats the enjeu their ROLE cares about (CFO → coût,
+   *  DSI → souveraineté, DG → retard IA) when no live trigger overrides. */
+  contactTitle?: string | null;
   /** The account name — one of the signals the server crosses to resolve the
    *  sector (a "Haute école de santé" is a SCHOOL, not an EMS). */
   companyName?: string | null;
@@ -207,10 +211,15 @@ export function CallScriptPanel({
     () => planProblems(view.problems, triggerText, replaceableTool),
     [view.problems, triggerText, replaceableTool],
   );
+  // Live trigger (detected tool/signal) wins; otherwise float the enjeu the
+  // contact's ROLE cares about (CFO → coût, DSI → souveraineté, DG → retard).
+  const personaIdx = useMemo(() => personaEnjeuIndex(contactTitle), [contactTitle]);
+  const floatIdx = matchedIdx >= 0 ? matchedIdx : (personaIdx ?? -1);
+  const floatViaPersona = matchedIdx < 0 && personaIdx != null;
   const orderedProblems = useMemo(() => {
-    if (matchedIdx < 0) return problemDisplay;
-    return [...problemDisplay].sort((a, b) => Number(b.idx === matchedIdx) - Number(a.idx === matchedIdx));
-  }, [problemDisplay, matchedIdx]);
+    if (floatIdx < 0) return problemDisplay;
+    return [...problemDisplay].sort((a, b) => Number(b.idx === floatIdx) - Number(a.idx === floatIdx));
+  }, [problemDisplay, floatIdx]);
   // Methodology guard on whatever is being shown (saved script OR live draft):
   // soft markers, never blocking — the rep stays free, but informed.
   const methodGaps = useMemo(() => checkScriptMethod(view), [view]);
@@ -350,7 +359,7 @@ export function CallScriptPanel({
           <p className="text-[12px] italic" style={{ color: "var(--color-text-tertiary)" }}>{peerLeadFor(sector)}</p>
           <div className="flex flex-col gap-1.5">
             {orderedProblems.map(({ idx: i, text: p, viaTool }) => {
-              const isMatch = i === matchedIdx;
+              const isMatch = i === floatIdx;
               return (
                 <button key={i} type="button" onClick={() => toggle(i)}
                   className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--color-bg-hover)]"
@@ -363,7 +372,7 @@ export function CallScriptPanel({
                     {p}
                     {isMatch && (
                       <span className="ml-1.5 rounded-sm px-1.5 py-px align-middle text-[9px] font-semibold uppercase tracking-wide" style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
-                        {viaTool ? "Détecté chez eux" : "Le plus pertinent"}
+                        {floatViaPersona ? "Adapté au rôle" : viaTool ? "Détecté chez eux" : "Le plus pertinent"}
                       </span>
                     )}
                   </span>
