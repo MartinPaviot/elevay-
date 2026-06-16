@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ImageOff, ShieldAlert } from "lucide-react";
+import { ImageOff, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { sanitizeEmailHtml } from "@/lib/inbox/sanitize-email";
 import { applyEmailPrivacy } from "@/lib/inbox/email-privacy";
+import { foldQuotedReply } from "@/lib/inbox/email-fold";
 
 /**
  * Renders one email message body with fidelity, privacy and safety (INBOX-R01 +
@@ -22,12 +23,15 @@ const PROXY_BASE = "/api/inbox/image-proxy?url=";
 
 export function EmailBody({ html, text }: { html: string | null; text: string }) {
   const [loadRemote, setLoadRemote] = useState(false);
+  const [showTrimmed, setShowTrimmed] = useState(false);
 
   const safeHtml = useMemo(() => (html ? sanitizeEmailHtml(html) : ""), [html]);
   const privacy = useMemo(
     () => applyEmailPrivacy(safeHtml, { loadRemoteImages: loadRemote, proxyBase: PROXY_BASE }),
     [safeHtml, loadRemote],
   );
+  // Split off the quoted reply chain so the new content reads first (R05).
+  const fold = useMemo(() => foldQuotedReply(privacy.html), [privacy.html]);
 
   if (html && safeHtml.trim()) {
     return (
@@ -54,8 +58,34 @@ export function EmailBody({ html, text }: { html: string | null; text: string })
             overflowWrap: "anywhere",
           }}
           // Allowlist-sanitized by sanitizeEmailHtml, then privacy-filtered above.
-          dangerouslySetInnerHTML={{ __html: privacy.html }}
+          dangerouslySetInnerHTML={{ __html: fold.visibleHtml }}
         />
+
+        {fold.hasTrimmed && !showTrimmed && (
+          <button
+            type="button"
+            onClick={() => setShowTrimmed(true)}
+            title="Show trimmed content"
+            aria-label="Show trimmed content"
+            className="mt-1 inline-flex items-center rounded px-2 py-0.5 leading-none hover:bg-[var(--color-bg-hover)]"
+            style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-border-default)" }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+        )}
+
+        {fold.hasTrimmed && showTrimmed && (
+          <div
+            className="email-body mt-1 border-l pl-2 text-[13px] leading-relaxed"
+            style={{
+              color: "var(--color-text-tertiary)",
+              borderColor: "var(--color-border-default)",
+              wordBreak: "break-word",
+              overflowWrap: "anywhere",
+            }}
+            dangerouslySetInnerHTML={{ __html: fold.trimmedHtml }}
+          />
+        )}
 
         {!loadRemote && privacy.blockedRemoteImages > 0 && (
           <button

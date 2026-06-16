@@ -1,0 +1,72 @@
+// @vitest-environment happy-dom
+import { describe, it, expect } from "vitest";
+import { foldQuotedReply } from "@/lib/inbox/email-fold";
+
+describe("foldQuotedReply (INBOX-R05)", () => {
+  it("folds a Gmail-style quote container", () => {
+    const res = foldQuotedReply(
+      `<div>Thanks, sounds good!</div>` +
+        `<div class="gmail_quote">On Mon, 1 Jun 2026, Bob wrote:<blockquote>earlier message</blockquote></div>`,
+    );
+    expect(res.hasTrimmed).toBe(true);
+    expect(res.visibleHtml).toContain("Thanks, sounds good!");
+    expect(res.visibleHtml).not.toContain("earlier message");
+    expect(res.trimmedHtml).toContain("earlier message");
+  });
+
+  it("folds a bare <blockquote> reply chain", () => {
+    const res = foldQuotedReply(`<p>Here is my answer.</p><blockquote>your original question</blockquote>`);
+    expect(res.hasTrimmed).toBe(true);
+    expect(res.visibleHtml).toContain("Here is my answer.");
+    expect(res.trimmedHtml).toContain("your original question");
+  });
+
+  it("folds at a loose attribution text node before the quote", () => {
+    const res = foldQuotedReply(
+      `<div>Got it.</div>On Mon, 1 Jun 2026 at 09:00, Alice <a@x.com> wrote:<blockquote>q</blockquote>`,
+    );
+    expect(res.hasTrimmed).toBe(true);
+    expect(res.visibleHtml).toContain("Got it.");
+    expect(res.visibleHtml).not.toContain("wrote:");
+    expect(res.trimmedHtml).toContain("wrote:");
+  });
+
+  it("folds at an Outlook-style original-message divider", () => {
+    const res = foldQuotedReply(
+      `<div>My reply</div><div>-----Original Message-----</div><div>old thread</div>`,
+    );
+    expect(res.hasTrimmed).toBe(true);
+    expect(res.visibleHtml).toContain("My reply");
+    expect(res.trimmedHtml).toContain("old thread");
+  });
+
+  it("folds a French attribution line", () => {
+    const res = foldQuotedReply(
+      `<div>Merci beaucoup.</div><div class="gmail_quote">Le 1 juin 2026 à 09:00, Bob a écrit :<blockquote>x</blockquote></div>`,
+    );
+    expect(res.hasTrimmed).toBe(true);
+    expect(res.visibleHtml).toContain("Merci beaucoup.");
+  });
+
+  it("does not fold an email with no quote", () => {
+    const res = foldQuotedReply(`<p>Just a simple note with no reply chain.</p>`);
+    expect(res.hasTrimmed).toBe(false);
+    expect(res.visibleHtml).toContain("simple note");
+    expect(res.trimmedHtml).toBe("");
+  });
+
+  it("shows everything when the whole body is the quote (pure forward)", () => {
+    const res = foldQuotedReply(`<blockquote>the entire forwarded message</blockquote>`);
+    expect(res.hasTrimmed).toBe(false);
+    expect(res.visibleHtml).toContain("entire forwarded message");
+  });
+
+  it("does not mistake a body paragraph that merely says 'wrote' for an attribution", () => {
+    const res = foldQuotedReply(`<p>I wrote the report you asked for and attached it here.</p>`);
+    expect(res.hasTrimmed).toBe(false);
+  });
+
+  it("returns empty for empty input", () => {
+    expect(foldQuotedReply("")).toEqual({ visibleHtml: "", trimmedHtml: "", hasTrimmed: false });
+  });
+});

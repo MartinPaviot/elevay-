@@ -1,0 +1,90 @@
+/**
+ * Quote / reply-chain folding for the inbox reading pane (INBOX-R05).
+ *
+ * Splits a rendered email into the NEW content the reader cares about and the
+ * trailing quoted thread (the "On <date>, <name> wrote: > …" chain). The pane
+ * shows the new content and tucks the quote behind a "show trimmed content"
+ * toggle — the single biggest readability win on long threads.
+ *
+ * Heuristic, cross-client: detects `<blockquote>`, the major clients' quote
+ * containers (Gmail/Yahoo/Thunderbird/Outlook), and the attribution line that
+ * precedes a quote, in EN/FR/DE. Runs on already-sanitized HTML (so classes we
+ * key on, like `gmail_quote`, are still present — `class` is allowlisted).
+ *
+ * DOM-based ⇒ browser only; on the server it is a no-op (everything "visible").
+ */
+
+export interface FoldResult {
+  visibleHtml: string;
+  trimmedHtml: string;
+  hasTrimmed: boolean;
+}
+
+// "On Mon, 1 Jun 2026 … wrote:", "Le … a écrit :", "Am … schrieb …:",
+// "-----Original Message-----". Kept tight (≤200 chars) so a body paragraph that
+// merely contains "wrote:" isn't mistaken for the attribution line.
+const ATTRIBUTION_RE =
+  /(?:^|\n)\s*(?:on\b[\s\S]{0,160}?\bwrote:|le\b[\s\S]{0,160}?\ba écrit\s*:|am\b[\s\S]{0,160}?\bschrieb[\s\S]{0,40}?:|-{2,}\s*original message\s*-{2,}|_{5,})\s*$/i;
+
+const QUOTE_CLASS_RE = /\b(gmail_quote|gmail_extra|yahoo_quoted|moz-cite-prefix|zmail_extra)\b/i;
+const QUOTE_ID_RE = /(appendonsend|divrplymessage|x_appendonsend)/i;
+
+function isQuoteBoundary(el: Element): boolean {
+  if (el.tagName.toLowerCase() === "blockquote") return true;
+  const cls = (el.getAttribute("class") || "").toLowerCase();
+  if (QUOTE_CLASS_RE.test(cls)) return true;
+  const id = (el.getAttribute("id") || "").toLowerCase();
+  if (QUOTE_ID_RE.test(id)) return true;
+  if (el.querySelector("blockquote")) return true;
+  return false;
+}
+
+function isAttributionNode(node: Node): boolean {
+  const text = (node.textContent || "").trim();
+  if (!text || text.length > 200) return false;
+  return ATTRIBUTION_RE.test(text);
+}
+
+export function foldQuotedReply(html: string): FoldResult {
+  if (!html) return { visibleHtml: "", trimmedHtml: "", hasTrimmed: false };
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    return { visibleHtml: html, trimmedHtml: "", hasTrimmed: false };
+  }
+
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const nodes = Array.from(doc.body.childNodes);
+
+  let foldIndex = -1;
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.nodeType === 1 && isQuoteBoundary(n as Element)) {
+      foldIndex = i;
+      break;
+    }
+    if (isAttributionNode(n)) {
+      foldIndex = i;
+      break;
+    }
+  }
+
+  // foldIndex <= 0 → nothing to fold, or the message IS the quote (pure forward):
+  // either way show everything rather than hide the whole body.
+  if (foldIndex <= 0) {
+    return { visibleHtml: doc.body.innerHTML, trimmedHtml: "", hasTrimmed: false };
+  }
+
+  const visible = doc.createElement("div");
+  const trimmed = doc.createElement("div");
+  nodes.forEach((n, i) => (i < foldIndex ? visible : trimmed).appendChild(n));
+
+  // Only fold when something real remains visible (never leave an empty pane).
+  if (!(visible.textContent || "").trim()) {
+    return { visibleHtml: doc.body.innerHTML, trimmedHtml: "", hasTrimmed: false };
+  }
+
+  return {
+    visibleHtml: visible.innerHTML,
+    trimmedHtml: trimmed.innerHTML,
+    hasTrimmed: trimmed.childNodes.length > 0,
+  };
+}
