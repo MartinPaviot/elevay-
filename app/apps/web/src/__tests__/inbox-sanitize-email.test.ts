@@ -80,6 +80,12 @@ describe("sanitizeEmailHtml (authoritative DOM allowlist)", () => {
   it("returns empty string for empty input", () => {
     expect(sanitizeEmailHtml("")).toBe("");
   });
+
+  it("never throws on malformed / unclosed markup (INBOX-R09 robustness)", () => {
+    expect(() => sanitizeEmailHtml("<div><p>unclosed <b>bold <a href=https://x.example>link")).not.toThrow();
+    expect(() => sanitizeEmailHtml("<<>><sCrIpt<script>>alert(1)</script>")).not.toThrow();
+    expect(() => sanitizeEmailHtml("<table><tr><td>cell")).not.toThrow();
+  });
 });
 
 describe("stripDangerousHtml (server-safe pre-strip, no DOM)", () => {

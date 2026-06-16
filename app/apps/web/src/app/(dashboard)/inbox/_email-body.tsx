@@ -5,6 +5,7 @@ import { ImageOff, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { sanitizeEmailHtml } from "@/lib/inbox/sanitize-email";
 import { applyEmailPrivacy } from "@/lib/inbox/email-privacy";
 import { foldQuotedReply } from "@/lib/inbox/email-fold";
+import { linkifyPlainText } from "@/lib/inbox/linkify";
 
 /**
  * Renders one email message body with fidelity, privacy and safety (INBOX-R01 +
@@ -108,7 +109,21 @@ export function EmailBody({ html, text }: { html: string | null; text: string })
       className="whitespace-pre-wrap text-[13px] leading-relaxed"
       style={{ color: "var(--color-text-primary)", wordBreak: "break-word", overflowWrap: "anywhere" }}
     >
-      {text}
+      {linkifyPlainText(text).map((seg, i) =>
+        seg.type === "link" ? (
+          <a
+            key={i}
+            href={seg.href}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            style={{ color: "var(--color-accent)", textDecoration: "underline" }}
+          >
+            {seg.text}
+          </a>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
     </div>
   );
 }
