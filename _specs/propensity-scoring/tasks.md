@@ -84,11 +84,13 @@ verdict), call-brief surface (A5).
 computeDepth) + propensity blend (computePropensity / valueBand / normalizeIntent)
 — 14 tests, tsc-clean. Pure cores = the actual intra-ICP differentiator; fit
 stays the GATE, propensity is the RANK. **B3 DONE** (a13d5235: learnPropensityWeights
-+ assembleContactPropensity bridge — pure, 6 tests). Remaining: **B4** calibrated
-bands, and the **SHADOW WIRING** (compute propensity ALONGSIDE the fit grade in the
-recompute via assembleContactPropensity, store in properties.propensity, surface it
-next to fit, prove it beats fit on outcomes via the calibration report, THEN flip
-the grade — never blind) — the invasive/unverifiable-here piece (edits the core
-recompute), best done where it can run. Phase C = bounded LLM pain. NB: existing FR
-UI in already-merged code (reachability labels, call-mode toasts) violates the
-all-English rule — separate cleanup, out of scope.
++ assembleContactPropensity bridge — pure, 6 tests). **SHADOW WIRING DONE**
+(01a6aa56): recomputeContactPropensity stores `properties.propensity`
+{score, components, computedAt}, wired into POST /api/score-contacts (both paths,
+best-effort), surfaced in score-explain + ScoreExplainLine ("Propensity N% —
+shadow, not the grade yet"). The fit grade is UNCHANGED — safe-by-design. tsc-clean,
+NOT runtime-verified. Remaining: prove propensity beats fit on outcomes via the
+calibration report, THEN flip the grade (never blind); **B4** calibrated bands;
+**C** bounded LLM pain; + the live smoke. NB: existing FR UI in already-merged code
+(reachability labels, call-mode toasts) violates the all-English rule — separate
+cleanup, out of scope.
