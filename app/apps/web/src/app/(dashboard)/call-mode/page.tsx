@@ -1473,6 +1473,7 @@ export default function CallModePage() {
             <div className="p-3">
               <CallScriptPanel
                 contactName={selected.contactName}
+                contactTitle={selected.title}
                 companyName={selected.companyName}
                 companyDomain={selected.companyDomain}
                 contactId={selected.contactId}

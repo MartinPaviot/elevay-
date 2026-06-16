@@ -2,7 +2,7 @@
  * Permission-based call scripts, keyed by sector — Douablin-faithful flow,
  * adapted to Martin's intent (no phone discovery; the call's only job is to
  * book the meeting). FINAL model (validated on paper before shipping):
- *   1. Opener = minimal identity ("une startup lausannoise") + the PROSPECT'S
+ *   1. Opener = minimal identity ("une société lausannoise") + the PROSPECT'S
  *      SECTOR tied to our subject ({line}) + a permission ask ("ça vous
  *      convient ?"). No self-pitch, never tell the buyer he overpays.
  *   2. After the OK, a half-sentence bascule (IA interne / automatisations open
@@ -60,7 +60,7 @@ export interface ResolvedScript extends CallScript {
  * tokenless saved opener simply renders as-is (regenerate to pick the slots up).
  */
 export const DEFAULT_OPENER =
-  "Bonjour {name}, Martin Paviot, cofondateur de Pilae, une startup lausannoise. Je me concentre en ce moment sur {line} Je vous appelle pas pour vous dérouler un pitch, juste voir en deux minutes si c'est un sujet chez vous. Ça vous convient ?";
+  "Bonjour {name}, Martin Paviot, cofondateur de Pilae, une société lausannoise. Je me concentre en ce moment sur {line} Je vous appelle pas pour vous dérouler un pitch, juste voir si c'est un sujet chez vous. Ça vous convient ?";
 
 /** The half-sentence said right after the OK (the bascule), then the rule:
  *  one enjeu at a time, stop at the first that lands. Shown above the enjeux. */
@@ -411,6 +411,22 @@ export function pickCallScript(sector: string | null | undefined): CallScript {
 /** The opener sector↔subject line for a known sector key. */
 export function lineForKey(key: string | null | undefined): string {
   return scriptForKey(key).line;
+}
+
+/**
+ * The enjeu a contact's ROLE cares about most, as an index into the 3 enjeux
+ * (stable across segments): 0 = IA / retard, 1 = coût / licences, 2 =
+ * souveraineté / données. A CFO leads on cost, a DSI on sovereignty/control, a
+ * DG on the AI-lag/strategy. null when the title gives no strong steer (keep
+ * the default order). Floated only when no live trigger already decided.
+ */
+export function personaEnjeuIndex(title?: string | null): number | null {
+  const t = norm(title ?? "");
+  if (!t) return null;
+  if (/\bdsi\b|\bcio\b|\bcto\b|informati|\bict\b|\bit\b|syst[èe]me|num[ée]rique|digital|\bdata\b|cyber|s[ée]curit/.test(t)) return 2;
+  if (/\bcfo\b|financ|comptab|tr[ée]sor|controlling|contr[ôo]le de gestion|administratif et financier/.test(t)) return 1;
+  if (/directeur g[ée]n[ée]ral|direction g[ée]n[ée]rale|\bdg\b|chief executive|\bceo\b|secr[ée]taire g[ée]n[ée]ral|managing director|administrateur d[ée]l[ée]gu[ée]|\bg[ée]rant|pr[ée]sident|fondateur|\bfounder|\bowner|propri[ée]taire/.test(t)) return 0;
+  return null;
 }
 
 /** Default editable fields for a known sector key. */
