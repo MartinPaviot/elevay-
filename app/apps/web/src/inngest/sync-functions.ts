@@ -490,7 +490,14 @@ export const syncEmails = inngest.createFunction(
             .set({
               sentiment: result.sentiment as any,
               intent: result.intent,
-              metadata: { ...(act.metadata || {}), intent: result.intent },
+              // Merge into the row's REAL metadata (JSONB ||), never the
+              // reduced `act.metadata` push payload: spreading the latter
+              // replaced the whole column and dropped `to`/`from`/`subject`
+              // that captureInboundEmail wrote — which orphaned every inbound
+              // email from the per-user inbox (it attributes by metadata.to).
+              // The `intent` column above is canonical; this only keeps a
+              // back-compat copy in metadata without clobbering siblings.
+              metadata: sql`coalesce(metadata, '{}'::jsonb) || ${JSON.stringify({ intent: result.intent })}::jsonb`,
             })
             .where(eq(activities.id, act.id));
         }

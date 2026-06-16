@@ -75,6 +75,17 @@ describe("inboundBelongsToUser", () => {
     expect(inboundBelongsToUser({ metadata: null }, scope)).toBe(false);
     expect(inboundBelongsToUser({ metadata: {} }, scope)).toBe(false);
   });
+
+  it("regression: the post-sync enrichment shape must keep 'to' to stay attributed", () => {
+    // The cold-sync sentiment step once OVERWROTE activities.metadata with a
+    // partial payload ({intent, gmailMessageId}), dropping `to` — the email
+    // then matched no mailbox and vanished from every personal inbox. `to` is
+    // the attribution key; the enrichment now JSONB-merges instead of replacing.
+    const clobbered = { metadata: { intent: ["follow_up_needed"], gmailMessageId: "x" } };
+    const merged = { metadata: { to: "me@pilae.ch", intent: ["follow_up_needed"], gmailMessageId: "x" } };
+    expect(inboundBelongsToUser(clobbered, scope)).toBe(false); // the bug's symptom
+    expect(inboundBelongsToUser(merged, scope)).toBe(true); // after the merge fix
+  });
 });
 
 describe("scopeConversationRows", () => {
