@@ -10,6 +10,7 @@ import {
   BASCULE,
   OBJECTIONS,
   resolveBranches,
+  personaEnjeuIndex,
 } from "@/lib/call-mode/call-scripts";
 
 describe("pickCallScript", () => {
@@ -168,6 +169,33 @@ describe("peerLeadFor", () => {
     expect(peerLeadFor("hospital & health care")).toBe(BASCULE);
     expect(peerLeadFor("")).toBe(BASCULE);
     expect(peerLeadFor(null)).toBe(BASCULE);
+  });
+});
+
+describe("personaEnjeuIndex (float the enjeu the role cares about)", () => {
+  it("finance roles → coût (1)", () => {
+    expect(personaEnjeuIndex("CFO")).toBe(1);
+    expect(personaEnjeuIndex("Directeur administratif et financier / CFO-COO")).toBe(1);
+    expect(personaEnjeuIndex("Head of Finance & Controlling")).toBe(1);
+  });
+  it("IT roles → souveraineté (2)", () => {
+    expect(personaEnjeuIndex("DSI")).toBe(2);
+    expect(personaEnjeuIndex("Head of Information Technology Department")).toBe(2);
+    expect(personaEnjeuIndex("Responsable IT")).toBe(2);
+    expect(personaEnjeuIndex("CIO")).toBe(2);
+  });
+  it("general management → retard IA (0)", () => {
+    expect(personaEnjeuIndex("Directeur général")).toBe(0);
+    expect(personaEnjeuIndex("Secrétaire général")).toBe(0);
+    expect(personaEnjeuIndex("Chief Executive Officer")).toBe(0);
+    expect(personaEnjeuIndex("Managing Director")).toBe(0);
+    expect(personaEnjeuIndex("Propriétaire")).toBe(0);
+  });
+  it("no strong steer → null (keep default order)", () => {
+    expect(personaEnjeuIndex("Directrice des Soins Infirmiers")).toBeNull();
+    expect(personaEnjeuIndex("Responsable marketing et communication")).toBeNull();
+    expect(personaEnjeuIndex(null)).toBeNull();
+    expect(personaEnjeuIndex("")).toBeNull();
   });
 });
 
