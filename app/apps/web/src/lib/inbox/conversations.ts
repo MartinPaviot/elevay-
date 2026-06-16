@@ -13,6 +13,7 @@
  */
 
 import { classifyInboundSender } from "@/lib/inbound/lead-classification";
+import type { SenderAuthStatus } from "@/lib/inbox/sender-auth";
 
 export interface InboundRow {
   id: string;
@@ -66,6 +67,9 @@ export interface ConversationMessage {
   /** Sanitized HTML body for fidelity rendering (INBOX-R01). Null ⇒ render `body`
    *  as text. Inbound only today; outbound is composed as text. */
   bodyHtml: string | null;
+  /** Sender domain-auth verdict (INBOX-R06): "pass" earns a verified badge,
+   *  "fail" a caution, "unknown" shows nothing. Outbound is always "unknown". */
+  senderVerified: SenderAuthStatus;
   at: string | null;
   status: string | null;
   stepNumber: number | null;
@@ -340,6 +344,8 @@ export function buildConversations(input: {
           subject: r.summary ?? String(meta.subject ?? ""),
           body: r.rawContent ?? String(meta.snippet ?? ""),
           bodyHtml: typeof meta.bodyHtml === "string" ? meta.bodyHtml : null,
+          senderVerified:
+            (meta.senderAuth as { status?: SenderAuthStatus } | undefined)?.status ?? "unknown",
           at: toIso(r.occurredAt),
           status: null,
           stepNumber: null,
@@ -353,6 +359,7 @@ export function buildConversations(input: {
         subject: r.subject,
         body: r.bodyText ?? "",
         bodyHtml: null,
+        senderVerified: "unknown" as const,
         at: toIso(r.sentAt),
         status: r.status,
         stepNumber: r.stepNumber,

@@ -498,6 +498,31 @@ describe("content extraction", () => {
     expect(convs[0].messages[0].bodyHtml).toBeNull();
   });
 
+  it("threads the sender domain-auth verdict onto messages (INBOX-R06)", () => {
+    const convs = buildConversations({
+      inbound: [
+        inbound({ id: "i1", threadId: "t1", metadata: { from: "p@acme.ch", senderAuth: { status: "pass" } } }),
+      ],
+      outbound: [outbound({ id: "o1", threadId: "t1" })],
+      triage: [],
+      now: NOW,
+    });
+    const inboundMsg = convs[0].messages.find((m) => m.direction === "inbound")!;
+    const outboundMsg = convs[0].messages.find((m) => m.direction === "outbound")!;
+    expect(inboundMsg.senderVerified).toBe("pass");
+    expect(outboundMsg.senderVerified).toBe("unknown"); // our own sent mail
+  });
+
+  it("defaults senderVerified to unknown when no auth verdict was captured", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1" })],
+      outbound: [],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].messages[0].senderVerified).toBe("unknown");
+  });
+
   it("counts lanes", () => {
     const convs = buildConversations({
       inbound: [

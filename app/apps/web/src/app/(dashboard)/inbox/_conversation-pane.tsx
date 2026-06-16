@@ -20,6 +20,8 @@ import {
   ChevronDown,
   Bot,
   Quote,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,7 @@ import { MeetingSchedulerCard } from "@/components/meeting-scheduler";
 import { timeAgo } from "./_time-ago";
 import { reasonTooltip, type ConversationDetail, type InboxLane } from "./_types";
 import { EmailBody } from "./_email-body";
+import { initialsFor, avatarColorIndex } from "@/lib/inbox/sender-auth";
 
 const SNOOZE_OPTIONS: Array<{ label: string; until: () => Date }> = [
   {
@@ -459,9 +462,39 @@ export function ConversationPane({
               marginLeft: m.direction === "outbound" ? "24px" : "0",
             }}
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-                {m.direction === "inbound" ? m.from || conv.displayName : "You"}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                {m.direction === "inbound" && (
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
+                    style={{
+                      background: `var(--color-badge-${avatarColorIndex(m.from || conv.displayName)}-bg)`,
+                      color: `var(--color-badge-${avatarColorIndex(m.from || conv.displayName)})`,
+                    }}
+                    aria-hidden
+                  >
+                    {initialsFor(m.from || conv.displayName)}
+                  </span>
+                )}
+                <span className="truncate">
+                  {m.direction === "inbound" ? m.from || conv.displayName : "You"}
+                </span>
+                {m.direction === "inbound" && m.senderVerified === "pass" && (
+                  <ShieldCheck
+                    size={13}
+                    className="shrink-0"
+                    style={{ color: "var(--color-success)" }}
+                    aria-label="Sender domain verified (SPF/DKIM/DMARC)"
+                  />
+                )}
+                {m.direction === "inbound" && m.senderVerified === "fail" && (
+                  <ShieldAlert
+                    size={13}
+                    className="shrink-0"
+                    style={{ color: "var(--color-warning)" }}
+                    aria-label="Sender failed domain authentication"
+                  />
+                )}
                 {m.direction === "outbound" && m.stepNumber ? (
                   <span className="ml-1.5 font-normal" style={{ color: "var(--color-text-tertiary)" }}>
                     Step {m.stepNumber}

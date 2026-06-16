@@ -43,6 +43,8 @@ export interface ConversationMessage {
   body: string;
   /** Sanitized HTML body for fidelity rendering (INBOX-R01). Null ⇒ render text. */
   bodyHtml: string | null;
+  /** Sender domain-auth verdict (INBOX-R06): pass → verified badge, fail → caution. */
+  senderVerified: "pass" | "fail" | "unknown";
   at: string | null;
   status: string | null;
   stepNumber: number | null;

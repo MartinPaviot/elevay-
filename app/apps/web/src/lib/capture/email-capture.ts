@@ -42,6 +42,7 @@ import { ingestEpisode } from "@/lib/ai/context-graph";
 import { inngest } from "@/inngest/client";
 import { classifyInboundSender } from "@/lib/inbound/lead-classification";
 import { stripDangerousHtml } from "@/lib/inbox/sanitize-email";
+import { parseAuthResults } from "@/lib/inbox/sender-auth";
 
 /** "John Doe <john@example.com>" -> "john@example.com" (lowercased). */
 export function extractEmailFromHeader(header: string): string {
@@ -352,6 +353,10 @@ export async function captureInboundEmail(
   // Capped so a hostile or runaway body can't bloat the activity row.
   const bodyHtml = input.html ? stripDangerousHtml(input.html).slice(0, 500_000) : null;
 
+  // Sender domain-authentication verdict (SPF/DKIM/DMARC) from the receiving
+  // server's header — a stored trust signal for the reading pane (INBOX-R06).
+  const senderAuth = parseAuthResults(input.headers);
+
   const res = await recordCapturedActivity({
     tenantId,
     mode,
@@ -380,6 +385,9 @@ export async function captureInboundEmail(
         // Sanitized HTML body for the reading pane (INBOX-R01/R13). Only stored
         // when present, so text-only mail keeps a lean metadata row.
         ...(bodyHtml ? { bodyHtml } : {}),
+        // Sender domain-auth verdict (INBOX-R06) — small, always stored so the
+        // reader can tell "unknown" (checked, no verdict) from a real pass/fail.
+        senderAuth,
         // The lead-recognition verdict travels with the activity so every
         // downstream reader (warm-leads, hot-inbounds, inbox lanes) can trust
         // a stored decision rather than re-deriving it. Deterministic-only in
