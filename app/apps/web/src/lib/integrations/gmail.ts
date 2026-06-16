@@ -125,8 +125,10 @@ export async function fetchRecentEmails(
       const subject = getHeader("subject");
       const dateStr = getHeader("date");
 
-      // Extract full body from the payload
+      // Extract full body from the payload (text for snippet/fallback, and the
+      // original HTML part for fidelity rendering — INBOX-R01/R13).
       const body = extractBodyFromPayload(detail.data.payload);
+      const html = extractHtmlFromPayload(detail.data.payload);
 
       // Determine direction: if user's email is in the From field → outbound
       const fromEmail = extractEmail(from);
@@ -151,6 +153,7 @@ export async function fetchRecentEmails(
         subject,
         snippet: detail.data.snippet || "",
         body: body.slice(0, 50000), // cap at 50k chars
+        html: html ? html.slice(0, 500000) : null,
         date: dateStr ? new Date(dateStr) : new Date(),
         direction,
         headers: Object.keys(headerRecord).length ? headerRecord : null,
@@ -205,6 +208,35 @@ function extractBodyFromPayload(payload: any): string {
     // Recurse into nested multipart
     for (const part of payload.parts) {
       const nested = extractBodyFromPayload(part);
+      if (nested) return nested;
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Recursively extract the ORIGINAL `text/html` part (un-stripped) from a Gmail
+ * payload, for fidelity rendering in the reading pane (INBOX-R01/R13). Returns
+ * "" when the message has no HTML part. Sanitization happens at capture + render,
+ * never here.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractHtmlFromPayload(payload: any): string {
+  if (!payload) return "";
+
+  if (payload.body?.data && (payload.mimeType || "").toLowerCase() === "text/html") {
+    return Buffer.from(payload.body.data, "base64url").toString("utf-8");
+  }
+
+  if (payload.parts && Array.isArray(payload.parts)) {
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/html" && part.body?.data) {
+        return Buffer.from(part.body.data, "base64url").toString("utf-8");
+      }
+    }
+    for (const part of payload.parts) {
+      const nested = extractHtmlFromPayload(part);
       if (nested) return nested;
     }
   }
