@@ -11,7 +11,7 @@ Phased so we MEASURE before we rebuild. Each task: implement → verify → test
   - Verify: a call attempt creates exactly one snapshot with the grade then-current.
   - Test: hook unit (writes snapshot; no back-dating).
 
-- [ ] **A2 — Calibration engine + report**
+- [x] **A2 — Calibration engine + report** (pure core + v1 route done; A1 removes look-ahead)
   - `lib/scoring/calibration.ts` (pure): snapshots × outcomes → `CohortCell[]` by
     grade → `classifyCohorts`. Outcome param: `meeting_booked` (calls), 
     `reply_interested` (outbound_emails), `won` (deals).
@@ -20,13 +20,13 @@ Phased so we MEASURE before we rebuild. Each task: implement → verify → test
   - Test: A+-truly-wins fixture → "healthy"; random fixture → "not significant";
     under-floor → "too few".
 
-- [ ] **A3 — Rationale (deterministic, evidence-cited)**
+- [x] **A3 — Rationale (deterministic, evidence-cited)** (pure core done; UI surfacing pending)
   - `lib/scoring/rationale.ts` (pure): rank real factors (matched criteria + fresh
     signals + reachability facts) → one line. Surface on contact/account detail +
     call brief.
   - Test: cites only real matched factors; never an invented reason; stable order.
 
-- [ ] **A4 — Confidence**
+- [x] **A4 — Confidence** (pure core done; UI surfacing pending)
   - `confidence = coverage × freshnessFactor` (coverage from computeBlendedFit;
     freshness from role/signal/enrichment dates). Surface beside grade; list sort
     by score × confidence.
@@ -70,9 +70,10 @@ Phased so we MEASURE before we rebuild. Each task: implement → verify → test
   - Test: cited fact present → scored; no evidence → unscored + confidence drop.
 
 ## Status
-Spec drafted (office-hours + requirements + design + tasks), grounded on the live
-engine (criteria-engine binary eval = the saturation root; priorityScore +
-signal-outcomes = the reusable propensity bones; calls.meeting_booked +
-cohort-engine = the calibration foundation). Build starts at A1 on approval.
-Recommend shipping **Phase A first** — it tests the "A+ taules" hypothesis and
-delivers the rationale + certainty without a risky model rewrite.
+Spec drafted + **Phase A pure cores BUILT** (commit 7e4f34e4): calibration (A2),
+rationale (A3), confidence (A4) + the `GET /api/analytics/score-calibration` v1
+report — 14 unit tests, tsc-clean. Remaining in Phase A: **A1 score_snapshots**
+(grade live at funnel-entry → kills the v1 look-ahead bias) and **surface
+rationale + confidence in the UI** (contact/account detail + call brief), then
+A5 live read of the real Pilae calibration verdict. Then Phase B (graded depth +
+propensity → grade + learned weights) and C (bounded LLM pain).
