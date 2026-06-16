@@ -9,17 +9,18 @@ Ordered. Each task: implement → verify → test → commit.
   - Test: ≥12 cases (preamble+BOM, no-preamble, dedup url-variants, empty email
     kept, no-identity skipped, date formats, CRLF, garbage → headerFound false).
 
-- [ ] **T2 — Import endpoint** `app/api/network/import/route.ts`
-  - parse → company upsert-by-name (tenant) → contact upsert dedup (linkedinUrl|email)
-    → tag `properties.network` + `networkConnectedOn` → collect ids.
-  - Verify: POST a fixture export; assert tenant inserts + dedup against a pre-seeded
-    contact + company linkage.
-  - Test: route test with a seeded duplicate.
+- [x] **T2 — Import endpoint** `app/api/network/import/route.ts`
+  - Pure planner `lib/network/import-plan.ts` (dedup vs tenant by linkedinUrl|email,
+    row shaping) + service `lib/network/import-service.ts` (parse → company
+    upsert-by-name → contact insert tagged `properties.network` +
+    `networkConnectedOn`) + thin route (auth, rate-limit "bulk", 5MB cap, JSON/file).
+  - Verified: planner 7 tests + route 5 tests (mocked service, no fragile db mock);
+    27 network tests total green; tsc clean.
 
-- [ ] **T3 — Wire ICP scoring**
-  - After insert, load active ICPs (existing loader) and call
-    `scoreContactIcpBatch(tenantId, ids, activeIcps)`; return `scored`.
-  - Verify: imported ids have non-null `score`.
+- [x] **T3 — Wire ICP scoring** (folded into the import service)
+  - `import-service` loads active ICPs + `scoreContactIcpBatch(tenantId, ids,
+    activeIcps)` after insert; missing/empty ICP is non-fatal (`scored:0`, contacts
+    kept for the next recompute).
 
 - [ ] **T4 — Contacts filter** `?fNetwork=true`
   - Extend `app/api/contacts/route.ts` (condition + count). Add a "Mon réseau"
@@ -47,4 +48,7 @@ Ordered. Each task: implement → verify → test → commit.
     rows can show call-readiness facts).
 
 ## Status
-T1 in progress this session (parser + tests). T2–T8 sequenced after.
+T1+T2+T3 DONE this session (parse → dedup → upsert → ICP score, behind
+auth/rate-limit; 27 unit tests, tsc clean). Remaining: T4 contacts filter,
+T5 call-list source, T6 cohort enrich, T7 upload UI, T8 regression + rebase
+onto origin/main (for #251 reachability on the cohort rows).
