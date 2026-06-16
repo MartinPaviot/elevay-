@@ -6,6 +6,7 @@ import { matchIndustries } from "@/lib/search/industry-match";
 import { parseExcludedMode, parseAccountListFilters, GRADE_RANGES } from "@/lib/accounts/list-filters";
 import { EFFECTIVE_LIFECYCLE_STAGE_SQL } from "@/lib/accounts/lifecycle-stage";
 import { lastInteractionUnionSql } from "@/lib/accounts/last-interaction";
+import { accountContactReachSql, accountRecencyBucketSql } from "@/lib/accounts/account-segments";
 import { inngest } from "@/inngest/client";
 import { apiError } from "@/lib/infra/api-errors";
 import { paginatedResponse } from "@/lib/infra/api-response";
@@ -111,6 +112,8 @@ export async function GET(req: Request) {
       });
       refineConds.push(sql`(${sql.join(gradeConds, sql` OR `)})`);
     }
+    if (f.contactReach.length) refineConds.push(sql`(${sql.raw(accountContactReachSql())}) = ANY(${anyArr(f.contactReach)})`);
+    if (f.recency.length) refineConds.push(sql`(${sql.raw(accountRecencyBucketSql())}) = ANY(${anyArr(f.recency)})`);
     if (f.linkedin === "has")
       refineConds.push(sql`(COALESCE(${companies.properties}->>'linkedinUrl','') <> '' OR COALESCE(${companies.properties}->>'linkedin_url','') <> '')`);
     if (f.linkedin === "empty")
@@ -269,6 +272,28 @@ export async function GET(req: Request) {
         facetCounts = fcOut;
       } catch (e) {
         console.warn("accounts: facet counts query failed", e);
+      }
+      try {
+        // Segment facets with no column: contact reach + engagement recency,
+        // computed from the same SSOT the filters use. Separate pass so a bug
+        // here can't take down the enum facet counts above.
+        const segWhere = sql`tenant_id = ${authCtx.tenantId} AND ${deletedSql} AND ${excludedSql}`;
+        const reachExpr = sql.raw(accountContactReachSql());
+        const recencyExpr = sql.raw(accountRecencyBucketSql());
+        const seg = await db.execute(sql`
+          SELECT 'contactReach'::text AS facet, ${reachExpr} AS value, count(*)::int AS count
+            FROM companies WHERE ${segWhere} GROUP BY 2
+          UNION ALL
+          SELECT 'recency'::text, ${recencyExpr}, count(*)::int
+            FROM companies WHERE ${segWhere} GROUP BY 2
+        `);
+        facetCounts = facetCounts ?? {};
+        for (const r of seg as unknown as Array<{ facet: string; value: string | null; count: number }>) {
+          if (r.value == null) continue;
+          (facetCounts[r.facet] ??= {})[String(r.value)] = Number(r.count);
+        }
+      } catch (e) {
+        console.warn("accounts: segment facet counts query failed", e);
       }
       try {
         // Reuses the `enrichedExpr` defined above (same definition the

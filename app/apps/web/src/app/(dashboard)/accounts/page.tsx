@@ -47,6 +47,9 @@ import { SourcingPreviewModal } from "@/components/sourcing-preview-modal";
 import { COLUMN_CATEGORIES, DEFAULT_VISIBLE_CATEGORY_KEYS, getColumnCategory, buildPickerModel, isDynamicCategoryKey, isCategoryAvailable, customSignalKey, signalTypeKey, customFieldKey } from "@/lib/accounts/column-categories";
 import { TAM_PROPOSALS_ENTRY_ENABLED } from "@/lib/tam/entry-visibility";
 import { deriveAccountTabCounts } from "@/lib/accounts/tab-counts";
+import { FiltersPanel, panelActiveCount, type PanelSection } from "@/components/ui/filters-panel";
+import { accountReachLabel, ACCOUNT_REACH_BUCKETS } from "@/lib/accounts/account-segments";
+import { recencyLabel, RECENCY_BUCKETS } from "@/lib/contacts/recency";
 
 /** Firmographic-extra category columns (founded year, tech, funding,
  * keywords) — addable via the Categories picker, filled by the same
@@ -180,6 +183,9 @@ export default function AccountsPage() {
   // tab + enrich badges, so they show true totals rather than the loaded subset.
   const [serverCounts, setServerCounts] = useState<{ total: number; tam: number; manual: number; unenriched: number } | null>(null);
   const [openColumnFilter, setOpenColumnFilter] = useState<string | null>(null);
+  // Dedicated "Filtres" panel — segment cuts with no column home (contact
+  // reach, engagement recency). Reads/writes the same columnFilters state.
+  const [showFilters, setShowFilters] = useState(false);
   // Bulk contact extraction (Apollo) + delete flows.
   const [extractingContacts, setExtractingContacts] = useState(false);
   // Accounts the sourcing-preview modal is open for (null = closed).
@@ -524,6 +530,8 @@ export default function AccountsPage() {
     const ENUM_PARAM: Record<string, string> = {
       industry: "fIndustry", geography: "fGeography", size: "fSize",
       revenue: "fRevenue", stage: "fStage", score: "fGrade",
+      // Filters panel (no column home): contact reach + engagement recency.
+      contactReach: "fContactReach", recency: "fRecency",
     };
     const TEXT_PARAM: Record<string, string> = { name: "fName", domain: "fDomain" };
     for (const [key, fst] of Object.entries(debouncedColumnFilters)) {
@@ -556,6 +564,36 @@ export default function AccountsPage() {
     for (const [k, v] of serializeAccountFilters()) params.set(k, v);
     return params;
   }, [debouncedSearch, viewExcluded, viewDeleted, serializeAccountFilters]);
+
+  // Sections for the dedicated Filters panel — the two account cuts with no
+  // column home, from the server segment facet counts (lib/accounts/account-segments).
+  const filterSections = useMemo<PanelSection[]>(() => {
+    const reachCounts = serverFacetCounts?.contactReach ?? {};
+    const reachOpts = ACCOUNT_REACH_BUCKETS.filter((b) => reachCounts[b] != null).map((b) => ({
+      value: b as string,
+      label: accountReachLabel(b),
+    }));
+    const recencyCounts = serverFacetCounts?.recency ?? {};
+    const recencyOpts = RECENCY_BUCKETS.filter((b) => recencyCounts[b] != null).map((b) => ({
+      value: b as string,
+      label: recencyLabel(b),
+    }));
+    return [
+      {
+        title: "Joignabilité",
+        filters: [
+          { key: "contactReach", label: "Couverture contact", options: reachOpts, counts: reachCounts, hint: "A-t-on un interlocuteur — et un numéro pour l'appeler ?" },
+        ],
+      },
+      {
+        title: "Engagement",
+        filters: [
+          { key: "recency", label: "Dernier contact", options: recencyOpts, counts: recencyCounts, hint: "Dernier échange réel sur le compte (contacts, emails, RDV)" },
+        ],
+      },
+    ];
+  }, [serverFacetCounts]);
+  const panelActive = panelActiveCount(filterSections, columnFilters);
 
   /** Fetch a single page of accounts.
    *  - page=1, append=false → initial load (replaces list)
@@ -1737,6 +1775,25 @@ export default function AccountsPage() {
           ))}
         </div>
 
+        <button
+          type="button"
+          onClick={() => setShowFilters(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
+          style={{
+            background: panelActive > 0 ? "var(--color-accent-soft)" : "transparent",
+            color: panelActive > 0 ? "var(--color-accent)" : "var(--color-text-tertiary)",
+          }}
+          title="Filtres avancés — joignabilité, récence"
+        >
+          <SlidersHorizontal size={12} />
+          Filtres
+          {panelActive > 0 && (
+            <span className="rounded-full px-1.5 text-[10px] font-medium tabular-nums" style={{ background: "var(--color-accent)", color: "#fff" }}>
+              {panelActive}
+            </span>
+          )}
+        </button>
+
         {/* Enrichment partition — independent of the source tab. Lets the user
             isolate the not-yet-enriched accounts so a bulk enrich doesn't pay to
             re-enrich the ones already enriched. Counts come from the tenant-wide
@@ -1819,6 +1876,21 @@ export default function AccountsPage() {
           />
         </div>
       </FilterBar>
+
+      <FiltersPanel
+        open={showFilters}
+        onOpenChange={setShowFilters}
+        sections={filterSections}
+        state={columnFilters}
+        onChange={(key, next) =>
+          setColumnFilters((prev) => {
+            const n = { ...prev };
+            if (next) n[key] = next;
+            else delete n[key];
+            return n;
+          })
+        }
+      />
 
       <ActiveFiltersChips
         filters={smartFilters}

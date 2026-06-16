@@ -34,6 +34,8 @@ export interface AccountListFilters {
   revenues: string[];
   stages: string[]; // matches the EFFECTIVE stage (manual override > deal-derived > "new")
   grades: string[]; // A+ | A | B | C | D | F
+  contactReach: string[]; // none | no_phone | reachable (has a dialable contact?)
+  recency: string[]; // never | 7 | 30 | 90 | old (last real interaction, account-level)
   enriched: "yes" | "no" | null; // "no" = base firmographics still missing (to-enrich)
   linkedin: "has" | "empty" | null;
   name: string | null; // substring match
@@ -81,6 +83,8 @@ export function parseAccountListFilters(params: URLSearchParams): AccountListFil
     revenues: csv(params.get("fRevenue")),
     stages: csv(params.get("fStage")),
     grades: csv(params.get("fGrade")).filter((g) => g in GRADE_RANGES),
+    contactReach: csv(params.get("fContactReach")),
+    recency: csv(params.get("fRecency")),
     enriched,
     linkedin,
     name: params.get("fName")?.trim() || null,
@@ -101,6 +105,8 @@ export function hasActiveAccountFilters(f: AccountListFilters): boolean {
     f.revenues.length > 0 ||
     f.stages.length > 0 ||
     f.grades.length > 0 ||
+    f.contactReach.length > 0 ||
+    f.recency.length > 0 ||
     f.enriched !== null ||
     f.linkedin !== null ||
     !!f.name ||

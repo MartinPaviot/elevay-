@@ -29,12 +29,11 @@ export function recencyLabel(key: string): string {
   return RECENCY_LABELS[key as RecencyBucket] ?? key;
 }
 
-/** Day boundaries that separate the buckets (ascending). */
-const BOUNDARIES: ReadonlyArray<{ key: RecencyBucket; days: number }> = [
-  { key: "7", days: 7 },
-  { key: "30", days: 30 },
-  { key: "90", days: 90 },
-];
+/** Day boundaries that separate the buckets (ascending). Exported so the
+ *  account-level recency SQL reuses the exact same edges (one source). */
+export const RECENCY_BOUNDARY_DAYS = [7, 30, 90] as const;
+const BOUNDARIES: ReadonlyArray<{ key: RecencyBucket; days: number }> =
+  RECENCY_BOUNDARY_DAYS.map((days) => ({ key: String(days) as RecencyBucket, days }));
 
 /** Pure TS mirror of recencyBucketSql, for unit tests + single-row consumers. */
 export function recencyBucket(
