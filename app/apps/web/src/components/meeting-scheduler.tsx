@@ -3,13 +3,15 @@
 /**
  * Inline meeting scheduler card — posts to /api/meetings/book (connected
  * calendar + invite). Extracted from Call Mode's _call-actions so the
- * Inbox reading pane books meetings with the exact same widget.
+ * Inbox reading pane books meetings with the exact same widget. Fully
+ * bilingual via useT() — follows the global locale (default FR).
  */
 
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { useT } from "@/lib/i18n/locale";
 
 function defaultWhen(): string {
   // Tomorrow 10:00 local, formatted for <input type="datetime-local">.
@@ -32,6 +34,7 @@ export function MeetingSchedulerCard({
   onBooked?: () => void;
 }) {
   const { toast } = useToast();
+  const t = useT();
   const [when, setWhen] = useState(defaultWhen);
   const [duration, setDuration] = useState(45);
   const [title, setTitle] = useState("");
@@ -59,12 +62,12 @@ export function MeetingSchedulerCard({
 
   async function bookMeeting() {
     if (!when) {
-      toast("Pick a date and time.", "warning");
+      toast(t("meeting.pickDateTime"), "warning");
       return;
     }
     const start = new Date(when);
     if (Number.isNaN(start.getTime())) {
-      toast("That date and time doesn't look valid.", "error");
+      toast(t("meeting.invalidDateTime"), "error");
       return;
     }
     setBooking(true);
@@ -89,10 +92,10 @@ export function MeetingSchedulerCard({
         error?: string;
       };
       if (!res.ok || !data.booked) {
-        toast(data.error ?? "Couldn't book the meeting.", "error");
+        toast(data.error ?? t("meeting.bookFailed"), "error");
         return;
       }
-      toast(`Visio planifiée avec ${firstName || "le prospect"}.`, "success");
+      toast(t("meeting.bookedToast", { name: firstName || t("common.theProspect") }), "success");
       setTitle("");
       onBooked?.();
       // Stay open and reveal the join link instead of closing immediately.
@@ -101,7 +104,7 @@ export function MeetingSchedulerCard({
         conferencing: data.conferencing ?? conferencing,
       });
     } catch {
-      toast("Network error while booking.", "error");
+      toast(t("meeting.networkError"), "error");
     } finally {
       setBooking(false);
     }
@@ -114,9 +117,9 @@ export function MeetingSchedulerCard({
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
-          {booked ? "Visio planifiée" : "Schedule a discovery meeting"}
+          {booked ? t("meeting.bookedTitle") : t("meeting.scheduleTitle")}
         </span>
-        <button onClick={onClose} aria-label="Close" style={{ color: "var(--color-text-tertiary)" }}>
+        <button onClick={onClose} aria-label={t("common.close")} style={{ color: "var(--color-text-tertiary)" }}>
           <X size={13} />
         </button>
       </div>
@@ -124,8 +127,7 @@ export function MeetingSchedulerCard({
       {booked ? (
         <div className="space-y-2">
           <p className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-            Invitation envoyée à {firstName || "le prospect"} avec le lien de visio
-            {booked.conferencing === "sovereign" ? " souveraine." : "."}
+            {t("meeting.inviteSent", { name: firstName || t("common.theProspect") })}
           </p>
           {booked.joinUrl && (
             <div className="flex items-center gap-1.5">
@@ -137,18 +139,18 @@ export function MeetingSchedulerCard({
                 style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
               />
               <Button size="sm" variant="outline" onClick={copyLink}>
-                {copied ? "Copié" : "Copier"}
+                {copied ? t("common.copied") : t("common.copy")}
               </Button>
             </div>
           )}
           <div className="flex justify-end">
-            <Button size="sm" onClick={onClose}>Terminé</Button>
+            <Button size="sm" onClick={onClose}>{t("common.done")}</Button>
           </div>
         </div>
       ) : (
       <>
       <label className="block text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-        When
+        {t("meeting.when")}
         <input
           type="datetime-local"
           value={when}
@@ -159,7 +161,7 @@ export function MeetingSchedulerCard({
       </label>
 
       <div className="mt-2 flex items-center gap-1.5">
-        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Duration</span>
+        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{t("meeting.duration")}</span>
         {[30, 45, 60].map((d) => (
           <button
             key={d}
@@ -177,7 +179,7 @@ export function MeetingSchedulerCard({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Visio</span>
+        <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{t("meeting.video")}</span>
         {([
           { key: "sovereign", label: "Visio" },
           { key: "google_meet", label: "Google Meet" },
@@ -203,20 +205,18 @@ export function MeetingSchedulerCard({
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder={`Title (optional) — e.g. Échange ${firstName}`}
+        placeholder={t("meeting.titlePlaceholder", { name: firstName })}
         className="mt-2 w-full rounded-md px-2 py-1 text-[13px] outline-none"
         style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
       />
 
       <div className="mt-2 flex justify-end">
         <Button size="sm" onClick={bookMeeting} disabled={booking} loading={booking}>
-          {booking ? "Booking…" : "Confirm"}
+          {booking ? t("meeting.booking") : t("common.confirm")}
         </Button>
       </div>
       <p className="mt-1.5 text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
-        {conferencing === "sovereign"
-          ? "Ajoute l'événement à votre agenda connecté avec un lien de visio souveraine, et invite le contact."
-          : "Crée la réunion (Google Meet / Teams / Zoom) selon votre choix et votre agenda connecté, et invite le contact."}
+        {conferencing === "sovereign" ? t("meeting.descSovereign") : t("meeting.descProvider")}
       </p>
       </>
       )}
