@@ -20,6 +20,7 @@ import { checkScriptMethod } from "@/lib/call-mode/script-levers";
 import type { ScriptContext } from "@/lib/voice/script-context";
 import { useToast } from "@/components/ui/toast";
 import { useT } from "@/lib/i18n/locale";
+import { SCRIPT_LANGUAGES, SCRIPT_LANGUAGE_SHORT, type ScriptLanguage } from "@/lib/call-mode/script-language";
 
 /** Sector key → i18n key for the "détecté" hint (resolved with t() at render,
  *  since this const is module-level and can't call the hook). */
@@ -95,6 +96,10 @@ export function CallScriptPanel({
   const [draftGrounding, setDraftGrounding] = useState<Array<{ index: number; fact: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Script generation language — the rep picks it per call ("la langue voulue
+  // par le prospect"), manual selection (no auto-detection). Chrome stays EN;
+  // this drives only the generated script's language.
+  const [scriptLang, setScriptLang] = useState<ScriptLanguage>("fr");
   const [showBranches, setShowBranches] = useState(false);
   // Beyond the happy path: gatekeeper, voicemail, callback, objection playbook.
   const branches = useMemo(() => resolveBranches({ name: contactName }), [contactName]);
@@ -191,8 +196,9 @@ export function CallScriptPanel({
       const res = await fetch("/api/calls/script/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // contactId grounds the draft on THIS prospect's server-side evidence.
-        body: JSON.stringify({ sector, contactId: contactId ?? undefined }),
+        // contactId grounds the draft on THIS prospect's server-side evidence;
+        // language is the rep-selected output language for the script.
+        body: JSON.stringify({ sector, contactId: contactId ?? undefined, language: scriptLang }),
       });
       const data = await res.json();
       if (!res.ok) { toast(data.error || t("callScript.genFailed"), "error"); return; }
@@ -259,6 +265,29 @@ export function CallScriptPanel({
         <Phone size={14} style={{ color: "var(--color-accent)" }} />
         <span className="text-[13px] font-semibold" style={{ color: "var(--color-text-primary)" }}>{t("callScript.title")}</span>
         <span className="ml-auto inline-flex items-center gap-1.5">
+          <span
+            className="inline-flex items-center overflow-hidden rounded-md"
+            style={{ border: "1px solid var(--color-border-default)" }}
+            role="group"
+            aria-label={t("callScript.scriptLanguage")}
+          >
+            {SCRIPT_LANGUAGES.map((lng) => (
+              <button
+                key={lng}
+                type="button"
+                onClick={() => setScriptLang(lng)}
+                title={t("callScript.scriptLanguage")}
+                className="px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                style={
+                  scriptLang === lng
+                    ? { background: "var(--color-accent)", color: "#fff" }
+                    : { color: "var(--color-text-tertiary)" }
+                }
+              >
+                {SCRIPT_LANGUAGE_SHORT[lng]}
+              </button>
+            ))}
+          </span>
           <button
             type="button"
             onClick={regenerate}

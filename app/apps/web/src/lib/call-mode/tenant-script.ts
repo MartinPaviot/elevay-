@@ -15,6 +15,10 @@ import { openai } from "@ai-sdk/openai";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { defaultScriptFields, defaultScriptFieldsForKey, type ScriptFields } from "./call-scripts";
 import type { GenEvidenceItem } from "./prospect-evidence";
+import { SCRIPT_LANGUAGE_NAME, type ScriptLanguage } from "./script-language";
+
+// Re-export so server callers (the generate route) keep one import site.
+export { SCRIPT_LANGUAGES, asScriptLanguage, type ScriptLanguage } from "./script-language";
 
 /** One generated enjeu: prospect-grounded iff it cites an evidence id. */
 export interface GeneratedProblem {
@@ -164,7 +168,7 @@ export async function upsertTenantScript(args: {
  */
 export async function generateCallScript(
   tenantId: string,
-  opts: { sector?: string | null; persona?: string | null; evidence?: GenEvidenceItem[] } = {},
+  opts: { sector?: string | null; persona?: string | null; evidence?: GenEvidenceItem[]; language?: ScriptLanguage } = {},
 ): Promise<{ draft: ScriptFields; grounding: GroundingNote[] } | null> {
   const model = process.env.ANTHROPIC_API_KEY
     ? anthropic("claude-haiku-4-5-20251001")
@@ -191,6 +195,10 @@ export async function generateCallScript(
   const sector = (opts.sector ?? (s.targetIndustries ?? [])[0] ?? "").toString().trim();
   const evidence = opts.evidence ?? [];
   const posture = s.scriptPosture === "challenger" ? "challenger" : "consultative";
+  // The rep-selected output language (default FR). The chrome stays English; the
+  // script the rep reads aloud is in the prospect's language.
+  const language = opts.language ?? "fr";
+  const langName = SCRIPT_LANGUAGE_NAME[language];
   const ctx = {
     product: s.productDescription ?? "",
     salesMotion: s.salesMotion ?? "",
@@ -236,7 +244,7 @@ Grounding rules (hard): at least ONE enjeu must be specific to THIS prospect and
         permissionCheck: z.string().describe("Leave EMPTY (\"\") — the validation now travels inside each enjeu (the two-door question). Only fill for a single shared fallback question."),
         bookingAsk: z.string().describe("Propose a 45 min-1h VIDEO meeting, offering TWO concrete time windows (e.g. 'lundi entre 14h et 18h, ou jeudi entre 9h et 12h'); de-risk it (rien à préparer, they leave with a costed read even without a follow-up). No phone discovery."),
       }),
-      prompt: `Write a permission-based cold-call script in French (Suisse romande), for a salesperson selling this product:
+      prompt: `Write a permission-based cold-call script in ${langName}, for a salesperson selling this product. Produce EVERY spoken line in ${langName} and make it sound natural to a native speaker; the French example phrases further down only convey the tone and structure — render their spirit in ${langName} (if the target language IS French, use them as written). Keep the {name} and {line} placeholders verbatim.
 
 PRODUCT: ${ctx.product || "(non renseigné)"}
 SALES MOTION: ${ctx.salesMotion || "(n/a)"}
@@ -244,7 +252,7 @@ KEY CHALLENGE WE SOLVE: ${ctx.challenge || "(n/a)"}
 TARGET SEGMENT — sector: ${ctx.sector || "(générique)"}; sizes: ${ctx.sizes.join(", ") || "n/a"}; geographies: ${ctx.geographies.join(", ") || "n/a"}; persona/roles: ${ctx.persona || "décideur"}; tech in place we replace: ${ctx.technologies.join(", ") || "n/a"}.${evidenceBlock}
 
 Methodology (strict — founder cold call, Benjamin Douablin, adapted: NO discovery on the phone — the only job is to BOOK the meeting): short call (2-3 min). Flow: (1) OPENER = greeting + MINIMAL identity (just "une société lausannoise", NO product description, avoid "startup") + the prospect's SECTOR tied to our subject (the {line} placeholder, e.g. "je me concentre en ce moment sur les EMS romands : utiliser l'IA en interne sans que les données des résidents partent à l'étranger") + a permission ask ("je vous appelle pas pour un pitch, juste voir si c'est un sujet chez vous, ça vous convient ?"). The opener never pitches and NEVER tells the buyer he overpays or is behind; (2) after the OK, a half-sentence (IA interne / automatisations open source, hébergées en Suisse, à l'usage), then illuminate the pains through a RÉCIT-PAIR — a QUOTED peer voice ("Beaucoup nous disent : '…'"), never frontally — ONE enjeu at a time, each followed by a TWO-DOOR validation that lets the prospect place himself without judgment ("…, chez vous c'est déjà le cas, ou pas encore ?"); iterate up to 3, stop at the first that lands; (3) as soon as one lands, propose a 45 min-1h VIDEO meeting with two concrete time windows. ${postureLine} Ton suisse: sober, factual, modest, no number thrown on the phone, we propose and never lecture. Talk to decision-makers first. Use "vous". No emojis. Sound like a founder with one real reason to call, not a stack of techniques. Never claim a certification the company doesn't have. The opener MUST keep BOTH the {name} and {line} placeholders so they interpolate per call (do NOT put {sector}/{geo} in the opener, do NOT use {reason}).${playbookBlock}`,
-      _trace: { agentId: "call-script-generate", tenantId, inputPreview: `${sector.slice(0, 60)}|ev:${evidence.length}|${posture}` },
+      _trace: { agentId: "call-script-generate", tenantId, inputPreview: `${sector.slice(0, 60)}|ev:${evidence.length}|${posture}|${language}` },
     });
 
     // Fail-closed citation gate; if nothing survives, fall back to the
