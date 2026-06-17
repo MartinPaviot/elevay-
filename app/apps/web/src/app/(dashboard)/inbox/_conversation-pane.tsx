@@ -306,6 +306,28 @@ export function ConversationPane({
                 Last interaction: {timeAgo(detail.lastInteraction.at)} · {detail.lastInteraction.type.replace(/_/g, " ")}
               </div>
             )}
+            {/* Sequence-reply link (INBOX-G07): which of our steps they're answering,
+                linking to the sequence. enrollment loaded in the detail route. */}
+            {detail.enrollment && (() => {
+              const step = Math.max(
+                0,
+                ...conv.messages
+                  .filter((m) => m.direction === "outbound" && m.stepNumber)
+                  .map((m) => m.stepNumber as number),
+              );
+              return (
+                <div className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  {step > 0 ? `Reply to step ${step} of ` : "In sequence "}
+                  <Link
+                    href={`/sequences/${detail.enrollment.sequenceId}`}
+                    className="font-medium hover:underline"
+                    style={{ color: "var(--color-accent)" }}
+                  >
+                    {detail.enrollment.sequenceName}
+                  </Link>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
