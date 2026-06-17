@@ -16,6 +16,7 @@ import { getTenantSettings, deriveTargetRoles, type TenantSettings } from "@/lib
 import { readApprovalMode, chatCreateDisposition } from "@/lib/guardrails/approval-mode";
 import { buildChatSystemPrompt } from "@/lib/prompts/chat-system-prompt";
 import { buildAllChatTools, type ToolContext } from "@/lib/chat/tools";
+import type { PageActionManifest } from "@/lib/chat/page-actions/types";
 import { resolveCapabilities, type SurfaceContext } from "@/lib/agents/capability-resolver";
 import { routeTools } from "@/lib/chat/tool-router";
 import { orchestrate } from "@/lib/agents/orchestrator";
@@ -405,6 +406,7 @@ export async function POST(req: Request) {
     contextId,
     surface: surfaceInput,
     threadId,
+    pageActions,
   }: {
     messages: UIMessage[];
     contextType?: string;
@@ -416,6 +418,11 @@ export async function POST(req: Request) {
      * propose durable memories from recent conversation history.
      */
     threadId?: string;
+    /**
+     * CLE-04: the current page's action manifest (CLE-03's dock put it on the
+     * wire). Absent off-web (Slack/MCP) or on the /chat page (no dock).
+     */
+    pageActions?: PageActionManifest;
   } = await req.json();
 
   // If the Anthropic circuit breaker is open, skip straight to OpenAI
@@ -612,6 +619,7 @@ export async function POST(req: Request) {
     authCtx,
     settings: tenantSettings,
     agentApprovalMode,
+    pageActionManifest: pageActions, // CLE-04
   };
   const allTools = buildAllChatTools(toolCtx);
   const resolved = resolveCapabilities(allTools, {

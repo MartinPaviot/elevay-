@@ -10,9 +10,10 @@ import {
 import { runRegisteredAction } from "@/lib/chat/page-actions/registry";
 import type { PageActionResult } from "@/lib/chat/page-actions/types";
 
-/** Frozen transport tags for the v1 page-action result round-trip (README §3.5). */
-export const ACTION_RESULT_OPEN = "[[action-result]]";
-export const ACTION_RESULT_CLOSE = "[[/action-result]]";
+// Frozen transport tags live in a pure module so the server-side prompt can
+// import the same literals without pulling this "use client" module (CLE-04).
+import { ACTION_RESULT_OPEN, ACTION_RESULT_CLOSE } from "@/lib/chat/page-actions/result-tags";
+export { ACTION_RESULT_OPEN, ACTION_RESULT_CLOSE };
 
 /** The frozen envelope (README §3.5). Only these keys cross back to the model. */
 export interface ActionResultEnvelope {

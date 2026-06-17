@@ -68,6 +68,8 @@ const TOOL_GROUP_MAP: Record<string, string> = {
   listSharedPrompts: "query", deleteSharedPrompt: "query",
   // navigation + command layer (always-available via "query")
   openRecord: "query", openListView: "query", composeEmail: "query",
+  // page actions (page-actions.ts)
+  listPageActions: "query", invokePageAction: "action",
   // read-gap tools
   querySequences: "query", getMailboxHealth: "query", queryProposals: "query",
   // create

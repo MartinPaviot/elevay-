@@ -78,6 +78,11 @@ const TOOL_GROUPS: Record<string, string> = {
   openRecord: "query",
   openListView: "query",
   composeEmail: "query",
+  // page actions (page-actions.ts) — listPageActions discovers what the current
+  // page can do (read, always-available like the command layer); invokePageAction
+  // emits the directive (an "action" so the action-intent router includes it).
+  listPageActions: "query",
+  invokePageAction: "action",
   // read-gap tools (read-gaps.ts)
   querySequences: "query",
   getMailboxHealth: "query",

@@ -141,6 +141,18 @@ export const VIEWER_DENIED_TOOLS = new Set<string>([
 ]);
 
 /**
+ * Tools reachable by viewers even though their group is NOT in
+ * VIEWER_ALLOWED_GROUPS, because per-action gating happens downstream.
+ * invokePageAction is the gateway to page actions; it refuses mutating/outbound
+ * actions for viewers INSIDE the tool via decideAction (CLE-04), so a viewer can
+ * still drive read-only page actions (applyFilter, toggleView) and gets a correct
+ * per-action reason rather than a blanket "no tools". CLE-12 generalizes this.
+ */
+export const VIEWER_GATEWAY_TOOLS = new Set<string>([
+  "invokePageAction",
+]);
+
+/**
  * Fail-closed allowlist for viewers: a tool must belong to an allowed
  * group AND not be denied by name. Unknown tools (no group mapping yet)
  * are dropped for viewers — the opposite of the router's fail-open
@@ -148,6 +160,7 @@ export const VIEWER_DENIED_TOOLS = new Set<string>([
  */
 export function isViewerAllowedTool(name: string): boolean {
   if (VIEWER_DENIED_TOOLS.has(name)) return false;
+  if (VIEWER_GATEWAY_TOOLS.has(name)) return true; // CLE-04 — gateway, gated per-action by decideAction
   const group = getToolGroup(name);
   return !!group && VIEWER_ALLOWED_GROUPS.has(group);
 }
