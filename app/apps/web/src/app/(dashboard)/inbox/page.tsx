@@ -39,6 +39,10 @@ export default function InboxPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("attention");
+  // Custom smart lanes (INBOX-T01): when one is selected, customLaneId drives the
+  // fetch (?lane=<id>) instead of the built-in tab.
+  const [customLaneId, setCustomLaneId] = useState<string | null>(null);
+  const [customLanes, setCustomLanes] = useState<Array<{ id: string; name: string; hideWhenEmpty: boolean; count: number }>>([]);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
   // connect card before the first response.
@@ -75,7 +79,7 @@ export default function InboxPage() {
   }, []);
 
   const loadLane = useCallback(
-    async (lane: InboxLane, pageNum: number, append: boolean) => {
+    async (lane: string, pageNum: number, append: boolean) => {
       if (append) setLoadingMore(true);
       else setLoading(true);
       try {
@@ -90,9 +94,11 @@ export default function InboxPage() {
           mailboxConnected?: boolean;
           mailboxes?: MailboxSummary[];
           selectedMailbox?: string | null;
+          customLanes?: Array<{ id: string; name: string; hideWhenEmpty: boolean; count: number }>;
         };
         setMailboxConnected(data.mailboxConnected !== false);
         if (data.mailboxes) setMailboxes(data.mailboxes);
+        setCustomLanes(data.customLanes ?? []);
         setCounts(data.counts);
         setTotal(data.pagination.total);
         setConversations((prev) => (append ? [...prev, ...data.conversations] : data.conversations));
@@ -106,11 +112,33 @@ export default function InboxPage() {
     [toast, selectedMailbox],
   );
 
+  // Minimal lane creator (INBOX-T01): name + a sender-domain clause. Selecting the
+  // new lane triggers the load effect, which refreshes customLanes from the route.
+  const handleNewLane = useCallback(async () => {
+    const name = window.prompt("New lane name?")?.trim();
+    if (!name) return;
+    const domain = window.prompt('Show mail from which sender domain? (e.g. "pilae.ch")')?.trim();
+    if (!domain) return;
+    try {
+      const res = await fetch("/api/inbox/lanes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, clauses: [{ field: "from", op: "domain", value: domain }], join: "and" }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const { lane } = (await res.json()) as { lane: { id: string } };
+      setCustomLaneId(lane.id);
+    } catch {
+      toast("Couldn't create the lane.", "error");
+    }
+  }, [toast]);
+
   useEffect(() => {
-    if (tab === "outbound") return;
+    const param = customLaneId ?? tab;
+    if (param === "outbound") return;
     setPage(1);
-    void loadLane(tab, 1, false);
-  }, [tab, loadLane]);
+    void loadLane(param, 1, false);
+  }, [tab, customLaneId, loadLane]);
 
   // Reconcile the selection whenever the list changes: a pending deep-link
   // wins when its thread is listed; otherwise keep the current selection if
@@ -192,7 +220,7 @@ export default function InboxPage() {
       ) {
         return;
       }
-      if (tab === "outbound") return;
+      if (tab === "outbound" && !customLaneId) return;
 
       if (e.key === "j" || e.key === "k") {
         if (conversations.length === 0) return;
@@ -236,20 +264,47 @@ export default function InboxPage() {
       />
 
       <FilterBar>
-        <div className="flex gap-0.5">
-          {TABS.map((t) => (
+        <div className="flex flex-wrap gap-0.5">
+          {TABS.map((t) => {
+            const active = customLaneId === null && tab === t;
+            return (
+              <button
+                key={t}
+                onClick={() => {
+                  setCustomLaneId(null);
+                  setTab(t);
+                }}
+                className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
+                style={{
+                  background: active ? "var(--color-accent-soft)" : "transparent",
+                  color: active ? "var(--color-accent)" : "var(--color-text-tertiary)",
+                }}
+              >
+                {TAB_LABELS[t]} ({counts[t]})
+              </button>
+            );
+          })}
+          {customLanes.map((l) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={l.id}
+              onClick={() => setCustomLaneId(l.id)}
               className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
               style={{
-                background: tab === t ? "var(--color-accent-soft)" : "transparent",
-                color: tab === t ? "var(--color-accent)" : "var(--color-text-tertiary)",
+                background: customLaneId === l.id ? "var(--color-accent-soft)" : "transparent",
+                color: customLaneId === l.id ? "var(--color-accent)" : "var(--color-text-tertiary)",
               }}
             >
-              {TAB_LABELS[t]} ({counts[t]})
+              {l.name} ({l.count})
             </button>
           ))}
+          <button
+            onClick={() => void handleNewLane()}
+            className="rounded-md px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ color: "var(--color-text-tertiary)" }}
+            title="Create a lane from a sender domain"
+          >
+            + New lane
+          </button>
         </div>
       </FilterBar>
 
@@ -264,7 +319,7 @@ export default function InboxPage() {
             actionVariant="gradient"
           />
         </div>
-      ) : tab === "outbound" ? (
+      ) : tab === "outbound" && !customLaneId ? (
         <div className="flex-1 overflow-hidden">
           <OutboundTable />
         </div>
@@ -286,7 +341,7 @@ export default function InboxPage() {
               <TableSkeleton rows={8} cols={1} />
             ) : (
               <ConversationList
-                lane={tab}
+                lane={customLaneId ? "attention" : tab === "outbound" ? "attention" : tab}
                 conversations={conversations}
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
@@ -295,7 +350,7 @@ export default function InboxPage() {
                 onLoadMore={() => {
                   const next = page + 1;
                   setPage(next);
-                  void loadLane(tab, next, true);
+                  void loadLane(customLaneId ?? tab, next, true);
                 }}
                 showMailbox={selectedMailbox === null}
               />
@@ -304,7 +359,7 @@ export default function InboxPage() {
           <div className="min-w-0 flex-1">
             <ConversationPane
               conversationKey={selectedKey}
-              lane={tab}
+              lane={customLaneId ? "attention" : tab === "outbound" ? "attention" : tab}
               replySignal={replySignal}
               onTriage={handleTriage}
             />
