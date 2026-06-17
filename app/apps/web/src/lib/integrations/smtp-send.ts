@@ -21,6 +21,8 @@ export interface OutgoingMessage {
   to: string;
   /** Optional CC recipients, comma-separated. */
   cc?: string;
+  /** Optional BCC recipients, comma-separated. */
+  bcc?: string;
   subject: string;
   html?: string;
   text?: string;
@@ -73,6 +75,7 @@ export async function sendViaSmtp(
       from,
       to: msg.to,
       cc: msg.cc || undefined,
+      bcc: msg.bcc || undefined,
       subject: msg.subject,
       html: msg.html,
       text: msg.text || stripHtml(msg.html || ""),

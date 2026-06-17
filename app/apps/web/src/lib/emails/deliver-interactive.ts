@@ -47,6 +47,7 @@ export interface DeliverInteractiveInput {
   ownerAppUserId: string | null | undefined;
   to: string;
   cc?: string[];
+  bcc?: string[];
   subject: string;
   /** Plain-text body (the composer + follow-up drafts are plain text). */
   body: string;
@@ -174,7 +175,13 @@ export async function deliverInteractiveEmail(
           password,
           displayName: mailbox.displayName,
         },
-        { to, subject, text, cc: input.cc && input.cc.length > 0 ? input.cc.join(", ") : undefined },
+        {
+          to,
+          subject,
+          text,
+          cc: input.cc && input.cc.length > 0 ? input.cc.join(", ") : undefined,
+          bcc: input.bcc && input.bcc.length > 0 ? input.bcc.join(", ") : undefined,
+        },
       );
       messageId = res.messageId;
       via = "smtp";
@@ -186,6 +193,7 @@ export async function deliverInteractiveEmail(
         from: fromAddress,
         to: [to],
         cc: input.cc && input.cc.length > 0 ? input.cc : undefined,
+        bcc: input.bcc && input.bcc.length > 0 ? input.bcc : undefined,
         subject,
         text,
         headers: { "List-Unsubscribe": `<${unsubUrl}>` },

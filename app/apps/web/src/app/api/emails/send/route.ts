@@ -17,6 +17,7 @@ import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient
 const sendEmailSchema = z.object({
   to: z.string().email("Invalid recipient email address"),
   cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
   subject: z.string().min(1, "Subject is required").max(500),
   body: z.string().min(1, "Body is required").max(50_000),
   contactId: z.string().optional(),
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
     ownerAppUserId: authCtx.appUserId,
     to: parsed.to,
     cc: parsed.cc,
+    bcc: parsed.bcc,
     subject: parsed.subject,
     body: parsed.body,
     contactId: parsed.contactId,

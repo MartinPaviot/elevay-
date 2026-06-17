@@ -6,6 +6,7 @@ import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw } f
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
+import { parseRecipients } from "@/lib/inbox/template-vars";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -14,6 +15,7 @@ import { ContactCollisionNotice } from "@/components/collision/contact-collision
 export interface EmailComposerDraft {
   to: string;
   cc?: string;
+  bcc?: string;
   subject: string;
   body: string;
   contactId?: string;
@@ -72,9 +74,13 @@ function EmailField({
   const inputRef = useRef<HTMLInputElement>(null);
 
   function addEmail(raw: string) {
-    const trimmed = raw.trim();
-    if (trimmed && trimmed.includes("@") && !emails.includes(trimmed)) {
-      onChange([...emails, trimmed]);
+    // parseRecipients handles "Name <email>", comma/semicolon lists and dedupe,
+    // so a pasted "a@b.c, d@e.f" becomes two pills in one go.
+    const { valid } = parseRecipients(raw);
+    if (valid.length > 0) {
+      const merged = [...emails];
+      for (const addr of valid) if (!merged.includes(addr)) merged.push(addr);
+      onChange(merged);
     }
     setInputValue("");
   }
@@ -134,6 +140,7 @@ const DRAFT_KEY = "elevay:email-draft";
 function saveDraftToStorage(data: {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   body: string;
   contactId?: string;
@@ -149,6 +156,7 @@ function saveDraftToStorage(data: {
 function loadDraftFromStorage(): {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   body: string;
   contactId?: string;
@@ -180,14 +188,12 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
 
-  // Form state
-  const [toEmails, setToEmails] = useState<string[]>(
-    draft.to ? draft.to.split(",").map((e) => e.trim()).filter(Boolean) : []
-  );
-  const [ccEmails, setCcEmails] = useState<string[]>(
-    draft.cc ? draft.cc.split(",").map((e) => e.trim()).filter(Boolean) : []
-  );
-  const [showCc, setShowCc] = useState(false);
+  // Form state — parseRecipients keeps "Name <email>" and lists tidy.
+  const [toEmails, setToEmails] = useState<string[]>(parseRecipients(draft.to || "").valid);
+  const [ccEmails, setCcEmails] = useState<string[]>(parseRecipients(draft.cc || "").valid);
+  const [bccEmails, setBccEmails] = useState<string[]>(parseRecipients(draft.bcc || "").valid);
+  const [showCc, setShowCc] = useState(Boolean(draft.cc));
+  const [showBcc, setShowBcc] = useState(Boolean(draft.bcc));
   const [editSubject, setEditSubject] = useState(draft.subject);
   const [editBody, setEditBody] = useState(draft.body);
 
@@ -237,6 +243,7 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
     saveDraftToStorage({
       to: toEmails,
       cc: ccEmails,
+      bcc: bccEmails,
       subject: editSubject,
       body: editBody,
       contactId: draft.contactId,
@@ -271,6 +278,7 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
         body: JSON.stringify({
           to: toEmails[0],
           cc: ccEmails.length > 0 ? ccEmails : undefined,
+          bcc: bccEmails.length > 0 ? bccEmails : undefined,
           subject: editSubject,
           body: editBody,
           contactId: draft.contactId || undefined,
@@ -374,41 +382,30 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
           placeholder="recipient@example.com"
         />
 
-        {/* Cc toggle */}
-        {!showCc ? (
+        {/* Cc / Bcc — fields when open, compact toggles otherwise */}
+        {showCc && <EmailField label="Cc" emails={ccEmails} onChange={setCcEmails} />}
+        {showBcc && <EmailField label="Bcc" emails={bccEmails} onChange={setBccEmails} />}
+        <div
+          className="flex items-center gap-3 px-4 py-1.5"
+          style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+        >
           <button
-            onClick={() => setShowCc(true)}
-            className="flex items-center gap-1 px-4 py-1.5 text-[11px]"
-            style={{
-              color: "var(--color-text-muted)",
-              background: "none",
-              border: "none",
-              borderBottom: "0.5px solid var(--color-border-default)",
-              cursor: "pointer",
-            }}
+            onClick={() => setShowCc((v) => !v)}
+            className="flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--color-text-muted)", cursor: "pointer" }}
           >
-            <ChevronDown size={10} />
-            Cc
+            {showCc ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            {showCc ? "Hide Cc" : "Cc"}
           </button>
-        ) : (
-          <>
-            <EmailField label="Cc" emails={ccEmails} onChange={setCcEmails} />
-            <button
-              onClick={() => setShowCc(false)}
-              className="flex items-center gap-1 px-4 py-1 text-[11px]"
-              style={{
-                color: "var(--color-text-muted)",
-                background: "none",
-                border: "none",
-                borderBottom: "0.5px solid var(--color-border-default)",
-                cursor: "pointer",
-              }}
-            >
-              <ChevronUp size={10} />
-              Hide Cc
-            </button>
-          </>
-        )}
+          <button
+            onClick={() => setShowBcc((v) => !v)}
+            className="flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--color-text-muted)", cursor: "pointer" }}
+          >
+            {showBcc ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            {showBcc ? "Hide Bcc" : "Bcc"}
+          </button>
+        </div>
 
         {/* Subject */}
         <div
