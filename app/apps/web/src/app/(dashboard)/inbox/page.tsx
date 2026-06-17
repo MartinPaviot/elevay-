@@ -16,6 +16,7 @@ import { Inbox, Mail } from "lucide-react";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ConversationList } from "./_conversation-list";
 import { ConversationPane } from "./_conversation-pane";
@@ -25,6 +26,14 @@ import { CommandPalette, type PaletteCommand } from "./_command-palette";
 import { MailboxRail } from "./_mailbox-rail";
 import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
+import {
+  EMPTY_SELECTION,
+  toggle as selToggle,
+  rangeTo as selRangeTo,
+  selectAll as selSelectAll,
+  summarizeBulk,
+  type SelectionState,
+} from "@/lib/inbox/selection";
 
 type Tab = InboxLane | "outbound" | "bundles";
 
@@ -71,6 +80,8 @@ export default function InboxPage() {
   const [replySignal, setReplySignal] = useState(0);
   // Cmd/Ctrl+K command palette (INBOX-K01).
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Bulk multi-select (INBOX-T09): x toggles, Shift+x ranges, Esc clears.
+  const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
   const listRef = useRef<HTMLDivElement>(null);
   // In-flight triage POST. Lane fetches await it so switching to Done/
   // Snoozed right after the verb never races the write (the GET would
@@ -186,6 +197,7 @@ export default function InboxPage() {
     const param = customLaneId ?? tab;
     if (param === "outbound") return;
     setPage(1);
+    setSelection(EMPTY_SELECTION);
     void loadLane(param, 1, false);
   }, [tab, customLaneId, loadLane]);
 
@@ -263,6 +275,57 @@ export default function InboxPage() {
     [tab, toast, loadLane, conversations],
   );
 
+  // Multi-select (INBOX-T09): toggle a row, or shift-extend from the anchor over
+  // the current visible ordering.
+  const handleToggleSelect = useCallback(
+    (key: string, shift: boolean) => {
+      const ordered = conversations.map((c) => c.key);
+      setSelection((sel) => (shift ? selRangeTo(sel, ordered, key) : selToggle(sel, key)));
+    },
+    [conversations],
+  );
+
+  // Bulk triage the whole selection — reuses the per-key verb (a dedicated
+  // /triage/bulk fan-out is residual). Optimistic; reports any failures.
+  const handleBulkTriage = useCallback(
+    async (action: "done" | "snooze", snoozeUntil?: string) => {
+      const keys = selection.keys;
+      if (keys.length === 0) return;
+      const keySet = new Set(keys);
+      setConversations((prev) => prev.filter((c) => !keySet.has(c.key)));
+      setSelection(EMPTY_SELECTION);
+      setCounts((c) => {
+        const updated = { ...c };
+        if (tab !== "outbound" && tab !== "bundles") updated[tab] = Math.max(0, updated[tab] - keys.length);
+        if (action === "done") updated.done += keys.length;
+        if (action === "snooze") updated.snoozed += keys.length;
+        return updated;
+      });
+      const results = await Promise.all(
+        keys.map(async (key) => {
+          try {
+            const r = await fetch("/api/inbox/triage", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ conversationKey: key, action, snoozeUntil }),
+            });
+            return { key, ok: r.ok };
+          } catch {
+            return { key, ok: false };
+          }
+        }),
+      );
+      const { applied, failed } = summarizeBulk(results);
+      if (failed.length > 0) {
+        toast(`${applied} updated, ${failed.length} failed — reloading.`, "error");
+        if (tab !== "outbound") void loadLane(customLaneId ?? tab, 1, false);
+      } else {
+        toast(`${applied} conversation${applied === 1 ? "" : "s"} marked ${action === "done" ? "done" : "snoozed"}.`, "success");
+      }
+    },
+    [selection, tab, customLaneId, toast, loadLane],
+  );
+
   // Keyboard: j/k navigate, e done, r reply. Never while typing.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -291,9 +354,25 @@ export default function InboxPage() {
           ?.querySelector(`[data-conversation-key="${CSS.escape(next ?? "")}"]`)
           ?.scrollIntoView({ block: "nearest" });
       } else if (e.key === "e") {
-        if ((tab === "attention" || tab === "snoozed") && selectedKey) {
+        if ((tab === "attention" || tab === "snoozed")) {
+          // With a selection, `e` clears the whole set; otherwise the focused one.
+          if (selection.keys.length > 0) {
+            e.preventDefault();
+            void handleBulkTriage("done");
+          } else if (selectedKey) {
+            e.preventDefault();
+            void handleTriage(selectedKey, "done");
+          }
+        }
+      } else if (e.key === "x" || e.key === "X") {
+        if (selectedKey) {
           e.preventDefault();
-          void handleTriage(selectedKey, "done");
+          handleToggleSelect(selectedKey, e.shiftKey);
+        }
+      } else if (e.key === "Escape") {
+        if (selection.keys.length > 0) {
+          e.preventDefault();
+          setSelection(EMPTY_SELECTION);
         }
       } else if (e.key === "r") {
         if (selectedKey) {
@@ -304,7 +383,7 @@ export default function InboxPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, selectedKey, handleTriage, conversations]);
+  }, [tab, selectedKey, handleTriage, conversations, selection, handleToggleSelect, handleBulkTriage]);
 
   const hasMore = tab !== "outbound" && conversations.length < total;
   const bundleTotal = bundles.reduce((n, b) => n + b.count, 0);
@@ -481,6 +560,50 @@ export default function InboxPage() {
             className="w-[360px] shrink-0 overflow-y-auto border-r"
             style={{ borderColor: "var(--color-border-default)" }}
           >
+            {/* Bulk action bar (INBOX-T09) — appears once a row is selected. */}
+            {selection.keys.length > 0 && (
+              <div
+                className="sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2"
+                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border-default)" }}
+              >
+                <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                  {selection.keys.length} selected
+                </span>
+                {(tab === "attention" || tab === "snoozed") && (
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => void handleBulkTriage("done")}>
+                      Done
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + 1);
+                        d.setHours(9, 0, 0, 0);
+                        void handleBulkTriage("snooze", d.toISOString());
+                      }}
+                    >
+                      Snooze
+                    </Button>
+                  </>
+                )}
+                <button
+                  onClick={() => setSelection(selSelectAll(conversations.map((c) => c.key)))}
+                  className="text-[11px] font-medium hover:underline"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Select all
+                </button>
+                <button
+                  onClick={() => setSelection(EMPTY_SELECTION)}
+                  className="ml-auto text-[11px] font-medium hover:underline"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
             {loading ? (
               <TableSkeleton rows={8} cols={1} />
             ) : (
@@ -489,6 +612,8 @@ export default function InboxPage() {
                 conversations={conversations}
                 selectedKey={selectedKey}
                 onSelect={setSelectedKey}
+                selectedKeys={selection.keys}
+                onToggleSelect={handleToggleSelect}
                 hasMore={hasMore}
                 loadingMore={loadingMore}
                 onLoadMore={() => {

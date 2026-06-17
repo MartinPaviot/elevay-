@@ -5,7 +5,7 @@
  * snippet, reason line. Bodies live in the reading pane.
  */
 
-import { Inbox, CheckCircle2, AlarmClock, Bot, Mail } from "lucide-react";
+import { Inbox, CheckCircle2, AlarmClock, Bot, Mail, CheckSquare, Square } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "./_time-ago";
@@ -44,6 +44,8 @@ export function ConversationList({
   conversations,
   selectedKey,
   onSelect,
+  selectedKeys = [],
+  onToggleSelect,
   hasMore,
   loadingMore,
   onLoadMore,
@@ -53,12 +55,18 @@ export function ConversationList({
   conversations: ConversationListItem[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  /** Multi-select set (INBOX-T09); empty = not in selection mode. */
+  selectedKeys?: string[];
+  /** Toggle a row into the multi-select set (shift = range). */
+  onToggleSelect?: (key: string, shift: boolean) => void;
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
   /** Show the "received on X" chip — true in the "All inboxes" view. */
   showMailbox?: boolean;
 }) {
+  const selectedSet = new Set(selectedKeys);
+  const hasSelection = selectedKeys.length > 0;
   if (conversations.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -71,19 +79,40 @@ export function ConversationList({
     <div className="flex h-full flex-col overflow-y-auto">
       {conversations.map((c) => {
         const selected = c.key === selectedKey;
+        const multiSelected = selectedSet.has(c.key);
         const when = c.lastInboundAt ?? c.lastMessageAt;
         return (
           <button
             key={c.key}
             onClick={() => onSelect(c.key)}
-            className="block w-full border-b px-3.5 py-2.5 text-left transition-colors"
+            className="group block w-full border-b px-3.5 py-2.5 text-left transition-colors"
             style={{
               borderColor: "var(--color-border-default)",
-              background: selected ? "var(--color-accent-soft)" : "transparent",
+              background: selected || multiSelected ? "var(--color-accent-soft)" : "transparent",
               boxShadow: selected ? "inset 2px 0 0 var(--color-accent)" : "none",
             }}
             data-conversation-key={c.key}
           >
+            <div className="flex gap-2.5">
+              {onToggleSelect && (
+                <span
+                  role="checkbox"
+                  aria-checked={multiSelected}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelect(c.key, e.shiftKey);
+                  }}
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center transition-opacity ${
+                    multiSelected || hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  }`}
+                  style={{ color: multiSelected ? "var(--color-accent)" : "var(--color-text-muted)" }}
+                  title="Select (x) · Shift-click for a range"
+                >
+                  {multiSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
                 {c.displayName}
@@ -150,6 +179,8 @@ export function ConversationList({
                   <span className="max-w-[110px] truncate">{c.mailboxLabel}</span>
                 </span>
               )}
+            </div>
+              </div>
             </div>
           </button>
         );
