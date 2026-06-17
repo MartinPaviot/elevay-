@@ -36,6 +36,7 @@ import { reasonTooltip, type ConversationDetail, type InboxLane } from "./_types
 import { EmailBody } from "./_email-body";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { ThreadSummarySection } from "./_thread-summary";
+import { ThreadAskSection } from "./_thread-ask";
 import { shouldSummarize } from "@/lib/inbox/thread-summary-prep";
 import { initialsFor, avatarColorIndex } from "@/lib/inbox/sender-auth";
 import { parseWhen } from "@/lib/inbox/parse-when";
@@ -482,6 +483,9 @@ export function ConversationPane({
           conv.messages.length,
           conv.messages.reduce((n, m) => n + (m.body?.length ?? 0), 0),
         ) && <ThreadSummarySection conversationKey={conv.key} />}
+
+        {/* ── Ask about this thread (INBOX-Q07): on-demand, cited, thread-scoped Q&A. ── */}
+        {conv.messages.length > 0 && <ThreadAskSection conversationKey={conv.key} />}
 
         {/* ── Action items (INBOX-S04): deterministic request/commitment cues. ── */}
         {detail.actionItems.length > 0 && (
