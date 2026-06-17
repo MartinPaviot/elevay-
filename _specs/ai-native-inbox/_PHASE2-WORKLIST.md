@@ -19,10 +19,20 @@ built, needs wiring · [O] ocean (flag, don't fake) · [ ] to build.
 ## A. Deterministic-core WIRING (fast, unit-testable) — DO FIRST
 - [x] S04 action items → pane (18798361)
 - [x] S05 entities → pane (18798361)
-- [ ] S03 catch-me-up digest — selectCatchUp(core) → a "Catch up since last seen"
-      view/banner; lastSeenAt from user_preferences JSONB.
-- [ ] T06 no-reply nudge — shouldResurface(core) → surface a nudge on outbound
-      threads gone quiet (read-time flag in conversations route + list chip).
+- [x] S03 catch-me-up — seen-store.ts (lastSeenAt JSONB) + POST /api/inbox/seen +
+      selectCatchUp in route (first-visit guard) + "N new since you were last
+      here · Mark all seen" banner (d540cea7). LLM digest narrative residual.
+- [O] T06 no-reply nudge — shouldResurface(core) is gated on a conditional
+      "if no reply" snooze flag (snoozeIfNoReply) that the T05 snooze UI does NOT
+      capture and the triage table has no column for. Storable in JSONB but it's
+      a chain (snooze UI flag + triage metadata + read), do with runtime verify.
+      FLAGGED.
+- [O] S09 why-line in LIST — composeWhyLine(core) ready, BUT its distinctive
+      signal (no-reply-days = us waiting on them) barely applies in the attention
+      lane (inbound that just arrived), and its richer form needs the per-row
+      deal-stage join. "Why this matters" is already delivered by T08 reason +
+      G05 next-action card + N04 overdue + S05 details. Wiring it would risk
+      regressing the clean T08 reason for marginal gain → FLAGGED (covered).
 - [O] T07 one-click unsubscribe — parseListUnsubscribe(core) is ready, but the
       raw List-Unsubscribe header is NOT persisted: classifyInboundSender only
       *detects* it transiently for bulk classification (email-capture.ts metadata
