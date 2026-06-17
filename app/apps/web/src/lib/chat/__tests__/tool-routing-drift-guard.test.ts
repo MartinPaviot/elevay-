@@ -25,11 +25,9 @@ const KNOWN_GROUPS = new Set([
   "coaching", "skills", "memory", "briefing", "schema", "undo",
 ]);
 
-// Names mapped on purpose ahead of their implementation. CLE-02 builds these as
-// real tools and DELETES this allowlist (flipping the live-registry phantom
-// assertion fully strict). See _specs/CLE-02.
-const PENDING_TOOLS = new Set(["runCustomSkill", "listCustomSkills", "forkSkill"]);
-
+// CLE-02 built runCustomSkill/listCustomSkills/forkSkill as real tools and
+// removed the former PENDING_TOOLS allowlist — every mapped name is now a live
+// registry key, so the live-registry phantom check (Part B) is fully strict.
 const ROUTER_NAMES = getRoutedToolNames();
 const ORCH_NAMES = getOrchestratorToolNames();
 
@@ -125,7 +123,7 @@ describe.skipIf(REGISTRY_NAMES === null)("tool-routing drift-guard — live regi
   it("neither map has phantom keys beyond the live registry + pending allowlist", () => {
     const live = new Set(REGISTRY_NAMES!);
     const mapKeys = new Set<string>([...ROUTER_NAMES, ...ORCH_NAMES]);
-    const phantom = [...mapKeys].filter((n) => !live.has(n) && !PENDING_TOOLS.has(n));
+    const phantom = [...mapKeys].filter((n) => !live.has(n));
     expect(phantom, `phantom map keys (mapped, not in registry): ${phantom.join(", ")}`).toEqual([]);
   });
 });
