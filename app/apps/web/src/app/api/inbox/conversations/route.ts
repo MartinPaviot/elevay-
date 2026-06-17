@@ -6,6 +6,8 @@ import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversat
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { attributeMailbox, indexMailboxes } from "@/lib/inbox/mailbox-attribution";
+import { laneMatches, type MatchCandidate } from "@/lib/inbox/lane-match";
+import { getUserLanes } from "@/lib/inbox/lane-store";
 
 const LANES: Lane[] = ["attention", "handled", "snoozed", "done"];
 const PAGE_SIZE = 30;
@@ -24,6 +26,20 @@ export async function GET(req: Request) {
     // never the whole workspace. No mailbox connected → an empty inbox.
     const scope = await getInboxScope(authCtx.tenantId, authCtx.userId);
     const mailboxIndex = indexMailboxes(scope.mailboxes);
+
+    // Custom smart lanes (INBOX-T01) live in the user_preferences JSONB store.
+    // ?lane=<id> selects one and filters by its saved query (over the already-
+    // scoped set) instead of a built-in lane; never widens visibility.
+    const userLanes = await getUserLanes(authCtx.userId);
+    const customLane = userLanes.find((l) => l.id === laneParam) ?? null;
+    const toLaneCandidate = (row: {
+      c: { fromAddress: string; subject: string };
+      mb: { mailboxAddress: string | null };
+    }): MatchCandidate => ({
+      from: row.c.fromAddress,
+      subject: row.c.subject,
+      mailbox: row.mb.mailboxAddress ?? undefined,
+    });
 
     // Optional per-mailbox filter (?mailbox=<id>) — the unified-inbox cockpit
     // lets the user focus one of their many boxes. Ignored unless it's one
@@ -80,8 +96,20 @@ export async function GET(req: Request) {
         ),
       );
 
-    const inLane = visible.filter(({ c }) => c.lane === lane);
+    const inLane = customLane
+      ? visible.filter((row) => laneMatches(toLaneCandidate(row), customLane))
+      : visible.filter(({ c }) => c.lane === lane);
     const pageRows = inLane.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    // Per-custom-lane counts for the tabs (honour "hide when empty").
+    const customLanes = userLanes
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        hideWhenEmpty: l.hideWhenEmpty ?? false,
+        count: visible.filter((row) => laneMatches(toLaneCandidate(row), l)).length,
+      }))
+      .filter((l) => !l.hideWhenEmpty || l.count > 0);
 
     const names = await contactNameMap(
       authCtx.tenantId,
@@ -117,6 +145,8 @@ export async function GET(req: Request) {
       mailboxConnected: scope.hasMailbox,
       mailboxes,
       selectedMailbox,
+      customLanes,
+      activeLane: customLane ? customLane.id : lane,
     });
   } catch (error) {
     console.error("Failed to load inbox conversations:", error);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { laneMatches, clauseMatches, type MatchCandidate } from "@/lib/inbox/lane-match";
+import { laneMatches, clauseMatches, filterByLane, type MatchCandidate } from "@/lib/inbox/lane-match";
 
 const pilae: MatchCandidate = { from: "anna@pilae.ch", subject: "Re: pricing", labelIds: ["L1"] };
 
@@ -33,5 +33,20 @@ describe("lane-match (INBOX-T01)", () => {
 
   it("an empty definition matches nothing", () => {
     expect(laneMatches(pilae, { clauses: [], join: "and" })).toBe(false);
+  });
+});
+
+describe("filterByLane (INBOX-T01)", () => {
+  it("keeps only the items matching the lane, via the candidate extractor", () => {
+    const items = [
+      { key: "a", from: "anna@pilae.ch", subject: "Hi" },
+      { key: "b", from: "x@other.com", subject: "Hi" },
+    ];
+    const def = {
+      clauses: [{ field: "from" as const, op: "domain" as const, value: "pilae.ch" }],
+      join: "and" as const,
+    };
+    const out = filterByLane(items, def, (i) => ({ from: i.from, subject: i.subject }));
+    expect(out.map((i) => i.key)).toEqual(["a"]);
   });
 });

@@ -76,3 +76,14 @@ export function laneMatches(c: MatchCandidate, def: LaneDefinition): boolean {
   const byLabel = hasLabels ? (c.labelIds ?? []).some((l) => def.aiLabelIds!.includes(l)) : false;
   return byClause || byLabel;
 }
+
+/** Filter a list to a lane, extracting the MatchCandidate from each item. Generic
+ *  so the conversations route can keep the full Conversation while matching on its
+ *  from/subject/mailbox/labels. */
+export function filterByLane<T>(
+  items: T[],
+  def: LaneDefinition,
+  toCandidate: (item: T) => MatchCandidate,
+): T[] {
+  return items.filter((item) => laneMatches(toCandidate(item), def));
+}
