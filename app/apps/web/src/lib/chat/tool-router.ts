@@ -1,5 +1,5 @@
 /**
- * Dynamic tool routing -- instead of sending all 126 tools on every request,
+ * Dynamic tool routing -- instead of sending all ~160 tools on every request,
  * detect the user's intent and only include relevant tool groups.
  *
  * Groups:
@@ -31,8 +31,16 @@
 
 /**
  * Maps each tool name to its group. Built from the actual tool files:
- * query.ts, create.ts, update.ts, action.ts, intelligence.ts,
- * skills.ts, memory.ts, briefing.ts, schema.ts, coaching.ts, undo.ts.
+ * query.ts, create.ts, update.ts, action.ts, intelligence.ts, skills.ts,
+ * memory.ts, briefing.ts, schema.ts, coaching.ts, undo.ts, research.ts,
+ * forecast.ts, stakeholder.ts, workflow.ts, brain.ts, enrichment.ts,
+ * calls.ts, navigation.ts, read-gaps.ts, knowledge.ts, code-execution.ts,
+ * import.ts.
+ *
+ * INVARIANT: every tool returned by buildAllChatTools MUST be mapped here
+ * (and identically in orchestrator.ts TOOL_GROUP_MAP). The drift-guard test
+ * (tool-routing-drift-guard.test.ts) enforces this — filterToolsByGroups
+ * fail-opens on unmapped tools, so an unmapped tool silently ships every turn.
  */
 const TOOL_GROUPS: Record<string, string> = {
   // query (query.ts)
@@ -148,11 +156,21 @@ const TOOL_GROUPS: Record<string, string> = {
   getAccountIntelligence: "intelligence",
   generateMeetingPrep: "intelligence",
   getMeetingNotes: "intelligence",
+  getBuyerIntentScore: "intelligence",
+  getDealsAtRisk: "intelligence",
+  getWinLossAnalysis: "intelligence",
+  // research (research.ts)
+  buildCompanyDossier: "intelligence",
+  // forecast (forecast.ts) — NB export name is misspelled "Forcast"; do not rename here
+  getRevenueForcast: "intelligence",
+  // stakeholder (stakeholder.ts)
+  mapDealStakeholders: "intelligence",
 
   // coaching (coaching.ts)
   getCoachingInsights: "coaching",
   getMyPerformance: "coaching",
   searchExactWords: "coaching",
+  searchTranscripts: "coaching",
 
   // skills (skills.ts)
   analyzePipeline: "skills",
@@ -181,6 +199,8 @@ const TOOL_GROUPS: Record<string, string> = {
   draftProposal: "skills",
   handleObjection: "skills",
   reEngageStalledDeal: "skills",
+  listProposalTemplates: "skills",
+  fillProposal: "skills",
   runCustomSkill: "skills",
   listCustomSkills: "skills",
   forkSkill: "skills",
@@ -191,6 +211,11 @@ const TOOL_GROUPS: Record<string, string> = {
 
   // code execution (code-execution.ts)
   executeCode: "intelligence",
+
+  // workflow (workflow.ts) — NL automation config
+  createWorkflow: "update",
+  listWorkflows: "update",
+  deleteWorkflow: "update",
 
   // memory (memory.ts)
   exploreGraph: "memory",
@@ -398,7 +423,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
 
 /** When no intent is detected, include these groups. This covers the
  *  most common conversational patterns: querying data, getting
- *  intelligence, and taking action. ~40-50 tools instead of 126. */
+ *  intelligence, and taking action. ~40-50 tools instead of ~160. */
 const DEFAULT_GROUPS = new Set(["query", "intelligence", "action", "briefing"]);
 
 /** Groups always included regardless of detected intent. */
@@ -492,6 +517,15 @@ export function getToolsInGroup(group: string): string[] {
   return Object.entries(TOOL_GROUPS)
     .filter(([, g]) => g === group)
     .map(([name]) => name);
+}
+
+/**
+ * All tool names mapped in TOOL_GROUPS. Exported for the drift-guard test
+ * (CLE-01) so both routing maps' key sets can be compared without importing
+ * the AI-heavy tool registry.
+ */
+export function getRoutedToolNames(): string[] {
+  return Object.keys(TOOL_GROUPS);
 }
 
 /**
