@@ -100,6 +100,7 @@ export async function GET(req: Request) {
         snippet: c.snippet,
         reason: c.reason,
         reasonSource: c.reasonSource,
+        slaHoursOverdue: c.slaHoursOverdue,
         handledNote: c.handledNote,
         lastInboundAt: c.lastInboundAt,
         lastMessageAt: c.lastMessageAt,

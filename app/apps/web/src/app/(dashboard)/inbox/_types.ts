@@ -21,6 +21,8 @@ export interface ConversationListItem {
   reason: string;
   /** Provenance of `reason` for the honest-badge tooltip (INBOX-T08). Null = no badge. */
   reasonSource: "reply" | "summary" | "sentiment" | "handled" | null;
+  /** Hours overdue past the response SLA when awaiting our reply (INBOX-N04); null otherwise. */
+  slaHoursOverdue: number | null;
   handledNote: string | null;
   lastInboundAt: string | null;
   lastMessageAt: string | null;

@@ -14,6 +14,10 @@
 
 import { classifyInboundSender } from "@/lib/inbound/lead-classification";
 import type { SenderAuthStatus } from "@/lib/inbox/sender-auth";
+import { checkSla } from "@/lib/inbox/sla";
+
+/** Hours awaiting our reply before a conversation is flagged overdue (INBOX-N04). */
+const SLA_THRESHOLD_HOURS = 24;
 
 export interface InboundRow {
   id: string;
@@ -88,6 +92,9 @@ export interface Conversation {
   reason: string;
   /** Provenance of `reason`, for the honest-badge tooltip. Null when there is no badge. */
   reasonSource: ReasonSource;
+  /** Hours overdue if we're past the response SLA on a conversation awaiting our
+   *  reply (INBOX-N04); null when not awaiting us or within the SLA. */
+  slaHoursOverdue: number | null;
   /** What the pipeline did, for the handled lane. Null elsewhere. */
   handledNote: string | null;
   lastInboundAt: string | null;
@@ -379,6 +386,17 @@ export function buildConversations(input: {
     const lastInboundMeta = (lastInbound?.metadata ?? {}) as Record<string, unknown>;
     const lastMessage = messages[messages.length - 1] ?? null;
 
+    // Response SLA (INBOX-N04): overdue only when we're the ones who owe a reply
+    // (the latest message is inbound) on an active conversation, past the threshold.
+    const awaitingOurReply = lane === "attention" && lastMessage?.direction === "inbound";
+    const sla = checkSla({
+      awaitingOurReply,
+      lastInboundAt: lastInbound ? toMs(lastInbound.occurredAt) : null,
+      now: nowMs,
+      thresholdHours: SLA_THRESHOLD_HOURS,
+    });
+    const slaHoursOverdue = sla.breached ? sla.hoursOver : null;
+
     conversations.push({
       key,
       lane,
@@ -397,6 +415,7 @@ export function buildConversations(input: {
       ),
       reason,
       reasonSource,
+      slaHoursOverdue,
       handledNote,
       lastInboundAt: lastInbound ? toIso(lastInbound.occurredAt) : null,
       lastMessageAt: lastMessage?.at ?? null,

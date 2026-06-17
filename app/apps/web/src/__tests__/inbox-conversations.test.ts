@@ -536,3 +536,47 @@ describe("content extraction", () => {
     expect(laneCounts(convs)).toEqual({ attention: 1, handled: 1, snoozed: 0, done: 0 });
   });
 });
+
+describe("response SLA (INBOX-N04)", () => {
+  it("flags an attention conversation awaiting our reply past the threshold", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-08T10:00:00Z" })], // ~50h before NOW
+      outbound: [],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].slaHoursOverdue).not.toBeNull();
+    expect(convs[0].slaHoursOverdue!).toBeGreaterThan(0);
+  });
+
+  it("does not flag a conversation within the SLA window", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-10T10:00:00Z" })], // 2h before NOW
+      outbound: [],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].slaHoursOverdue).toBeNull();
+  });
+
+  it("does not flag when we replied last (not awaiting our reply)", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-08T10:00:00Z" })],
+      outbound: [outbound({ id: "o1", threadId: "t1", sentAt: "2026-06-09T10:00:00Z" })],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].slaHoursOverdue).toBeNull();
+  });
+
+  it("does not flag handled conversations", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-08T10:00:00Z", intent: ["out_of_office"] })],
+      outbound: [],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].lane).toBe("handled");
+    expect(convs[0].slaHoursOverdue).toBeNull();
+  });
+});

@@ -119,6 +119,18 @@ export function ConversationList({
                   {c.reason}
                 </span>
               )}
+              {c.slaHoursOverdue != null && (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded px-1 text-[10px] font-medium"
+                  style={{ background: "var(--color-warning-soft)", color: "var(--color-warning)" }}
+                  title="Awaiting your reply, past the response SLA"
+                >
+                  <AlarmClock size={10} className="shrink-0" />
+                  {c.slaHoursOverdue >= 24
+                    ? `${Math.round(c.slaHoursOverdue / 24)}d overdue`
+                    : `${Math.round(c.slaHoursOverdue)}h overdue`}
+                </span>
+              )}
               {showMailbox && c.mailboxLabel && (
                 <span
                   className="ml-auto flex shrink-0 items-center gap-1 text-[10px]"
