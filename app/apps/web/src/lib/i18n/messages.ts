@@ -89,6 +89,34 @@ export const messages: Record<Locale, Messages> = {
       "Utile si votre équipe couvre plusieurs domaines (filiales, acquisitions). Max 10.",
     "settings.recording.selectReason":
       "Sélectionnez une raison pour enregistrer la politique de mode silencieux.",
+    // Settings → Sending infrastructure · Voice (Twilio)
+    "voice.title": "Voix (Twilio)",
+    "voice.desc":
+      "Configurez Twilio + Deepgram pour activer Call Mode (cold call autonome). Les identifiants sont en variables d'environnement — voir docs/voice-bootstrap.md.",
+    "voice.loadingConfig": "Lecture de la configuration…",
+    "voice.connected": "Twilio connecté",
+    "voice.notConfigured": "Twilio non configuré",
+    "voice.poolActive": "{n} numéro(s) actif(s) dans le pool.",
+    "voice.noOutbound":
+      "Aucun numéro sortant provisionné. Voir docs/voice-bootstrap.md pour en acheter un.",
+    "voice.addCreds":
+      "Ajoutez TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET / TWILIO_APP_SID dans .env.local puis redémarrez.",
+    "voice.usageLabel": "Usage {month}",
+    "voice.usageMinutes": "{used} / {included} min incluses",
+    "voice.usageOverage": " — en overage ($0.05/min)",
+    "voice.usageCeiling": " — plafond dur atteint, appels bloqués",
+    "voice.provisionedNumbers": "Numéros provisionnés",
+    "voice.buyNumber": "Acheter un numéro",
+    "voice.areaPlaceholder": "Area code (ex 415, optionnel)",
+    "voice.buying": "Achat…",
+    "voice.buy": "Acheter",
+    "voice.buyHelper":
+      "Twilio facture ~$1.15/mois par numéro. L'area code permet de choisir un préfixe local pour une meilleure pickup-rate.",
+    "voice.noInventory": "Aucun numéro disponible chez Twilio pour ce country/area code.",
+    "voice.notConfiguredEnv": "Configurez Twilio dans .env.local avant d'acheter un numéro.",
+    "voice.buyFailed": "Échec achat numéro ({code}).",
+    "voice.provisioned": "Numéro provisionné et ajouté au pool.",
+    "voice.buyError": "Erreur achat : {msg}",
   },
   en: {
     "common.save": "Save",
@@ -163,6 +191,33 @@ export const messages: Record<Locale, Messages> = {
     "settings.recording.aliasesHelper":
       "Useful if your team spans multiple domains (subsidiaries, acquisitions). Max 10.",
     "settings.recording.selectReason": "Select a reason to save silent-mode policy.",
+    // Settings → Sending infrastructure · Voice (Twilio)
+    "voice.title": "Voice (Twilio)",
+    "voice.desc":
+      "Configure Twilio + Deepgram to enable Call Mode (autonomous cold call). Credentials are environment variables — see docs/voice-bootstrap.md.",
+    "voice.loadingConfig": "Reading configuration…",
+    "voice.connected": "Twilio connected",
+    "voice.notConfigured": "Twilio not configured",
+    "voice.poolActive": "{n} active number(s) in the pool.",
+    "voice.noOutbound": "No outbound number provisioned. See docs/voice-bootstrap.md to buy one.",
+    "voice.addCreds":
+      "Add TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET / TWILIO_APP_SID to .env.local, then restart.",
+    "voice.usageLabel": "Usage {month}",
+    "voice.usageMinutes": "{used} / {included} min included",
+    "voice.usageOverage": " — in overage ($0.05/min)",
+    "voice.usageCeiling": " — hard ceiling reached, calls blocked",
+    "voice.provisionedNumbers": "Provisioned numbers",
+    "voice.buyNumber": "Buy a number",
+    "voice.areaPlaceholder": "Area code (e.g. 415, optional)",
+    "voice.buying": "Buying…",
+    "voice.buy": "Buy",
+    "voice.buyHelper":
+      "Twilio charges ~$1.15/mo per number. The area code lets you pick a local prefix for a better pickup rate.",
+    "voice.noInventory": "No number available at Twilio for this country/area code.",
+    "voice.notConfiguredEnv": "Configure Twilio in .env.local before buying a number.",
+    "voice.buyFailed": "Number purchase failed ({code}).",
+    "voice.provisioned": "Number provisioned and added to the pool.",
+    "voice.buyError": "Purchase error: {msg}",
   },
 };
 
