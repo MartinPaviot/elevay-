@@ -17,6 +17,8 @@ export type Messages = Record<string, string>;
 export const messages: Record<Locale, Messages> = {
   fr: {
     "common.save": "Enregistrer",
+    "common.saving": "Enregistrement…",
+    "common.saved": "Enregistré",
     "common.cancel": "Annuler",
     "common.networkError": "Erreur réseau",
     "common.loading": "Chargement…",
@@ -26,6 +28,7 @@ export const messages: Record<Locale, Messages> = {
     "common.copy": "Copier",
     "common.copied": "Copié",
     "common.done": "Terminé",
+    "common.notConfigured": "Non configuré",
     "common.theProspect": "le prospect",
     "language.label": "Langue",
     "language.toEnglish": "English",
@@ -48,9 +51,49 @@ export const messages: Record<Locale, Messages> = {
       "Ajoute l'événement à votre agenda connecté avec un lien de visio souveraine, et invite le contact.",
     "meeting.descProvider":
       "Crée la réunion (Google Meet / Teams / Zoom) selon votre choix et votre agenda connecté, et invite le contact.",
+    // Settings → Recording
+    "settings.recording.title": "Enregistrement",
+    "settings.recording.subtitle":
+      "Configurez l'enregistrement automatique des réunions, la transcription et la politique de marque.",
+    "settings.recording.autoRecord": "Enregistrer les réunions automatiquement",
+    "settings.recording.autoRecordOn":
+      "Un bot rejoint vos réunions pour les enregistrer et les transcrire automatiquement.",
+    "settings.recording.autoRecordOff":
+      "Une fois une intégration de prise de notes connectée, un bot rejoindra vos réunions pour les enregistrer et les transcrire. En attendant, ce réglage est enregistré mais inactif.",
+    "settings.recording.toggleAria": "Activer/désactiver l'enregistrement",
+    "settings.recording.botNameLabel": "Nom affiché du bot",
+    "settings.recording.botNameHelper":
+      "Ce nom apparaît quand le bot rejoint des réunions externes. La mention « (via Elevay) » est ajoutée automatiquement.",
+    "settings.recording.brandingPolicy": "Politique de marque",
+    "settings.recording.brandingHelper":
+      "Détermine si les prospects externes voient la marque Elevay dans les enregistrements.",
+    "settings.recording.policy.branded.title": "Marqué (recommandé)",
+    "settings.recording.policy.branded.helper":
+      "Le bot rejoint sous le nom de votre workspace avec la mention « via Elevay » pour les réunions externes. Réunions internes : mode silencieux automatique.",
+    "settings.recording.policy.silent.title": "Toujours silencieux",
+    "settings.recording.policy.silent.helper":
+      "Le bot rejoint toujours sous le nom « Notes », sans marque Elevay. Utile pour les secteurs régulés.",
+    "settings.recording.policy.perMeeting.title": "Choix par réunion",
+    "settings.recording.policy.perMeeting.helper":
+      "Marqué par défaut, avec l'option de désactiver la marque réunion par réunion (UI à venir).",
+    "settings.recording.reasonTitle": "Raison du mode silencieux",
+    "settings.recording.reason.internalOnly": "Usage interne uniquement",
+    "settings.recording.reason.clientConfidential": "Clients confidentiels",
+    "settings.recording.reason.regulatory": "Secteur régulé (finance, santé)",
+    "settings.recording.reason.other": "Autre",
+    "settings.recording.primaryDomainLabel": "Domaine principal de l'entreprise",
+    "settings.recording.primaryDomainHelper":
+      "Les participants sur ce domaine comptent comme internes. Par défaut, le domaine de l'email du propriétaire.",
+    "settings.recording.aliasesLabel": "Domaines additionnels (séparés par des virgules)",
+    "settings.recording.aliasesHelper":
+      "Utile si votre équipe couvre plusieurs domaines (filiales, acquisitions). Max 10.",
+    "settings.recording.selectReason":
+      "Sélectionnez une raison pour enregistrer la politique de mode silencieux.",
   },
   en: {
     "common.save": "Save",
+    "common.saving": "Saving…",
+    "common.saved": "Saved",
     "common.cancel": "Cancel",
     "common.networkError": "Network error",
     "common.loading": "Loading…",
@@ -60,6 +103,7 @@ export const messages: Record<Locale, Messages> = {
     "common.copy": "Copy",
     "common.copied": "Copied",
     "common.done": "Done",
+    "common.notConfigured": "Not configured",
     "common.theProspect": "the prospect",
     "language.label": "Language",
     "language.toEnglish": "English",
@@ -82,6 +126,43 @@ export const messages: Record<Locale, Messages> = {
       "Adds the event to your connected calendar with a sovereign video link, and invites the contact.",
     "meeting.descProvider":
       "Creates the meeting (Google Meet / Teams / Zoom) per your choice and connected calendar, and invites the contact.",
+    // Settings → Recording
+    "settings.recording.title": "Recording",
+    "settings.recording.subtitle":
+      "Configure automatic meeting recording, transcription, and branding policy.",
+    "settings.recording.autoRecord": "Auto-record meetings",
+    "settings.recording.autoRecordOn":
+      "A bot joins your meetings to record and transcribe automatically.",
+    "settings.recording.autoRecordOff":
+      "Once a notetaker integration is connected, a bot will join your meetings to record and transcribe automatically. Until then, this setting is saved but inactive.",
+    "settings.recording.toggleAria": "Toggle recording",
+    "settings.recording.botNameLabel": "Bot display name",
+    "settings.recording.botNameHelper":
+      "This name appears when the bot joins external meetings. The « (via Elevay) » wedge is appended automatically.",
+    "settings.recording.brandingPolicy": "Branding policy",
+    "settings.recording.brandingHelper":
+      "Controls whether external prospects see the Elevay brand in meeting recordings.",
+    "settings.recording.policy.branded.title": "Branded (recommended)",
+    "settings.recording.policy.branded.helper":
+      "The bot joins under your workspace name with a « via Elevay » mention for external meetings. Internal meetings: automatic silent mode.",
+    "settings.recording.policy.silent.title": "Always silent",
+    "settings.recording.policy.silent.helper":
+      "The bot always joins under the name « Notes », without Elevay branding. Useful for regulated sectors.",
+    "settings.recording.policy.perMeeting.title": "Per-meeting choice",
+    "settings.recording.policy.perMeeting.helper":
+      "Branded by default, with the option to disable branding per meeting (UI coming).",
+    "settings.recording.reasonTitle": "Reason for silent mode",
+    "settings.recording.reason.internalOnly": "Internal use only",
+    "settings.recording.reason.clientConfidential": "Confidential clients",
+    "settings.recording.reason.regulatory": "Regulated sector (finance, healthcare)",
+    "settings.recording.reason.other": "Other",
+    "settings.recording.primaryDomainLabel": "Primary company domain",
+    "settings.recording.primaryDomainHelper":
+      "Attendees on this domain count as internal. Defaults to your owner email domain.",
+    "settings.recording.aliasesLabel": "Additional domains (comma-separated)",
+    "settings.recording.aliasesHelper":
+      "Useful if your team spans multiple domains (subsidiaries, acquisitions). Max 10.",
+    "settings.recording.selectReason": "Select a reason to save silent-mode policy.",
   },
 };
 

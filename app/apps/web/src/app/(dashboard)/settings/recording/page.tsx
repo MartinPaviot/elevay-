@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Video } from "lucide-react";
 import { useSafeFetch } from "@/lib/infra/use-safe-fetch";
+import { useT } from "@/lib/i18n/locale";
 
 type RecordingPolicy = "branded" | "always_silent" | "per_meeting_choice";
 type OptOutReason = "internal_only" | "client_confidential" | "regulatory" | "other";
@@ -22,32 +23,23 @@ type WorkspaceResponse = {
   };
 };
 
-const POLICY_OPTIONS: Array<{ value: RecordingPolicy; title: string; helper: string }> = [
-  {
-    value: "branded",
-    title: "Branded (recommended)",
-    helper: "Le bot rejoint sous le nom de votre workspace avec la mention « via Elevay » pour les meetings externes. Meetings internes : mode silencieux automatique.",
-  },
-  {
-    value: "always_silent",
-    title: "Always silent",
-    helper: "Le bot rejoint toujours sous le nom « Notes », sans marque Elevay. Utile pour secteurs régulés.",
-  },
-  {
-    value: "per_meeting_choice",
-    title: "Per-meeting choice",
-    helper: "Par défaut branded, avec option de désactiver la marque meeting par meeting (UI à venir).",
-  },
+// Option labels live as message KEYS (these consts are module-level, so they
+// can't call the useT hook); the component resolves them with t() at render.
+const POLICY_OPTIONS: Array<{ value: RecordingPolicy; titleKey: string; helperKey: string }> = [
+  { value: "branded", titleKey: "settings.recording.policy.branded.title", helperKey: "settings.recording.policy.branded.helper" },
+  { value: "always_silent", titleKey: "settings.recording.policy.silent.title", helperKey: "settings.recording.policy.silent.helper" },
+  { value: "per_meeting_choice", titleKey: "settings.recording.policy.perMeeting.title", helperKey: "settings.recording.policy.perMeeting.helper" },
 ];
 
-const REASON_OPTIONS: Array<{ value: OptOutReason; label: string }> = [
-  { value: "internal_only", label: "Usage interne uniquement" },
-  { value: "client_confidential", label: "Clients confidentiels" },
-  { value: "regulatory", label: "Secteur régulé (finance, santé)" },
-  { value: "other", label: "Autre" },
+const REASON_OPTIONS: Array<{ value: OptOutReason; labelKey: string }> = [
+  { value: "internal_only", labelKey: "settings.recording.reason.internalOnly" },
+  { value: "client_confidential", labelKey: "settings.recording.reason.clientConfidential" },
+  { value: "regulatory", labelKey: "settings.recording.reason.regulatory" },
+  { value: "other", labelKey: "settings.recording.reason.other" },
 ];
 
 export default function RecordingSettingsPage() {
+  const t = useT();
   const [enabled, setEnabled] = useState(true);
   const [botName, setBotName] = useState("Elevay Notetaker");
   const [policy, setPolicy] = useState<RecordingPolicy>("branded");
@@ -116,8 +108,8 @@ export default function RecordingSettingsPage() {
   return (
     <>
       <SettingsHeader
-        title="Recording"
-        subtitle="Configure automatic meeting recording, transcription, and branding policy."
+        title={t("settings.recording.title")}
+        subtitle={t("settings.recording.subtitle")}
       />
 
       <div className="mt-8 space-y-6">
@@ -136,19 +128,19 @@ export default function RecordingSettingsPage() {
             <div>
               <div className="flex items-center gap-2">
                 <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-                  Auto-record meetings
+                  {t("settings.recording.autoRecord")}
                 </p>
-                {!notetakerOn && <Badge variant="warning" size="sm">Not configured</Badge>}
+                {!notetakerOn && <Badge variant="warning" size="sm">{t("common.notConfigured")}</Badge>}
               </div>
               <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
                 {notetakerOn
-                  ? "A bot joins your meetings to record and transcribe automatically."
-                  : "Once a notetaker integration is connected, a bot will join your meetings to record and transcribe automatically. Until then, this setting is saved but inactive."}
+                  ? t("settings.recording.autoRecordOn")
+                  : t("settings.recording.autoRecordOff")}
               </p>
             </div>
           </div>
           <button
-            aria-label="Toggle recording"
+            aria-label={t("settings.recording.toggleAria")}
             onClick={() => setEnabled(!enabled)}
             className="relative h-6 w-11 rounded-full transition-colors"
             style={{ background: enabled ? "var(--color-accent)" : "var(--color-bg-emphasis)" }}
@@ -163,24 +155,24 @@ export default function RecordingSettingsPage() {
         {/* Bot name */}
         <div>
           <Input
-            label="Bot display name"
+            label={t("settings.recording.botNameLabel")}
             value={botName}
             onChange={(e) => setBotName(e.target.value)}
             placeholder="Elevay Notetaker"
             disabled={!enabled}
           />
           <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-            This name appears when the bot joins external meetings. The « (via Elevay) » wedge is appended automatically.
+            {t("settings.recording.botNameHelper")}
           </p>
         </div>
 
         {/* Branding policy */}
         <div>
           <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-            Branding policy
+            {t("settings.recording.brandingPolicy")}
           </p>
           <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-            Controls whether external prospects see the Elevay brand in meeting recordings.
+            {t("settings.recording.brandingHelper")}
           </p>
           <div className="mt-3 space-y-2">
             {POLICY_OPTIONS.map((opt) => (
@@ -203,10 +195,10 @@ export default function RecordingSettingsPage() {
                 />
                 <div>
                   <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-                    {opt.title}
+                    {t(opt.titleKey)}
                   </p>
                   <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                    {opt.helper}
+                    {t(opt.helperKey)}
                   </p>
                 </div>
               </label>
@@ -218,7 +210,7 @@ export default function RecordingSettingsPage() {
         {needsReason && (
           <div>
             <p className="text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-              Reason for silent mode <span style={{ color: "var(--color-text-error, #d33)" }}>*</span>
+              {t("settings.recording.reasonTitle")} <span style={{ color: "var(--color-text-error, #d33)" }}>*</span>
             </p>
             <div className="mt-3 space-y-2">
               {REASON_OPTIONS.map((r) => (
@@ -230,7 +222,7 @@ export default function RecordingSettingsPage() {
                     checked={optOutReason === r.value}
                     onChange={() => setOptOutReason(r.value)}
                   />
-                  <span style={{ color: "var(--color-text-primary)" }}>{r.label}</span>
+                  <span style={{ color: "var(--color-text-primary)" }}>{t(r.labelKey)}</span>
                 </label>
               ))}
             </div>
@@ -240,40 +232,40 @@ export default function RecordingSettingsPage() {
         {/* Primary domain */}
         <div>
           <Input
-            label="Primary company domain"
+            label={t("settings.recording.primaryDomainLabel")}
             value={primaryDomain}
             onChange={(e) => setPrimaryDomain(e.target.value)}
             placeholder="acme.com"
             disabled={!enabled}
           />
           <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-            Attendees on this domain count as internal. Defaults to your owner email domain.
+            {t("settings.recording.primaryDomainHelper")}
           </p>
         </div>
 
         {/* Domain aliases */}
         <div>
           <Input
-            label="Additional domains (comma-separated)"
+            label={t("settings.recording.aliasesLabel")}
             value={domainAliasesInput}
             onChange={(e) => setDomainAliasesInput(e.target.value)}
             placeholder="acme-eu.com, acmegroup.com"
             disabled={!enabled}
           />
           <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-            Useful if your team spans multiple domains (subsidiaries, acquisitions). Max 10.
+            {t("settings.recording.aliasesHelper")}
           </p>
         </div>
 
         {/* Save */}
         <div className="flex items-center gap-3">
           <Button variant="solid" onClick={handleSave} disabled={!canSave}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? t("common.saving") : t("common.save")}
           </Button>
-          {saved && <Badge variant="success">Saved</Badge>}
+          {saved && <Badge variant="success">{t("common.saved")}</Badge>}
           {needsReason && !optOutReason && (
             <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-              Select a reason to save silent-mode policy.
+              {t("settings.recording.selectReason")}
             </span>
           )}
         </div>
