@@ -2,6 +2,7 @@ import { getAuthContext } from "@/lib/auth/auth-utils";
 import { z } from "zod";
 import { draftFromBullets } from "@/lib/inbox/draft-from-bullets";
 import { getInboxMemory, buildMemoryPrompt } from "@/lib/inbox/ai-memory";
+import { getAiProfile, aiEnabled } from "@/lib/inbox/ai-profile";
 
 /**
  * POST /api/inbox/compose/draft  { bullets, context? }  (INBOX-C07)
@@ -25,6 +26,10 @@ export async function POST(req: Request) {
       return Response.json({ error: err.issues[0]?.message || "Validation failed" }, { status: 422 });
     }
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!aiEnabled(await getAiProfile(authCtx.userId))) {
+    return Response.json({ subject: "", text: "" });
   }
 
   try {

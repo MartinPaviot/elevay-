@@ -4,6 +4,7 @@ import { loadConversationRows } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { askThread, type ThreadMessage } from "@/lib/inbox/ask-thread";
 import { getInboxMemory, buildMemoryPrompt } from "@/lib/inbox/ai-memory";
+import { getAiProfile, aiEnabled } from "@/lib/inbox/ai-profile";
 
 /**
  * POST /api/inbox/conversations/ask  { key, question }  (INBOX-Q07)
@@ -29,6 +30,12 @@ export async function POST(req: Request) {
   if (!key) return Response.json({ error: "key required" }, { status: 400 });
   if (!question) return Response.json({ error: "question required" }, { status: 400 });
   if (question.length > 500) question = question.slice(0, 500);
+
+  if (!aiEnabled(await getAiProfile(authCtx.userId))) {
+    return Response.json({
+      result: { answer: "AI features are turned off in your settings.", citations: [], answered: false },
+    });
+  }
 
   try {
     const scope = await getInboxScope(authCtx.tenantId, authCtx.userId);
