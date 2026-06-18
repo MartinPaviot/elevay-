@@ -6,7 +6,7 @@ import {
   activities,
   emailOptouts,
 } from "@/db/schema";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { buildUnsubscribeUrl } from "@/lib/emails/unsubscribe-token";
 import { signTrackingId } from "@/lib/emails/tracking-token";
@@ -110,6 +110,32 @@ export const processOutboundEmails = inngest.createFunction(
     concurrency: [{ limit: 1 }], // Only one instance at a time
   },
   async ({ step }) => {
+    // Step 0 (CLE-11): release matured holds. An outbound placed on a
+    // cancellable undo window (status="held", hold_until set) becomes sendable
+    // once its window elapses. This atomic, set-based UPDATE is the DURABLE
+    // CLOCK (no in-memory timer): a crash just means the next 2-minute pass
+    // releases due holds (AC-14). It is idempotent — a row already moved is not
+    // matched again, and two concurrent passes transition it once (AC-15). Rows
+    // whose hold_until is still in the future are NOT matched, so the queued
+    // fetch below never sees them (AC-8). The hold only DELAYS; every guardrail
+    // still fires at send time (AC-9).
+    await step.run("release-holds", async () => {
+      await db
+        .update(outboundEmails)
+        .set({
+          status: "queued",
+          queuedAt: new Date(),
+          holdUntil: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(outboundEmails.status, "held"),
+            lte(outboundEmails.holdUntil, new Date()),
+          ),
+        );
+    });
+
     // Step 1: Fetch queued emails (batch of 20)
     const queuedEmails = await step.run("fetch-queued", async () => {
       return db
@@ -537,6 +563,18 @@ export const sendSingleEmail = inngest.createFunction(
         .limit(1);
       return e || null;
     });
+
+    // CLE-11: a held send within its undo window must not be jumped by an
+    // event-driven trigger. hold_until in the future → no-op; once the cron
+    // releases it (held → queued) it sends normally.
+    if (
+      email &&
+      email.status === "held" &&
+      email.holdUntil &&
+      email.holdUntil.getTime() > Date.now()
+    ) {
+      return { emailId, sent: false, reason: "held" };
+    }
 
     if (!email || (email.status !== "queued" && email.status !== "draft")) {
       return { emailId, sent: false, reason: "Not in sendable state" };

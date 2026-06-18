@@ -8,8 +8,11 @@ import {
   type ComposeEmailDraft,
   type InvokeActionDirective,
 } from "@/lib/chat/ui-directives";
-import { runRegisteredAction } from "@/lib/chat/page-actions/registry";
-import type { PageActionResult } from "@/lib/chat/page-actions/types";
+import {
+  runRegisteredAction,
+  getRegisteredActionMeta,
+} from "@/lib/chat/page-actions/registry";
+import type { PageActionResult, UndoDescriptor } from "@/lib/chat/page-actions/types";
 
 // Frozen transport tags live in a pure module so the server-side prompt can
 // import the same literals without pulling this "use client" module (CLE-04).
@@ -35,6 +38,60 @@ export function encodeActionResult(invocationId: string, r: PageActionResult): s
     ...(r.error ? { error: r.error } : {}),
   };
   return `${ACTION_RESULT_OPEN}${JSON.stringify(env)}${ACTION_RESULT_CLOSE}`;
+}
+
+/**
+ * CLE-11 — the audit path. After a Page Action runs on the client, post its
+ * outcome (+ the serializable undo descriptor) to the server audit seam, in
+ * PARALLEL with the model envelope. Independent of the model path: one is for
+ * chaining (the model), one is for undo (the server). Fire-and-forget — a
+ * failed audit row never blocks the action, which already ran (E-7).
+ *
+ *  - A FORWARD action posts the forward log ONLY if it is mutating (reads are
+ *    not audited — AC-2). The undo descriptor is forwarded only in its
+ *    serializable (object) form; a closure cannot cross to the server.
+ *  - The INVERSE of an undo (directive carried `reconcileEventId`) posts the
+ *    reconcile body so a failed inverse re-opens the original event (E-3).
+ */
+function postPageActionLog(
+  d: Extract<UiDirective, { kind: "invokeAction" }>,
+  result: PageActionResult,
+): void {
+  const isReconcile = typeof d.reconcileEventId === "string" && d.reconcileEventId.length > 0;
+
+  if (!isReconcile) {
+    // Forward action — only audit mutating ones.
+    const meta = getRegisteredActionMeta(d.actionId);
+    if (!meta || !meta.mutating) return;
+  }
+
+  // Only the serializable descriptor form of undo is persistable.
+  const undo: UndoDescriptor | undefined =
+    result.undo && typeof result.undo === "object" ? (result.undo as UndoDescriptor) : undefined;
+
+  const body = {
+    invocationId: d.invocationId,
+    actionId: d.actionId,
+    params: d.params,
+    ok: result.ok,
+    summary: result.summary,
+    error: result.error,
+    ...(undo ? { undo } : {}),
+    ...(isReconcile ? { reconcileEventId: d.reconcileEventId } : {}),
+    // The server only audits mutating forward actions; pass the flag so the
+    // route can double-check (defense in depth).
+    ...(isReconcile ? {} : { mutating: true }),
+  };
+
+  void fetch("/api/chat/page-action-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+    keepalive: true,
+  }).catch(() => {
+    // Audit is best-effort; never surface to the user.
+  });
 }
 
 /** Minimal shape we need from the AI SDK `useChat` return value. */
@@ -73,7 +130,10 @@ export function runUiDirective(
       // Fire-and-forget: the dock owns the promise, so a page unmount mid-run
       // does not cancel it.
       void runRegisteredAction(d.actionId, d.params).then((result) => {
+        // Model path: re-inject the tagged envelope so the model can chain.
         ctx.sendActionResult(encodeActionResult(d.invocationId, result));
+        // Audit path (CLE-11): record the outcome + undo descriptor server-side.
+        postPageActionLog(d, result);
       });
     }
   }

@@ -247,6 +247,17 @@ export interface TenantSettings {
   /** Max sends per calendar day from the user's primary mailbox when
    *  `sendingMailboxMode === "primary-with-caps"`. Default 20. */
   sendingDailyCapPrimary?: number;
+  /**
+   * CLE-11 outbound undo window (de-facto unsend), in SECONDS. When > 0, an
+   * outbound action whose disposition is "execute" is enqueued on a cancellable
+   * hold (status="held", hold_until = now + this) instead of being queued
+   * immediately; the cron releases it once the window elapses, and an undo
+   * within the window cancels it before it leaves. Default 0 (backwards-safe:
+   * no hold, today's behaviour exactly). Read it through
+   * `readOutboundUndoWindowSeconds()` which coerces malformed/out-of-range
+   * values back to the default. Recommended range when enabled: 30–60s.
+   */
+  outboundUndoWindowSeconds?: number;
   /** When false (default), cold outreach from the primary inbox is
    *  blocked and routed to the scaling-path prompt instead. */
   sendingAllowColdOnPrimary?: boolean;

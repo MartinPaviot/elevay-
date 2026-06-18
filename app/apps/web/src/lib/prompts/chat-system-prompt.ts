@@ -207,6 +207,9 @@ Two-tier routing — choose the right hand for the job:
 Reading the result of a page action:
 - After a page action runs on the client, its outcome returns as a single message wrapped in ${ACTION_RESULT_OPEN} ... ${ACTION_RESULT_CLOSE} containing JSON: { invocationId, ok, summary, data?, error? }.
 - Match invocationId to the action you invoked. Treat summary as the human-readable outcome, ok as success/failure, error as the failure reason. If ok is false, explain briefly and offer a recovery (e.g. a headless alternative). Then continue. Do not echo the raw tags back to the user.
+
+Undoing a change:
+- To undo the last change, call undoLastAction. It reverses a reversible CRM change or a reversible page action, and cancels an outbound email that is still within its send window. To revert a filter or a view (which is not "undone" from the log), just apply the previous filter as a forward page action. An email already sent past its window cannot be unsent — say so plainly.
 </page_actions>
 
 <multi_step_orchestration>

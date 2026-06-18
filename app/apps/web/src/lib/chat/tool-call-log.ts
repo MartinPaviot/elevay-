@@ -32,6 +32,8 @@ import {
   toolCallEvents,
 } from "@/db/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { invokeActionDirective } from "@/lib/chat/ui-directives"; // CLE-03 builder — do NOT re-implement
+import { cancelHeldOutbound } from "@/lib/emails/outbound-hold"; // CLE-11 outbound cancel seam
 
 type ReversibleEntityLoose =
   | "contact"
@@ -89,6 +91,34 @@ export type ReversibleSnapshot =
       type: "delete_sequence_step";
       sequenceId: string;
       stepsBefore: Array<Record<string, unknown>>;
+    }
+  | {
+      /**
+       * CLE-11: a Page Action (PAR) reversed by RE-INVOKING a declared inverse
+       * action on the live page. The closure that ran the forward action cannot
+       * be serialized or survive a page unmount, so the server log holds only
+       * the inverse DESCRIPTOR (actionId + params), never a closure. reverseToolCall
+       * returns an invokeAction directive for this inverse; the client runs it via
+       * runRegisteredAction (the same CLE-03 path the forward action used). The
+       * event is marked reverted optimistically on DISPATCH and reconciled when
+       * the reversal envelope returns (design §3.3). For PAR effects that are pure
+       * server-owned rows, prefer a create/update/delete snapshot instead (Mode A,
+       * AC-6) — reversed server-side with no round-trip.
+       */
+      type: "page_action";
+      actionId: string; // the original action id (forensics)
+      inverse: { actionId: string; params: Record<string, unknown> };
+    }
+  | {
+      /**
+       * CLE-11: an outbound send placed on a cancellable hold (the undo window).
+       * Reversal cancels the held outbound_emails row before it leaves; after the
+       * window elapses and the row is released/sent it is irreversible (AC-11).
+       */
+      type: "outbound_send";
+      outboundEmailId: string;
+      holdUntil: string; // ISO — for the "already sent" message
+      channel: "email" | "sequence_step" | "meeting_invite";
     };
 
 export interface LogToolCallInput {
@@ -137,6 +167,101 @@ export async function logToolCall(input: LogToolCallInput): Promise<string | nul
   }
 }
 
+export interface LogPageActionCallInput {
+  tenantId: string;
+  userId: string;
+  threadId?: string;
+  /** The invoked Page Action id, e.g. "opportunities.moveStage". */
+  actionId: string;
+  /** The validated params the action ran with. */
+  params: Record<string, unknown>;
+  /** From the result envelope (README §3.5). status="failed" when false. */
+  ok: boolean;
+  /** Human-readable outcome from the envelope. */
+  summary?: string;
+  /** Failure reason from the envelope, when ok=false. */
+  error?: string;
+  /** Surface context (forensics), e.g. "opportunities". */
+  surfaceType?: string;
+  /**
+   * The reversal snapshot. Either a page_action inverse descriptor (Mode B,
+   * client re-invocation) or a server-owned create/update/delete snapshot
+   * (Mode A). null when the action declared no usable undo (treated as not
+   * reversible). On ok=false this is forced to null (a failed action changed
+   * nothing).
+   */
+  snapshot?: ReversibleSnapshot | null;
+}
+
+/**
+ * CLE-11 — record a mutating Page Action (PAR) in tool_call_events.
+ *
+ * The CALLER decides whether to call this: pure reads (manifest `mutating:false`)
+ * are NOT audited (AC-2), exactly as no headless read calls logToolCall. This
+ * helper is a thin adapter over logToolCall so there is ONE audit-write path:
+ *  - toolName is namespaced `invokePageAction:<actionId>` so forensics/undo can
+ *    tell a PAR action from a headless tool without a schema change.
+ *  - args mirrors the headless convention: the validated input.
+ *  - status is "executed" only on ok:true (AC-1); "failed" + errorMessage on
+ *    ok:false, and a failed row carries snapshot:null so it is never a reversal
+ *    candidate (AC-4).
+ *
+ * Fire-and-forget safe (inherits logToolCall's swallow): only this undo row is
+ * lost if the insert fails (E-7) — never blocks the action, which already ran.
+ */
+export async function logPageActionCall(
+  input: LogPageActionCallInput,
+): Promise<string | null> {
+  const failed = !input.ok;
+  return logToolCall({
+    tenantId: input.tenantId,
+    userId: input.userId,
+    threadId: input.threadId,
+    toolName: `invokePageAction:${input.actionId}`,
+    args: { actionId: input.actionId, params: input.params },
+    result: {
+      ok: input.ok,
+      ...(input.summary !== undefined ? { summary: input.summary } : {}),
+      ...(input.error ? { error: input.error } : {}),
+    },
+    status: failed ? "failed" : "executed",
+    // A failed action changed nothing → never reversible.
+    snapshot: failed ? null : input.snapshot ?? null,
+    surfaceType: input.surfaceType,
+    errorMessage: failed ? input.error ?? "Page action failed" : undefined,
+  });
+}
+
+/**
+ * CLE-11 reconcile path (E-3). Re-open a previously (optimistically) reverted
+ * event so it is reversible again — used when a PAR client-inverse reversal
+ * came back ok:false/action_not_registered (the inverse could not run because
+ * the page is gone). Tenant/user-scoped. Returns true if a row was re-opened.
+ */
+export async function reopenEvent(
+  tenantId: string,
+  userId: string,
+  eventId: string,
+): Promise<boolean> {
+  try {
+    const res = await db
+      .update(toolCallEvents)
+      .set({ status: "executed", revertedAt: null })
+      .where(
+        and(
+          eq(toolCallEvents.id, eventId),
+          eq(toolCallEvents.tenantId, tenantId),
+          eq(toolCallEvents.userId, userId),
+        ),
+      )
+      .returning({ id: toolCallEvents.id });
+    return res.length > 0;
+  } catch (err) {
+    console.warn("tool-call-log: reopenEvent failed", err);
+    return false;
+  }
+}
+
 /**
  * Find the most recent reversible tool call for this user, scoped to
  * tenant. Skips events that have already been reverted.
@@ -174,14 +299,29 @@ export async function getLastReversibleCall(
  * Reverse a previously logged tool call by its event id.
  * Returns { ok: true, reverseEventId } on success.
  */
+/**
+ * The result of a reversal. The base success shape (server-owned undo) is
+ * unchanged. CLE-11 adds two OPTIONAL fields used only by a `page_action`
+ * (client-inverse) reversal: `directive` is an invokeAction directive the
+ * undoLastAction tool spreads so the client runs the inverse on the live page,
+ * and `reconcileEventId` lets the envelope-ingest re-open the event if that
+ * inverse cannot run (E-3). Server-owned and outbound reversals never set them.
+ */
+export type ReverseToolCallResult =
+  | {
+      ok: true;
+      reverseEventId: string | null;
+      reversedAction: string;
+      directive?: ReturnType<typeof invokeActionDirective>;
+      reconcileEventId?: string;
+    }
+  | { ok: false; error: string };
+
 export async function reverseToolCall(
   tenantId: string,
   userId: string,
   eventId: string
-): Promise<
-  | { ok: true; reverseEventId: string | null; reversedAction: string }
-  | { ok: false; error: string }
-> {
+): Promise<ReverseToolCallResult> {
   const [event] = await db
     .select()
     .from(toolCallEvents)
@@ -327,6 +467,54 @@ export async function reverseToolCall(
         ok: true,
         reverseEventId: null,
         reversedAction: `${event.toolName} (${restored} restored, ${failed} failed)`,
+      };
+    } else if (snapshot.type === "page_action") {
+      // CLE-11 Mode B — client-side reversal. We cannot run the inverse here
+      // (it lives on the page). Emit an invokeAction directive for the declared
+      // inverse; the client runs it and round-trips an [[action-result]]
+      // envelope. Mark reverted on DISPATCH (the server's only synchronous
+      // observable); the envelope-ingest reconciles on failure via
+      // reconcileEventId (design §3.3, E-3). The inverse runs through the SAME
+      // registry gate as the forward action — only a currently-registered id
+      // can run, so a forged/stale inverse id is a no-op (action_not_registered).
+      const invocationId = crypto.randomUUID();
+      await db
+        .update(toolCallEvents)
+        .set({ status: "reverted", revertedAt: new Date() })
+        .where(eq(toolCallEvents.id, eventId));
+      return {
+        ok: true,
+        reverseEventId: null,
+        reversedAction: `${event.toolName} (undo sent to the page)`,
+        directive: invokeActionDirective(
+          invocationId,
+          snapshot.inverse.actionId,
+          snapshot.inverse.params,
+          false, // requireConfirm:false — an undo runs without a second confirm
+          eventId, // reconcileEventId — echoed back so E-3 can re-open on failure
+        ),
+        reconcileEventId: eventId,
+      };
+    } else if (snapshot.type === "outbound_send") {
+      // CLE-11 scope c — cancel a held outbound send within its window. Atomic +
+      // tenant-scoped (held → canceled). After the window the row has been
+      // released/sent, so cancel matches 0 rows → refuse honestly, leaving the
+      // event NOT reverted (AC-11/E-5).
+      const cancel = await cancelHeldOutbound(tenantId, snapshot.outboundEmailId);
+      if (!cancel.canceled) {
+        return {
+          ok: false,
+          error: `This email was already sent ${snapshot.holdUntil} and can't be unsent.`,
+        };
+      }
+      await db
+        .update(toolCallEvents)
+        .set({ status: "reverted", revertedAt: new Date() })
+        .where(eq(toolCallEvents.id, eventId));
+      return {
+        ok: true,
+        reverseEventId: null,
+        reversedAction: "email send (canceled before it left)",
       };
     } else {
       return { ok: false, error: `Unsupported snapshot type` };

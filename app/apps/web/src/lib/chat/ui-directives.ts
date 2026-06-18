@@ -41,6 +41,13 @@ export type UiDirective =
       actionId: string; // e.g. "opportunities.moveStage"
       params: Record<string, unknown>;
       requireConfirm: boolean; // computed server-side via decideAction (CLE-04/CLE-10)
+      /**
+       * CLE-11: set ONLY when this invocation is the INVERSE of an undo (a
+       * page_action reversal, design §3.3). The client echoes it back to the
+       * audit seam so a failed inverse (page gone → action_not_registered)
+       * re-opens the original event (E-3). Absent on every forward action.
+       */
+      reconcileEventId?: string;
     };
 
 /**
@@ -75,9 +82,17 @@ export function invokeActionDirective(
   actionId: string,
   params: Record<string, unknown>,
   requireConfirm: boolean,
+  reconcileEventId?: string,
 ) {
   return {
-    [UI_DIRECTIVE_KEY]: { kind: "invokeAction", invocationId, actionId, params, requireConfirm },
+    [UI_DIRECTIVE_KEY]: {
+      kind: "invokeAction",
+      invocationId,
+      actionId,
+      params,
+      requireConfirm,
+      ...(reconcileEventId ? { reconcileEventId } : {}),
+    },
   } as const;
 }
 
@@ -149,12 +164,14 @@ export function parseUiDirective(result: unknown): UiDirective | null {
     if (!invocationId || !actionId) return null;
     if (!isRecord(raw.params)) return null;
     if (typeof raw.requireConfirm !== "boolean") return null;
+    const reconcileEventId = asNonEmptyString(raw.reconcileEventId);
     return {
       kind: "invokeAction",
       invocationId,
       actionId,
       params: raw.params as Record<string, unknown>,
       requireConfirm: raw.requireConfirm,
+      ...(reconcileEventId ? { reconcileEventId } : {}),
     };
   }
 

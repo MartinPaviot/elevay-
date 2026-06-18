@@ -124,6 +124,24 @@ export async function runRegisteredAction(actionId: string, params: unknown): Pr
   }
 }
 
+/**
+ * CLE-11: read the static metadata of a registered action (mutating, outbound,
+ * reversible) without running it. The audit seam uses `mutating` to decide
+ * whether a PAR invocation is logged (reads are not audited — AC-2). Returns
+ * null for an unregistered id.
+ */
+export function getRegisteredActionMeta(
+  actionId: string,
+): { mutating: boolean; outbound: boolean; reversible: boolean } | null {
+  const reg = store.get(actionId);
+  if (!reg) return null;
+  return {
+    mutating: reg.action.mutating,
+    outbound: reg.action.outbound ?? false,
+    reversible: reg.action.reversible ?? false,
+  };
+}
+
 /** Test-only: clear the store between cases. Not part of the runtime contract. */
 export function __resetPageActionsForTest(): void {
   store.clear();

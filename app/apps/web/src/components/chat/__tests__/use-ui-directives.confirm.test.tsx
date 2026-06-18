@@ -3,8 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the registry so we can assert runRegisteredAction is / isn't invoked.
 // vitest v4 requires explicit named exports (a Proxy fails export validation).
+// getRegisteredActionMeta is used by the CLE-11 audit path (postPageActionLog);
+// returning mutating:false makes the audit a no-op (reads are not audited), so the
+// run-now executor test stays focused on the model round-trip.
 vi.mock("@/lib/chat/page-actions/registry", () => ({
   runRegisteredAction: vi.fn(async () => ({ ok: true, summary: "ran" })),
+  getRegisteredActionMeta: vi.fn(() => ({ mutating: false })),
 }));
 
 import { runUiDirective } from "../use-ui-directives";
