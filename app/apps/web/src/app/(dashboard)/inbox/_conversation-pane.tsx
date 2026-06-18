@@ -36,6 +36,7 @@ import { reasonTooltip, type ConversationDetail, type InboxLane } from "./_types
 import { EmailBody } from "./_email-body";
 import { EventCard } from "./_event-card";
 import { injectMeetingLink } from "@/lib/inbox/meeting-link";
+import { takeCachedDetail } from "@/lib/inbox/detail-cache";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { ThreadSummarySection } from "./_thread-summary";
@@ -145,10 +146,16 @@ export function ConversationPane({
     }
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/inbox/conversations/detail?key=${encodeURIComponent(conversationKey)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
+    // Drain the prefetch cache (INBOX-K04) — a hovered/neighbouring thread is
+    // already in flight, so j/k renders instantly. Miss → authoritative fetch.
+    const source =
+      takeCachedDetail(conversationKey) ??
+      fetch(`/api/inbox/conversations/detail?key=${encodeURIComponent(conversationKey)}`).then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)),
+      );
+    source
       .then((data) => {
-        if (!cancelled) setDetail(data);
+        if (!cancelled) setDetail(data as ConversationDetail);
       })
       .catch(() => {
         if (!cancelled) setDetail(null);

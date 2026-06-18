@@ -29,6 +29,7 @@ import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary } from
 import type { BundleSource } from "@/lib/inbox/bundle";
 import { registerShortcut } from "@/lib/hotkey-registry";
 import { INBOX_SHORTCUTS } from "@/lib/inbox/inbox-shortcuts";
+import { prefetchDetail } from "@/lib/inbox/detail-cache";
 import {
   EMPTY_SELECTION,
   toggle as selToggle,
@@ -433,6 +434,18 @@ export default function InboxPage() {
     const unregs = INBOX_SHORTCUTS.map(registerShortcut);
     return () => unregs.forEach((u) => u());
   }, []);
+
+  // Warm the neighbours of the selected thread (INBOX-K04) so pressing j/k
+  // renders the next/previous pane from cache. Bounded to two requests; the
+  // cache dedupes and expires them.
+  useEffect(() => {
+    if (!selectedKey || conversations.length === 0) return;
+    const idx = conversations.findIndex((c) => c.key === selectedKey);
+    if (idx < 0) return;
+    for (const c of [conversations[idx + 1], conversations[idx - 1]]) {
+      if (c) prefetchDetail(c.key);
+    }
+  }, [selectedKey, conversations]);
 
   // Palette commands: jump to a lane, act on the current conversation, or open
   // any loaded conversation by fuzzy name/subject. Rebuilt as those inputs move.

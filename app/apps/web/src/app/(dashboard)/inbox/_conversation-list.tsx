@@ -5,6 +5,7 @@
  * snippet, reason line. Bodies live in the reading pane.
  */
 
+import { useRef } from "react";
 import { Inbox, CheckCircle2, AlarmClock, Bot, Mail, CheckSquare, Square } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { timeAgo } from "./_time-ago";
 import { reasonTooltip, type ConversationListItem, type InboxLane } from "./_types";
 import { dirOf } from "@/lib/inbox/text-direction";
 import { decodeDisplay } from "@/lib/inbox/text-decode";
+import { prefetchDetail } from "@/lib/inbox/detail-cache";
 import { SenderAvatar } from "./_sender-avatar";
 
 const EMPTY_COPY: Record<InboxLane, { title: string; description: string }> = {
@@ -69,6 +71,20 @@ export function ConversationList({
 }) {
   const selectedSet = new Set(selectedKeys);
   const hasSelection = selectedKeys.length > 0;
+  // Hover-intent prefetch (INBOX-K04): warm a thread's detail after the cursor
+  // rests on its row ~150ms, so a click/keyboard-open renders instantly. One
+  // timer for the whole list — only the last-hovered row is in flight.
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armPrefetch = (key: string) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => prefetchDetail(key), 150);
+  };
+  const cancelPrefetch = () => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
   if (conversations.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -87,6 +103,8 @@ export function ConversationList({
           <button
             key={c.key}
             onClick={() => onSelect(c.key)}
+            onMouseEnter={() => armPrefetch(c.key)}
+            onMouseLeave={cancelPrefetch}
             className="group block w-full border-b px-3.5 py-2.5 text-left transition-colors"
             style={{
               borderColor: "var(--color-border-default)",
