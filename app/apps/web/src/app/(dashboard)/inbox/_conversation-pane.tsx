@@ -37,6 +37,8 @@ import { EmailBody } from "./_email-body";
 import { EventCard } from "./_event-card";
 import { injectMeetingLink } from "@/lib/inbox/meeting-link";
 import { takeCachedDetail } from "@/lib/inbox/detail-cache";
+import { type Snippet } from "@/lib/inbox/snippets";
+import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { ThreadSummarySection } from "./_thread-summary";
@@ -101,6 +103,7 @@ export function ConversationPane({
   const [stopping, setStopping] = useState(false);
   const [trustedSenders, setTrustedSenders] = useState<string[]>([]);
   const [replyTones, setReplyTones] = useState<Array<{ tone: string; subject: string; body: string }>>([]);
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
   const snoozeRef = useRef<HTMLDivElement>(null);
 
   // Dismiss the snooze popover on Escape or outside click.
@@ -127,6 +130,20 @@ export function ConversationPane({
       .then((r) => (r.ok ? r.json() : { senders: [] }))
       .then((d: { senders?: string[] }) => {
         if (!cancelled && Array.isArray(d.senders)) setTrustedSenders(d.senders);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load the user's personal reply snippets once (INBOX-X05).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/inbox/snippets")
+      .then((r) => (r.ok ? r.json() : { snippets: [] }))
+      .then((d: { snippets?: Snippet[] }) => {
+        if (!cancelled && Array.isArray(d.snippets)) setSnippets(d.snippets);
       })
       .catch(() => {});
     return () => {
@@ -765,6 +782,15 @@ export function ConversationPane({
               })}
             </div>
           )}
+          <SnippetBar
+            snippets={snippets}
+            onChange={setSnippets}
+            currentBody={composer.body}
+            contact={detail?.contact ?? null}
+            onInsert={(text) =>
+              setComposer((c) => (c ? { ...c, body: c.body.trim() ? `${c.body}\n\n${text}` : text } : c))
+            }
+          />
           <EmailComposerPanel
             draft={composer}
             onClose={() => {
