@@ -34,9 +34,25 @@ block under the "Consommée identiquement par" line).
    `deriveApprovalModeFromLevel`). `tenant_settings.trustScore` (0–1) is the NUDGE
    score (`guardrails/trust-score.ts`, with decay). CLE-16 uses ONLY the gate score
    and documents the boundary with a comment at both call sites + on the
-   `TenantSettings.trustScore` field. **Recommend a future consolidation** (one
-   score, two consumers); merging now would touch the nudge UX + the route gate at
-   once — out of scope.
+   `TenantSettings.trustScore` field.
+
+   **Boundary re-verified 2026-06-18 (not a correctness bug, only a naming
+   overlap).** Full consumer trace:
+   - Gate path (0–100): `TRUST_FLOOR` = {copilot 0, guided 50, autonomous 65,
+     strategic 80} and the `trustOverall >= 80` strategic-relaxation check both
+     compare against `getTrustScore().overall` from `@/lib/campaign-engine/trust-score`.
+     All THREE `resolveEffectiveMode` callers (`settings/autonomy/route`,
+     `agent-reactor`, `autonomous-pipeline`) pass `trust.overall` from that same
+     0–100 module. No 0–1 value enters the gate.
+   - Nudge path (0–1): `settings.trustScore` is read only in `nudges/autonomy/route`,
+     `deal-progression/engine`, `guardrails/trust-score` (its own updater), and
+     `agent-memory` — where it is explicitly `* 100` with a "(0-100)" label for
+     DISPLAY, a correct conversion, never a gate input.
+
+   So there is **no scale-crossing** and nothing to fix for safety. The remaining
+   item is purely a **future consolidation preference** (one score, two consumers);
+   merging now would touch the nudge UX + the route gate at once — out of scope, and
+   a product/architecture call rather than a latent defect.
 
 3. **copilot ≡ guided on the disposition axis (tension 3).** CLE-10 maps both to
    `review-each`; the copilot/guided difference lives on the campaign-engine
@@ -45,6 +61,13 @@ block under the "Consommée identiquement par" line).
    send timing/policy is set under Guardrails") rather than over-promising. If
    product wants `guided` to auto-run reversible work after a delay, that is a
    one-line `deriveApprovalModeFromLevel` change in CLE-10 — flagged, deferred.
+
+   **Decision 2026-06-18: kept conservative on purpose.** Making `guided` auto-run
+   reversible work changes what the product DOES without a human in the loop — an
+   autonomy-semantics / product call, not a code-completeness gap, so it is not one
+   to make autonomously. The current state is safe and the UI copy is honest, so the
+   conservative behaviour (guided ≡ copilot on disposition) stands until product
+   asks for the delayed-auto-run semantics. No code change.
 
 4. **Incremental-from-prev learning (tension 4 — a behaviour change to F005 math).**
    `recalculateThresholds` now accumulates the ±0.05 delta from the **previous
@@ -58,6 +81,11 @@ block under the "Consommée identiquement par" line).
 
 ## 3. Implementation notes / minor deviations (honest record)
 
+- **Orphaned proof test recovered (2026-06-18).** `learned-trust.update.test.ts`
+  (the bounded-incremental-learning + reversal-bridge + read-clamp suite referenced
+  in tension 4 above) was authored for CLE-16 but never staged when CLE-16 landed
+  (11a8c1af). It is now committed (12 tests, green against the shipped code). The
+  CLE-16 learning math is no longer only trace-asserted.
 - **actionType vocabulary bridge.** `action_outcomes.actionType` is written by the
   reactor in the F003 vocabulary (`send_followup`, `create_task`, …), NOT the
   `GuardedAction` vocabulary (`email-send`, `task-create`). The design (§3.1/§3.2)
