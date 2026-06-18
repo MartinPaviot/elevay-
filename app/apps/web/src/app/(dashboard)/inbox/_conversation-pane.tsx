@@ -99,6 +99,7 @@ export function ConversationPane({
   const [snoozeText, setSnoozeText] = useState("");
   const [stopping, setStopping] = useState(false);
   const [trustedSenders, setTrustedSenders] = useState<string[]>([]);
+  const [replyTones, setReplyTones] = useState<Array<{ tone: string; subject: string; body: string }>>([]);
   const snoozeRef = useRef<HTMLDivElement>(null);
 
   // Dismiss the snooze popover on Escape or outside click.
@@ -134,6 +135,7 @@ export function ConversationPane({
 
   useEffect(() => {
     setComposer(null);
+    setReplyTones([]);
     setSchedOpen(false);
     setSnoozeOpen(false);
     setUsedDraftId(null);
@@ -164,6 +166,7 @@ export function ConversationPane({
 
   const openReply = useCallback(async () => {
     if (!detail) return;
+    setReplyTones([]); // clear any tone chips from a prior thread (INBOX-C02)
     const conv = detail.conversation;
     if (detail.preparedDraft) {
       setUsedDraftId(detail.preparedDraft.id);
@@ -194,6 +197,7 @@ export function ConversationPane({
       const data = res.ok
         ? ((await res.json()) as { replies?: Array<{ tone: string; subject: string; body: string }> })
         : {};
+      setReplyTones(data.replies ?? []); // one-tap tone switcher (INBOX-C02)
       const brief = data.replies?.find((r) => r.tone === "brief") ?? data.replies?.[0];
       setComposer({
         to: replyTo,
@@ -703,11 +707,43 @@ export function ConversationPane({
       </div>
 
       {composer && (
-        <EmailComposerPanel
-          draft={composer}
-          onClose={() => setComposer(null)}
-          onSent={() => void handleSent()}
-        />
+        <div>
+          {replyTones.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                Tone
+              </span>
+              {replyTones.map((r) => {
+                const active = composer.body === r.body;
+                return (
+                  <button
+                    key={r.tone}
+                    type="button"
+                    onClick={() =>
+                      setComposer((c) => (c ? { ...c, subject: r.subject || c.subject, body: r.body } : c))
+                    }
+                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      border: "1px solid var(--color-border-default)",
+                      background: active ? "var(--color-accent-soft)" : "transparent",
+                      color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
+                    }}
+                  >
+                    {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <EmailComposerPanel
+            draft={composer}
+            onClose={() => {
+              setComposer(null);
+              setReplyTones([]);
+            }}
+            onSent={() => void handleSent()}
+          />
+        </div>
       )}
     </div>
   );
