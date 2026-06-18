@@ -103,7 +103,7 @@ PARTIAL (18) — core shipped; the residual IS the remaining work toward 101/101
 - [~] R07 img tracking-pixel strip ✓ — residual LAKE: CSS bg-beacon strip, tracker host list, opt-out (user_prefs).
 - [~] R08 dark-mode container ✓ — residual LAKE: view-original-colors toggle, adaptive per-block contrast.
 - [~] R09 text path + sanitizer fallback ✓ — residual: malformed-MIME silently dropped (imap), empty-state "(no content)".
-- [~] R10 dir=auto + dirOf ✓ — residual LAKE: text-decode.ts (charset/RFC2047/bidi-strip), subject dir, CJK/Arabic fonts.
+- [~] R10 dir=auto + dirOf + **text-decode.ts (RFC2047 decode + bidi anti-spoof) wired into list+pane subject/snippet, 8 tests (245608fc)** — residual: capture-time charset fallback + mojibake repair (capture-path), CJK/Arabic font fallback in globals.css.
 - [~] C02 suggest-reply returns 3 tones ✓ — residual LAKE: chip row + 1/2/3 keys + per-thread cache + server-side voice.
 - [~] C03 draft stage+consume ✓ (reactive) — residual: proactive triggers, reason field+badge, calendar slot re-validate.
 - [~] G02 capture+approval backend ✓ — residual: inbox review drawer, Add-to-CRM CTA, "Captured by Elevay" provenance line.
