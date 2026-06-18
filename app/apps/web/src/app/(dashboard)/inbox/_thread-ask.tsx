@@ -18,15 +18,25 @@ interface ThreadAnswer {
   answered: boolean;
 }
 
+interface InboxAnswer {
+  answer: string;
+  citations: Array<{ key: string; subject: string }>;
+  answered: boolean;
+}
+
 export function ThreadAskSection({ conversationKey }: { conversationKey: string }) {
   const [question, setQuestion] = useState("");
   const [data, setData] = useState<ThreadAnswer | null>(null);
   const [loading, setLoading] = useState(false);
+  // Whole-inbox escalation (INBOX-Q02) when the thread can't answer.
+  const [inboxData, setInboxData] = useState<InboxAnswer | null>(null);
+  const [inboxLoading, setInboxLoading] = useState(false);
 
   async function run() {
     const q = question.trim();
     if (!q || loading) return;
     setLoading(true);
+    setInboxData(null);
     try {
       const r = await fetch("/api/inbox/conversations/ask", {
         method: "POST",
@@ -38,6 +48,24 @@ export function ThreadAskSection({ conversationKey }: { conversationKey: string 
       setData(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runInbox() {
+    const q = question.trim();
+    if (!q || inboxLoading) return;
+    setInboxLoading(true);
+    try {
+      const r = await fetch("/api/inbox/ask-inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q }),
+      });
+      setInboxData(r.ok ? (((await r.json()) as { result: InboxAnswer }).result ?? null) : null);
+    } catch {
+      setInboxData(null);
+    } finally {
+      setInboxLoading(false);
     }
   }
 
@@ -99,9 +127,55 @@ export function ThreadAskSection({ conversationKey }: { conversationKey: string 
             </div>
           )}
           {!data.answered && (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-              Not answered by this thread — try asking across your whole inbox.
-            </p>
+            <div className="mt-1.5">
+              <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                Not answered by this thread.
+              </p>
+              {!inboxData && (
+                <button
+                  type="button"
+                  onClick={() => void runInbox()}
+                  disabled={inboxLoading}
+                  className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium"
+                  style={{ color: "var(--color-accent)" }}
+                >
+                  {inboxLoading ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+                  {inboxLoading ? "Searching your inbox…" : "Search across your whole inbox"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {inboxData && (
+            <div
+              className="mt-2 rounded-md border p-2"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
+            >
+              <span
+                className="text-[10px] font-medium uppercase tracking-wide"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                Across your inbox
+              </span>
+              <p className="mt-1 text-[12px] leading-snug" style={{ color: "var(--color-text-primary)" }}>
+                {inboxData.answered
+                  ? inboxData.answer
+                  : "I couldn't find that anywhere in your inbox."}
+              </p>
+              {inboxData.answered && inboxData.citations.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {inboxData.citations.map((c) => (
+                    <SourceLink
+                      key={c.key}
+                      kind="email"
+                      label={c.subject || "Thread"}
+                      href={`/inbox?conversation=${encodeURIComponent(c.key)}`}
+                    />
+                  ))}
+                  <span className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>· via Elevay</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
