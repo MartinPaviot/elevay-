@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { Sparkles, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SourceLink } from "@/components/ai-ui";
 
 interface ThreadAnswer {
   answer: string;
@@ -89,9 +90,13 @@ export function ThreadAskSection({ conversationKey }: { conversationKey: string 
             </p>
           )}
           {data.answered && data.citations.length > 0 && (
-            <p className="mt-1 text-[10px]" style={{ color: "var(--color-text-muted)" }}>
-              From messages {data.citations.map((c) => `#${c + 1}`).join(", ")} · via Elevay
-            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              <span className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>From</span>
+              {data.citations.map((c) => (
+                <SourceLink key={c} kind="email" label={`Message #${c + 1}`} href={`#thread-msg-${c}`} />
+              ))}
+              <span className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>· via Elevay</span>
+            </div>
           )}
           {!data.answered && (
             <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
