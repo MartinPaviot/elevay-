@@ -89,12 +89,8 @@ function definePageAction<P>(a: PageAction<P>): PageAction {
  * A boundary test (proposals-actions.boundary.test.ts) asserts the registered id
  * set is disjoint from this — registering any of these would be a boundary breach.
  */
-export const PROPOSALS_EXCLUDED_IDS = [
-  "proposals.uploadTemplate",
-  "proposals.submitTemplate",
-  "proposals.downloadPdf",
-  "proposals.download",
-] as const;
+// PROPOSALS_EXCLUDED_IDS moved to ./_excluded-ids (a Next page.tsx may only export
+// the default component + route config).
 
 export default function ProposalsPage() {
   const [templates, setTemplates] = useState<TemplateRow[]>([]);

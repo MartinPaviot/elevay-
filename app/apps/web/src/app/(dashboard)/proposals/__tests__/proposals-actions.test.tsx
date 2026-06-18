@@ -30,7 +30,8 @@ vi.mock("@/hooks/use-custom-fields", () => ({
   useCustomFields: () => ({ fields: [], loading: false }),
 }));
 
-import ProposalsPage, { PROPOSALS_EXCLUDED_IDS } from "@/app/(dashboard)/proposals/page";
+import ProposalsPage from "@/app/(dashboard)/proposals/page";
+import { PROPOSALS_EXCLUDED_IDS } from "@/app/(dashboard)/proposals/_excluded-ids";
 import { getActionManifest, runRegisteredAction, __resetPageActionsForTest } from "@/lib/chat/page-actions/registry";
 
 function jsonRes(data: unknown, ok = true, status = 200) {

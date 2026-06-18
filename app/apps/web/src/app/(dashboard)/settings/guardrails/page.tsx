@@ -24,10 +24,8 @@ function definePageAction<P>(a: PageAction<P>): PageAction { return a as unknown
  *    and live behind the human only.
  * A boundary test asserts the registered settings id set is DISJOINT from this.
  */
-export const SETTINGS_EXCLUDED_IDS = [
-  "settings.changePassword", "settings.enrollMfa", "settings.disableMfa",
-  "settings.manageBilling", "settings.upgradePlan", "settings.updatePayment",
-] as const;
+// SETTINGS_EXCLUDED_IDS moved to ./_excluded-ids (a Next page.tsx may only export
+// the default component + route config).
 
 /**
  * Settings → Guardrails — the consolidated page for approval mode,

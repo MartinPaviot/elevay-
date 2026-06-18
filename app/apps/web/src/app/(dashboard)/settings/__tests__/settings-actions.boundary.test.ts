@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SETTINGS_EXCLUDED_IDS } from "@/app/(dashboard)/settings/guardrails/page";
+import { SETTINGS_EXCLUDED_IDS } from "@/app/(dashboard)/settings/guardrails/_excluded-ids";
 
 /**
  * CLE-14 — the SAFE-config boundary for the /settings/* cluster. The chat

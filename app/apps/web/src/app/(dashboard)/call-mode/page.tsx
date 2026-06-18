@@ -280,24 +280,9 @@ function definePageAction<P>(a: PageAction<P>): PageAction {
   return a as unknown as PageAction;
 }
 
-/**
- * CLE-09 — the IDs we INTENTIONALLY do NOT register. Live WebRTC telephony +
- * mic capture + in-call disposition are human-bound (README §2: "l'agent prépare
- * et navigue, l'humain exécute"); buying a number spends real money and is
- * admin-only. The agent PREPARES the call; the human PLACES and DISPOSITIONS it,
- * and BUYS numbers. A test (call-mode-actions.test.tsx) asserts the registered id
- * set is disjoint from this — adding any of these would be a boundary breach.
- */
-export const CALLMODE_HUMAN_BOUND_IDS = [
-  "callMode.call",
-  "callMode.dial",
-  "callMode.hangUp",
-  "callMode.dropVoicemail",
-  "callMode.disposition",
-  "callMode.callAgain",
-  "callMode.skip",
-  "callMode.buyNumber",
-] as const;
+// CLE-09 — the human-bound (intentionally-unregistered) call-mode action IDs live
+// in ./_human-bound-ids (a Next.js page.tsx may only export the default component
+// + route config, so this can't be a named export here).
 
 export default function CallModePage() {
   const { toast } = useToast();
