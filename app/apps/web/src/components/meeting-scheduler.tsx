@@ -20,6 +20,65 @@ function defaultWhen(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Slot the booking POST needs — the shared shape both the card and the
+ *  CLE-09 page action build. `startTime` is an ISO string (the card converts
+ *  its datetime-local input first). */
+export interface BookMeetingSlot {
+  contactId: string;
+  startTime: string;
+  durationMinutes?: number;
+  conferencing?: "sovereign" | "google_meet" | "teams" | "zoom";
+  title?: string;
+}
+
+export interface BookMeetingResult {
+  ok: boolean;
+  joinUrl?: string | null;
+  conferencing?: string;
+  error?: string;
+}
+
+/**
+ * CLE-09 §4 lift: the single copy of the POST /api/meetings/book request.
+ * Both the human card (MeetingSchedulerCard.bookMeeting) and the agent path
+ * (callMode.bookMeeting via CallActions) call this so there is exactly one
+ * request shape — calendar event + invite, byte-identical for both callers.
+ * It does NOT send anything else; the human/agent confirm gate is upstream.
+ */
+export async function bookMeetingRequest(slot: BookMeetingSlot): Promise<BookMeetingResult> {
+  try {
+    const res = await fetch("/api/meetings/book", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contactId: slot.contactId,
+        startTime: slot.startTime,
+        durationMinutes: slot.durationMinutes ?? 45,
+        meetingType: "qualification",
+        title: slot.title?.trim() || undefined,
+        conferencing: slot.conferencing ?? "sovereign",
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      booked?: boolean;
+      joinUrl?: string;
+      meetLink?: string;
+      conferencing?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.booked) {
+      return { ok: false, error: data.error ?? "Couldn't book the meeting." };
+    }
+    return {
+      ok: true,
+      joinUrl: data.joinUrl ?? data.meetLink ?? null,
+      conferencing: data.conferencing ?? slot.conferencing ?? "sovereign",
+    };
+  } catch {
+    return { ok: false, error: "Network error while booking." };
+  }
+}
+
 export function MeetingSchedulerCard({
   contactId,
   firstName,
@@ -68,43 +127,28 @@ export function MeetingSchedulerCard({
       return;
     }
     setBooking(true);
-    try {
-      const res = await fetch("/api/meetings/book", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contactId,
-          startTime: start.toISOString(),
-          durationMinutes: duration,
-          meetingType: "qualification",
-          title: title.trim() || undefined,
-          conferencing,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        booked?: boolean;
-        joinUrl?: string;
-        meetLink?: string;
-        conferencing?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.booked) {
-        toast(data.error ?? "Couldn't book the meeting.", "error");
-        return;
-      }
-      toast(`Visio planifiée avec ${firstName || "le prospect"}.`, "success");
-      setTitle("");
-      onBooked?.();
-      // Stay open and reveal the join link instead of closing immediately.
-      setBooked({
-        joinUrl: data.joinUrl ?? data.meetLink ?? null,
-        conferencing: data.conferencing ?? conferencing,
-      });
-    } catch {
-      toast("Network error while booking.", "error");
-    } finally {
-      setBooking(false);
+    // CLE-09 §4: the POST now lives in the shared bookMeetingRequest so the
+    // card and the agent path issue one identical request.
+    const r = await bookMeetingRequest({
+      contactId,
+      startTime: start.toISOString(),
+      durationMinutes: duration,
+      title,
+      conferencing,
+    });
+    setBooking(false);
+    if (!r.ok) {
+      toast(r.error ?? "Couldn't book the meeting.", "error");
+      return;
     }
+    toast(`Visio planifiée avec ${firstName || "le prospect"}.`, "success");
+    setTitle("");
+    onBooked?.();
+    // Stay open and reveal the join link instead of closing immediately.
+    setBooked({
+      joinUrl: r.joinUrl ?? null,
+      conferencing: r.conferencing ?? conferencing,
+    });
   }
 
   return (

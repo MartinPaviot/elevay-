@@ -14,6 +14,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
+import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
+import { useRegisterPageActions } from "@/lib/chat/page-actions/registry";
 import {
   Phone,
   PhoneOff,
@@ -50,7 +53,7 @@ import { CallModeOnboarding } from "./_onboarding";
 import { EditCampaignModal } from "./_edit-campaign-modal";
 import { CampaignFunnelBar } from "./_funnel-bar";
 import { readSprintAudience } from "@/lib/voice/sprint-audience";
-import { CallScriptPanel } from "./_call-script";
+import { CallScriptPanel, type ScriptPanelApi } from "./_call-script";
 import { CallListSelector, type CallListsData, type SystemListEntry } from "./_list-selector";
 import { sortQueueItems } from "@/lib/voice/queue-sort";
 import { type CallListSort } from "@/lib/voice/call-lists";
@@ -59,9 +62,13 @@ import { speakableGeo } from "@/lib/call-mode/geo";
 import { pickReplaceableTools } from "@/lib/tech-detect/replaceable";
 import type { ScriptContext } from "@/lib/voice/script-context";
 import type { RoleVerification } from "@/lib/contacts/role-status";
-import { CallActions } from "./_call-actions";
+import { CallActions, type CallActionsApi } from "./_call-actions";
 import { ReachabilityInfo } from "./_reachability-info";
 import { ReachabilitySummary } from "./_reachability-summary";
+import { requestFindMobile } from "./_find-mobile";
+import { requestRoleObsolete } from "./_find-mobile";
+import { initialFromCampaign } from "./_edit-campaign-modal";
+import { planPayload, DEFAULT_PLAN, type GoalType, type GoalWindow } from "./_call-plan-form";
 
 interface QueueItem {
   contactId: string;
@@ -261,6 +268,36 @@ function ResizeHandle({ onDelta, side }: { onDelta: (dx: number) => void; side: 
     </div>
   );
 }
+
+/* ── CLE-09: page-action helpers (pure, shared) ── */
+
+const okResult = (summary: string, data?: unknown): PageActionResult => ({ ok: true, summary, data });
+const errResult = (error: string, summary?: string): PageActionResult => ({ ok: false, error, summary: summary ?? error });
+
+/** Type a PageAction against its own params schema, then erase P so heterogeneous
+ *  actions live in one PageAction[] (the registry stores PageAction<unknown>). */
+function definePageAction<P>(a: PageAction<P>): PageAction {
+  return a as unknown as PageAction;
+}
+
+/**
+ * CLE-09 — the IDs we INTENTIONALLY do NOT register. Live WebRTC telephony +
+ * mic capture + in-call disposition are human-bound (README §2: "l'agent prépare
+ * et navigue, l'humain exécute"); buying a number spends real money and is
+ * admin-only. The agent PREPARES the call; the human PLACES and DISPOSITIONS it,
+ * and BUYS numbers. A test (call-mode-actions.test.tsx) asserts the registered id
+ * set is disjoint from this — adding any of these would be a boundary breach.
+ */
+export const CALLMODE_HUMAN_BOUND_IDS = [
+  "callMode.call",
+  "callMode.dial",
+  "callMode.hangUp",
+  "callMode.dropVoicemail",
+  "callMode.disposition",
+  "callMode.callAgain",
+  "callMode.skip",
+  "callMode.buyNumber",
+] as const;
 
 export default function CallModePage() {
   const { toast } = useToast();
@@ -462,35 +499,45 @@ export default function CallModePage() {
   // surfaced from the brief's "à enrichir" section. The contact updates
   // when Zeliq posts back to its webhook, so we re-fetch the brain after
   // a short delay to pick up freshly resolved email / phone.
-  const handleEnrich = useCallback(
-    async (contactId: string) => {
-      setEnriching(true);
+  // CLE-09 §4: the POST /api/contacts/:id/zeliq-enrich, lifted out of handleEnrich
+  // so the brief button and the agent path (callMode.rowEnrich) issue one
+  // identical request. On success it invalidates the brain cache (same effect the
+  // handler had). Returns { ok, error? } for the action; never throws.
+  const enrichContactResult = useCallback(
+    async (contactId: string): Promise<{ ok: boolean; error?: string }> => {
       try {
         const res = await fetch(`/api/contacts/${contactId}/zeliq-enrich`, {
           method: "POST",
         });
         const body = await res.json().catch(() => ({}));
         if (res.ok) {
-          toast(
-            "Enrichment started — Zeliq is completing email and phone in the background.",
-            "info",
-          );
           // Invalidate the cache so the next selection re-pulls the brain.
           fetchedBrainRef.current.delete(contactId);
-        } else {
-          toast(
-            body?.error ??
-              "Enrichment unavailable (ZELIQ_API_KEY not configured?).",
-            "error",
-          );
+          return { ok: true };
         }
+        return { ok: false, error: body?.error ?? "Enrichment unavailable (ZELIQ_API_KEY not configured?)." };
       } catch {
-        toast("Failed to enrich the contact.", "error");
-      } finally {
-        setEnriching(false);
+        return { ok: false, error: "Failed to enrich the contact." };
       }
     },
-    [toast],
+    [],
+  );
+
+  const handleEnrich = useCallback(
+    async (contactId: string) => {
+      setEnriching(true);
+      const r = await enrichContactResult(contactId);
+      if (r.ok) {
+        toast(
+          "Enrichment started — Zeliq is completing email and phone in the background.",
+          "info",
+        );
+      } else {
+        toast(r.error ?? "Failed to enrich the contact.", "error");
+      }
+      setEnriching(false);
+    },
+    [toast, enrichContactResult],
   );
 
   // The by-day system view is a pure client filter over the loaded queue:
@@ -929,6 +976,35 @@ export default function CallModePage() {
     }
   }, [toast, reloadCampaignQueue]);
 
+  // CLE-09 §4: the PATCH /api/calls/campaign, lifted out of EditCampaignModal.save
+  // so the modal's "Save plan" button AND the agent path (callMode.editPlan) issue
+  // one identical request. It takes the same payload shape useCallPlan(...).payload
+  // produces, PATCHes, then updates campaign + queue from the response (the same
+  // onUpdated effect the modal applied). Returns { ok, perDay?, error? }.
+  const patchPlan = useCallback(
+    async (payload: unknown): Promise<{ ok: boolean; perDay?: number; error?: string }> => {
+      try {
+        const res = await fetch("/api/calls/campaign", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return { ok: false, error: data?.error ?? "Couldn't update the plan" };
+        const updated = data.campaign as typeof campaign;
+        const calls = (data.calls ?? []) as QueueItem[];
+        if (updated) setCampaign(updated);
+        setQueue(calls);
+        if (calls.length > 0) setSelectedId(calls[0].contactId);
+        setPlanVersion((v) => v + 1);
+        return { ok: true, perDay: updated?.dailyQuota };
+      } catch {
+        return { ok: false, error: "Network error — try again" };
+      }
+    },
+    [],
+  );
+
   // Create a sector list from a phrase, then activate it so it drives the queue.
   const handleCreateList = useCallback(
     async (phrase: string) => {
@@ -956,6 +1032,376 @@ export default function CallModePage() {
     },
     [toast, handleActivateSector, reloadCampaignQueue],
   );
+
+  // ── CLE-09: page-action registration ──────────────────────────
+  // Live refs so a registered action's run() reads the LIVE cockpit without
+  // re-registering on every state change (CLE-06 §3.1 — stable id set + ref-read).
+  const queueRef = useRef(queue); queueRef.current = queue;
+  const campaignRef = useRef(campaign); campaignRef.current = campaign;
+  const configRef = useRef(config); configRef.current = config;
+  const selectedIdRef = useRef(selectedId); selectedIdRef.current = selectedId;
+  const listsDataRef = useRef(listsData); listsDataRef.current = listsData;
+  const creatingListRef = useRef(creatingList); creatingListRef.current = creatingList;
+  // Stable lifted helpers (useCallback / module-level) used by the run()s.
+  const patchPlanRef = useRef(patchPlan); patchPlanRef.current = patchPlan;
+  const enrichContactResultRef = useRef(enrichContactResult); enrichContactResultRef.current = enrichContactResult;
+  // Imperative handles for the child-component handlers (set by the §4 lifts).
+  // null when the owning child is unmounted (no prospect selected) -> E-5b.
+  const scriptApiRef = useRef<ScriptPanelApi | null>(null);
+  const callActionsApiRef = useRef<CallActionsApi | null>(null);
+
+  const callModeActions: PageAction[] = useMemo(
+    () => [
+      // ── activateSectorList ─────────────────────────────────────
+      definePageAction({
+        id: "callMode.activateSectorList",
+        title: "Switch the call list to a sector",
+        description:
+          "Activate one of the saved sector lists so today's call queue is drawn from that audience " +
+          "(e.g. the EMS directors, the Geneva foundations). Use when the user wants to call a specific segment. " +
+          "This changes WHO is in the queue; it does not place any call.",
+        params: z.object({ listId: z.string().min(1) }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async ({ listId }): Promise<PageActionResult> => {
+          if (!campaignRef.current) return errResult("No calling campaign yet - set up your calling plan first."); // E-3
+          const before = listsDataRef.current?.sector.find((l) => l.id === listId);
+          await handleActivateSector(listId); // reuses the page handler verbatim
+          const after = listsDataRef.current?.sector.find((l) => l.id === listId);
+          return okResult(
+            'Activated the "' + (before?.name ?? "selected") + '" list - ' +
+              (after?.counts.callable ?? queueRef.current.length) + " contacts to call.",
+          );
+        },
+      }),
+
+      // ── activateAllIcp ─────────────────────────────────────────
+      definePageAction({
+        id: "callMode.activateAllIcp",
+        title: "Call the whole ICP",
+        description: "Clear any sector filter and rank the entire ICP by fit for today's queue.",
+        params: z.object({}),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async (): Promise<PageActionResult> => {
+          if (!campaignRef.current) return errResult("No calling campaign yet - set up your calling plan first."); // E-3
+          await handleActivateAll();
+          return okResult("Back to the whole ICP - " + queueRef.current.length + " contacts.");
+        },
+      }),
+
+      // ── createSectorList ───────────────────────────────────────
+      definePageAction({
+        id: "callMode.createSectorList",
+        title: "Create a sector call list from a phrase",
+        description:
+          "Create a new sector list from a plain-language phrase (e.g. 'the DGs of EMS in French Switzerland') " +
+          "and activate it. The phrase is resolved to a sector x persona segment. Use when the user describes a NEW audience to call.",
+        params: z.object({ phrase: z.string().min(1) }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async ({ phrase }): Promise<PageActionResult> => {
+          if (!campaignRef.current) return errResult("No calling campaign yet - set up your calling plan first."); // E-3
+          if (creatingListRef.current) return errResult("A list is already being created - try again in a moment."); // E-8
+          const p = phrase.trim();
+          if (!p) return errResult("Describe the audience to create a list."); // AC-4
+          await handleCreateList(p); // creates + activates + reloads
+          return okResult('Created and activated "' + p + '".');
+        },
+      }),
+
+      // ── editPlan ───────────────────────────────────────────────
+      definePageAction({
+        id: "callMode.editPlan",
+        title: "Edit the calling plan",
+        description:
+          "Change the calling goal and cadence: goal type (calls/connects/meetings), target, window, max attempts per " +
+          "contact, retry window in days, list frequency, working days. The server recomputes the daily quota " +
+          "and regenerates today's list. Use when the user wants to change how many/how often they call.",
+        params: z.object({
+          goalType: z.enum(["calls", "connects", "meetings"]).optional(),
+          target: z.number().positive().optional(),
+          window: z.enum(["day", "week", "month"]).optional(),
+          maxAttempts: z.number().int().positive().optional(),
+          windowDays: z.number().int().positive().optional(),
+          listFrequency: z.enum(["daily", "weekly"]).optional(),
+          workingDays: z.array(z.number().int().min(0).max(6)).optional(),
+        }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async (p): Promise<PageActionResult> => {
+          const camp = campaignRef.current;
+          if (!camp) return errResult("No calling campaign yet - set up your calling plan first."); // E-3
+          if (p.target != null && p.target <= 0) return errResult("The target must be a positive number."); // AC-5
+          // Recover the current plan from the campaign, apply the partial, build
+          // the one payload shape useCallPlan(...).payload produces (§4 dedup).
+          const base = { ...DEFAULT_PLAN, ...initialFromCampaign(camp) };
+          const merged = {
+            ...base,
+            ...(p.goalType != null ? { type: p.goalType as GoalType } : {}),
+            ...(p.target != null ? { target: p.target } : {}),
+            ...(p.window != null ? { window: p.window as GoalWindow } : {}),
+            ...(p.maxAttempts != null ? { maxAttempts: p.maxAttempts } : {}),
+            ...(p.windowDays != null ? { windowDays: p.windowDays } : {}),
+            ...(p.listFrequency != null ? { listFrequency: p.listFrequency } : {}),
+            ...(p.workingDays != null && p.workingDays.length > 0 ? { workingDays: p.workingDays } : {}),
+          };
+          const r = await patchPlanRef.current(planPayload(merged));
+          return r.ok
+            ? okResult("Calling plan updated - " + (r.perDay ?? "?") + "/day.")
+            : errResult(r.error ?? "Couldn't update the plan.");
+        },
+      }),
+
+      // ── selectProspect ─────────────────────────────────────────
+      definePageAction({
+        id: "callMode.selectProspect",
+        title: "Open a prospect in the cockpit",
+        description:
+          "Select a contact from the current call list so their brief, script and softphone load. " +
+          "Navigation only - it does NOT call them. Use when the user wants to look at a specific prospect next.",
+        params: z.object({ contactId: z.string().min(1) }),
+        mutating: false, reversible: true, cost: "free", confirm: "never",
+        run: async ({ contactId }): Promise<PageActionResult> => {
+          const item = queueRef.current.find((q) => q.contactId === contactId);
+          if (!item) return errResult("That contact is not in the current call list."); // E-1
+          setSelectedId(contactId);
+          return okResult("Opened " + item.contactName + ".");
+        },
+      }),
+
+      // ── setFromNumber ──────────────────────────────────────────
+      definePageAction({
+        id: "callMode.setFromNumber",
+        title: "Choose the outbound caller ID",
+        description:
+          "Pick which of your provisioned numbers you call from, or 'automatic' for local-presence matching. " +
+          "This sets your caller ID for upcoming calls; it does NOT place a call and does NOT buy a number.",
+        params: z.object({ number: z.string().min(1) }), // an E.164 in the pool, or "automatic"
+        mutating: false, reversible: true, cost: "free", confirm: "never",
+        run: async ({ number }): Promise<PageActionResult> => {
+          if (number === "automatic") { setFromNumberOverride(null); return okResult("Caller ID set to automatic (local presence)."); }
+          const pool = configRef.current?.pool ?? [];
+          if (pool.length === 0) return errResult("No outbound number provisioned. Buy one in the header (admin) or Settings - Voice."); // E-4
+          if (!pool.some((pn) => pn.e164 === number)) return errResult("That number isn't in your pool. Buy one in the header (admin) or Settings - Voice.");
+          setFromNumberOverride(number);
+          return okResult("Calling from " + formatE164(number) + ".");
+        },
+      }),
+
+      // ── byDayView ──────────────────────────────────────────────
+      definePageAction({
+        id: "callMode.byDayView",
+        title: "Switch the by-day view",
+        description: "Filter the loaded queue by attempt state: today (all), callbacks (already attempted), new (never attempted).",
+        params: z.object({ view: z.enum(["today", "callbacks", "new"]) }),
+        mutating: false, reversible: true, cost: "free", confirm: "never",
+        run: async ({ view }): Promise<PageActionResult> => {
+          const id = view === "callbacks" ? "callbacks_due" : view; // E-6 friendly->internal
+          handleSelectSystem(id as SystemListEntry["id"]);
+          const n = view === "callbacks"
+            ? queueRef.current.filter((q) => (q.attemptCount ?? 0) > 0).length
+            : view === "new"
+              ? queueRef.current.filter((q) => (q.attemptCount ?? 0) === 0).length
+              : queueRef.current.length;
+          return okResult(
+            view === "callbacks" ? "Showing callbacks due (" + n + ")."
+              : view === "new" ? "Showing new contacts (" + n + ")."
+                : "Showing all (" + n + ").",
+          );
+        },
+      }),
+
+      // ── sortQueue ──────────────────────────────────────────────
+      definePageAction({
+        id: "callMode.sortQueue",
+        title: "Sort the call queue",
+        description: "Re-order the current queue: by fit (score), by oldest callback, or by fewest attempts.",
+        params: z.object({ sort: z.enum(["fit", "callback", "attempts"]) }),
+        mutating: false, reversible: true, cost: "free", confirm: "never",
+        run: async ({ sort }): Promise<PageActionResult> => {
+          const key = sort === "callback" ? "oldest_callback" : sort === "attempts" ? "fewest_attempts" : "fit"; // E-6
+          handleSortChange(key as CallListSort);
+          return okResult(
+            sort === "callback" ? "Sorted by oldest callback."
+              : sort === "attempts" ? "Sorted by fewest attempts."
+                : "Sorted by fit.",
+          );
+        },
+      }),
+
+      // ── regenerateScript ───────────────────────────────────────
+      definePageAction({
+        id: "callMode.regenerateScript",
+        title: "Regenerate the call script",
+        description:
+          "Draft a fresh call script for the current sector from your product + ICP. The draft loads into the " +
+          "script panel for you to REVIEW and save - it is not applied automatically. Use when the user wants a new script.",
+        params: z.object({ sector: z.string().optional() }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async ({ sector }): Promise<PageActionResult> => {
+          const api = scriptApiRef.current;
+          if (!api) return errResult("Open a prospect first so the script panel is available."); // E-5b
+          const r = await api.regenerate(sector);
+          return r.ok
+            ? okResult("Drafted a new script" + (sector ? " for " + sector : "") + " - review it in the panel.")
+            : errResult(r.error ?? "Couldn't generate a script.");
+        },
+      }),
+
+      // ── editScript ─────────────────────────────────────────────
+      definePageAction({
+        id: "callMode.editScript",
+        title: "Save changes to the call script",
+        description:
+          "Update and save the call script's fields (opener, problems/enjeux, validation question, booking ask, " +
+          "the 'if no' response). Persists immediately for this sector. Use when the user dictates a script change.",
+        params: z.object({
+          opener: z.string().optional(),
+          problems: z.array(z.string()).optional(),
+          permissionCheck: z.string().optional(),
+          bookingAsk: z.string().optional(),
+          noResponse: z.string().optional(),
+          sector: z.string().optional(),
+        }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async (p): Promise<PageActionResult> => {
+          const api = scriptApiRef.current;
+          if (!api) return errResult("Open a prospect first so the script panel is available."); // E-5b
+          const r = await api.save(p); // merges supplied fields over the current script, PUTs
+          return r.ok ? okResult("Script saved.") : errResult(r.error ?? "Couldn't save the script.");
+        },
+      }),
+
+      // ── rowEnrich (Zeliq, credits) ─────────────────────────────
+      definePageAction({
+        id: "callMode.rowEnrich",
+        title: "Enrich this contact",
+        description:
+          "Run deep enrichment (Zeliq) on a contact to fill in their email and phone. Uses credits and runs " +
+          "in the background - the details land on the contact shortly. Use when a contact is missing coordinates.",
+        params: z.object({ contactId: z.string().min(1) }),
+        mutating: true, reversible: false, cost: "credits", confirm: "risky",
+        run: async ({ contactId }): Promise<PageActionResult> => {
+          const r = await enrichContactResultRef.current(contactId); // §4 wrapper around handleEnrich's POST
+          return r.ok
+            ? okResult("Enrichment started - email and phone will fill in shortly.")
+            : errResult(r.error ?? "Enrichment unavailable.");
+        },
+      }),
+
+      // ── rowFindMobile (FullEnrich, credits) ────────────────────
+      definePageAction({
+        id: "callMode.rowFindMobile",
+        title: "Find a mobile for this contact",
+        description:
+          "Look up a mobile number for a contact via the EU/CH waterfall (FullEnrich). Uses credits; the number " +
+          "lands on the contact shortly. Use when a contact has no callable number.",
+        params: z.object({ contactId: z.string().min(1) }),
+        mutating: true, reversible: false, cost: "credits", confirm: "risky",
+        run: async ({ contactId }): Promise<PageActionResult> => {
+          const r = await requestFindMobile([contactId]); // imported shared helper, no duplication
+          return r.ok ? okResult("Looking for a mobile - it'll land on the contact shortly.") : errResult(r.error ?? "Couldn't request a mobile.");
+        },
+      }),
+
+      // ── bulkFindMobile (FullEnrich, credits) ───────────────────
+      definePageAction({
+        id: "callMode.bulkFindMobile",
+        title: "Find mobiles for several contacts",
+        description:
+          "Request mobile lookups for a set of contacts in the current call list that have no number (FullEnrich, " +
+          "uses credits, capped at 100). Use when the user wants to fill in missing numbers for the loaded queue.",
+        params: z.object({ contactIds: z.array(z.string().min(1)) }),
+        mutating: true, reversible: false, cost: "credits", confirm: "risky",
+        run: async ({ contactIds }): Promise<PageActionResult> => {
+          if (contactIds.length === 0) return errResult("No contacts to enrich."); // AC-8
+          const r = await requestFindMobile(contactIds); // helper caps at 100 (E-9)
+          return r.ok ? okResult("Requested mobiles for " + (r.requested ?? contactIds.length) + " contacts.") : errResult(r.error ?? "Couldn't request mobiles.");
+        },
+      }),
+
+      // ── markRoleObsolete ───────────────────────────────────────
+      definePageAction({
+        id: "callMode.markRoleObsolete",
+        title: "Flag a contact as having left their role",
+        description:
+          "Mark a contact's sourced job title as obsolete (they left the role) and drop them from the call list. " +
+          "Reversible. Use when the user knows a prospect no longer holds the position.",
+        params: z.object({ contactId: z.string().min(1) }),
+        mutating: true, reversible: true, cost: "free", confirm: "risky",
+        run: async ({ contactId }): Promise<PageActionResult> => {
+          const item = queueRef.current.find((q) => q.contactId === contactId);
+          if (!item) return errResult("That contact is not in the current call list."); // E-1
+          const r = await requestRoleObsolete(contactId); // §4 shared PUT
+          if (!r.ok) return errResult(r.error ?? "Couldn't flag the role.");
+          // Page-side effect: same as the brief's onRoleObsolete (drop row + advance selection).
+          const remaining = queueRef.current.filter((q) => q.contactId !== contactId);
+          setQueue(remaining);
+          if (selectedIdRef.current === contactId) setSelectedId(remaining[0]?.contactId ?? null);
+          return okResult("Flagged " + item.contactName + " as having left the role - removed from the list.");
+        },
+      }),
+
+      // ── writeEmailDraft (opens composer; NO send) ──────────────
+      definePageAction({
+        id: "callMode.writeEmailDraft",
+        title: "Draft the follow-up email",
+        description:
+          "AI-draft a meeting-request email to the selected prospect and OPEN it in the composer for you to review " +
+          "and send. It does NOT send - you send from the composer. Uses credits for the draft.",
+        params: z.object({ contactId: z.string().min(1) }),
+        mutating: false, outbound: false, reversible: true, cost: "credits", confirm: "never",
+        run: async ({ contactId }): Promise<PageActionResult> => {
+          const api = callActionsApiRef.current;
+          if (!api) return errResult("Open a prospect first so the email composer is available."); // E-5b
+          const r = await api.writeDraft(contactId);
+          if (!r.ok) return errResult(r.error ?? "Couldn't open the composer.");
+          return r.drafted
+            ? okResult("Drafted the email - review and send it in the composer.")
+            : okResult("Opened a blank email - the AI draft was unavailable, write it by hand in the composer."); // existing fallback
+        },
+      }),
+
+      // ── bookMeeting (OUTBOUND - calendar + invite) ─────────────
+      definePageAction({
+        id: "callMode.bookMeeting",
+        title: "Book the discovery meeting",
+        description:
+          "Book the discovery meeting with the selected prospect - creates the calendar event AND sends them an " +
+          "invite. Pass startTime (ISO), optional duration (default 45m) and conferencing (sovereign/google_meet/teams/zoom). " +
+          "This SENDS an invite externally, so it always asks you to confirm first.",
+        params: z.object({
+          contactId: z.string().min(1),
+          startTime: z.string().min(1),
+          durationMinutes: z.number().int().positive().optional(),
+          conferencing: z.enum(["sovereign", "google_meet", "teams", "zoom"]).optional(),
+          title: z.string().optional(),
+        }),
+        mutating: true, outbound: true, reversible: false, cost: "free", confirm: "always",
+        run: async (p): Promise<PageActionResult> => {
+          const api = callActionsApiRef.current;
+          if (!api) return errResult("Open a prospect first so the meeting can be booked."); // E-5b
+          const start = new Date(p.startTime);
+          if (Number.isNaN(start.getTime())) return errResult("That date and time doesn't look valid."); // AC-10
+          if (start.getTime() <= Date.now()) return errResult("Pick a time in the future."); // E-7
+          const r = await api.book({
+            contactId: p.contactId,
+            startTime: start.toISOString(),
+            durationMinutes: p.durationMinutes,
+            conferencing: p.conferencing,
+            title: p.title,
+          });
+          return r.ok
+            ? okResult("Meeting booked - invite sent.", { joinUrl: r.joinUrl ?? null })
+            : errResult(r.error ?? "Couldn't book the meeting.");
+        },
+      }),
+    ],
+    // Stable id set; run() reads live values via refs / lifted handles (stable
+    // setters + useCallbacks). The §4 lifts (handleActivateSector/All/CreateList,
+    // handleSelectSystem/SortChange, formatE164, requestFindMobile/RoleObsolete)
+    // are referentially stable, so the manifest never re-registers on state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  useRegisterPageActions(callModeActions);
 
   // ── Render ────────────────────────────────────────────────────
   // Every state lives inside the same shell as the other tabs: a flush
@@ -1085,12 +1531,7 @@ export default function CallModePage() {
         <EditCampaignModal
           campaign={campaign}
           onClose={() => setEditingPlan(false)}
-          onUpdated={({ campaign: updated, calls }) => {
-            setCampaign(updated);
-            setQueue(calls as unknown as QueueItem[]);
-            if (calls.length > 0) setSelectedId(calls[0].contactId);
-            setPlanVersion((v) => v + 1);
-          }}
+          onSave={patchPlan}
         />
       )}
       <DispositionModal
@@ -1412,6 +1853,7 @@ export default function CallModePage() {
                         contactId={selected.contactId}
                         contactName={selected.contactName}
                         email={brain?.focalContact?.email ?? null}
+                        apiRef={callActionsApiRef}
                       />
                     </div>
                   )}
@@ -1438,6 +1880,7 @@ export default function CallModePage() {
                     contactId={selected.contactId}
                     contactName={selected.contactName}
                     email={brain?.focalContact?.email ?? null}
+                    apiRef={callActionsApiRef}
                   />
                   {/* Company + buying committee live WITH the prospect (linked),
                       not under the independent script panel on the right. */}
@@ -1493,6 +1936,7 @@ export default function CallModePage() {
                 ].filter(Boolean).join(" ")}
                 replaceableTool={replaceableTool}
                 onContext={(c) => { scriptCtxRef.current = c; }}
+                apiRef={scriptApiRef}
               />
             </div>
             {inCall && (
