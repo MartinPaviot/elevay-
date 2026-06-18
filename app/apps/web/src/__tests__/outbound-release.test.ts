@@ -124,6 +124,16 @@ vi.mock("@/lib/emails/recipient-guardrail", () => ({
   isRecipientAllowed: () => true,
   recipientBlockReason: () => "blocked",
 }));
+// CLE-13: the worker now reads tenant settings (for the send-window timezone)
+// and runs the shared sending gate. Stub both so this CLE-11 release test stays
+// focused on the hold/release behavior.
+vi.mock("@/lib/config/tenant-settings", () => ({
+  getTenantSettings: vi.fn().mockResolvedValue({ timezone: "UTC" }),
+}));
+vi.mock("@/lib/emails/send-window", () => ({ isWithinSendWindow: () => true }));
+vi.mock("@/lib/guardrails/sending-gate", () => ({
+  evaluateSend: vi.fn().mockResolvedValue({ send: true, reason: "ok" }),
+}));
 vi.mock("@/lib/billing/plan-limits", () => ({ checkPlanLimit: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/billing/billing", () => ({ trackUsage: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/analytics/pipeline-tracker", () => ({ trackPipeline: vi.fn().mockResolvedValue(undefined) }));

@@ -445,7 +445,11 @@ export interface CustomObjectTypeDef {
 
 // ── Defaults ──
 
-const DEFAULTS: Required<Pick<
+// CLE-13 (T1): exported so the shared sending-gate (lib/guardrails/sending-gate.ts)
+// reads the SAME sending defaults the `getTenantSettings` merge applies, with no
+// value change. `getTenantSettings` always merges these in, so a tenant with no
+// explicit sending config still gets `primary-with-caps` / cap 20 / cold-blocked.
+export const DEFAULTS: Required<Pick<
   TenantSettings,
   | "aiTone"
   | "salesMotion"

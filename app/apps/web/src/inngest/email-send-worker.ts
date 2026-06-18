@@ -14,6 +14,9 @@ import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient
 import { checkPlanLimit } from "@/lib/billing/plan-limits";
 import { trackUsage } from "@/lib/billing/billing";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
+import { evaluateSend } from "@/lib/guardrails/sending-gate";
+import { isWithinSendWindow } from "@/lib/emails/send-window";
+import { getTenantSettings } from "@/lib/config/tenant-settings";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -212,10 +215,15 @@ export const processOutboundEmails = inngest.createFunction(
       const tenantIds = [...new Set(sendableEmails.map((e) => e.tenantId))];
       const map: Record<
         string,
-        { id: string; emailAddress: string; displayName: string | null; dailyLimit: number; sentToday: number; status: string | null; sendWindowStart: string; sendWindowEnd: string; sendDays: string[] }
+        { id: string; emailAddress: string; displayName: string | null; dailyLimit: number; sentToday: number; status: string | null; sendWindowStart: string; sendWindowEnd: string; sendDays: string[]; timezone: string | null }
       > = {};
 
       for (const tid of tenantIds) {
+        // CLE-13 (item 4): one tenant-settings read per tenant per cron tick so
+        // the send window is evaluated in the tenant-local clock, not UTC.
+        const tenantSettings = await getTenantSettings(tid);
+        const tenantTimezone = tenantSettings?.timezone ?? null;
+
         const mailboxes = await db
           .select()
           .from(connectedMailboxes)
@@ -241,6 +249,7 @@ export const processOutboundEmails = inngest.createFunction(
             sendWindowStart: mb.sendWindowStart || "08:00",
             sendWindowEnd: mb.sendWindowEnd || "18:00",
             sendDays: (mb.sendDays as string[]) || ["mon", "tue", "wed", "thu", "fri"],
+            timezone: tenantTimezone,
           };
         }
 
@@ -264,6 +273,7 @@ export const processOutboundEmails = inngest.createFunction(
             sendWindowStart: best.sendWindowStart || "08:00",
             sendWindowEnd: best.sendWindowEnd || "18:00",
             sendDays: (best.sendDays as string[]) || ["mon", "tue", "wed", "thu", "fri"],
+            timezone: tenantTimezone,
           };
         }
       }
@@ -325,13 +335,9 @@ export const processOutboundEmails = inngest.createFunction(
         }
 
         {
-          // Check send window (day of week + time range)
-          const now = new Date();
-          const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-          const currentDay = dayNames[now.getUTCDay()];
-          const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
-
-          if (!mailbox.sendDays.includes(currentDay) || currentTime < mailbox.sendWindowStart || currentTime > mailbox.sendWindowEnd) {
+          // CLE-13 (item 4): check the send window in the TENANT's timezone,
+          // not UTC. Single shared helper so the clock logic can't drift.
+          if (!isWithinSendWindow(new Date(), mailbox.timezone, mailbox)) {
             await db
               .update(outboundEmails)
               .set({
@@ -359,6 +365,40 @@ export const processOutboundEmails = inngest.createFunction(
           fromAddress = mailbox.displayName
             ? `${mailbox.displayName} <${mailbox.emailAddress}>`
             : mailbox.emailAddress;
+        }
+
+        // CLE-13 (item 1): sending-identity gate (+ opt-out, idempotent with the
+        // batch pre-filter above). Cold-on-primary / managed-setup-pending /
+        // opted_out -> fail the row with the reason; primary-cap-hit -> re-queue
+        // so capacity frees next day (mirrors the daily-limit branch above).
+        const sendGate = await evaluateSend({
+          tenantId: email.tenantId,
+          toAddress: email.toAddress,
+          sentTodayFromPrimary: mailbox.sentToday,
+        });
+        if (!sendGate.send) {
+          if (sendGate.code === "primary-cap-hit") {
+            await db
+              .update(outboundEmails)
+              .set({
+                status: "queued",
+                errorMessage: sendGate.reason,
+                updatedAt: new Date(),
+              })
+              .where(eq(outboundEmails.id, email.id));
+            return;
+          }
+          await db
+            .update(outboundEmails)
+            .set({
+              status: "failed",
+              failedAt: new Date(),
+              errorMessage: sendGate.reason,
+              updatedAt: new Date(),
+            })
+            .where(eq(outboundEmails.id, email.id));
+          failed++;
+          return;
         }
 
         // Plan limit enforcement: monthly email cap
@@ -614,6 +654,50 @@ export const sendSingleEmail = inngest.createFunction(
         })
         .where(eq(outboundEmails.id, emailId));
       return { emailId, sent: false, reason: "Blocked by test-mode guardrail" };
+    }
+
+    // CLE-13 (item 1): sending-identity gate on the event-driven single send.
+    // Cold/managed/opt-out -> fail the row; cap-hit -> leave queued for the cron.
+    const primaryToday = await step.run("gate-primary-count", async () => {
+      const [mb] = await db
+        .select({ sentToday: connectedMailboxes.sentToday })
+        .from(connectedMailboxes)
+        .where(
+          and(
+            eq(connectedMailboxes.tenantId, email.tenantId),
+            eq(connectedMailboxes.status, "active"),
+          ),
+        )
+        .limit(1);
+      return mb?.sentToday ?? 0;
+    });
+    const singleGate = await evaluateSend({
+      tenantId: email.tenantId,
+      toAddress: email.toAddress,
+      sentTodayFromPrimary: primaryToday,
+    });
+    if (!singleGate.send) {
+      if (singleGate.code === "primary-cap-hit") {
+        await db
+          .update(outboundEmails)
+          .set({
+            status: "queued",
+            errorMessage: singleGate.reason,
+            updatedAt: new Date(),
+          })
+          .where(eq(outboundEmails.id, emailId));
+        return { emailId, sent: false, reason: singleGate.reason };
+      }
+      await db
+        .update(outboundEmails)
+        .set({
+          status: "failed",
+          failedAt: new Date(),
+          errorMessage: singleGate.reason,
+          updatedAt: new Date(),
+        })
+        .where(eq(outboundEmails.id, emailId));
+      return { emailId, sent: false, reason: singleGate.reason };
     }
 
     if (!resend) {

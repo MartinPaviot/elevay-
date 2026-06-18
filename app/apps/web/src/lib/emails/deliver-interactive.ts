@@ -36,6 +36,7 @@ import { checkPlanLimit } from "@/lib/billing/plan-limits";
 import { trackUsage } from "@/lib/billing/billing";
 import { logger } from "@/lib/observability/logger";
 import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient-guardrail";
+import { evaluateSend } from "@/lib/guardrails/sending-gate";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const FALLBACK_FROM = process.env.INVITE_FROM_ADDRESS || "Elevay <outbound@resend.dev>";
@@ -60,7 +61,7 @@ export type DeliverInteractiveResult =
   | { ok: true; messageId: string; via: "smtp" | "resend"; fromAddress: string }
   | {
       ok: false;
-      code: "opted_out" | "plan_limit" | "not_configured" | "send_failed" | "test_mode";
+      code: "opted_out" | "blocked" | "plan_limit" | "not_configured" | "send_failed" | "test_mode";
       error: string;
     };
 
@@ -72,6 +73,7 @@ interface OwnerMailbox {
   smtpHost: string | null;
   smtpPort: number | null;
   secretEncrypted: string | null;
+  sentToday: number;
 }
 
 async function resolveOwnerMailbox(
@@ -89,6 +91,7 @@ async function resolveOwnerMailbox(
       smtpHost: connectedMailboxes.smtpHost,
       smtpPort: connectedMailboxes.smtpPort,
       secretEncrypted: connectedMailboxes.secretEncrypted,
+      sentToday: connectedMailboxes.sentToday,
     })
     .from(connectedMailboxes)
     .where(
@@ -135,7 +138,24 @@ export async function deliverInteractiveEmail(
     return { ok: false, code: "opted_out", error: `${to} has unsubscribed and can't be emailed.` };
   }
 
-  // 2. Plan limit (monthly emails).
+  // 2. Resolve the sender's own mailbox (needed for the sending-identity cap).
+  const mailbox = await resolveOwnerMailbox(tenantId, input.ownerAppUserId);
+
+  // 2b. CLE-13 (item 1): sending-identity gate. Opt-out is handled above (and
+  // re-checked here idempotently); this enforces the cold-on-primary rail and
+  // the primary daily cap that were never applied on the interactive path.
+  const interactiveGate = await evaluateSend({
+    tenantId,
+    toAddress: to,
+    sentTodayFromPrimary: mailbox?.sentToday ?? 0,
+  });
+  if (!interactiveGate.send) {
+    return interactiveGate.code === "opted_out"
+      ? { ok: false, code: "opted_out", error: interactiveGate.reason }
+      : { ok: false, code: "blocked", error: interactiveGate.reason };
+  }
+
+  // 3. Plan limit (monthly emails).
   const planCheck = await checkPlanLimit(tenantId, "emails");
   if (!planCheck.allowed) {
     return {
@@ -144,9 +164,6 @@ export async function deliverInteractiveEmail(
       error: `Monthly email limit reached (${planCheck.current}/${planCheck.limit}). Upgrade your plan to send more.`,
     };
   }
-
-  // 3. Resolve the sender's own mailbox.
-  const mailbox = await resolveOwnerMailbox(tenantId, input.ownerAppUserId);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.elevay.dev";
   const unsubUrl = buildUnsubscribeUrl(appUrl, tenantId, to);
