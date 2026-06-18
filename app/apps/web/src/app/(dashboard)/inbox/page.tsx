@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ConversationList } from "./_conversation-list";
 import { ConversationPane } from "./_conversation-pane";
+import { CaptureReviewDrawer } from "./_capture-review";
 import { OutboundTable } from "./_outbound-table";
 import { BundlesView } from "./_bundles-view";
 import { CommandPalette, type PaletteCommand } from "./_command-palette";
@@ -614,6 +615,9 @@ export default function InboxPage() {
             className="w-[360px] shrink-0 overflow-y-auto border-r"
             style={{ borderColor: "var(--color-border-default)" }}
           >
+            {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
+            <CaptureReviewDrawer />
+
             {/* Catch-me-up (INBOX-S03) — new since you were last here. */}
             {catchUpCount > 0 && !debouncedSearch && selection.keys.length === 0 && (
               <div
