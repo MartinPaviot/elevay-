@@ -41,10 +41,8 @@ function definePageAction<P>(a: PageAction<P>): PageAction {
  * human's job. A boundary test asserts the registered id set is disjoint from
  * this — registering any of these would be a breach.
  */
-export const MEETINGS_EXCLUDED_IDS = [
-  "meetings.record", "meetings.startRecording", "meetings.stopRecording",
-  "meetings.uploadTranscript", "meetings.submitTranscript",
-] as const;
+// MEETINGS_EXCLUDED_IDS moved to ./_excluded-ids (a Next page.tsx may only export
+// the default component + route config).
 
 /** E-9 helper — does the meeting's CRM bag carry a PENDING intel proposal for
  *  this entity type? The post-call pipeline writes pending facts to a `pending*`

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PROPOSALS_EXCLUDED_IDS } from "@/app/(dashboard)/proposals/page";
+import { PROPOSALS_EXCLUDED_IDS } from "@/app/(dashboard)/proposals/_excluded-ids";
 
 /**
  * CLE-14 /proposals boundary — the headline guard. A template UPLOAD is a native

@@ -29,7 +29,8 @@ vi.mock("@/hooks/use-custom-fields", () => ({
   useCustomFields: () => ({ fields: [], loading: false }),
 }));
 
-import CallModePage, { CALLMODE_HUMAN_BOUND_IDS } from "@/app/(dashboard)/call-mode/page";
+import CallModePage from "@/app/(dashboard)/call-mode/page";
+import { CALLMODE_HUMAN_BOUND_IDS } from "@/app/(dashboard)/call-mode/_human-bound-ids";
 import { getActionManifest, runRegisteredAction, __resetPageActionsForTest } from "@/lib/chat/page-actions/registry";
 import { decideAction } from "@/lib/guardrails/decide-action";
 

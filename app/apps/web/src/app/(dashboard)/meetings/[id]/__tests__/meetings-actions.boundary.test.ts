@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { MEETINGS_EXCLUDED_IDS } from "@/app/(dashboard)/meetings/[id]/page";
+import { MEETINGS_EXCLUDED_IDS } from "@/app/(dashboard)/meetings/[id]/_excluded-ids";
 
 /**
  * CLE-14 — the /meetings/[id] detail page registers the seven NON-CAPTURE
