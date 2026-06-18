@@ -76,6 +76,9 @@ export interface SyncedEmail {
   /** Raw RFC headers (lower-cased keys) when the transport exposes them —
    *  drives machine-sent detection (List-Unsubscribe, Precedence, …). */
   headers?: Record<string, string> | null;
+  /** Raw `text/calendar` (.ics) part of an inbound meeting invite, when present.
+   *  Parsed by parseIcs for the inline event card + accept/decline (INBOX-R12/CAL). */
+  calendar?: string | null;
 }
 
 export async function fetchRecentEmails(

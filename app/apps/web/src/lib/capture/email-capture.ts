@@ -98,6 +98,9 @@ export interface InboundEmailInput {
    *  machine-sent detection (List-Unsubscribe, Precedence, Auto-Submitted).
    *  Optional + back-compat: absent ⇒ role-local-part detection only. */
   headers?: Record<string, string> | null;
+  /** Raw text/calendar (.ics) part of an inbound meeting invite, when the
+   *  transport exposes it — parsed for the inline event card (INBOX-R12/CAL). */
+  calendar?: string | null;
 }
 
 export interface InboundCaptureResult {
@@ -385,6 +388,8 @@ export async function captureInboundEmail(
         // Sanitized HTML body for the reading pane (INBOX-R01/R13). Only stored
         // when present, so text-only mail keeps a lean metadata row.
         ...(bodyHtml ? { bodyHtml } : {}),
+        // Raw .ics of an inbound invite (INBOX-R12/CAL), capped. Only when present.
+        ...(input.calendar ? { calendar: input.calendar.slice(0, 100_000) } : {}),
         // Sender domain-auth verdict (INBOX-R06) — small, always stored so the
         // reader can tell "unknown" (checked, no verdict) from a real pass/fail.
         senderAuth,

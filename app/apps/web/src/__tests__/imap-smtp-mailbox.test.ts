@@ -173,6 +173,48 @@ describe("fetchRecentEmailsImap", () => {
     expect(emails[0].subject).toBe("(unreadable message)");
     expect(emails[0].html).toBeNull();
   });
+
+  it("captures the inbound text/calendar (.ics) part of an invite (R12/CAL)", async () => {
+    fetchYield.mockReturnValue(asyncGen([{ uid: 30, source: Buffer.from("raw") }]));
+    simpleParser.mockResolvedValueOnce({
+      messageId: "<inv@x>",
+      from: { text: "Org <org@acme.com>", value: [{ address: "org@acme.com" }] },
+      to: { value: [{ address: "me@org.ch" }] },
+      subject: "Invite: Sync",
+      text: "You are invited.",
+      date: new Date("2026-03-01"),
+      attachments: [
+        { contentType: "application/octet-stream", content: Buffer.from("nope") },
+        { contentType: "text/calendar; method=REQUEST", content: Buffer.from("BEGIN:VEVENT\r\nSUMMARY:Sync\r\nEND:VEVENT") },
+      ],
+    });
+
+    const { emails } = await fetchRecentEmailsImap(
+      { emailAddress: "me@org.ch", imapHost: "h", imapPort: 993, password: "pw", imapLastUid: 0 },
+      30,
+    );
+
+    expect(emails).toHaveLength(1);
+    expect(emails[0].calendar).toContain("BEGIN:VEVENT");
+    expect(emails[0].calendar).toContain("SUMMARY:Sync");
+  });
+
+  it("leaves calendar null when there is no text/calendar part", async () => {
+    fetchYield.mockReturnValue(asyncGen([{ uid: 31, source: Buffer.from("raw") }]));
+    simpleParser.mockResolvedValueOnce({
+      messageId: "<plain@x>",
+      from: { text: "A <a@b.com>", value: [{ address: "a@b.com" }] },
+      to: { value: [{ address: "me@org.ch" }] },
+      subject: "Hi",
+      text: "no invite",
+      date: new Date(),
+    });
+    const { emails } = await fetchRecentEmailsImap(
+      { emailAddress: "me@org.ch", imapHost: "h", imapPort: 993, password: "pw", imapLastUid: 0 },
+      30,
+    );
+    expect(emails[0].calendar ?? null).toBeNull();
+  });
 });
 
 describe("sendViaSmtp / verifySmtp", () => {

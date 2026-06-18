@@ -189,6 +189,10 @@ export async function fetchRecentEmailsImap(
       const text = (parsed.text || "").toString();
       const html = (parsed.html || "").toString();
       const body = text || html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      // Inbound meeting invite: retain the raw text/calendar (.ics) part so the
+      // reading pane can render an inline event card + accept/decline (INBOX-R12/CAL).
+      const calendar =
+        parsed.attachments?.find((a) => /^text\/calendar/i.test(a.contentType || ""))?.content?.toString("utf8") || null;
 
       // Normalise mailparser's header Map to a lower-cased record so the
       // inbound classifier can read List-Unsubscribe / Precedence / Auto-Submitted.
@@ -215,6 +219,7 @@ export async function fetchRecentEmailsImap(
         date: parsed.date || new Date(),
         direction,
         headers: Object.keys(headerRecord).length ? headerRecord : null,
+        calendar,
       });
 
       if (++count >= MAX_PER_RUN) break;

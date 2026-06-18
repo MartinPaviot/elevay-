@@ -273,6 +273,7 @@ export const syncEmails = inngest.createFunction(
               threadId: email.threadId,
               occurredAt: email.date,
               headers: email.headers ?? null,
+              calendar: email.calendar ?? null,
             });
             if (captured.captured) {
               batchCreated++;
