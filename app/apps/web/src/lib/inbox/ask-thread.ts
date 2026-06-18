@@ -115,9 +115,9 @@ export async function askThread(
     const answer = (a.answer || "").trim();
     const answered = Boolean(a.answered) && answer.length > 0;
     if (!answered) return { answer: answer || NOT_FOUND, citations: [], answered: false };
-    const citations = (a.citations || [])
-      .filter((n) => Number.isInteger(n) && n >= 0 && n < messages.length)
-      .slice(0, 8);
+    const citations = [
+      ...new Set((a.citations || []).filter((n) => Number.isInteger(n) && n >= 0 && n < messages.length)),
+    ].slice(0, 8);
     return { answer, citations, answered: true };
   } catch (err) {
     console.warn("inbox thread ask failed:", err);

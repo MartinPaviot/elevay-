@@ -22,7 +22,7 @@ describe("askThread (INBOX-Q07)", () => {
     expect(p).toContain("contract Monday");
   });
 
-  it("maps an answer, clamps citations to real indices, and caps them at 8", async () => {
+  it("clamps citations to real indices and dedupes repeats", async () => {
     const gen = async (): Promise<ThreadAnswer> => ({
       answer: "  You promised to send the contract on Monday.  ",
       citations: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 99, -1],
@@ -31,7 +31,7 @@ describe("askThread (INBOX-Q07)", () => {
     const a = await askThread(msgs, "What did I promise?", gen);
     expect(a.answered).toBe(true);
     expect(a.answer).toBe("You promised to send the contract on Monday.");
-    expect(a.citations).toEqual([0, 1, 2, 3, 0, 1, 2, 3]); // out-of-range 99/-1 dropped, capped at 8
+    expect(a.citations).toEqual([0, 1, 2, 3]); // out-of-range 99/-1 dropped, duplicates collapsed
   });
 
   it("returns answered=false with no citations when the thread can't answer", async () => {

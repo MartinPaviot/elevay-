@@ -55,6 +55,12 @@ describe("ai-memory (INBOX-O02)", () => {
     expect(isAutoSendInstruction("Always sign as Martin")).toBe(false);
   });
 
+  it("does not over-flag legitimate instructions that merely mention sending", () => {
+    expect(isAutoSendInstruction("Offer to send a calendar invite")).toBe(false);
+    expect(isAutoSendInstruction("Mention I'll send the deck after the call")).toBe(false);
+    expect(isAutoSendInstruction("Ask whether they want me to send pricing")).toBe(false);
+  });
+
   it("clamps instruction count, per-item length, and drops blanks", () => {
     const many: InboxMemory = {
       standingInstructions: [

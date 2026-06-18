@@ -31,6 +31,15 @@ describe("digest (INBOX-N02)", () => {
     expect(d.total).toBe(12); // total counts all, not just shown
   });
 
+  it("sorts items with a null timestamp last without crashing", () => {
+    const d = composeDigest([
+      item("dated", "awaiting_reply", "2026-06-18T09:00:00Z"),
+      item("undated", "awaiting_reply", null),
+    ]);
+    const sec = d.sections.find((s) => s.id === "awaiting_reply")!;
+    expect(sec.items.map((i) => i.key)).toEqual(["dated", "undated"]);
+  });
+
   it("returns no sections for an empty inbox", () => {
     expect(composeDigest([])).toEqual({ title: "Your inbox digest", total: 0, sections: [] });
   });
