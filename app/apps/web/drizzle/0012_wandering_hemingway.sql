@@ -118,13 +118,6 @@ CREATE TABLE "knowledge_entries" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "scope" text DEFAULT 'workspace' NOT NULL;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "steps" jsonb DEFAULT '[]'::jsonb;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "constraints" jsonb DEFAULT '[]'::jsonb;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "parameters" jsonb DEFAULT '[]'::jsonb;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "forked_from_id" text;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "use_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "custom_skill_templates" ADD COLUMN "last_used_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "action_outcomes" ADD CONSTRAINT "action_outcomes_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_reactions" ADD CONSTRAINT "agent_reactions_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "agent_tasks" ADD CONSTRAINT "agent_tasks_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -151,5 +144,4 @@ CREATE INDEX "code_executions_tenant_idx" ON "code_executions" USING btree ("ten
 CREATE INDEX "code_executions_thread_idx" ON "code_executions" USING btree ("chat_thread_id");--> statement-breakpoint
 CREATE INDEX "knowledge_entries_tenant_idx" ON "knowledge_entries" USING btree ("tenant_id");--> statement-breakpoint
 CREATE INDEX "knowledge_entries_scope_idx" ON "knowledge_entries" USING btree ("tenant_id","scope");--> statement-breakpoint
-CREATE INDEX "knowledge_entries_category_idx" ON "knowledge_entries" USING btree ("tenant_id","category");--> statement-breakpoint
-CREATE INDEX "custom_skill_templates_scope_idx" ON "custom_skill_templates" USING btree ("tenant_id","scope");
+CREATE INDEX "knowledge_entries_category_idx" ON "knowledge_entries" USING btree ("tenant_id","category");

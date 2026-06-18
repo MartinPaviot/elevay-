@@ -23,13 +23,13 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "agent_actions" ADD CONSTRAINT "agent_actions_user_id_auth_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."auth_users"("id") ON DELETE set null ON UPDATE no action;
+ ALTER TABLE "agent_actions" ADD CONSTRAINT "agent_actions_user_id_auth_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."auth_user"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "agent_actions" ADD CONSTRAINT "agent_actions_reversed_by_user_id_auth_users_id_fk" FOREIGN KEY ("reversed_by_user_id") REFERENCES "public"."auth_users"("id") ON DELETE set null ON UPDATE no action;
+ ALTER TABLE "agent_actions" ADD CONSTRAINT "agent_actions_reversed_by_user_id_auth_users_id_fk" FOREIGN KEY ("reversed_by_user_id") REFERENCES "public"."auth_user"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
