@@ -135,6 +135,7 @@ Full phase methodology (Calibrate, Research, Plan) is in `_harness/CHARTER.md`.
 | Regression + drift check | `/regression` |
 | Repo-aware plan (Rippletide rules) | `/plan` |
 | Code review before commit/PR | `/code-review` |
+| Visual/UX audit of the live UI | `/design-review` (vs design language + AI-slop) |
 | Debug a bug / failing test | `/investigate` (no fix without investigation) |
 | Confirm a change works in the app | `/verify` · `/run` |
 | Reuse/simplify pass (no bug hunt) | `/simplify` |
