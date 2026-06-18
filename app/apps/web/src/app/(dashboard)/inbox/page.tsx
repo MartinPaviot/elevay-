@@ -30,6 +30,7 @@ import type { BundleSource } from "@/lib/inbox/bundle";
 import { registerShortcut } from "@/lib/hotkey-registry";
 import { INBOX_SHORTCUTS } from "@/lib/inbox/inbox-shortcuts";
 import { prefetchDetail } from "@/lib/inbox/detail-cache";
+import { resolveMailboxShortcut } from "@/lib/inbox/mailbox-switch";
 import {
   EMPTY_SELECTION,
   toggle as selToggle,
@@ -93,6 +94,9 @@ export default function InboxPage() {
   const [catchUpCount, setCatchUpCount] = useState(0);
   const seenInitRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  // `m`-then-key mailbox quick-switch state machine (INBOX-K05).
+  const mailboxAwaitRef = useRef(false);
+  const mailboxAwaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // In-flight triage POST. Lane fetches await it so switching to Done/
   // Snoozed right after the verb never races the write (the GET would
   // otherwise read pre-commit state and show an empty lane).
@@ -352,7 +356,7 @@ export default function InboxPage() {
     [selection, tab, customLaneId, toast, loadLane],
   );
 
-  // Keyboard: j/k navigate, e done, r reply. Never while typing.
+  // Keyboard: j/k navigate, e done, r reply, m+digit switch mailbox. Never while typing.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -366,6 +370,32 @@ export default function InboxPage() {
       ) {
         return;
       }
+
+      // Mailbox quick-switch (INBOX-K05): `m` arms a brief window; the next key
+      // is consumed here (so it can't also trigger j/k) and resolved to a box.
+      // Only meaningful with a chooser, i.e. 2+ connected mailboxes.
+      if (mailboxAwaitRef.current) {
+        mailboxAwaitRef.current = false;
+        if (mailboxAwaitTimer.current) {
+          clearTimeout(mailboxAwaitTimer.current);
+          mailboxAwaitTimer.current = null;
+        }
+        const res = resolveMailboxShortcut(e.key, mailboxes.map((m) => m.id));
+        if (res) {
+          e.preventDefault();
+          setSelectedMailbox(res.target);
+        }
+        return;
+      }
+      if (e.key === "m" && mailboxes.length >= 2) {
+        e.preventDefault();
+        mailboxAwaitRef.current = true;
+        mailboxAwaitTimer.current = setTimeout(() => {
+          mailboxAwaitRef.current = false;
+        }, 1500);
+        return;
+      }
+
       if ((tab === "outbound" || tab === "bundles") && !customLaneId) return;
 
       if (e.key === "j" || e.key === "k") {
@@ -409,7 +439,7 @@ export default function InboxPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, selectedKey, handleTriage, conversations, selection, handleToggleSelect, handleBulkTriage]);
+  }, [tab, selectedKey, handleTriage, conversations, selection, handleToggleSelect, handleBulkTriage, mailboxes]);
 
   const hasMore = tab !== "outbound" && conversations.length < total;
   const bundleTotal = bundles.reduce((n, b) => n + b.count, 0);
@@ -476,6 +506,24 @@ export default function InboxPage() {
     customLanes.forEach((l) =>
       cmds.push({ id: `lane:${l.id}`, label: `Go to ${l.name}`, hint: "Lane", run: () => setCustomLaneId(l.id) }),
     );
+    // Mailbox quick-switch from the palette (INBOX-K05) — mirrors the m+digit
+    // shortcut. Only when there's a chooser, i.e. 2+ connected mailboxes.
+    if (mailboxes.length >= 2) {
+      cmds.push({
+        id: "mailbox:all",
+        label: "Switch to All inboxes",
+        hint: "Mailbox",
+        run: () => setSelectedMailbox(null),
+      });
+      mailboxes.forEach((m) =>
+        cmds.push({
+          id: `mailbox:${m.id}`,
+          label: `Switch to ${m.label || m.address}`,
+          hint: "Mailbox",
+          run: () => setSelectedMailbox(m.id),
+        }),
+      );
+    }
     if (selectedKey && (tab === "attention" || tab === "snoozed")) {
       cmds.push({
         id: "act:done",
@@ -499,7 +547,7 @@ export default function InboxPage() {
       }),
     );
     return cmds;
-  }, [conversations, customLanes, bundleTotal, selectedKey, tab, handleTriage]);
+  }, [conversations, customLanes, bundleTotal, selectedKey, tab, handleTriage, mailboxes]);
 
   return (
     <div className="flex h-full flex-col animate-content-in">
