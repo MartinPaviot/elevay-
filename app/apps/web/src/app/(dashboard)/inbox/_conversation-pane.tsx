@@ -636,9 +636,10 @@ export function ConversationPane({
         )}
 
         {/* ── Messages, chronological, full bodies ── */}
-        {conv.messages.map((m) => (
+        {conv.messages.map((m, i) => (
           <div
             key={m.id}
+            id={`thread-msg-${i}`}
             className="mb-2.5 rounded-lg border p-3"
             style={{
               borderColor: "var(--color-border-default)",
