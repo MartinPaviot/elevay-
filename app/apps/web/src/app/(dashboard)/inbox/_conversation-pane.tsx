@@ -7,7 +7,7 @@
  * triage verbs: Reply, Book meeting, Stop sequence, Done, Snooze.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
   Mail,
@@ -37,6 +37,7 @@ import { EmailBody } from "./_email-body";
 import { EventCard } from "./_event-card";
 import { injectMeetingLink } from "@/lib/inbox/meeting-link";
 import { takeCachedDetail } from "@/lib/inbox/detail-cache";
+import { extractProposedTime, toDatetimeLocal } from "@/lib/inbox/proposed-time";
 import { type Snippet } from "@/lib/inbox/snippets";
 import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
@@ -99,6 +100,7 @@ export function ConversationPane({
   const [usedDraftId, setUsedDraftId] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [schedOpen, setSchedOpen] = useState(false);
+  const [prefillWhen, setPrefillWhen] = useState<string | null>(null);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeText, setSnoozeText] = useState("");
   const [stopping, setStopping] = useState(false);
@@ -188,6 +190,14 @@ export function ConversationPane({
 
   const replyTo =
     detail?.conversation.fromAddress || detail?.contact?.email || "";
+
+  // A meeting time the prospect proposed in their latest message (INBOX-CAL02) —
+  // offered as a one-click prefill of the scheduler, never auto-booked.
+  const proposedTime = useMemo(() => {
+    const msgs = detail?.conversation.messages ?? [];
+    const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound");
+    return extractProposedTime(lastInbound?.body);
+  }, [detail]);
 
   const openReply = useCallback(async () => {
     if (!detail) return;
@@ -400,6 +410,21 @@ export function ConversationPane({
               Book meeting
             </Button>
           )}
+          {detail.contact && proposedTime && !schedOpen && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPrefillWhen(toDatetimeLocal(proposedTime.start));
+                setSchedOpen(true);
+              }}
+              className="gap-1.5"
+              title={`They proposed ${proposedTime.phrase}`}
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+              Book {proposedTime.phrase}
+            </Button>
+          )}
           {detail.enrollment && (
             <Button variant="outline" size="sm" onClick={stopSequence} disabled={stopping} className="gap-1.5">
               {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <OctagonX className="h-3.5 w-3.5" />}
@@ -489,7 +514,11 @@ export function ConversationPane({
           <MeetingSchedulerCard
             contactId={detail.contact.id}
             firstName={detail.contact.name.split(" ")[0] || ""}
-            onClose={() => setSchedOpen(false)}
+            initialWhen={prefillWhen ?? undefined}
+            onClose={() => {
+              setSchedOpen(false);
+              setPrefillWhen(null);
+            }}
             // Drop the sovereign join link straight into an open reply draft (INBOX-G10).
             onBooked={(joinUrl) => {
               if (joinUrl) setComposer((c) => (c ? { ...c, body: injectMeetingLink(c.body, joinUrl) } : c));
