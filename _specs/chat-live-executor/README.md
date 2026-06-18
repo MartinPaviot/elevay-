@@ -44,9 +44,11 @@ export type UiDirective =
       params: Record<string, unknown>;
       requireConfirm: boolean;     // calculé serveur via decideAction (§3.5)
     };
-// HighlightAnchor (amendement CLE-15) = { kind: "entity"; entityType: string; id: string }
+// HighlightAnchor (amendement CLE-15, tel qu'implémenté) =
+//   { entityId: string; scope?: string; field?: string; focus?: boolean }
 //   Champ OPTIONNEL sur l'arm `navigate`. Absent => comportement actuel inchangé.
-//   La page enregistre un locator (id -> noeud DOM) ; les clients off-web l'ignorent.
+//   La page enregistre un locator (entityId -> noeud DOM via data-cle-entity) ;
+//   les clients off-web l'ignorent. (Forme figée dans CLE-15 design §2.1.)
 ```
 
 ### 3.2 Descripteur d'action de page (type client) — `lib/chat/page-actions/types.ts` (CLE-03)
