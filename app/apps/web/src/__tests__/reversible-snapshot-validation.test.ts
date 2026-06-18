@@ -60,8 +60,15 @@ describe("isValidReversibleSnapshot — rejects malformed / forged snapshots", (
     [{ type: "bulk_update", entity: "deal", rows: [{ id: "x" }] }, "bulk row missing before"],
     [{ type: "bulk_update", entity: "deal", rows: "nope" }, "bulk rows not an array"],
     [{ type: "merge_contacts", survivorId: "c1", mergedRows: [], repoints: {} }, "repoints missing arrays"],
+    [
+      { type: "merge_contacts", survivorId: "c1", mergedRows: [], repoints: { activities: [], deals: [], sequenceEnrollments: [] } },
+      "repoints missing exactly one array (tasks)",
+    ],
+    [{ type: "delete_sequence_step", sequenceId: "s1", stepsBefore: "x" }, "stepsBefore not an array"],
     [{ type: "page_action", actionId: "a", inverse: { params: {} } }, "inverse missing actionId"],
+    [{ type: "page_action", actionId: "a", inverse: { actionId: "b", params: "x" } }, "inverse.params not an object"],
     [{ type: "outbound_send", outboundEmailId: "oe1", holdUntil: "x", channel: "sms" }, "bad channel"],
+    [{ type: "outbound_send", outboundEmailId: "oe1", channel: "email" }, "outbound_send missing holdUntil"],
   ])("rejects %o (%s)", (snap, _label) => {
     expect(isValidReversibleSnapshot(snap)).toBe(false);
   });

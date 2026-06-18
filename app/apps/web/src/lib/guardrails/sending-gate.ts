@@ -116,9 +116,11 @@ export interface EvaluateSendArgs {
  * `DEFAULTS` (it never returns null — lib/config/tenant-settings.ts:510-525), so
  * every real tenant gets `primary-with-caps` protection. A caller MAY still pass
  * `settings: null` explicitly; rather than fail OPEN (the original design's narrow
- * branch), the gate then evaluates against the protective `DEFAULTS` — so there is
- * no send-through path at all (CLE-13 FOLLOWUPS #4: the gate is fully fail-closed,
- * an absent/unknown settings object can only make it send LESS, never more).
+ * branch), the gate then evaluates against the protective `DEFAULTS`
+ * (primary-with-caps, cold blocked, 20/day cap). A warm under-cap recipient still
+ * sends under those defaults — the point (CLE-13 FOLLOWUPS #4) is that there is no
+ * FAIL-OPEN path: an absent/unknown settings object can only make the gate send
+ * LESS than the defaults would allow, never more.
  */
 export async function evaluateSend(
   args: EvaluateSendArgs,
@@ -140,7 +142,8 @@ export async function evaluateSend(
     // CLE-13 FOLLOWUPS #4: a genuinely-absent settings object (caller passed
     // null) cannot tell us the mode — so fall back to the protective DEFAULTS
     // (primary-with-caps, cold blocked) rather than failing open. `?.` makes the
-    // null case use every DEFAULT, leaving the gate with no send-through path.
+    // null case use every DEFAULT, so the gate has no FAIL-OPEN path (warm
+    // under-cap still sends, but never more than the defaults permit).
     const mode = settings?.sendingMailboxMode ?? DEFAULTS.sendingMailboxMode;
     const cap =
       settings?.sendingDailyCapPrimary ?? DEFAULTS.sendingDailyCapPrimary;

@@ -75,6 +75,20 @@ well-formed snapshot is persisted unchanged. Tests: a 24-case pure validator sui
 Defense-in-depth; the tenant-scoping at reversal time still stands as the primary
 guard.
 
+**Reversal-path hole closed too (self-review, 2026-06-18).** The write-time
+allowlist alone could not make the "can't escape the actor's tenant" claim true:
+`sequence_step` has no `tenantId` column and its reversal ops were NOT confined —
+`deleteByEntityId` deleted `WHERE id = $id` with no tenant filter (the
+"FK via sequenceId is authoritative" comment described a join that did not exist),
+`restoreEntity` referenced a non-existent `tenantId` (and `updatedAt`) column, and
+`reinsertEntity` re-inserted client-supplied rows unscoped. A forged
+`{type:"create", entity:"sequence_step", id:"<foreign step>"}` snapshot could thus
+delete another tenant's step on undo. **Fixed:** all three sequence_step reversal
+ops now confine through the parent sequence's tenant (`sequenceStepOwnedByTenant` /
+`sequenceOwnedByTenant`); a foreign/forged step is a silent no-op. Regression test
+in `tool-call-log-page-action.test.ts` (forged foreign step → 0 deletes; owned step
+→ 1 delete). The other allowlisted entities were already tenant-filtered.
+
 ## 3. Deploy: migration `0077_outbound_hold.sql` must be applied
 Adds the `held`/`canceled` enum values + `hold_until` column + index. NOT run by the
 implementation. Apply with `pnpm db:migrate:apply`. Code is safe pre-migration

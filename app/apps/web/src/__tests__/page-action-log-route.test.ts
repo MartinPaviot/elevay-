@@ -91,6 +91,19 @@ describe("CLE-11 POST /api/chat/page-action-log", () => {
     expect(logPageActionCall.mock.calls[0][0].snapshot).toBeNull();
   });
 
+  it("400 when mutating but actionId is missing (and nothing logged)", async () => {
+    const res = await POST(req({ mutating: true, ok: true }));
+    expect(res.status).toBe(400);
+    expect(logPageActionCall).not.toHaveBeenCalled();
+  });
+
+  it("a mutating forward with NO undo logs snapshot:null and never calls the validator", async () => {
+    await POST(req({ actionId: "deal.create", params: {}, ok: true, mutating: true }));
+    expect(logPageActionCall).toHaveBeenCalledTimes(1);
+    expect(logPageActionCall.mock.calls[0][0].snapshot).toBeNull();
+    expect(isValidReversibleSnapshot).not.toHaveBeenCalled();
+  });
+
   it("AC-2: a non-mutating (read) result is NOT logged", async () => {
     const res = await POST(req({ actionId: "list.applyFilter", params: {}, ok: true, mutating: false }));
     const json = await res.json();

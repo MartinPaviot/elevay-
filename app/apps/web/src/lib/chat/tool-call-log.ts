@@ -136,10 +136,13 @@ const isEntity = (v: unknown): boolean => typeof v === "string" && REVERSIBLE_EN
 
 /**
  * CLE-11 FOLLOWUPS #2 — structural validation of a client-asserted Mode-A
- * (`undo.kind:"server"`) snapshot BEFORE it is persisted. The reversal path
- * already forces `tenantId` and only touches allowlisted tables (so a forged
- * snapshot can't escape the actor's tenant), but previously a malformed snapshot
- * was stored verbatim and only failed when the user clicked undo. This validates
+ * (`undo.kind:"server"`) snapshot BEFORE it is persisted. At reversal every
+ * entity is tenant-confined — most tables filter on their own `tenantId` column,
+ * and `sequence_step` (which has none) is confined through its parent sequence's
+ * tenant (see sequenceStepOwnedByTenant / sequenceOwnedByTenant) — so a forged
+ * snapshot can't escape the actor's tenant. This is the WRITE-time complement:
+ * previously a malformed snapshot was stored verbatim and only failed when the
+ * user clicked undo. This validates
  * the discriminant + required fields + entity allowlist at WRITE time, so a
  * malformed/forged snapshot is rejected up front (the action logs as
  * non-undoable rather than appearing undoable and failing later). It can only
@@ -618,6 +621,31 @@ type ReversibleEntity =
   | "comment"
   | "shared_prompt";
 
+/**
+ * sequence_steps has NO tenantId column — its only tenant anchor is the parent
+ * sequence's FK. These helpers confine every sequence_step reversal op to the
+ * actor's tenant so a forged/client-asserted snapshot can never reach another
+ * tenant's step (the hole the write-time `isValidReversibleSnapshot` allowlist
+ * could not close on its own, since it green-lists the entity by name).
+ */
+async function sequenceStepOwnedByTenant(stepId: string, tenantId: string): Promise<boolean> {
+  const [owned] = await db
+    .select({ id: sequenceSteps.id })
+    .from(sequenceSteps)
+    .innerJoin(sequences, eq(sequences.id, sequenceSteps.sequenceId))
+    .where(and(eq(sequenceSteps.id, stepId), eq(sequences.tenantId, tenantId)))
+    .limit(1);
+  return !!owned;
+}
+async function sequenceOwnedByTenant(sequenceId: string, tenantId: string): Promise<boolean> {
+  const [owned] = await db
+    .select({ id: sequences.id })
+    .from(sequences)
+    .where(and(eq(sequences.id, sequenceId), eq(sequences.tenantId, tenantId)))
+    .limit(1);
+  return !!owned;
+}
+
 async function deleteByEntityId(
   entity: ReversibleEntity,
   id: string,
@@ -642,8 +670,11 @@ async function deleteByEntityId(
       .delete(sequences)
       .where(and(eq(sequences.id, id), eq(sequences.tenantId, tenantId)));
   } else if (entity === "sequence_step") {
-    // sequence_steps has no tenantId — FK via sequenceId is authoritative
-    await db.delete(sequenceSteps).where(eq(sequenceSteps.id, id));
+    // sequence_steps has no tenantId column — confine via the parent sequence so
+    // a forged snapshot cannot delete another tenant's step.
+    if (await sequenceStepOwnedByTenant(id, tenantId)) {
+      await db.delete(sequenceSteps).where(eq(sequenceSteps.id, id));
+    }
   } else if (entity === "comment") {
     await db
       .delete(comments)
@@ -669,6 +700,16 @@ async function restoreEntity(
   delete setClause.id;
   delete setClause.tenantId;
   delete setClause.tenant_id;
+  if (entity === "sequence_step") {
+    // sequence_steps has neither a tenantId NOR an updatedAt column — the generic
+    // path below would reference both and crash. Confine via the parent sequence
+    // and update by id only (a foreign/forged step is a silent no-op).
+    delete setClause.updatedAt;
+    if (await sequenceStepOwnedByTenant(id, tenantId)) {
+      await db.update(sequenceSteps).set(setClause).where(eq(sequenceSteps.id, id));
+    }
+    return;
+  }
   await db
     .update(table)
     .set(setClause)
@@ -689,9 +730,21 @@ async function reinsertEntity(
 ): Promise<void> {
   const table = pickTable(entity);
   if (!table) throw new Error(`Unknown entity: ${entity}`);
+  if (entity === "sequence_step") {
+    // No tenantId column — confine by verifying the snapshot's parent sequence
+    // belongs to this tenant before re-inserting, so a forged delete-snapshot
+    // can't inject a step into another tenant's sequence.
+    const seqId = (before.sequenceId ?? before.sequence_id) as unknown;
+    if (typeof seqId !== "string" || !(await sequenceOwnedByTenant(seqId, tenantId))) {
+      return; // foreign / missing parent — refuse the re-insert
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.insert(sequenceSteps).values(before as any);
+    return;
+  }
   // Spread the full snapshot. If it carried tenantId, we enforce the
   // caller's; otherwise (tables without tenantId column, e.g.
-  // sequence_step, sequence_enrollment) we leave the spread as-is.
+  // sequence_enrollment) we leave the spread as-is.
   const payload: Record<string, unknown> = { ...before };
   if ("tenantId" in payload || "tenant_id" in payload) {
     payload.tenantId = tenantId;

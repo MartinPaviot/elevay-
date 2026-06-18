@@ -4,20 +4,28 @@
  * soft-deleted (re-validated here, since sequenceEnrollments has no tenantId
  * column and the payload is replayed from approval), skips already-enrolled
  * contacts, and is tenant-scoped on the sequence. Review-found H1.
+ *
+ * The drizzle predicates are NOT stubbed to identity — eq/inArray/isNull return
+ * structured ops and every WHERE is captured, so the test PROVES the contacts
+ * re-validation query actually carries eq(contacts.tenantId), isNull(deletedAt),
+ * and inArray(contacts.id) — a future edit dropping the tenant scope fails here.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Ordered result queue the mocked db.select chain shifts from, in call order.
 const selectQueue: unknown[][] = [];
 const insertedValues: Array<Record<string, unknown>> = [];
+// Every WHERE predicate the executor builds, in call order, for assertion.
+const wherePredicates: unknown[] = [];
 
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
       from: () => ({
-        where: () => {
+        // generic select: .from().where()  (resolves as awaited or via .limit)
+        where: (cond: unknown) => {
+          wherePredicates.push(cond);
           const result = selectQueue.shift() ?? [];
-          // Resolves both as an awaited query (.then) and via .limit(1).
           return {
             limit: () => Promise.resolve(result),
             then: (res: (v: unknown) => void) => res(result),
@@ -35,17 +43,19 @@ vi.mock("@/db", () => ({
 }));
 
 vi.mock("@/db/schema", () => ({
-  tasks: {}, deals: {}, companies: {}, contacts: { id: "id", tenantId: "tenant_id", deletedAt: "deleted_at" },
-  sequences: { id: "id", tenantId: "tenant_id" },
-  sequenceEnrollments: { id: "id", sequenceId: "sequence_id", contactId: "contact_id" },
+  tasks: {}, deals: {}, companies: {},
+  contacts: { id: "contacts.id", tenantId: "contacts.tenantId", deletedAt: "contacts.deletedAt" },
+  sequences: { id: "sequences.id", tenantId: "sequences.tenantId" },
+  sequenceEnrollments: { id: "se.id", sequenceId: "se.sequenceId", contactId: "se.contactId" },
 }));
 
+// Structured ops (NOT identity) so the captured predicate is introspectable.
 vi.mock("drizzle-orm", () => ({
-  and: (...a: unknown[]) => a,
-  eq: (...a: unknown[]) => a,
-  inArray: (...a: unknown[]) => a,
-  isNull: (...a: unknown[]) => a,
-  ne: (...a: unknown[]) => a,
+  and: (...args: unknown[]) => ({ op: "and", args }),
+  eq: (col: unknown, val: unknown) => ({ op: "eq", col, val }),
+  inArray: (col: unknown, vals: unknown) => ({ op: "inArray", col, vals }),
+  isNull: (col: unknown) => ({ op: "isNull", col }),
+  ne: (col: unknown, val: unknown) => ({ op: "ne", col, val }),
 }));
 
 vi.mock("@/lib/emails/deliver-interactive", () => ({ deliverInteractiveEmail: vi.fn() }));
@@ -56,9 +66,13 @@ const action = (payload: Record<string, unknown>) => ({
   id: "a1", userId: null, actionType: "sequence-enrollment", payload,
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const flatten = (p: any): any[] => (p && p.op === "and" ? p.args.flatMap(flatten) : [p]);
+
 beforeEach(() => {
   selectQueue.length = 0;
   insertedValues.length = 0;
+  wherePredicates.length = 0;
 });
 
 describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)", () => {
@@ -81,6 +95,19 @@ describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)"
     // Only c1 inserted (c2 invalid, c3 already enrolled).
     expect(insertedValues).toHaveLength(1);
     expect(insertedValues[0]).toMatchObject({ sequenceId: "seq1", contactId: "c1", status: "active", currentStep: 1 });
+
+    // PROVE the contacts re-validation query is genuinely tenant+deletedAt scoped.
+    const contactsPred = wherePredicates
+      .map(flatten)
+      .find((terms) => terms.some((t: { op?: string; col?: unknown }) => t?.op === "inArray" && t.col === "contacts.id"));
+    expect(contactsPred, "contacts re-validation predicate must exist").toBeDefined();
+    expect(contactsPred).toEqual(
+      expect.arrayContaining([
+        { op: "inArray", col: "contacts.id", vals: ["c1", "c2", "c3"] },
+        { op: "eq", col: "contacts.tenantId", val: "t1" },
+        { op: "isNull", col: "contacts.deletedAt" },
+      ]),
+    );
   });
 
   it("fails closed when the sequence is not the tenant's (no inserts)", async () => {
@@ -89,6 +116,16 @@ describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)"
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/sequence not found/);
     expect(insertedValues).toHaveLength(0);
+    // The sequence lookup itself is tenant-scoped.
+    const seqPred = wherePredicates
+      .map(flatten)
+      .find((terms) => terms.some((t: { op?: string; col?: unknown }) => t?.col === "sequences.id"));
+    expect(seqPred).toEqual(
+      expect.arrayContaining([
+        { op: "eq", col: "sequences.id", val: "seqX" },
+        { op: "eq", col: "sequences.tenantId", val: "t1" },
+      ]),
+    );
   });
 
   it("enrolls nobody (ok, all skipped) when no contact survives re-validation", async () => {

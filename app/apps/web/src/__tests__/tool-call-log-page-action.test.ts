@@ -13,9 +13,13 @@ interface UpdateCapture {
 
 const inserts: InsertCapture[] = [];
 const updates: UpdateCapture[] = [];
+const deletes: unknown[] = [];
 let nextInsertId = "evt-1";
 // The single event row reverseToolCall/getLastReversibleCall read back.
 let selectRows: Record<string, unknown>[] = [];
+// What the sequence_step tenant-confinement join (innerJoin) returns — [] means
+// the step's parent sequence is NOT owned by the acting tenant.
+let stepOwnedRows: Record<string, unknown>[] = [];
 
 vi.mock("@/db", () => ({
   db: {
@@ -39,9 +43,18 @@ vi.mock("@/db", () => ({
           orderBy: () => ({ limit: () => Promise.resolve(selectRows) }),
           limit: () => Promise.resolve(selectRows),
         }),
+        // sequence_step confinement: select(...).from(sequenceSteps).innerJoin(sequences,...).where(...).limit(1)
+        innerJoin: () => ({
+          where: () => ({ limit: () => Promise.resolve(stepOwnedRows) }),
+        }),
       }),
     })),
-    delete: vi.fn(() => ({ where: () => Promise.resolve(undefined) })),
+    delete: vi.fn((tbl: unknown) => ({
+      where: () => {
+        deletes.push(tbl);
+        return Promise.resolve(undefined);
+      },
+    })),
   },
 }));
 
@@ -78,7 +91,9 @@ import {
 beforeEach(() => {
   inserts.length = 0;
   updates.length = 0;
+  deletes.length = 0;
   selectRows = [];
+  stepOwnedRows = [];
   nextInsertId = "evt-1";
   cancelHeldOutbound.mockReset();
 });
@@ -207,6 +222,31 @@ describe("CLE-11 reverseToolCall outbound_send arm (scope c)", () => {
     expect(res.error).toContain("already sent");
     expect(res.error).toContain("2026-06-18T10:00:00.000Z");
     expect(updates.some((u) => u.set.status === "reverted")).toBe(false);
+  });
+});
+
+describe("CLE-11 reverseToolCall create/sequence_step arm — tenant confinement (review H1)", () => {
+  const forged = (id: string) => [{
+    id: "evt-1", tenantId: "t1", userId: "u1", revertedAt: null,
+    toolName: "invokePageAction:sequences.addStep",
+    snapshot: { type: "create", entity: "sequence_step", id },
+  }];
+
+  it("does NOT delete a sequence_step whose parent sequence is not the tenant's (forged id)", async () => {
+    selectRows = forged("foreign-step");
+    stepOwnedRows = []; // parent sequence NOT owned by t1 → confinement check fails
+    const res = await reverseToolCall("t1", "u1", "evt-1");
+    expect(res.ok).toBe(true); // the attacker only reverts their own bogus event
+    // CRITICAL: no DELETE was issued against the foreign step.
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("deletes a sequence_step the tenant DOES own (legit create-undo still works)", async () => {
+    selectRows = forged("my-step");
+    stepOwnedRows = [{ id: "my-step" }]; // parent sequence owned by t1
+    const res = await reverseToolCall("t1", "u1", "evt-1");
+    expect(res.ok).toBe(true);
+    expect(deletes).toHaveLength(1);
   });
 });
 

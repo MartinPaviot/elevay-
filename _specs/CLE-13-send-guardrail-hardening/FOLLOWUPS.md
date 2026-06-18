@@ -25,7 +25,8 @@ approve button — tighten-safe, but a UX dead-end).
   select) before any write;
 - idempotently inserts `sequenceEnrollments` (status `active`, step 1, `nextStepAt`
   now), skipping any contact already enrolled in that sequence;
-- returns a human summary (`Enrolled N contacts in <name> (M already enrolled)`).
+- returns a human summary (`Enrolled N contact(s) in <name> (M skipped)`, where M
+  folds in already-enrolled + tenant/deletedAt re-validation failures).
 
 The dispatcher (`agent-action-dispatcher.ts:78`) already passes `row.actionType` +
 `row.payload` through, so the approve path is live end-to-end. The first-step sends
