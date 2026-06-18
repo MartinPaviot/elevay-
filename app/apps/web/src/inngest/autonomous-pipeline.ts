@@ -31,6 +31,7 @@ import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { ageInStage } from "@/lib/deals/deal-helpers";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
+import { buildEffectiveThresholdMap } from "@/lib/guardrails/level-behavior";
 
 function getLLMModel() {
   if (process.env.ANTHROPIC_API_KEY) return anthropic("claude-sonnet-4-6");
@@ -106,10 +107,19 @@ export const autoPipelineStep = inngest.createFunction(
           .where(eq(autonomyConfig.tenantId, tenantId))
           .limit(1);
         const trust = await getTrustScore(tenantId);
-        const { mode: approvalMode } = resolveEffectiveMode({
+        const { mode: approvalMode, relaxThresholds } = resolveEffectiveMode({
           settings: settings ?? { agentApprovalMode: "review-each" },
           level: autoRow?.level as import("@/lib/campaign-engine/types").AutonomyLevel | undefined,
           trustOverall: trust.overall,
+        });
+
+        // CLE-16 §9 — fold level/trust/relaxation + learned thresholds into the
+        // ONE map decideAction reads (extra.learnedThresholds). The builder
+        // ceiling-forces excluded outbound/paid classes, so even here in the
+        // background an outbound bar can never be lowered. Signature unchanged.
+        const learnedThresholds = buildEffectiveThresholdMap({
+          learned: settings?.learnedThresholds,
+          relaxThresholds,
         });
 
         const model = getLLMModel();
@@ -260,6 +270,7 @@ ${daysSinceActivity < 2 ? "Recent activity detected — likely HOLD unless there
             mode: approvalMode,
             action: guarded,
             confidence: d.confidence,
+            learnedThresholds,
           }).allowed;
 
           if (d.action === "HOLD") {

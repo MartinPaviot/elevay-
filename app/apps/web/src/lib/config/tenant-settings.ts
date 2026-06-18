@@ -266,9 +266,28 @@ export interface TenantSettings {
    *  Instantly via `external-connected`. */
   instantlyCredentialsEncrypted?: string;
 
+  /**
+   * F005 / CLE-16 — learned per-action confidence thresholds, keyed by
+   * `GuardedAction`. Produced by `recalculateThresholds`
+   * (lib/guardrails/learned-trust.ts) from F003 `action_outcomes` + the CLE-11
+   * reversal/bounce signal, bounded to [0.5, 1.0]. Read back via
+   * `computeEffectiveThresholds`/`getEffectiveThreshold` and folded into the
+   * `decideAction` `extra.learnedThresholds` map by the background callers
+   * (always through `buildEffectiveThresholdMap`, which ceiling-forces the
+   * hard-excluded outbound/paid/destructive classes — they NEVER carry a learned
+   * key, design §3.3). jsonb-backed config; no DB migration. Never lowers a bar
+   * for an action the core refuses to auto-execute. */
+  learnedThresholds?: Record<string, number>;
+  /** ISO timestamp of the last `recalculateThresholds` write. Observability
+   *  marker for the weekly trust recalc; paired with `learnedThresholds`. */
+  trustStatsUpdatedAt?: string;
+
   /** Progressive-autonomy trust score, 0.0 - 1.0. Drives nudge thresholds.
    *  See lib/guardrails/trust-score.ts. Never write directly — use the
-   *  helpers so the audit trail in `trust_events` stays in sync. */
+   *  helpers so the audit trail in `trust_events` stays in sync.
+   *  NOTE (CLE-16 §4.4): this 0–1 "nudge" score is DISTINCT from the 0–100
+   *  `systemTrustScore.overall` gate score used by the autonomy level gate +
+   *  strategic relaxation. Do not conflate them. */
   trustScore?: number;
   /** ISO timestamp of the last positive trust event (approved_no_edit or
    *  approved_with_edit). Used by applyTrustDecay() to reduce stale scores

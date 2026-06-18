@@ -123,6 +123,8 @@ export function decideAction(input: {
 ```
 Consommée **identiquement** par : (a) les outils chat create/update (CLE-00/CLE-10), (b) `invokePageAction` (CLE-04), (c) les boucles background (CLE-10/CLE-16). C'est la seule autorité.
 
+> **Note CLE-16 (clarification additive, pas une redéfinition) :** `extra.learnedThresholds` est la carte de seuils **déjà résolue** — les appelants (boucles background) y replient niveau/trust/relaxation via `resolveEffectiveMode` + `buildEffectiveThresholdMap` AVANT d'appeler `decideAction`. Le cœur ne voit qu'un `Record<string, number>` (son type existant) : aucun drapeau `relaxThresholds` n'entre dans le cœur. Le builder force au plafond (1.0) les classes outbound/paid/destructive (`HARD_EXCLUDED_ACTIONS`), donc aucun seuil appris/relâché/forgé ne peut faire auto-exécuter ces classes. La signature §3.5bis reste figée.
+
 ### 3.6 Heuristique de routage à deux niveaux (addendum de system-prompt — CLE-04)
 - L'utilisateur est **sur** la surface concernée ET l'action est le flow natif de cette page → **action de page** (`invokePageAction`).
 - Opération de **masse / multi-entité / hors-page / background** → **outil headless**.
