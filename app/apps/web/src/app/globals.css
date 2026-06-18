@@ -674,3 +674,21 @@
 :focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ================================================================
+   REDUCED MOTION (a11y)
+   Honour the OS "reduce motion" preference. Neutralizes continuous and
+   entrance CSS animations (skeleton shimmer, gradient-text, spinners,
+   toasts, modals, slide-overs) and long transitions. Framer-motion
+   components in (marketing) are gated separately via useReducedMotion().
+   ================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
