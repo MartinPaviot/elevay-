@@ -14,6 +14,7 @@ import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { CopyButton } from "@/components/chat/copy-button";
 import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
+import { useActionConfirmCards, ActionConfirmCards } from "@/components/chat/chat-action-cards";
 import type { UiDirective } from "@/lib/chat/ui-directives";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -66,6 +67,7 @@ export default function ChatPage() {
   // Command layer: execute UI directives carried on tool results (open a
   // record/view, or the composer) exactly once per turn. Replayed thread
   // history has no tool parts, so loading an old chat never auto-navigates.
+  const actionConfirm = useActionConfirmCards(chat);
   const onDirective = useCallback(
     (d: UiDirective) =>
       runUiDirective(d, {
@@ -74,8 +76,9 @@ export default function ChatPage() {
         // The /chat page sends no manifest, so it dispatches no page actions in
         // practice; wiring this keeps the shared executor's ctx uniform.
         sendActionResult: (text) => chat.sendMessage({ text }),
+        enqueueConfirm: (cd) => actionConfirm.enqueueConfirm(cd),
       }),
-    [router, chat],
+    [router, chat, actionConfirm],
   );
   useUiDirectives(chat, onDirective);
   const [firstName, setFirstName] = useState<string>("");
@@ -852,6 +855,9 @@ export default function ChatPage() {
               assistantText.trim() === "";
             return thinking ? <StreamingSkeleton /> : null;
           })()}
+
+          {/* CLE-05: pending page-action confirm cards (one per invocationId). */}
+          <ActionConfirmCards controller={actionConfirm} />
 
           <div ref={messagesEndRef} />
         </div>

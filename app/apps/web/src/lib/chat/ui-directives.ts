@@ -43,6 +43,13 @@ export type UiDirective =
       requireConfirm: boolean; // computed server-side via decideAction (CLE-04/CLE-10)
     };
 
+/**
+ * The `invokeAction` arm of {@link UiDirective}, named for precise typing in the
+ * CLE-05 confirm controller + card. Derived from the union, not a new contract
+ * (README §3.1 untouched).
+ */
+export type InvokeActionDirective = Extract<UiDirective, { kind: "invokeAction" }>;
+
 /* ------------------------------------------------------------------ */
 /*  Server-side builders — spread into a tool result                   */
 /* ------------------------------------------------------------------ */

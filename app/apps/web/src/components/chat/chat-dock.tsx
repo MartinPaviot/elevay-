@@ -11,7 +11,12 @@ import {
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ElevayMark } from "@/components/ui/elevay-mark";
 import { ToolCallGroup, parseUiToolParts } from "@/components/tool-call-panel";
-import { useChatActionCards, MessageActionCards } from "@/components/chat/chat-action-cards";
+import {
+  useChatActionCards,
+  MessageActionCards,
+  useActionConfirmCards,
+  ActionConfirmCards,
+} from "@/components/chat/chat-action-cards";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { CopyButton } from "@/components/chat/copy-button";
@@ -133,18 +138,20 @@ export function ChatDock() {
   );
   const chat = useChat({ transport });
   const actionCards = useChatActionCards(chat);
+  const actionConfirm = useActionConfirmCards(chat);
 
   // Command layer: when a tool result carries a UI directive (open a record /
-  // view, or the composer), execute it once. Navigation keeps the dock mounted
-  // (it lives in the dashboard layout), so the conversation persists.
+  // view, the composer, or a page action), execute it once. Navigation keeps the
+  // dock mounted (it lives in the dashboard layout), so the conversation persists.
   const onDirective = useCallback(
     (d: UiDirective) =>
       runUiDirective(d, {
         navigate: (p) => router.push(p),
         openComposer: (draft) => setEmailComposer(draft),
         sendActionResult: (text) => chat.sendMessage({ text }),
+        enqueueConfirm: (cd) => actionConfirm.enqueueConfirm(cd),
       }),
-    [router, chat],
+    [router, chat, actionConfirm],
   );
   useUiDirectives(chat, onDirective);
 
@@ -520,6 +527,8 @@ export function ChatDock() {
               })()}
             </>
           )}
+          {/* CLE-05: pending page-action confirm cards (one per invocationId). */}
+          <ActionConfirmCards controller={actionConfirm} />
           <div ref={messagesEndRef} />
         </div>
 

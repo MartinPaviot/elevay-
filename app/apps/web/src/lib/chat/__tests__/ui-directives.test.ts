@@ -5,6 +5,7 @@ import {
   composeEmailDirective,
   invokeActionDirective,
   UI_DIRECTIVE_KEY,
+  type InvokeActionDirective,
 } from "../ui-directives";
 
 /**
@@ -152,5 +153,21 @@ describe("invokeActionDirective ↔ parseUiDirective (CLE-03)", () => {
     expect(
       parseUiDirective({ [UI_DIRECTIVE_KEY]: { kind: "invokeAction", invocationId: "i", actionId: "a.b", params: {}, requireConfirm: "yes" } }),
     ).toBeNull();
+  });
+});
+
+describe("InvokeActionDirective alias (CLE-05 Task 0)", () => {
+  it("is the invokeAction arm with the four fields and a boolean requireConfirm", () => {
+    // Compiles only if the alias resolves to the invokeAction arm of the union.
+    const d = {
+      kind: "invokeAction",
+      invocationId: "i",
+      actionId: "a.b",
+      params: { x: 1 },
+      requireConfirm: true,
+    } satisfies InvokeActionDirective;
+    const rc: boolean = d.requireConfirm;
+    expect(rc).toBe(true);
+    expect(d.kind).toBe("invokeAction");
   });
 });

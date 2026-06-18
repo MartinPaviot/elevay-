@@ -6,6 +6,7 @@ import {
   parseUiDirective,
   type UiDirective,
   type ComposeEmailDraft,
+  type InvokeActionDirective,
 } from "@/lib/chat/ui-directives";
 import { runRegisteredAction } from "@/lib/chat/page-actions/registry";
 import type { PageActionResult } from "@/lib/chat/page-actions/types";
@@ -55,19 +56,26 @@ export function runUiDirective(
     openComposer: (draft: ComposeEmailDraft) => void;
     /** Re-inject the tagged result envelope as a user turn (chat.sendMessage). */
     sendActionResult: (text: string) => void;
+    /** CLE-05: hand a confirm-needed directive to the card controller (no run). */
+    enqueueConfirm: (d: InvokeActionDirective) => void;
   },
 ): void {
   if (d.kind === "navigate") ctx.navigate(d.path);
   else if (d.kind === "composeEmail") ctx.openComposer(d.draft);
   else if (d.kind === "invokeAction") {
-    // CLE-03: run the registered action on the live page, then round-trip the
-    // result envelope so the model can chain. CLE-05 will branch on
-    // d.requireConfirm to render a confirm card first; the CLE-03 smoke action
-    // is confirm:"never", so we run directly. Fire-and-forget: the dock owns the
-    // promise, so a page unmount mid-run does not cancel it.
-    void runRegisteredAction(d.actionId, d.params).then((result) => {
-      ctx.sendActionResult(encodeActionResult(d.invocationId, result));
-    });
+    if (d.requireConfirm) {
+      // CLE-05 (AC-1): do NOT run. Hand to the controller, which renders an
+      // editable confirm card; the action runs only on the user's Approve.
+      ctx.enqueueConfirm(d);
+    } else {
+      // CLE-03 path (AC-4): requireConfirm=false (read-only, or decideAction
+      // returned execute) → run immediately and round-trip the result envelope.
+      // Fire-and-forget: the dock owns the promise, so a page unmount mid-run
+      // does not cancel it.
+      void runRegisteredAction(d.actionId, d.params).then((result) => {
+        ctx.sendActionResult(encodeActionResult(d.invocationId, result));
+      });
+    }
   }
 }
 
