@@ -27,6 +27,8 @@ import { CommandPalette, type PaletteCommand } from "./_command-palette";
 import { MailboxRail } from "./_mailbox-rail";
 import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
+import { registerShortcut } from "@/lib/hotkey-registry";
+import { INBOX_SHORTCUTS } from "@/lib/inbox/inbox-shortcuts";
 import {
   EMPTY_SELECTION,
   toggle as selToggle,
@@ -422,6 +424,14 @@ export default function InboxPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Surface the inbox shortcuts in the global `?` cheatsheet (INBOX-K02).
+  // Display-only — the handlers are the keydown listeners above; this just
+  // lists them under an "Inbox" group while the page is mounted.
+  useEffect(() => {
+    const unregs = INBOX_SHORTCUTS.map(registerShortcut);
+    return () => unregs.forEach((u) => u());
   }, []);
 
   // Palette commands: jump to a lane, act on the current conversation, or open
