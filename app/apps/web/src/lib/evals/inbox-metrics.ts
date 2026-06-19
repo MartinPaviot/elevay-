@@ -53,3 +53,32 @@ export function replyWorthyPR(cases: ReplyWorthyEvalCase[]): PrecisionRecall {
   const recall = tp + fn === 0 ? 1 : tp / (tp + fn);
   return { precision, recall, tp, fp, fn, tn, support: cases.length };
 }
+
+/** One scored multi-class case: a predicted label vs the hand label (B3 splits). */
+export interface LabelEvalCase {
+  predicted: string;
+  expected: string;
+}
+
+/**
+ * One-vs-rest precision/recall for a single `target` label (positive class =
+ * predicted === target). Generalizes replyWorthyPR to the multi-class split
+ * taxonomy; same confusion-matrix + vacuous-1 semantics.
+ */
+export function splitPR(cases: LabelEvalCase[], target: string): PrecisionRecall {
+  let tp = 0;
+  let fp = 0;
+  let fn = 0;
+  let tn = 0;
+  for (const c of cases) {
+    const pPos = c.predicted === target;
+    const ePos = c.expected === target;
+    if (pPos && ePos) tp++;
+    else if (pPos && !ePos) fp++;
+    else if (!pPos && ePos) fn++;
+    else tn++;
+  }
+  const precision = tp + fp === 0 ? 1 : tp / (tp + fp);
+  const recall = tp + fn === 0 ? 1 : tp / (tp + fn);
+  return { precision, recall, tp, fp, fn, tn, support: cases.length };
+}
