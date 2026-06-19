@@ -26,6 +26,21 @@ export interface ComposeReplyOpts {
   instructions?: string;
   /** One-line CRM/prospect context (INBOX-G01 cluster), grounded. */
   context?: string;
+  /**
+   * "reply" (default) answers their latest message; "nudge" (B7) writes a gentle
+   * follow-up because OUR last message went unanswered. Only the task sentence
+   * changes — the grounding, no-fabrication, and never-already-sent constraints
+   * are shared so a nudge can never invent facts or auto-send.
+   */
+  mode?: "reply" | "nudge";
+}
+
+/** The task sentence per mode — the only part of the prompt that varies. */
+function taskSentence(mode: "reply" | "nudge"): string {
+  if (mode === "nudge") {
+    return `Write a brief, friendly follow-up nudge from the salesperson ("You") because OUR last message in this thread went unanswered. Gently re-surface our open question or proposed next step and reference what we already said. Stay warm and low-pressure — never pushy, never guilt-trip, add no new facts, commitments, deadlines, or urgency, and never imply the email has already been sent. Keep it short and natural.`;
+  }
+  return `Write a complete reply to the LATEST message in this email thread, as the salesperson ("You"). Answer their actual question, move the deal forward with one clear next step, ground every claim in the thread, invent no facts or commitments, and never imply the email has already been sent. Keep it concise and natural.`;
 }
 
 export function buildReplyPrompt(messages: ThreadMessage[], opts: ComposeReplyOpts = {}): string {
@@ -40,7 +55,7 @@ export function buildReplyPrompt(messages: ThreadMessage[], opts: ComposeReplyOp
     .join("\n---\n");
   const preamble = opts.instructions ? `${opts.instructions}\n\n` : "";
   const ctx = opts.context ? `\nWhat you know about them: ${opts.context}\n` : "";
-  return `${preamble}Write a complete reply to the LATEST message in this email thread, as the salesperson ("You"). Answer their actual question, move the deal forward with one clear next step, ground every claim in the thread, invent no facts or commitments, and never imply the email has already been sent. Keep it concise and natural.${ctx}
+  return `${preamble}${taskSentence(opts.mode ?? "reply")}${ctx}
 Return a subject (keep the thread's "Re:" subject unless a new one is clearly better) and the body.
 
 Thread:

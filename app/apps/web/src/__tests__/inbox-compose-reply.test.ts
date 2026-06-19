@@ -35,3 +35,37 @@ describe("compose-reply (INBOX-C01/G08)", () => {
     expect(await composeReply(msgs, {}, boom)).toEqual({ subject: "", text: "" });
   });
 });
+
+describe("compose-reply nudge mode (B7 B3.1)", () => {
+  it("nudge mode swaps to the gentle follow-up task with never-pushy / no-new-facts constraints", () => {
+    const p = buildReplyPrompt(msgs, { mode: "nudge" });
+    expect(p).toContain("follow-up nudge");
+    expect(p).toContain("went unanswered");
+    expect(p).toContain("never pushy");
+    expect(p).toContain("no new facts");
+    expect(p).toContain("never imply the email has already been sent"); // shared safety
+    // It must NOT carry the reply task wording.
+    expect(p).not.toContain("Answer their actual question");
+    expect(p).not.toContain("Write a complete reply");
+  });
+
+  it("default mode is unchanged (reply task), a regression guard", () => {
+    const dflt = buildReplyPrompt(msgs);
+    const reply = buildReplyPrompt(msgs, { mode: "reply" });
+    expect(dflt).toBe(reply);
+    expect(dflt).toContain("Write a complete reply");
+    expect(dflt).toContain("Answer their actual question");
+    expect(dflt).not.toContain("follow-up nudge");
+  });
+
+  it("composeReply threads the nudge prompt to the generator and still trims/fails-closed", async () => {
+    let seen = "";
+    const gen = async (prompt: string): Promise<ReplyDraft> => {
+      seen = prompt;
+      return { subject: "  Re: Intro  ", text: "  Just floating this back up — still keen?  " };
+    };
+    const d = await composeReply(msgs, { mode: "nudge" }, gen);
+    expect(seen).toContain("follow-up nudge");
+    expect(d).toEqual({ subject: "Re: Intro", text: "Just floating this back up — still keen?" });
+  });
+});

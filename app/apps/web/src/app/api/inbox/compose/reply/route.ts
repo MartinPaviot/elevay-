@@ -60,8 +60,11 @@ export async function POST(req: Request) {
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   let key: string;
+  let mode: "reply" | "nudge" = "reply";
   try {
-    key = String(((await req.json()) as { key?: unknown }).key || "").trim();
+    const body = (await req.json()) as { key?: unknown; mode?: unknown };
+    key = String(body.key || "").trim();
+    if (body.mode === "nudge") mode = "nudge"; // B7: gentle follow-up; same fail-closed path
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -101,7 +104,7 @@ export async function POST(req: Request) {
       : "";
     const instructions = [stylePrompt, voice, memory, mailboxVoice].filter(Boolean).join("\n\n");
 
-    const result: ReplyDraft = await composeReply(messages, { instructions });
+    const result: ReplyDraft = await composeReply(messages, { instructions, mode });
     return Response.json(result);
   } catch (error) {
     console.error("Failed to compose reply:", error);
