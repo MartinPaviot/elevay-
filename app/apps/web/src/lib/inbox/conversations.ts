@@ -17,6 +17,8 @@ import type { SenderAuthStatus } from "@/lib/inbox/sender-auth";
 import { normalizeAttachments, type AttachmentMeta } from "@/lib/inbox/attachment-meta";
 import { checkSla } from "@/lib/inbox/sla";
 import { scoreImportance } from "@/lib/inbox/importance";
+import { resolveGeneralIntent } from "@/lib/inbox/general-intent";
+import { isReplyWorthy } from "@/lib/inbox/reply-worthy";
 
 /** Hours awaiting our reply before a conversation is flagged overdue (INBOX-N04). */
 const SLA_THRESHOLD_HOURS = 24;
@@ -109,6 +111,10 @@ export interface Conversation {
   importanceFactors: string[];
   /** Last inbound is automated/bulk — drives newsletter/promo bundling (INBOX-T03). */
   isBulk: boolean;
+  /** Inbound is worth offering an AI reply draft for (B1 selectivity); gates the
+   *  Generate-draft affordance + auto-draft so the AI never drafts on machine/
+   *  no-reply/bulk mail. Recall-biased: ambiguous human mail stays worthy. */
+  replyWorthy: boolean;
   /** What the pipeline did, for the handled lane. Null elsewhere. */
   handledNote: string | null;
   lastInboundAt: string | null;
@@ -435,6 +441,19 @@ export function buildConversations(input: {
       ageHours: lastInAtMs != null ? Math.max(0, (nowMs - lastInAtMs) / 3_600_000) : undefined,
     });
 
+    // B1 selectivity: compute once from the signals this row already carries —
+    // the model intent the sync pipeline persisted (lastInbound.intent), the
+    // machine-sent gate (inboundIsAutomated) and outbound presence. Pure resolver.
+    const replyWorthy = isReplyWorthy({
+      isMachineSent: inboundIsAutomated,
+      generalIntent: resolveGeneralIntent({
+        modelIntent: lastInbound?.intent?.[0] ?? undefined,
+        isMachineSent: inboundIsAutomated,
+        hasOutbound: g.outbound.length > 0,
+      }).generalIntent,
+      isBulk: inboundIsAutomated,
+    }).replyWorthy;
+
     conversations.push({
       key,
       lane,
@@ -458,6 +477,7 @@ export function buildConversations(input: {
       importanceTier: importance.tier,
       importanceFactors: importance.factors.map((f) => f.label),
       isBulk: inboundIsAutomated,
+      replyWorthy,
       handledNote,
       lastInboundAt: lastInbound ? toIso(lastInbound.occurredAt) : null,
       lastMessageAt: lastMessage?.at ?? null,
