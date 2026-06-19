@@ -56,35 +56,14 @@ import { parseWhen } from "@/lib/inbox/parse-when";
 import { dirOf } from "@/lib/inbox/text-direction";
 import { decodeDisplay } from "@/lib/inbox/text-decode";
 import { type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
+import { tomorrowMorning, inThreeDays, nextMonday } from "@/lib/inbox/snooze-presets";
 
+// The presets live in lib/inbox/snooze-presets (pure, unit-tested) so the popover
+// and the `s` keyboard shortcut resolve to the SAME instant (B6.4).
 const SNOOZE_OPTIONS: Array<{ label: string; until: () => Date }> = [
-  {
-    label: "Tomorrow morning",
-    until: () => {
-      const d = new Date();
-      d.setDate(d.getDate() + 1);
-      d.setHours(9, 0, 0, 0);
-      return d;
-    },
-  },
-  {
-    label: "In 3 days",
-    until: () => {
-      const d = new Date();
-      d.setDate(d.getDate() + 3);
-      d.setHours(9, 0, 0, 0);
-      return d;
-    },
-  },
-  {
-    label: "Next Monday",
-    until: () => {
-      const d = new Date();
-      d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
-      d.setHours(9, 0, 0, 0);
-      return d;
-    },
-  },
+  { label: "Tomorrow morning", until: tomorrowMorning },
+  { label: "In 3 days", until: inThreeDays },
+  { label: "Next Monday", until: nextMonday },
 ];
 
 /**
