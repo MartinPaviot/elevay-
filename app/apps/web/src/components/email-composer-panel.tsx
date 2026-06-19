@@ -218,6 +218,8 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
 
   // Refs
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // B1: the always-visible "edit with AI" instruction field (Cmd/Ctrl+J target).
+  const aiInstructionRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -238,6 +240,25 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  // B1 Cmd/Ctrl+J inside the composer = edit-with-AI (R2.1). With an instruction
+  // typed (and a body to act on), submit it through the EXISTING handleRewrite;
+  // otherwise focus the always-visible AI-instructions field so the user can type.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
+        e.preventDefault();
+        if (rewriteInstruction.trim() && editBody.trim() && !rewriting) {
+          void handleRewrite(rewriteInstruction);
+        } else {
+          aiInstructionRef.current?.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rewriteInstruction, editBody, rewriting]);
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -660,6 +681,33 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
               >
                 <Undo2 size={12} /> Undo
               </Button>
+            )}
+          </div>
+          {/* B1 edit-with-AI (Upstream canonical position): an always-visible
+              instruction field directly above the body. Submits to the SAME
+              handleRewrite (no new endpoint); Cmd/Ctrl+J focuses or submits it. */}
+          <div
+            className="mb-2 flex items-center gap-1.5 rounded-lg border px-2 py-1"
+            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
+          >
+            <Sparkles size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} aria-hidden />
+            <input
+              ref={aiInstructionRef}
+              value={rewriteInstruction}
+              onChange={(e) => setRewriteInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && rewriteInstruction.trim() && editBody.trim() && !rewriting) {
+                  e.preventDefault();
+                  void handleRewrite(rewriteInstruction);
+                }
+              }}
+              disabled={rewriting || !editBody.trim()}
+              placeholder="Hit Cmd/Ctrl+J to edit with AI"
+              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none disabled:opacity-60"
+              style={{ color: "var(--color-text-primary)" }}
+            />
+            {rewriting && (
+              <RefreshCw size={12} className="shrink-0 animate-spin" style={{ color: "var(--color-text-tertiary)" }} aria-hidden />
             )}
           </div>
           <textarea
