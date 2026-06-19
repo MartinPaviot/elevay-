@@ -10,6 +10,7 @@ import { parseRecipients } from "@/lib/inbox/template-vars";
 import { REWRITE_PRESETS } from "@/lib/inbox/rewrite-presets";
 import { TRANSLATE_LANGUAGES } from "@/lib/inbox/translate-languages";
 import { pickDefaultFrom, mailboxDisplay, type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
+import { applySignature } from "@/lib/inbox/mailbox-signature";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -250,6 +251,15 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  // A3: apply the From mailbox's signature on open + on From change. Idempotent
+  // (strip the prior "-- " block, append the new one once) so it is never
+  // duplicated and swaps cleanly when the From box changes.
+  useEffect(() => {
+    const sig = mailboxes.find((m) => m.id === fromMailboxId)?.signature;
+    setEditBody((b) => applySignature(b, sig));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromMailboxId, mailboxes]);
 
   // B1 Cmd/Ctrl+J inside the composer = edit-with-AI (R2.1). With an instruction
   // typed (and a body to act on), submit it through the EXISTING handleRewrite;

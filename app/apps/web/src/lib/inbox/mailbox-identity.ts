@@ -15,6 +15,10 @@ import { userPreferences } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { isAutoSendInstruction } from "@/lib/inbox/ai-memory";
 
+// Pure signature helpers live in a DB-free module so the client composer can
+// import them too; re-exported here for callers of the identity module.
+export { applySignature, stripSignature } from "@/lib/inbox/mailbox-signature";
+
 export interface MailboxIdentity {
   displayName?: string;
   signature?: string;
@@ -39,19 +43,6 @@ export function clampMailboxIdentity(input: Partial<MailboxIdentity> | null | un
   if (signature) out.signature = signature;
   if (voice) out.voice = voice;
   return Object.keys(out).length === 0 ? null : out;
-}
-
-/** Remove a trailing "-- " signature block (idempotent). */
-export function stripSignature(body: string): string {
-  return (body ?? "").replace(/\n+-- \n[\s\S]*$/, "").replace(/\s+$/, "");
-}
-
-/** Strip any existing signature block, then append the given one once (swap-safe). */
-export function applySignature(body: string, signature: string | undefined): string {
-  const stripped = stripSignature(body ?? "");
-  const sig = (signature ?? "").trim();
-  if (!sig) return stripped;
-  return `${stripped}\n\n-- \n${sig}`;
 }
 
 /** Drop any auto-send/skip-approval line so the override can't reopen never-auto-send. */

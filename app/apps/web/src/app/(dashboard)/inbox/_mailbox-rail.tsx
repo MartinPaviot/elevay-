@@ -9,6 +9,7 @@
 
 import { Inbox, Mail } from "lucide-react";
 import type { MailboxSummary } from "./_types";
+import { colorForMailbox } from "@/lib/inbox/mailbox-color";
 
 export function MailboxRail({
   mailboxes,
@@ -46,7 +47,16 @@ export function MailboxRail({
       {mailboxes.map((m) => (
         <RailRow
           key={m.id}
-          icon={<Mail size={14} />}
+          icon={
+            <span className="relative inline-flex items-center">
+              <Mail size={14} />
+              <span
+                aria-hidden
+                className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full"
+                style={{ background: colorForMailbox(m.id), boxShadow: "0 0 0 1.5px var(--color-bg-card)" }}
+              />
+            </span>
+          }
           label={m.label}
           sub={m.address}
           count={m.attention}

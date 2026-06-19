@@ -188,16 +188,32 @@ export function ConversationPane({
 
   // Load the user's SENDABLE mailboxes once (A2) — own + active only, for the
   // composer From selector. Created_at-ordered so [0] is the primary default.
+  // A3: overlay the per-mailbox identity (display-name → label, signature) so the
+  // From option shows the override and the composer can inject the signature.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/settings/mailboxes")
-      .then((r) => (r.ok ? r.json() : { mailboxes: [] }))
-      .then((d: { mailboxes?: Array<{ id: string; emailAddress: string; displayName: string | null; status: string }> }) => {
-        if (cancelled || !Array.isArray(d.mailboxes)) return;
+    Promise.all([
+      fetch("/api/settings/mailboxes").then((r) => (r.ok ? r.json() : { mailboxes: [] })),
+      fetch("/api/inbox/mailbox-identity").then((r) => (r.ok ? r.json() : { identities: {} })),
+    ])
+      .then(([boxes, ident]: [
+        { mailboxes?: Array<{ id: string; emailAddress: string; displayName: string | null; status: string }> },
+        { identities?: Record<string, { displayName?: string; signature?: string }> },
+      ]) => {
+        if (cancelled || !Array.isArray(boxes.mailboxes)) return;
+        const identities = ident?.identities ?? {};
         setSendableMailboxes(
-          d.mailboxes
+          boxes.mailboxes
             .filter((m) => m.status === "active")
-            .map((m) => ({ id: m.id, address: m.emailAddress, label: m.displayName || m.emailAddress })),
+            .map((m) => {
+              const id = identities[m.id];
+              return {
+                id: m.id,
+                address: m.emailAddress,
+                label: id?.displayName?.trim() || m.displayName || m.emailAddress,
+                signature: id?.signature,
+              };
+            }),
         );
       })
       .catch(() => {});

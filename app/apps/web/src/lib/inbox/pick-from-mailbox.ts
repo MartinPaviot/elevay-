@@ -12,6 +12,8 @@ export interface SendableMailbox {
   id: string;
   address: string;
   label: string;
+  /** A3: the per-mailbox signature to inject when composing from this box. */
+  signature?: string;
 }
 
 export function pickDefaultFrom(
