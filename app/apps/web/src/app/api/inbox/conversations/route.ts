@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { outboundEmails } from "@/db/schema";
 import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
-import { BUILT_IN_SPLITS } from "@/lib/inbox/splits";
+import { BUILT_IN_SPLITS, resolveCustomSplit } from "@/lib/inbox/splits";
+import { getUserSplits } from "@/lib/inbox/split-store";
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { attributeMailbox, indexMailboxes } from "@/lib/inbox/mailbox-attribution";
@@ -39,6 +40,8 @@ export async function GET(req: Request) {
     // scoped set) instead of a built-in lane; never widens visibility.
     const userLanes = await getUserLanes(authCtx.userId);
     const userFilters = await getUserFilters(authCtx.userId);
+    const userSplits = await getUserSplits(authCtx.userId);
+    const BUILT_IN_SPLIT_IDS = new Set<string>(BUILT_IN_SPLITS.map((b) => b.id));
     const lastSeen = await getLastSeen(authCtx.userId);
     const customLane = userLanes.find((l) => l.id === laneParam) ?? null;
     const toLaneCandidate = (row: {
@@ -131,7 +134,12 @@ export async function GET(req: Request) {
       : customLane
         ? visible.filter((row) => laneMatches(toLaneCandidate(row), customLane))
         : splitParam
-          ? visible.filter(({ c }) => c.lane === "attention" && c.split === splitParam)
+          ? visible.filter(({ c }) =>
+              c.lane === "attention" &&
+              (BUILT_IN_SPLIT_IDS.has(splitParam)
+                ? c.split === splitParam
+                : resolveCustomSplit(c.fromAddress, userSplits)?.id === splitParam),
+            )
           : visible.filter(({ c }) => c.lane === lane);
     const pageRows = inLane.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -146,12 +154,24 @@ export async function GET(req: Request) {
       .filter((l) => !l.hideWhenEmpty || l.count > 0);
 
     // B3: built-in intention-split counts over the attention lane (each
-    // conversation resolves to exactly one, so these sum to the attention total).
-    const splits = BUILT_IN_SPLITS.map((b) => ({
+    // conversation resolves to exactly one, so these sum to the attention total),
+    // then the user's custom per-sender splits (honouring hideWhenEmpty).
+    const attentionRows = visible.filter(({ c }) => c.lane === "attention");
+    const builtInSplitCounts = BUILT_IN_SPLITS.map((b) => ({
       id: b.id,
       name: b.name,
-      count: visible.filter(({ c }) => c.lane === "attention" && c.split === b.id).length,
+      count: attentionRows.filter(({ c }) => c.split === b.id).length,
     }));
+    const customSplitCounts = userSplits
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        hideWhenEmpty: s.hideWhenEmpty ?? false,
+        count: attentionRows.filter(({ c }) => resolveCustomSplit(c.fromAddress, userSplits)?.id === s.id).length,
+      }))
+      .filter((s) => !s.hideWhenEmpty || s.count > 0)
+      .map(({ id, name, count }) => ({ id, name, count }));
+    const splits = [...builtInSplitCounts, ...customSplitCounts];
 
     // Newsletter/promo bundling (INBOX-T03): group the bulk, never-replied
     // senders into one collapsible source each so they can be cleared in a
