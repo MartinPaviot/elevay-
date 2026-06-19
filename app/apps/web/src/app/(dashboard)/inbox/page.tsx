@@ -23,12 +23,13 @@ import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types
 import { useRegisterPageActions } from "@/lib/chat/page-actions/registry";
 import { ConversationList } from "./_conversation-list";
 import { ConversationPane, type ConversationPaneApi } from "./_conversation-pane";
+import { SplitTabs } from "./_split-tabs";
 import { CaptureReviewDrawer } from "./_capture-review";
 import { OutboundTable, type OutboundTableApi } from "./_outbound-table";
 import { BundlesView } from "./_bundles-view";
 import { CommandPalette, type PaletteCommand } from "./_command-palette";
 import { MailboxRail } from "./_mailbox-rail";
-import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary } from "./_types";
+import type { BuiltInSplit, ConversationListItem, InboxLane, LaneCounts, MailboxSummary, SplitCount } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
 import { registerShortcut } from "@/lib/hotkey-registry";
 import { INBOX_SHORTCUTS } from "@/lib/inbox/inbox-shortcuts";
@@ -77,6 +78,9 @@ export default function InboxPage() {
   // fetch (?lane=<id>) instead of the built-in tab.
   const [customLaneId, setCustomLaneId] = useState<string | null>(null);
   const [customLanes, setCustomLanes] = useState<Array<{ id: string; name: string; hideWhenEmpty: boolean; count: number }>>([]);
+  // B3 intention splits — sub-segment the attention lane. activeSplit drives ?split=.
+  const [activeSplit, setActiveSplit] = useState<BuiltInSplit | null>(null);
+  const [splitCounts, setSplitCounts] = useState<SplitCount[]>([]);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
   // connect card before the first response.
@@ -137,7 +141,9 @@ export default function InboxPage() {
         if (pendingTriage.current) await pendingTriage.current.catch(() => {});
         const mailboxQuery = selectedMailbox ? `&mailbox=${encodeURIComponent(selectedMailbox)}` : "";
         const searchQuery = debouncedSearch ? `&q=${encodeURIComponent(debouncedSearch)}` : "";
-        const res = await fetch(`/api/inbox/conversations?lane=${lane}&page=${pageNum}${mailboxQuery}${searchQuery}`);
+        // B3: only sub-segment the attention lane (splits don't apply to a custom lane).
+        const splitQuery = activeSplit && lane === "attention" ? `&split=${activeSplit}` : "";
+        const res = await fetch(`/api/inbox/conversations?lane=${lane}&page=${pageNum}${mailboxQuery}${searchQuery}${splitQuery}`);
         if (!res.ok) throw new Error(`${res.status}`);
         const data = (await res.json()) as {
           conversations: ConversationListItem[];
@@ -147,6 +153,7 @@ export default function InboxPage() {
           mailboxes?: MailboxSummary[];
           selectedMailbox?: string | null;
           customLanes?: Array<{ id: string; name: string; hideWhenEmpty: boolean; count: number }>;
+          splits?: SplitCount[];
           bundles?: BundleSource[];
           catchUpCount?: number;
           lastSeen?: string | null;
@@ -154,6 +161,7 @@ export default function InboxPage() {
         setMailboxConnected(data.mailboxConnected !== false);
         if (data.mailboxes) setMailboxes(data.mailboxes);
         setCustomLanes(data.customLanes ?? []);
+        setSplitCounts(data.splits ?? []);
         setBundles(data.bundles ?? []);
         setCatchUpCount(data.catchUpCount ?? 0);
         // First visit (no marker yet): stamp it once so future visits compute
@@ -172,7 +180,7 @@ export default function InboxPage() {
         setLoadingMore(false);
       }
     },
-    [toast, selectedMailbox, debouncedSearch],
+    [toast, selectedMailbox, debouncedSearch, activeSplit],
   );
 
   // Debounce the search box so each keystroke doesn't refetch (INBOX-Q04).
@@ -769,6 +777,7 @@ export default function InboxPage() {
                 key={t}
                 onClick={() => {
                   setCustomLaneId(null);
+                  setActiveSplit(null);
                   setTab(t);
                 }}
                 className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
@@ -784,7 +793,10 @@ export default function InboxPage() {
           {customLanes.map((l) => (
             <button
               key={l.id}
-              onClick={() => setCustomLaneId(l.id)}
+              onClick={() => {
+                setActiveSplit(null);
+                setCustomLaneId(l.id);
+              }}
               className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
               style={{
                 background: customLaneId === l.id ? "var(--color-accent-soft)" : "transparent",
@@ -798,6 +810,7 @@ export default function InboxPage() {
             <button
               onClick={() => {
                 setCustomLaneId(null);
+                setActiveSplit(null);
                 setTab("bundles");
               }}
               className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
@@ -850,6 +863,11 @@ export default function InboxPage() {
         </div>
         </div>
       </FilterBar>
+
+      {/* B3: intention splits sub-segment the attention lane only. */}
+      {tab === "attention" && !customLaneId && splitCounts.length > 0 && (
+        <SplitTabs splits={splitCounts} active={activeSplit} onSelect={setActiveSplit} />
+      )}
 
       {!mailboxConnected ? (
         <div className="flex flex-1 items-center justify-center">

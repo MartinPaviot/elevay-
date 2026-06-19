@@ -117,6 +117,12 @@ export function reasonTooltip(
   }
 }
 
+export interface SplitCount {
+  id: string;
+  name: string;
+  count: number;
+}
+
 export interface LaneCounts {
   attention: number;
   snoozed: number;
