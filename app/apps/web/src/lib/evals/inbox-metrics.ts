@@ -97,6 +97,81 @@ export interface LabelEvalCase {
   expected: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  B5 ask-agent floor metrics (pure, no LLM)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Retrieval recall: the fraction of cases (with a gold-relevant thread) whose
+ * ALL relevant keys appear in the retrieved set. Negatives (no relevant key)
+ * are not counted. The load-bearing bar that the right thread is found at all.
+ */
+export function retrievalRecall(
+  cases: Array<{ relevantKeys: string[]; retrievedKeys: string[] }>,
+): { recall: number; evaluated: number; hits: number } {
+  let hits = 0;
+  let evaluated = 0;
+  for (const c of cases) {
+    if (c.relevantKeys.length === 0) continue;
+    evaluated++;
+    const got = new Set(c.retrievedKeys);
+    if (c.relevantKeys.every((k) => got.has(k))) hits++;
+  }
+  return { recall: evaluated === 0 ? 1 : hits / evaluated, evaluated, hits };
+}
+
+/**
+ * Abstention correctness: of the negative cases (answer not in the corpus), the
+ * fraction where the agent correctly returned answered=false. The cardinal bar
+ * is == 1.0 — a single hallucinated answer on a negative fails the suite.
+ */
+export function abstentionCorrectness(
+  cases: Array<{ expectedAnswered: boolean; predictedAnswered: boolean }>,
+): { correctness: number; negatives: number; misses: number } {
+  let negatives = 0;
+  let correct = 0;
+  for (const c of cases) {
+    if (c.expectedAnswered) continue;
+    negatives++;
+    if (c.predictedAnswered === false) correct++;
+  }
+  return { correctness: negatives === 0 ? 1 : correct / negatives, negatives, misses: negatives - correct };
+}
+
+/** True when every citation references a known key with an in-range message index. */
+export function citationInRange(
+  citations: Array<{ key: string; messageIdx?: number }>,
+  corpus: { keys: Set<string>; msgCount: Map<string, number> },
+): boolean {
+  for (const c of citations) {
+    if (!corpus.keys.has(c.key)) return false;
+    if (c.messageIdx != null) {
+      const n = corpus.msgCount.get(c.key) ?? 0;
+      if (!(Number.isInteger(c.messageIdx) && c.messageIdx >= 0 && c.messageIdx < n)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Grounded-answer rate (LLM tier): of the positive cases, the fraction whose
+ * answer contains every required fact AND whose citations are all in-range.
+ */
+export function groundedAnswerRate(
+  cases: Array<{ expectedAnswered: boolean; answer: string; requiredFacts: string[]; citationsValid: boolean }>,
+): { rate: number; positives: number } {
+  let positives = 0;
+  let grounded = 0;
+  for (const c of cases) {
+    if (!c.expectedAnswered) continue;
+    positives++;
+    const a = (c.answer || "").toLowerCase();
+    const hasFacts = c.requiredFacts.every((f) => a.includes(f.toLowerCase()));
+    if (hasFacts && c.citationsValid) grounded++;
+  }
+  return { rate: positives === 0 ? 1 : grounded / positives, positives };
+}
+
 /**
  * One-vs-rest precision/recall for a single `target` label (positive class =
  * predicted === target). Generalizes replyWorthyPR to the multi-class split
