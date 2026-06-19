@@ -482,7 +482,7 @@ export default function LandingPage() {
           a pre-revenue product can't show yet: the mission in the founder's
           own words, plus a real early-access commitment. No fabricated
           metrics or customers. TODO(martin): confirm this copy is true to you. */}
-      <Section className="pt-32">
+      <Section className="pt-32 pb-32">
         <div className="mx-auto max-w-[1240px] px-6">
           <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8 md:p-12">
             <Animate><p className="text-xs font-semibold uppercase tracking-wider text-[#2563DF]">From the founder</p></Animate>
