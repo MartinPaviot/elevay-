@@ -24,6 +24,7 @@ import { useRegisterPageActions } from "@/lib/chat/page-actions/registry";
 import { ConversationList } from "./_conversation-list";
 import { ConversationPane, type ConversationPaneApi } from "./_conversation-pane";
 import { SplitTabs } from "./_split-tabs";
+import { LaneChip } from "./_lane-chip";
 import { CaptureReviewDrawer } from "./_capture-review";
 import { OutboundTable, type OutboundTableApi } from "./_outbound-table";
 import { BundlesView } from "./_bundles-view";
@@ -792,57 +793,42 @@ export default function InboxPage() {
       <FilterBar>
         <div className="flex w-full items-center gap-3">
         <div className="flex flex-wrap gap-0.5">
-          {TABS.map((t) => {
-            const active = customLaneId === null && tab === t;
-            return (
-              <button
-                key={t}
-                onClick={() => {
-                  setCustomLaneId(null);
-                  setActiveSplit(null);
-                  setTab(t);
-                }}
-                className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
-                style={{
-                  background: active ? "var(--color-accent-soft)" : "transparent",
-                  color: active ? "var(--color-accent)" : "var(--color-text-tertiary)",
-                }}
-              >
-                {TAB_LABELS[t]} ({counts[t]})
-              </button>
-            );
-          })}
+          {TABS.map((t) => (
+            <LaneChip
+              key={t}
+              label={TAB_LABELS[t]}
+              count={counts[t]}
+              active={customLaneId === null && tab === t}
+              onClick={() => {
+                setCustomLaneId(null);
+                setActiveSplit(null);
+                setTab(t);
+              }}
+            />
+          ))}
           {customLanes.map((l) => (
-            <button
+            <LaneChip
               key={l.id}
+              label={l.name}
+              count={l.count}
+              active={customLaneId === l.id}
               onClick={() => {
                 setActiveSplit(null);
                 setCustomLaneId(l.id);
               }}
-              className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
-              style={{
-                background: customLaneId === l.id ? "var(--color-accent-soft)" : "transparent",
-                color: customLaneId === l.id ? "var(--color-accent)" : "var(--color-text-tertiary)",
-              }}
-            >
-              {l.name} ({l.count})
-            </button>
+            />
           ))}
           {bundleTotal > 0 && (
-            <button
+            <LaneChip
+              label="Bundles"
+              count={bundleTotal}
+              active={customLaneId === null && tab === "bundles"}
               onClick={() => {
                 setCustomLaneId(null);
                 setActiveSplit(null);
                 setTab("bundles");
               }}
-              className="rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
-              style={{
-                background: customLaneId === null && tab === "bundles" ? "var(--color-accent-soft)" : "transparent",
-                color: customLaneId === null && tab === "bundles" ? "var(--color-accent)" : "var(--color-text-tertiary)",
-              }}
-            >
-              Bundles ({bundleTotal})
-            </button>
+            />
           )}
           <button
             onClick={() => void handleNewLane()}
