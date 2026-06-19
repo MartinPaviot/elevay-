@@ -1,5 +1,8 @@
 export type InboxLane = "attention" | "snoozed" | "done" | "handled";
 
+/** Intention split (B3) — sub-segments the attention lane. */
+export type BuiltInSplit = "needs_reply" | "follow_ups" | "promotions" | "social" | "other";
+
 /** One of the user's connected mailboxes, for the unified-inbox rail. */
 export interface MailboxSummary {
   id: string;
@@ -33,6 +36,8 @@ export interface ConversationListItem {
   lastMessageAt: string | null;
   messageCount: number;
   hasIntelligence: boolean;
+  /** Intention split this conversation resolves to (B3). */
+  split: BuiltInSplit;
   // Which of the user's connected mailboxes this conversation belongs to.
   // Null when it can't be attributed (e.g. legacy rows). Drives the
   // per-mailbox filter + the "received on X" chip in the unified inbox.

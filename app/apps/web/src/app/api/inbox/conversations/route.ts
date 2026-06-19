@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { outboundEmails } from "@/db/schema";
 import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
+import { BUILT_IN_SPLITS } from "@/lib/inbox/splits";
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { attributeMailbox, indexMailboxes } from "@/lib/inbox/mailbox-attribution";
@@ -110,6 +111,9 @@ export async function GET(req: Request) {
     const parsedQuery = qParam ? parseSearchQuery(qParam) : null;
     const searching = parsedQuery != null && isActiveQuery(parsedQuery);
 
+    // B3: ?split=<built-in id> sub-segments the attention lane by intention.
+    const splitParam = url.searchParams.get("split");
+
     const inLane = searching
       ? visible.filter((row) =>
           matchesSearch(
@@ -126,7 +130,9 @@ export async function GET(req: Request) {
         )
       : customLane
         ? visible.filter((row) => laneMatches(toLaneCandidate(row), customLane))
-        : visible.filter(({ c }) => c.lane === lane);
+        : splitParam
+          ? visible.filter(({ c }) => c.lane === "attention" && c.split === splitParam)
+          : visible.filter(({ c }) => c.lane === lane);
     const pageRows = inLane.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     // Per-custom-lane counts for the tabs (honour "hide when empty").
@@ -138,6 +144,14 @@ export async function GET(req: Request) {
         count: visible.filter((row) => laneMatches(toLaneCandidate(row), l)).length,
       }))
       .filter((l) => !l.hideWhenEmpty || l.count > 0);
+
+    // B3: built-in intention-split counts over the attention lane (each
+    // conversation resolves to exactly one, so these sum to the attention total).
+    const splits = BUILT_IN_SPLITS.map((b) => ({
+      id: b.id,
+      name: b.name,
+      count: visible.filter(({ c }) => c.lane === "attention" && c.split === b.id).length,
+    }));
 
     // Newsletter/promo bundling (INBOX-T03): group the bulk, never-replied
     // senders into one collapsible source each so they can be cleared in a
@@ -202,11 +216,13 @@ export async function GET(req: Request) {
         lastMessageAt: c.lastMessageAt,
         messageCount: c.messageCount,
         hasIntelligence: c.intelligence !== null,
+        split: c.split,
         mailboxId: mb.mailboxId,
         mailboxAddress: mb.mailboxAddress,
         mailboxLabel: mb.mailboxLabel,
       })),
       counts: { ...counts, outbound: Number(outboundCountRow?.count || 0) },
+      splits,
       pagination: { page, pageSize: PAGE_SIZE, total: inLane.length },
       mailboxConnected: scope.hasMailbox,
       mailboxes,
