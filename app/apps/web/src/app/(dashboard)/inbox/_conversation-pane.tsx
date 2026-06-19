@@ -132,7 +132,10 @@ export function ConversationPane({
   const [trustedSenders, setTrustedSenders] = useState<string[]>([]);
   const [replyTones, setReplyTones] = useState<Array<{ tone: string; subject: string; body: string }>>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [autoDraftOn, setAutoDraftOn] = useState(false);
   const snoozeRef = useRef<HTMLDivElement>(null);
+  // B1: at most one auto-draft per thread open (keyed by conversation key).
+  const autoDraftedFor = useRef<string | null>(null);
 
   // Dismiss the snooze popover on Escape or outside click.
   useEffect(() => {
@@ -158,6 +161,21 @@ export function ConversationPane({
       .then((r) => (r.ok ? r.json() : { senders: [] }))
       .then((d: { senders?: string[] }) => {
         if (!cancelled && Array.isArray(d.senders)) setTrustedSenders(d.senders);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load the per-user auto-draft preference once (B1). Default OFF; governs
+  // whether a reply-worthy thread pre-drafts on open — never overrides selectivity.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/inbox/auto-draft")
+      .then((r) => (r.ok ? r.json() : { autoDraft: { enabled: false } }))
+      .then((d: { autoDraft?: { enabled?: boolean } }) => {
+        if (!cancelled) setAutoDraftOn(d.autoDraft?.enabled === true);
       })
       .catch(() => {});
     return () => {
@@ -274,11 +292,79 @@ export function ConversationPane({
     }
   }, [detail, replyTo, toast]);
 
+  // B1 primary draft: a complete, VOICE-MATCHED reply via /api/inbox/compose/reply
+  // (folds the user's writing voice + standing memory server-side), landed in the
+  // editable composer. Distinct from openReply's suggest-reply tone variants, which
+  // stay as a secondary affordance (tone chips). Fail-closed: empty/error never
+  // fabricates a draft — it leaves an open composer untouched, or opens a blank one.
+  const generateDraft = useCallback(async () => {
+    if (!detail || !conversationKey) return;
+    const conv = detail.conversation;
+    setReplyTones([]); // the voice-matched draft is the primary path, not tone variants
+    setDrafting(true);
+    try {
+      const res = await fetch("/api/inbox/compose/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: conversationKey }),
+      });
+      const data = res.ok ? ((await res.json()) as { subject?: string; text?: string }) : {};
+      const text = (data.text ?? "").trim();
+      if (text) {
+        setComposer((c) => ({
+          to: c?.to ?? replyTo,
+          subject: data.subject?.trim() || c?.subject || `Re: ${conv.subject}`,
+          body: text,
+          contactId: detail.contact?.id,
+        }));
+      } else {
+        // Fail-closed (R1.6): never fabricate. Leave an open composer's body
+        // untouched; if none is open, open a blank one so the user can still write.
+        setComposer((c) => c ?? { to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id });
+        toast("Couldn't draft a reply — opening a blank composer.", "warning");
+      }
+    } catch {
+      setComposer((c) => c ?? { to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id });
+      toast("Couldn't draft a reply — opening a blank composer.", "warning");
+    } finally {
+      setDrafting(false);
+    }
+  }, [detail, conversationKey, replyTo, toast]);
+
   // `r` pressed on the page.
   useEffect(() => {
     if (replySignal > 0 && detail && !composer) void openReply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replySignal]);
+
+  // B1 Cmd/Ctrl+J: with no composer open, generate a voice-matched draft for a
+  // reply-worthy thread (R2.1). When the composer IS open, it owns this key for
+  // edit-with-AI (email-composer-panel), so the pane defers.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
+        if (composer) return; // composer handles edit-with-AI when open
+        if (!detail || !detail.conversation.replyWorthy) return;
+        e.preventDefault();
+        void generateDraft();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [composer, detail, generateDraft]);
+
+  // B1 auto-draft-on-open (R4.2/R4.4): when the pref is ON and the thread is
+  // reply-worthy, pre-draft once on open. Never overrides selectivity (gated on
+  // replyWorthy) and never clobbers an open composer or an agent-prepared draft.
+  useEffect(() => {
+    if (!autoDraftOn || !detail || !conversationKey) return;
+    if (!detail.conversation.replyWorthy) return;
+    if (composer || detail.preparedDraft) return;
+    if (autoDraftedFor.current === conversationKey) return;
+    autoDraftedFor.current = conversationKey;
+    void generateDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDraftOn, detail, conversationKey]);
 
   async function handleSent() {
     if (usedDraftId) {
@@ -440,10 +526,27 @@ export function ConversationPane({
         </div>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={openReply} disabled={drafting} className="gap-1.5">
-            {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-            {drafting ? "Drafting…" : "Reply"}
-          </Button>
+          {/* B1: where the thread is reply-worthy, the primary affordance is the
+              voice-matched Generate-draft (Cmd/Ctrl+J runs the same flow). Reply
+              stays as the manual/agent-draft open. Non-reply-worthy threads show
+              only Reply — the generate affordance is absent (selectivity). */}
+          {conv.replyWorthy ? (
+            <>
+              <Button size="sm" onClick={generateDraft} disabled={drafting} className="gap-1.5" title="Generate a voice-matched draft (⌘/Ctrl+J)">
+                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {drafting ? "Drafting…" : "Generate draft"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={openReply} disabled={drafting} className="gap-1.5">
+                <Mail className="h-3.5 w-3.5" />
+                Reply
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" onClick={openReply} disabled={drafting} className="gap-1.5">
+              {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+              {drafting ? "Drafting…" : "Reply"}
+            </Button>
+          )}
           {detail.contact && (
             <Button
               variant={schedOpen ? "solid" : "outline"}

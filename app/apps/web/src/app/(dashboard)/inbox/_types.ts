@@ -75,6 +75,9 @@ export interface ConversationDetail {
   conversation: ConversationListItem & {
     messages: ConversationMessage[];
     intelligence: ThreadIntelligenceView | null;
+    /** B1: whether this thread warrants an AI draft offer (pure selectivity, reply-worthy.ts).
+        Gates the Generate-draft affordance + Cmd/Ctrl+J + auto-draft-on-open. */
+    replyWorthy: boolean;
   };
   contact: { id: string; name: string; email: string | null } | null;
   enrollment: { id: string; sequenceId: string; sequenceName: string; status: string } | null;
