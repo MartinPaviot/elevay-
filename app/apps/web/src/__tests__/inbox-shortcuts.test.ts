@@ -11,10 +11,10 @@ afterEach(() => _resetShortcutRegistry());
 describe("INBOX_SHORTCUTS (INBOX-K02)", () => {
   it("covers exactly the single-key actions the inbox page handler implements", () => {
     // These mirror inbox/page.tsx's keydown handler: j/k navigate, e done,
-    // x select, r reply, m mailbox quick-switch. If a key is added/removed
-    // there, this must change too.
+    // x select, r reply, s snooze, b book, l label, m mailbox quick-switch. If a
+    // key is added/removed there, this must change too.
     const single = INBOX_SHORTCUTS.map((s) => s.combo).filter((c) => c.length === 1).sort();
-    expect(single).toEqual(["e", "j", "k", "m", "r", "x"]);
+    expect(single).toEqual(["b", "e", "j", "k", "l", "m", "r", "s", "x"]);
   });
 
   it("groups every entry under 'Inbox' with a non-empty description", () => {

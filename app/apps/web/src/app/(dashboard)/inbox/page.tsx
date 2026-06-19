@@ -30,6 +30,7 @@ import { OutboundTable, type OutboundTableApi } from "./_outbound-table";
 import { BundlesView } from "./_bundles-view";
 import { CommandPalette } from "./_command-palette";
 import { buildInboxPaletteCommands, type PaletteCommand } from "@/lib/inbox/palette-commands";
+import { tomorrowMorning } from "@/lib/inbox/snooze-presets";
 import { MailboxRail } from "./_mailbox-rail";
 import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary, SplitCount } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
@@ -666,6 +667,24 @@ export default function InboxPage() {
         if (selectedKey) {
           e.preventDefault();
           setReplySignal((n) => n + 1);
+        }
+      } else if (e.key === "s") {
+        // Snooze the focused thread to tomorrow 09:00 (the pane's first option).
+        if (selectedKey && (tab === "attention" || tab === "snoozed")) {
+          e.preventDefault();
+          void handleTriage(selectedKey, "snooze", tomorrowMorning().toISOString());
+        }
+      } else if (e.key === "b") {
+        // Book a meeting on the open thread via the shared pane handler.
+        if (selectedKey) {
+          e.preventDefault();
+          paneApiRef.current?.bookMeeting();
+        }
+      } else if (e.key === "l") {
+        // Open the thread's add-label input (relayed through labelSignal).
+        if (selectedKey) {
+          e.preventDefault();
+          setLabelSignal((n) => n + 1);
         }
       }
     }

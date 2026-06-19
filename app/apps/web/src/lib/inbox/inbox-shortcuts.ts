@@ -17,6 +17,9 @@ export const INBOX_SHORTCUTS: RegisteredShortcut[] = [
   { combo: "e", description: "Mark done", group: "Inbox" },
   { combo: "x", description: "Select conversation (Shift for range)", group: "Inbox" },
   { combo: "r", description: "Reply to selected", group: "Inbox" },
+  { combo: "s", description: "Snooze selected", group: "Inbox" },
+  { combo: "b", description: "Book a meeting", group: "Inbox" },
+  { combo: "l", description: "Label conversation", group: "Inbox" },
   { combo: "m", description: "Switch mailbox (then 1–9, or 0 for all)", group: "Inbox" },
   { combo: "mod+k", description: "Open command palette", group: "Inbox" },
 ];
