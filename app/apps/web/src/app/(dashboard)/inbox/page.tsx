@@ -29,7 +29,7 @@ import { OutboundTable, type OutboundTableApi } from "./_outbound-table";
 import { BundlesView } from "./_bundles-view";
 import { CommandPalette, type PaletteCommand } from "./_command-palette";
 import { MailboxRail } from "./_mailbox-rail";
-import type { BuiltInSplit, ConversationListItem, InboxLane, LaneCounts, MailboxSummary, SplitCount } from "./_types";
+import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary, SplitCount } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
 import { registerShortcut } from "@/lib/hotkey-registry";
 import { INBOX_SHORTCUTS } from "@/lib/inbox/inbox-shortcuts";
@@ -78,8 +78,9 @@ export default function InboxPage() {
   // fetch (?lane=<id>) instead of the built-in tab.
   const [customLaneId, setCustomLaneId] = useState<string | null>(null);
   const [customLanes, setCustomLanes] = useState<Array<{ id: string; name: string; hideWhenEmpty: boolean; count: number }>>([]);
-  // B3 intention splits — sub-segment the attention lane. activeSplit drives ?split=.
-  const [activeSplit, setActiveSplit] = useState<BuiltInSplit | null>(null);
+  // B3 intention splits — sub-segment the attention lane. activeSplit drives
+  // ?split= (a built-in id or a custom-split UUID).
+  const [activeSplit, setActiveSplit] = useState<string | null>(null);
   const [splitCounts, setSplitCounts] = useState<SplitCount[]>([]);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
@@ -207,6 +208,27 @@ export default function InboxPage() {
       setCustomLaneId(lane.id);
     } catch {
       toast("Couldn't create the lane.", "error");
+    }
+  }, [toast]);
+
+  // B3: a custom per-sender split (name + a sender domain/address). Selecting it
+  // after creation refreshes the splits payload via loadLane.
+  const handleNewSplit = useCallback(async () => {
+    const name = window.prompt("New split name?")?.trim();
+    if (!name) return;
+    const sender = window.prompt('Group mail from which sender? (domain like "stripe.com" or an address)')?.trim();
+    if (!sender) return;
+    try {
+      const res = await fetch("/api/inbox/splits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, senders: [sender] }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const { split } = (await res.json()) as { split: { id: string } };
+      setActiveSplit(split.id);
+    } catch {
+      toast("Couldn't create the split.", "error");
     }
   }, [toast]);
 
@@ -866,7 +888,7 @@ export default function InboxPage() {
 
       {/* B3: intention splits sub-segment the attention lane only. */}
       {tab === "attention" && !customLaneId && splitCounts.length > 0 && (
-        <SplitTabs splits={splitCounts} active={activeSplit} onSelect={setActiveSplit} />
+        <SplitTabs splits={splitCounts} active={activeSplit} onSelect={setActiveSplit} onCreate={handleNewSplit} />
       )}
 
       {!mailboxConnected ? (

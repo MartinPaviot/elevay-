@@ -7,24 +7,22 @@
  * (one chip system, tokens-only, no emoji) so the two strips can't drift.
  */
 
-import type { BuiltInSplit } from "./_types";
-
-interface SplitCount {
-  id: string;
-  name: string;
-  count: number;
-}
+import type { SplitCount } from "./_types";
 
 export function SplitTabs({
   splits,
   active,
   onSelect,
+  onCreate,
 }: {
   splits: SplitCount[];
-  active: BuiltInSplit | null;
-  onSelect: (id: BuiltInSplit | null) => void;
+  /** Built-in id or a custom-split UUID; null = All. */
+  active: string | null;
+  onSelect: (id: string | null) => void;
+  onCreate?: () => void;
 }) {
-  // Always show the four intention splits; "other" only when it has mail.
+  // Always show the four intention splits; "other" only when it has mail. Custom
+  // per-sender splits arrive in the same payload (after the built-ins).
   const shown = splits.filter((s) => s.id !== "other" || s.count > 0);
   return (
     <div
@@ -38,9 +36,20 @@ export function SplitTabs({
           label={s.name}
           count={s.count}
           active={active === s.id}
-          onClick={() => onSelect(s.id as BuiltInSplit)}
+          onClick={() => onSelect(s.id)}
         />
       ))}
+      {onCreate && (
+        <button
+          type="button"
+          onClick={onCreate}
+          className="rounded-full px-2 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--color-bg-hover)]"
+          style={{ color: "var(--color-text-tertiary)" }}
+          title="Group a sender into its own split"
+        >
+          + Split
+        </button>
+      )}
     </div>
   );
 }
