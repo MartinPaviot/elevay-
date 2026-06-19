@@ -102,6 +102,18 @@ export const ENJEUX_TERRAIN = [
 const enjeuxFor = (segment: "terrain" | "mure"): string[] =>
   segment === "terrain" ? [...ENJEUX_TERRAIN] : [...ENJEUX_MURE];
 
+/** Stable semantic key per enjeu POSITION (same across both segments):
+ *  0 = IA/retard, 1 = coût/licences, 2 = souveraineté/données. Used to
+ *  attribute call outcomes to an enjeu in the learning loop (sector-agnostic
+ *  so "cost wins" aggregates across terrain + mûre). */
+export const ENJEU_KEYS = ["ia", "cout", "souverainete"] as const;
+export type EnjeuKey = (typeof ENJEU_KEYS)[number];
+
+/** Map a floated enjeu index to its semantic key (null if out of range). */
+export function enjeuKeyForIndex(idx: number): EnjeuKey | null {
+  return idx >= 0 && idx < ENJEU_KEYS.length ? ENJEU_KEYS[idx] : null;
+}
+
 /** Read-aloud response when the prospect says no — natural, autonomy-first
  *  (acknowledge, one calibrated question, graceful exit), never a pushy rebuttal.
  *  Persisted inside `guidance` (tagged) so it survives without a schema change. */
@@ -514,4 +526,22 @@ export function interpolateOpener(
     .replace(/\s+([,.])/g, "$1")
     .replace(/^Bonjour\s*,/, "Bonjour,")
     .trim();
+}
+
+/**
+ * Lead the opener with a per-prospect OBSERVATION (Douablin) when a fresh,
+ * voiceable signal exists (deriveOpeningReason supplies it). Inserted as its
+ * own sentence right after the greeting+identity, before the sector subject:
+ * "…une société lausannoise. Je vois que vous recrutez un DSI. Je me concentre
+ * en ce moment sur …". No observation → the opener is returned unchanged.
+ */
+export function prefixObservation(opener: string, observation?: string | null): string {
+  const obs = (observation ?? "").trim();
+  if (!obs) return opener;
+  // End of the FIRST real sentence = a lowercase letter + ". ", so a French
+  // honorific ("M. Berra") or an initial ("J. Dupont") never fools the split.
+  const m = opener.match(/[a-zà-ÿ]\.\s/);
+  if (!m || m.index == null) return `${obs} ${opener}`.replace(/\s{2,}/g, " ").trim();
+  const cut = m.index + m[0].length;
+  return `${opener.slice(0, cut)}${obs} ${opener.slice(cut)}`.replace(/\s{2,}/g, " ").trim();
 }

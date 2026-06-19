@@ -20,6 +20,7 @@ import { sendViaSmtp } from "@/lib/integrations/smtp-send";
 import { decryptSecret } from "@/lib/crypto/settings-encryption";
 import { logger } from "@/lib/observability/logger";
 import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient-guardrail";
+import { evaluateSend } from "@/lib/guardrails/sending-gate";
 
 const BATCH = 25;
 
@@ -76,6 +77,30 @@ export const dispatchOutboundSmtp = inngest.createFunction(
           .limit(1);
         if (!mb || !mb.smtpHost || !mb.secretEncrypted) return "skipped";
         if ((mb.sentToday ?? 0) >= (mb.dailyLimit ?? 50)) return "skipped";
+
+        // CLE-13 (items 1 + 3): opt-out/suppression + sending-identity gate. This
+        // path had NO opt-out check before — the shared gate closes that gap
+        // (hard-bounce covered via the same email_optouts lookup). cap-hit leaves
+        // the row queued (treated as skipped) so it retries; every other block
+        // (opt-out / cold / managed) fails the row with the reason.
+        const smtpGate = await evaluateSend({
+          tenantId: o.tenantId,
+          toAddress: o.toAddress,
+          sentTodayFromPrimary: mb.sentToday ?? 0,
+        });
+        if (!smtpGate.send) {
+          if (smtpGate.code === "primary-cap-hit") return "skipped";
+          await db
+            .update(outboundEmails)
+            .set({
+              status: "failed",
+              failedAt: new Date(),
+              errorMessage: smtpGate.reason,
+              updatedAt: new Date(),
+            })
+            .where(eq(outboundEmails.id, o.id));
+          return "failed";
+        }
 
         try {
           const password = decryptSecret(mb.secretEncrypted);

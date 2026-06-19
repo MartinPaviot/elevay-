@@ -27,3 +27,28 @@ export async function requestFindMobile(contactIds: string[]): Promise<FindMobil
     return { ok: false, error: e instanceof Error ? e.message : "Échec de la requête" };
   }
 }
+
+export interface RoleObsoleteResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * CLE-09 §4 lift: the single copy of the PUT that flags a contact's sourced
+ * role as obsolete. Both the brief's "a quitté ce poste" button (PreCallBrief)
+ * and the agent path (callMode.markRoleObsolete) call this, so there is exactly
+ * one request shape. The row-drop / selection-advance is applied by the caller.
+ */
+export async function requestRoleObsolete(contactId: string): Promise<RoleObsoleteResult> {
+  try {
+    const res = await fetch(`/api/contacts/${contactId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleObsolete: true }),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Échec de la requête" };
+  }
+}

@@ -213,6 +213,12 @@ export const outboundStatusEnum = pgEnum("outbound_status", [
   "bounced",
   "failed",
   "skipped",
+  // CLE-11 outbound undo window: a send placed on a cancellable hold ("held")
+  // until holdUntil elapses (then released → queued by the cron), or canceled
+  // by an undo within the window ("canceled"). Inert unless a tenant sets a
+  // non-zero outboundUndoWindowSeconds.
+  "held",
+  "canceled",
 ]);
 
 export const connectedMailboxes = pgTable(
@@ -298,6 +304,10 @@ export const outboundEmails = pgTable(
     inReplyTo: text("in_reply_to"),
     status: outboundStatusEnum("status").default("draft"),
     queuedAt: timestamp("queued_at", { withTimezone: true }),
+    // CLE-11: when status="held", the moment the cancellable send window
+    // closes. The cron releases (held → queued) once now() >= hold_until.
+    // Null for every non-held row (default behaviour, window 0).
+    holdUntil: timestamp("hold_until", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     openedAt: timestamp("opened_at", { withTimezone: true }),
@@ -320,6 +330,9 @@ export const outboundEmails = pgTable(
     index("outbound_thread_idx").on(table.threadId),
     index("outbound_enrollment_idx").on(table.enrollmentId),
     index("outbound_sent_idx").on(table.sentAt),
+    // CLE-11: makes the cron's release scan (status='held' AND hold_until<=now)
+    // and the queued fetch cheap.
+    index("outbound_hold_idx").on(table.status, table.holdUntil),
   ]
 );
 

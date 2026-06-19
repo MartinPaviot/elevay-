@@ -11,7 +11,12 @@ import {
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ElevayMark } from "@/components/ui/elevay-mark";
 import { ToolCallGroup, parseUiToolParts } from "@/components/tool-call-panel";
-import { useChatActionCards, MessageActionCards } from "@/components/chat/chat-action-cards";
+import {
+  useChatActionCards,
+  MessageActionCards,
+  useActionConfirmCards,
+  ActionConfirmCards,
+} from "@/components/chat/chat-action-cards";
 import { FollowUpPills, extractFollowUps } from "@/components/chat/follow-up-pills";
 import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { CopyButton } from "@/components/chat/copy-button";
@@ -20,7 +25,8 @@ import { trackEvent } from "@/components/posthog-provider";
 import { useToast } from "@/components/ui/toast";
 import { deriveSurface, type SurfaceIcon } from "@/lib/chat/surface-from-path";
 import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
-import type { UiDirective } from "@/lib/chat/ui-directives";
+import { getActionManifest, locateEntity, highlightEntity } from "@/lib/chat/page-actions/registry";
+import type { UiDirective, HighlightAnchor } from "@/lib/chat/ui-directives";
 
 const ICONS: Record<SurfaceIcon, typeof Compass> = {
   building: Building2,
@@ -80,6 +86,14 @@ export function ChatDock() {
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
 
+  // Live page-action manifest for the transport body. The dock outlives any
+  // route, so read it at send time (like surfaceRef). Refreshed each render —
+  // cheap, and reflects the current page's mount/unmount registrations.
+  const manifestRef = useRef(getActionManifest());
+  useEffect(() => {
+    manifestRef.current = getActionManifest();
+  });
+
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(false); // drives the enter transition
   const [localInput, setLocalInput] = useState("");
@@ -115,6 +129,8 @@ export function ChatDock() {
             payload.contextId = s.contextId;
           }
           if (threadIdRef.current) payload.threadId = threadIdRef.current;
+          const manifest = manifestRef.current;
+          if (manifest.length > 0) payload.pageActions = manifest; // CLE-03: current page's actions
           return payload;
         },
       }),
@@ -122,17 +138,42 @@ export function ChatDock() {
   );
   const chat = useChat({ transport });
   const actionCards = useChatActionCards(chat);
+  const actionConfirm = useActionConfirmCards(chat);
 
   // Command layer: when a tool result carries a UI directive (open a record /
-  // view, or the composer), execute it once. Navigation keeps the dock mounted
-  // (it lives in the dashboard layout), so the conversation persists.
+  // view, the composer, or a page action), execute it once. Navigation keeps the
+  // dock mounted (it lives in the dashboard layout), so the conversation persists.
   const onDirective = useCallback(
     (d: UiDirective) =>
       runUiDirective(d, {
         navigate: (p) => router.push(p),
         openComposer: (draft) => setEmailComposer(draft),
+        sendActionResult: (text) => chat.sendMessage({ text }),
+        enqueueConfirm: (cd) => actionConfirm.enqueueConfirm(cd),
+        // CLE-15: pulse the affected element. A PAR-result highlight fires
+        // immediately (we're on the page already). A narrate-actuate navigate
+        // highlight needs a short bounded poll because router.push is async —
+        // the target page mounts and registers its locator on a later tick.
+        highlight: (anchor: HighlightAnchor | HighlightAnchor[], opts?: { afterNavigation?: boolean }) => {
+          if (!opts?.afterNavigation) {
+            highlightEntity(anchor);
+            return;
+          }
+          const first = Array.isArray(anchor) ? anchor[0] : anchor;
+          if (!first) return;
+          let tries = 0;
+          const tick = () => {
+            if (locateEntity(first)) {
+              highlightEntity(anchor); // resolved -> pulse all
+              return;
+            }
+            if (++tries >= 12) return; // ~12 × 100ms = 1.2s budget, then silent no-op
+            window.setTimeout(tick, 100);
+          };
+          tick();
+        },
       }),
-    [router],
+    [router, chat, actionConfirm],
   );
   useUiDirectives(chat, onDirective);
 
@@ -508,6 +549,8 @@ export function ChatDock() {
               })()}
             </>
           )}
+          {/* CLE-05: pending page-action confirm cards (one per invocationId). */}
+          <ActionConfirmCards controller={actionConfirm} />
           <div ref={messagesEndRef} />
         </div>
 
