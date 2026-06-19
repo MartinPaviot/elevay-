@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { classifyNoise, type NoiseInput } from "@/lib/inbox/noise";
+import { noiseOverrideMatches, type NoiseOverride } from "@/lib/inbox/noise-override-store";
 
 function input(over: Partial<NoiseInput>): NoiseInput {
   return {
@@ -66,5 +67,24 @@ describe("classifyNoise — default recall bias", () => {
         expect(classifyNoise(input({ replyWorthy: true, importanceTier: tier, isBulk })).noise).toBe(false);
       }
     }
+  });
+});
+
+describe("noiseOverrideMatches", () => {
+  const overrides: NoiseOverride[] = [
+    { sender: "news@acme.com", at: "2026-06-19T00:00:00Z" },
+    { sender: "", threadKey: "thread-xyz", at: "2026-06-19T00:00:00Z" },
+  ];
+  it("matches a sender override case-insensitively", () => {
+    expect(noiseOverrideMatches(overrides, "News@Acme.com", "k")).toBe(true);
+  });
+  it("matches a thread-only override by key", () => {
+    expect(noiseOverrideMatches(overrides, "anyone@x.com", "thread-xyz")).toBe(true);
+  });
+  it("does not match an unrelated sender/thread", () => {
+    expect(noiseOverrideMatches(overrides, "other@x.com", "thread-zzz")).toBe(false);
+  });
+  it("never matches on an empty from-address", () => {
+    expect(noiseOverrideMatches([{ sender: "", at: "x" }], "", "k")).toBe(false);
   });
 });
