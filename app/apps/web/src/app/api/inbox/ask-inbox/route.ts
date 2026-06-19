@@ -3,6 +3,7 @@ import { buildConversations } from "@/lib/inbox/conversations";
 import { loadConversationRows } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { selectRelevantThreads, askInbox, type InboxThread, type ThreadMessage } from "@/lib/inbox/ask-inbox";
+import { runInboxAgent } from "@/lib/inbox/ask-agent";
 import { getInboxMemory, buildMemoryPrompt } from "@/lib/inbox/ai-memory";
 import { getAiProfile, aiEnabled } from "@/lib/inbox/ai-profile";
 
@@ -46,8 +47,22 @@ export async function POST(req: Request) {
       ),
     }));
 
-    const selected = selectRelevantThreads(threads, question, 6);
     const { prompt: instructions } = buildMemoryPrompt(await getInboxMemory(authCtx.userId));
+
+    // B5: when a model is available, run the bounded retrieve->verify->act agent
+    // (multi-step tool use + citation verification). Otherwise fall back to the
+    // single-pass keyword answerer — an honest degrade, never a guess.
+    if (process.env.ANTHROPIC_API_KEY) {
+      const verified = await runInboxAgent({ threads }, question, {
+        tenantId: authCtx.tenantId,
+        instructions,
+      });
+      const subjectFor = (key: string) => threads.find((t) => t.key === key)?.subject ?? "";
+      const citations = verified.citations.map((c) => ({ key: c.key, subject: c.subject ?? subjectFor(c.key) }));
+      return Response.json({ result: { answer: verified.answer, answered: verified.answered, citations } });
+    }
+
+    const selected = selectRelevantThreads(threads, question, 6);
     const result = await askInbox(selected, question, undefined, instructions);
     // Resolve citation indices to linkable thread refs for the UI.
     const citations = result.citations
