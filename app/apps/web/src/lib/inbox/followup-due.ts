@@ -117,6 +117,33 @@ export function computeFollowupDue(lastOutboundAt: number | null, opts: Followup
 }
 
 /**
+ * Derive a follow-up from a chronologically-ascending message list (B2.1). The
+ * backoff is measured from OUR most recent outbound, and the stage escalates with
+ * the count of trailing consecutive outbounds (how many times we've messaged
+ * since their last inbound) — one trailing outbound is stage 1, two is stage 2.
+ * Returns the non-due sentinel when the thread does not end on our outbound (so
+ * awaiting-our-reply / inbound-led threads never surface a follow-up).
+ */
+export function followupFromMessages(
+  messages: { direction: "inbound" | "outbound"; at: string | null }[],
+  opts: { now?: number; backoffBusinessDays?: number[] } = {},
+): FollowupDue {
+  const last = messages[messages.length - 1];
+  if (!last || last.direction !== "outbound") return SENTINEL;
+  let trailing = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].direction === "outbound") trailing++;
+    else break;
+  }
+  const lastOutboundMs = last.at ? new Date(last.at).getTime() : null;
+  return computeFollowupDue(lastOutboundMs, {
+    now: opts.now,
+    priorNudgeCount: Math.max(0, trailing - 1),
+    backoffBusinessDays: opts.backoffBusinessDays,
+  });
+}
+
+/**
  * Human label for the follow-up indicator (B1.2). Null when there is no
  * follow-up. Reads cleanly across the four states: upcoming, due today, just
  * overdue (same day), and overdue by N business days.

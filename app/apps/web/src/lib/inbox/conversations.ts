@@ -20,6 +20,7 @@ import { scoreImportance } from "@/lib/inbox/importance";
 import { resolveGeneralIntent, type GeneralIntent } from "@/lib/inbox/general-intent";
 import { isReplyWorthy } from "@/lib/inbox/reply-worthy";
 import { resolveSplit, type BuiltInSplit } from "@/lib/inbox/splits";
+import { followupFromMessages, type FollowupDue } from "@/lib/inbox/followup-due";
 import { classifyNoise } from "@/lib/inbox/noise";
 import { noiseOverrideMatches, type NoiseOverride } from "@/lib/inbox/noise-override-store";
 
@@ -124,6 +125,10 @@ export interface Conversation {
   awaitingOurReply: boolean;
   /** Attention thread whose latest message is outbound — they owe a reply (B3). */
   awaitingTheirReply: boolean;
+  /** B7: when (and how overdue) a gentle follow-up is due on an awaiting-their-reply
+   *  thread; null otherwise. SLA-exclusive with slaHoursOverdue (a thread's last
+   *  message is inbound xor outbound, so the two never co-populate). */
+  followup: FollowupDue | null;
   /** Intention split (B3): needs_reply / follow_ups / promotions / social / other. */
   split: BuiltInSplit;
   /** Cold/automated/newsletter mail (B4) — floored in importance; never a
@@ -473,6 +478,11 @@ export function buildConversations(input: {
     }).replyWorthy;
     // B3: the mirror of awaitingOurReply — we sent and are awaiting their reply.
     const awaitingTheirReply = lane === "attention" && lastMessage?.direction === "outbound";
+    // B7: a gentle-follow-up due time, only on awaiting-their-reply threads (so it
+    // is SLA-exclusive). Derived purely from the trailing outbound run + nowMs.
+    const followup: FollowupDue | null = awaitingTheirReply
+      ? followupFromMessages(messages, { now: nowMs })
+      : null;
     const split: BuiltInSplit = resolveSplit({
       lane,
       replyWorthy,
@@ -531,6 +541,7 @@ export function buildConversations(input: {
       generalIntent,
       awaitingOurReply,
       awaitingTheirReply,
+      followup,
       split,
       noise,
       handledNote,

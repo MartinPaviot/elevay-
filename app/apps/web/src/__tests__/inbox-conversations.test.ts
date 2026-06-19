@@ -581,6 +581,51 @@ describe("response SLA (INBOX-N04)", () => {
   });
 });
 
+describe("follow-up timing (B7)", () => {
+  it("attaches an overdue follow-up on an awaiting-their-reply thread, SLA-exclusive", () => {
+    const convs = buildConversations({
+      // 2026-06-01 is a Monday; we replied last that morning, no answer since.
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-01T10:00:00Z" })],
+      outbound: [outbound({ id: "o1", threadId: "t1", sentAt: "2026-06-01T11:00:00Z" })],
+      triage: [],
+      now: NOW, // 2026-06-10, well past Mon+3 business days = Thu 06-04
+    });
+    const c = convs[0];
+    expect(c.awaitingTheirReply).toBe(true);
+    expect(c.followup).not.toBeNull();
+    expect(c.followup!.dueAt).not.toBeNull();
+    expect(c.followup!.stage).toBe(1);
+    expect(c.followup!.overdue).toBe(true);
+    expect(c.slaHoursOverdue).toBeNull(); // never both populated (R2.6)
+  });
+
+  it("attaches no follow-up when we owe the reply (awaiting our reply)", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-10T10:00:00Z" })],
+      outbound: [],
+      triage: [],
+      now: NOW,
+    });
+    expect(convs[0].awaitingOurReply).toBe(true);
+    expect(convs[0].followup).toBeNull();
+  });
+
+  it("counts two trailing outbounds as the stage-2 interval", () => {
+    const convs = buildConversations({
+      inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-01T10:00:00Z" })],
+      outbound: [
+        outbound({ id: "o1", threadId: "t1", sentAt: "2026-06-01T11:00:00Z" }),
+        outbound({ id: "o2", threadId: "t1", sentAt: "2026-06-04T11:00:00Z" }), // first nudge
+      ],
+      triage: [],
+      now: NOW,
+    });
+    const c = convs[0];
+    expect(c.awaitingTheirReply).toBe(true);
+    expect(c.followup!.stage).toBe(2);
+  });
+});
+
 describe("importance ranking (INBOX-T04)", () => {
   it("scores a hot intent above the bottom and pins automated senders to tier 4", () => {
     const convs = buildConversations({

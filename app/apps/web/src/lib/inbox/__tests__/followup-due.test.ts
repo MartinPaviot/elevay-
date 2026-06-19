@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeFollowupDue,
   followupLabel,
+  followupFromMessages,
   businessDaysBetween,
   DEFAULT_BACKOFF_BUSINESS_DAYS,
 } from "../followup-due";
@@ -116,6 +117,48 @@ describe("businessDaysBetween", () => {
     expect(businessDaysBetween(NEXT_MON, MON)).toBe(0); // reversed
     // Thu 06-18 -> Mon 06-22 spans Fri + Mon = 2 business days (weekend excluded).
     expect(businessDaysBetween(THU, NEXT_MON)).toBe(2);
+  });
+});
+
+describe("followupFromMessages (B2.1 derivation)", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it("empty thread or one ending on an inbound -> sentinel", () => {
+    expect(followupFromMessages([], { now: MON }).dueAt).toBeNull();
+    expect(
+      followupFromMessages(
+        [
+          { direction: "outbound", at: iso(MON) },
+          { direction: "inbound", at: iso(MON + 1000) },
+        ],
+        { now: MON },
+      ).dueAt,
+    ).toBeNull();
+  });
+
+  it("single trailing outbound -> stage 1, due +3 business days from it", () => {
+    const f = followupFromMessages(
+      [
+        { direction: "inbound", at: iso(MON - 86_400_000) },
+        { direction: "outbound", at: iso(MON) },
+      ],
+      { now: MON },
+    );
+    expect(f.stage).toBe(1);
+    expect(f.dueAt).toBe(THU);
+  });
+
+  it("two trailing outbounds -> stage 2, due +5 business days from the most recent", () => {
+    const f = followupFromMessages(
+      [
+        { direction: "inbound", at: iso(MON - 2 * 86_400_000) },
+        { direction: "outbound", at: iso(MON - 86_400_000) }, // first nudge
+        { direction: "outbound", at: iso(MON) }, // most recent outbound
+      ],
+      { now: MON },
+    );
+    expect(f.stage).toBe(2);
+    expect(f.dueAt).toBe(NEXT_MON);
   });
 });
 
