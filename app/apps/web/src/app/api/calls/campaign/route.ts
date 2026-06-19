@@ -95,7 +95,10 @@ async function todayQueue(tenantId: string, ownerId: string) {
     companyName: r.companyId ? cmap[r.companyId]?.name ?? null : null,
     companyDomain: r.companyId ? cmap[r.companyId]?.domain ?? null : null,
     phone: r.phone ?? "",
-    score: r.score ?? 0,
+    // contacts.score is stored 0..100; the cockpit (page.tsx) expects a 0..1
+    // composite like lib/voice/queue.ts returns, then renders it ×100. Without
+    // this /100 the queue badge showed the raw value ×100 (e.g. "10000").
+    score: Math.min(1, (r.score ?? 0) / 100),
     intentScore: Math.min(1, (r.score ?? 0) / 100),
     accessibilityScore: 0.7,
     dealValueWeight: 1,

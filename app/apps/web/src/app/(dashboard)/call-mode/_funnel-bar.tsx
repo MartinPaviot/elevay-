@@ -107,7 +107,7 @@ export function CampaignFunnelBar() {
           convention) so the cockpit is framed edge-to-edge instead of floating
           an inset card above full-bleed columns. */}
       <div
-        className="flex w-full flex-wrap items-center"
+        className="no-scrollbars flex w-full items-center overflow-x-auto"
         style={{ background: "var(--color-bg-card)", borderBottom: "1px solid var(--color-border-default)" }}
       >
       {/* Me / Team scope — per-user Call Mode, shareable team totals */}

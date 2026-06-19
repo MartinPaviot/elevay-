@@ -38,6 +38,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { Floating } from "@/components/ui/floating";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CompanyLogo } from "@/components/ui/company-logo";
 import { useToast } from "@/components/ui/toast";
@@ -1620,7 +1621,7 @@ export default function CallModePage() {
               // Only the fields we actually hold are worth a line — an empty
               // local time or an uncomputed (0) score render as noise that make
               // the row look broken, so each is gated on real data.
-              const scorePct = Math.round(item.score * 100);
+              const scorePct = Math.min(100, Math.round(item.score * 100));
               const hasMeta = Boolean(item.localTime) || Boolean(item.latestSignal);
               return (
                 <button
@@ -1895,8 +1896,8 @@ export default function CallModePage() {
 
       {/* ───── RIGHT — Account brain (prep) / call context (live) ───── */}
       <aside
-        className="shrink-0 border-l border-zinc-200 dark:border-zinc-800 overflow-y-auto"
-        style={{ width: colW.right }}
+        className="shrink-0 overflow-y-auto border-l pb-16"
+        style={{ width: colW.right, borderColor: "var(--color-border-default)" }}
       >
         {selected ? (
           <>
@@ -2147,7 +2148,7 @@ function FromNumberPicker(props: {
 }) {
   const { pool, value, onChange, prospectE164, onBuyNumber } = props;
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
   // Inline "buy a number" mini-form, revealed under the list.
   const [adding, setAdding] = useState(false);
   const [buyCountry, setBuyCountry] = useState<string>(
@@ -2158,22 +2159,6 @@ function FromNumberPicker(props: {
   // Buying a Twilio number is a money action — admin-only (billing:manage).
   // Non-admins still pick from the existing pool; they just can't add one.
   const canBuy = useCan("billing:manage");
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   const active = value ? pool.find((p) => p.e164 === value) ?? null : null;
   // The number actually dialed-from: the pinned choice, or the local-presence
@@ -2203,8 +2188,9 @@ function FromNumberPicker(props: {
   }
 
   return (
-    <div ref={ref} className="relative inline-flex">
+    <div className="relative inline-flex">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Choose the number you call from"
@@ -2233,15 +2219,18 @@ function FromNumberPicker(props: {
         <ChevronDown size={13} style={{ color: "var(--color-text-tertiary)" }} />
       </button>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[240px] rounded-lg py-1"
-          style={{
-            background: "var(--color-bg-card)",
-            border: "1px solid var(--color-border-default)",
-            boxShadow: "var(--shadow-floating)",
-          }}
-        >
+      <Floating
+        anchorRef={anchorRef}
+        open={open}
+        placement="bottom-end"
+        onClose={() => setOpen(false)}
+        className="min-w-[240px] rounded-lg py-1"
+        style={{
+          background: "var(--color-bg-card)",
+          border: "1px solid var(--color-border-default)",
+          boxShadow: "var(--shadow-floating)",
+        }}
+      >
           <FromNumberRow
             checked={value === null}
             primary="Automatic"
@@ -2322,8 +2311,7 @@ function FromNumberPicker(props: {
             </div>
           )}
           </>)}
-        </div>
-      )}
+      </Floating>
     </div>
   );
 }

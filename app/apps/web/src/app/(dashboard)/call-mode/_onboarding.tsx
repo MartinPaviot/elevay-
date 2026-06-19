@@ -166,13 +166,13 @@ export function CallModeOnboarding({
         )}
 
         {result && (
-          <div className="overflow-auto px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-auto px-5 py-5">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
-                <Check size={18} />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--color-success-soft)", color: "var(--color-success)" }}>
+                <Check size={16} />
               </div>
               <div className="min-w-0">
-                <h2 className="truncate text-[16px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>{result.campaign.name}</h2>
+                <h2 className="truncate text-[15px] font-semibold" style={{ color: "var(--color-text-primary)", letterSpacing: "-0.3px" }}>{result.campaign.name}</h2>
                 <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
                   {result.campaign.dailyQuota} calls/day · retry up to {result.campaign.maxAttempts}&times; over {result.campaign.windowDays} days
                 </p>
