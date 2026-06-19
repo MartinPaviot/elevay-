@@ -73,20 +73,11 @@ export function attributeMailbox(
   messages: AttributableMessage[],
   byAddress: Map<string, MailboxRef>,
 ): MailboxAttribution {
-  if (byAddress.size === 0 || messages.length === 0) return UNATTRIBUTED;
-  const newestFirst = [...messages].sort((a, b) => toMs(b.at) - toMs(a.at));
-  for (const m of newestFirst) {
-    // The address that identifies OUR box: the recipient on inbound, the
-    // sender on outbound.
-    const header = m.direction === "inbound" ? m.to : m.from;
-    for (const addr of headerAddresses(header)) {
-      const mb = byAddress.get(addr);
-      if (mb) {
-        return { mailboxId: mb.id, mailboxAddress: mb.address, mailboxLabel: mb.label };
-      }
-    }
-  }
-  return UNATTRIBUTED;
+  // A4: delegate to pickPrimaryMailbox so the conversations route + rail counts
+  // share ONE rule that is STABLE under message reordering (cross-box delivery can
+  // sync the same thread to two boxes in either order). Same single-row output as
+  // before for single-box threads; deterministic on the rare cross-box tie.
+  return pickPrimaryMailbox(messages, byAddress);
 }
 
 /**
