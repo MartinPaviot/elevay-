@@ -4,6 +4,7 @@ import { outboundEmails } from "@/db/schema";
 import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
 import { BUILT_IN_SPLITS, resolveCustomSplit } from "@/lib/inbox/splits";
+import { isFollowupDue } from "@/lib/inbox/followup-due";
 import { getUserSplits } from "@/lib/inbox/split-store";
 import { getNoiseOverrides } from "@/lib/inbox/noise-override-store";
 import { getMailboxIdentities } from "@/lib/inbox/mailbox-identity";
@@ -252,6 +253,7 @@ export async function GET(req: Request) {
       counts: { ...counts, outbound: Number(outboundCountRow?.count || 0) },
       splits,
       noiseCount: visible.filter(({ c }) => c.noise).length,
+      followupsDueCount: visible.filter(({ c }) => isFollowupDue(c.followup)).length,
       pagination: { page, pageSize: PAGE_SIZE, total: inLane.length },
       mailboxConnected: scope.hasMailbox,
       mailboxes,

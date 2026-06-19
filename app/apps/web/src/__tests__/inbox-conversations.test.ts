@@ -610,6 +610,28 @@ describe("follow-up timing (B7)", () => {
     expect(convs[0].followup).toBeNull();
   });
 
+  it("sorts an overdue follow-up ahead of an upcoming one at equal importance (B4.1)", () => {
+    // Both threads share the same inbound (06-01) -> identical importance tier+score.
+    // t-over's outbound is old (overdue follow-up); t-up's is recent (upcoming).
+    const convs = buildConversations({
+      inbound: [
+        inbound({ id: "iu", threadId: "t-up", occurredAt: "2026-06-01T10:00:00Z" }),
+        inbound({ id: "io", threadId: "t-over", occurredAt: "2026-06-01T10:00:00Z" }),
+      ],
+      outbound: [
+        outbound({ id: "ou", threadId: "t-up", sentAt: "2026-06-09T11:00:00Z" }), // upcoming
+        outbound({ id: "oo", threadId: "t-over", sentAt: "2026-06-01T11:00:00Z" }), // overdue
+      ],
+      triage: [],
+      now: NOW,
+    });
+    const over = convs.find((c) => c.key === "t-over")!;
+    const up = convs.find((c) => c.key === "t-up")!;
+    expect(over.followup!.overdue).toBe(true);
+    expect(up.followup!.overdue).toBe(false);
+    expect(convs.indexOf(over)).toBeLessThan(convs.indexOf(up)); // overdue leads
+  });
+
   it("counts two trailing outbounds as the stage-2 interval", () => {
     const convs = buildConversations({
       inbound: [inbound({ id: "i1", threadId: "t1", occurredAt: "2026-06-01T10:00:00Z" })],

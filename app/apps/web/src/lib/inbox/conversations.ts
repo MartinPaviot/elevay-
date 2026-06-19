@@ -564,6 +564,10 @@ export function sortConversations(conversations: Conversation[]): Conversation[]
     if (a.lane === "attention" && b.lane === "attention") {
       if (a.importanceTier !== b.importanceTier) return a.importanceTier - b.importanceTier;
       if (a.importanceScore !== b.importanceScore) return b.importanceScore - a.importanceScore;
+      // B7: within equal importance, an overdue follow-up leads (it needs action now).
+      const aOver = a.followup?.overdue ? 1 : 0;
+      const bOver = b.followup?.overdue ? 1 : 0;
+      if (aOver !== bOver) return bOver - aOver;
     }
     const aMs = a.lastInboundAt ?? a.lastMessageAt ?? "";
     const bMs = b.lastInboundAt ?? b.lastMessageAt ?? "";

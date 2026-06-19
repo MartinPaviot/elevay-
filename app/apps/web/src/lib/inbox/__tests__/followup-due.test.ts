@@ -3,6 +3,7 @@ import {
   computeFollowupDue,
   followupLabel,
   followupFromMessages,
+  isFollowupDue,
   businessDaysBetween,
   DEFAULT_BACKOFF_BUSINESS_DAYS,
 } from "../followup-due";
@@ -159,6 +160,17 @@ describe("followupFromMessages (B2.1 derivation)", () => {
     );
     expect(f.stage).toBe(2);
     expect(f.dueAt).toBe(NEXT_MON);
+  });
+});
+
+describe("isFollowupDue (B4.1)", () => {
+  it("true for overdue or due-today, false for upcoming / sentinel / nullish", () => {
+    expect(isFollowupDue(computeFollowupDue(MON, { now: Date.UTC(2026, 5, 25, 9, 0, 0) }))).toBe(true); // overdue
+    expect(isFollowupDue(computeFollowupDue(MON, { now: Date.UTC(2026, 5, 18, 8, 0, 0) }))).toBe(true); // due today
+    expect(isFollowupDue(computeFollowupDue(MON, { now: Date.UTC(2026, 5, 16, 9, 0, 0) }))).toBe(false); // upcoming
+    expect(isFollowupDue(computeFollowupDue(null, { now: MON }))).toBe(false); // sentinel
+    expect(isFollowupDue(null)).toBe(false);
+    expect(isFollowupDue(undefined)).toBe(false);
   });
 });
 

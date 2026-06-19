@@ -144,6 +144,15 @@ export function followupFromMessages(
 }
 
 /**
+ * Whether a follow-up needs action NOW (B4.1) — it has a due time and is either
+ * overdue or due today. Drives the followupsDueCount badge + the overdue-first
+ * tie-break. An upcoming follow-up (still days out) is not yet "due".
+ */
+export function isFollowupDue(f: FollowupDue | null | undefined): boolean {
+  return !!f && f.dueAt != null && (f.overdue || f.daysUntilDue === 0);
+}
+
+/**
  * Human label for the follow-up indicator (B1.2). Null when there is no
  * follow-up. Reads cleanly across the four states: upcoming, due today, just
  * overdue (same day), and overdue by N business days.
