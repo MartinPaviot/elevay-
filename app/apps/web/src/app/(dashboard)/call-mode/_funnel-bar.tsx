@@ -33,7 +33,7 @@ const muted = { color: "var(--color-text-tertiary)", fontWeight: 400 } as React.
 function Bar({ done, total }: { done: number; total: number }) {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return (
-    <div className="mt-0.5 h-0.5 w-full overflow-hidden rounded-full" style={{ background: "var(--color-border-default)" }}>
+    <div className="mt-px h-0.5 w-full overflow-hidden rounded-full" style={{ background: "var(--color-border-default)" }}>
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--color-accent)" }} />
     </div>
   );
@@ -111,7 +111,7 @@ export function CampaignFunnelBar() {
       >
       {/* Me / Team scope — per-user Call Mode, shareable team totals */}
       <div className="px-3 py-0.5" style={{ display: "flex", alignItems: "center" }}>
-        <div className="flex gap-0.5 rounded-md p-0.5" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)" }}>
+        <div className="flex gap-0.5 rounded p-px" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)" }}>
           {(["me", "team"] as const).map((k) => {
             const active = scope === k;
             return (
@@ -119,7 +119,7 @@ export function CampaignFunnelBar() {
                 key={k}
                 type="button"
                 onClick={() => setScope(k)}
-                className="rounded px-2 py-0.5 text-[9px] font-medium transition-colors"
+                className="rounded-sm px-1.5 py-0 text-[9px] font-medium leading-tight transition-colors"
                 style={{
                   background: active ? "var(--color-accent-soft)" : "transparent",
                   color: active ? "var(--color-accent)" : "var(--color-text-tertiary)",
@@ -187,12 +187,12 @@ export function CampaignFunnelBar() {
         <button
           type="button"
           onClick={() => setShowMetrics(true)}
-          className="ml-auto mr-3 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors"
+          className="ml-auto mr-3 flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
           style={{ color: "var(--color-text-secondary)", border: "1px solid var(--color-border-default)" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
         >
-          <BarChart3 className="h-3.5 w-3.5" />
+          <BarChart3 className="h-3 w-3" />
           Détails
         </button>
       </div>
