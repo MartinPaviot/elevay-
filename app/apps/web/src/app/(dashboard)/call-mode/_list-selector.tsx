@@ -25,7 +25,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Check, Loader2, Layers, ChevronDown, ArrowDownUp } from "lucide-react";
+import { Plus, Check, Loader2, ChevronDown, ArrowDownUp } from "lucide-react";
+import { Floating } from "@/components/ui/floating";
 import { ACTIVE_SORT_KEYS } from "@/lib/voice/queue-sort";
 import type { CallListSort } from "@/lib/voice/call-lists";
 
@@ -47,27 +48,6 @@ export interface CallListsData {
   sector: SectorListEntry[];
   activeListId: string | null;
   hasCampaign: boolean;
-}
-
-/** Dismiss an open popover on outside-click or Escape (shared by both menus). */
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
 }
 
 export function CallListSelector(props: {
@@ -188,18 +168,20 @@ function DayFilter(props: {
 function SortMenu(props: { sortKey: CallListSort; onSortChange: (s: CallListSort) => void }) {
   const { sortKey, onSortChange } = props;
   const [open, setOpen] = useState(false);
-  const ref = useDismiss(open, () => setOpen(false));
+  const anchorRef = useRef<HTMLButtonElement>(null);
   const activeLabel = ACTIVE_SORT_KEYS.find((s) => s.key === sortKey)?.label ?? "Fit ICP";
   const isDefault = sortKey === "fit";
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={`Trier : ${activeLabel}`}
         aria-label={`Trier : ${activeLabel}`}
-        className="relative flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-800 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        className="relative flex h-7 w-7 items-center justify-center rounded-md border text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+        style={{ borderColor: "var(--color-border-default)" }}
       >
         <ArrowDownUp size={13} />
         {!isDefault && (
@@ -210,15 +192,18 @@ function SortMenu(props: { sortKey: CallListSort; onSortChange: (s: CallListSort
         )}
       </button>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[170px] rounded-lg py-1"
-          style={{
-            background: "var(--color-bg-card)",
-            border: "1px solid var(--color-border-default)",
-            boxShadow: "var(--shadow-floating)",
-          }}
-        >
+      <Floating
+        anchorRef={anchorRef}
+        open={open}
+        placement="bottom-end"
+        onClose={() => setOpen(false)}
+        className="min-w-[170px] rounded-lg py-1"
+        style={{
+          background: "var(--color-bg-card)",
+          border: "1px solid var(--color-border-default)",
+          boxShadow: "var(--shadow-floating)",
+        }}
+      >
           <div
             className="px-3 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide"
             style={{ color: "var(--color-text-tertiary)" }}
@@ -250,8 +235,7 @@ function SortMenu(props: { sortKey: CallListSort; onSortChange: (s: CallListSort
               {s.label}
             </button>
           ))}
-        </div>
-      )}
+      </Floating>
     </div>
   );
 }
@@ -279,7 +263,7 @@ function AudienceMenu(props: {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [phrase, setPhrase] = useState("");
-  const ref = useDismiss(open, () => setOpen(false));
+  const anchorRef = useRef<HTMLButtonElement>(null);
 
   // Whole-ICP is the active "audience" when no sprint list is set.
   const activeSectorId = activeListId ?? "all";
@@ -306,14 +290,15 @@ function AudienceMenu(props: {
   }
 
   return (
-    <div ref={ref} className="relative min-w-0">
+    <div className="relative min-w-0">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="Audience : quelle cible alimente la file"
-        className="flex h-7 min-w-0 max-w-[180px] items-center gap-1.5 rounded-md border border-zinc-200 px-2 text-[12px] text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        className="flex h-6 min-w-0 max-w-[140px] items-center gap-1 rounded-md border px-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+        style={{ borderColor: "var(--color-border-default)" }}
       >
-        <Layers size={12} className="shrink-0 text-zinc-400" />
         <span className="truncate">{activeName}</span>
         {busySectorId !== null ? (
           <Loader2 size={12} className="shrink-0 animate-spin text-zinc-400" />
@@ -322,15 +307,18 @@ function AudienceMenu(props: {
         )}
       </button>
 
-      {open && (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[230px] rounded-lg py-1"
-          style={{
-            background: "var(--color-bg-card)",
-            border: "1px solid var(--color-border-default)",
-            boxShadow: "var(--shadow-floating)",
-          }}
-        >
+      <Floating
+        anchorRef={anchorRef}
+        open={open}
+        placement="bottom-end"
+        onClose={() => setOpen(false)}
+        className="w-[200px] rounded-lg py-1"
+        style={{
+          background: "var(--color-bg-card)",
+          border: "1px solid var(--color-border-default)",
+          boxShadow: "var(--shadow-floating)",
+        }}
+      >
           <div
             className="px-3 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide"
             style={{ color: "var(--color-text-tertiary)" }}
@@ -416,8 +404,7 @@ function AudienceMenu(props: {
               )}
             </>
           )}
-        </div>
-      )}
+      </Floating>
     </div>
   );
 }

@@ -30,11 +30,11 @@ export function PageHeader({ icon, title, subtitle, children }: PageHeaderProps)
       </h1>
       {isBetaRoute(pathname) && <BetaTag />}
       {subtitle && (
-        <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+        <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
           {subtitle}
         </span>
       )}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {children}
       </div>
     </div>

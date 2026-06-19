@@ -33,7 +33,7 @@ const muted = { color: "var(--color-text-tertiary)", fontWeight: 400 } as React.
 function Bar({ done, total }: { done: number; total: number }) {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return (
-    <div className="mt-0.5 h-0.5 w-full overflow-hidden rounded-full" style={{ background: "var(--color-border-default)" }}>
+    <div className="mt-px h-0.5 w-full overflow-hidden rounded-full" style={{ background: "var(--color-border-default)" }}>
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--color-accent)" }} />
     </div>
   );
@@ -49,18 +49,21 @@ function Cell({
   children,
   bar,
   style,
+  title,
 }: {
   label: string;
   children: React.ReactNode;
   bar?: { done: number; total: number };
   style?: React.CSSProperties;
+  /** Full "label · value" text shown on hover — the truncated cell is otherwise
+   *  unreadable once it ellipsizes. */
+  title?: string;
 }) {
   return (
-    <div className="px-3.5 py-1.5" style={style}>
-      {/* text-[13px] on the line keeps its strut equal to the value's line box,
-          so the strip height matches the previous flex layout exactly */}
-      <div className="truncate text-[13px]">
-        <span className="mr-1.5 text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
+    <div className="px-3 py-1" style={style} title={title}>
+      {/* Compact strip: 11px value / 9px label keep the bar a thin one-line glance. */}
+      <div className="truncate text-[11px] leading-tight">
+        <span className="mr-1.5 text-[9px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
           {label}
         </span>
         <span className="font-semibold" style={{ color: "var(--color-text-primary)" }}>
@@ -91,7 +94,6 @@ export function CampaignFunnelBar() {
 
   const noun = s.goal ? GOAL_NOUN[s.goal.type] : "calls";
   const reached = s.cadence.connected + s.cadence.converted;
-  const cov = s.coverage.targets;
   const divider = { borderLeft: "1px solid var(--color-border-default)" } as React.CSSProperties;
   const weekTarget = s.goal?.target ?? s.campaign.weeklyTarget;
 
@@ -107,12 +109,12 @@ export function CampaignFunnelBar() {
           convention) so the cockpit is framed edge-to-edge instead of floating
           an inset card above full-bleed columns. */}
       <div
-        className="flex w-full flex-wrap items-center"
+        className="no-scrollbars flex w-full items-center overflow-x-auto"
         style={{ background: "var(--color-bg-card)", borderBottom: "1px solid var(--color-border-default)" }}
       >
       {/* Me / Team scope — per-user Call Mode, shareable team totals */}
-      <div className="px-3.5 py-1.5" style={{ display: "flex", alignItems: "center" }}>
-        <div className="flex gap-0.5 rounded-md p-0.5" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)" }}>
+      <div className="px-3 py-0.5" style={{ display: "flex", alignItems: "center" }}>
+        <div className="flex gap-0.5 rounded p-px" style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)" }}>
           {(["me", "team"] as const).map((k) => {
             const active = scope === k;
             return (
@@ -120,7 +122,7 @@ export function CampaignFunnelBar() {
                 key={k}
                 type="button"
                 onClick={() => setScope(k)}
-                className="rounded px-2 py-0.5 text-[11px] font-medium transition-colors"
+                className="rounded-sm px-1.5 py-0 text-[9px] font-medium leading-tight transition-colors"
                 style={{
                   background: active ? "var(--color-accent-soft)" : "transparent",
                   color: active ? "var(--color-accent)" : "var(--color-text-tertiary)",
@@ -134,45 +136,43 @@ export function CampaignFunnelBar() {
         </div>
       </div>
 
-      <Cell label="Today" bar={{ done: s.progress.callsToday, total: s.progress.dailyQuota }} style={{ minWidth: 140, flex: "1 1 140px" }}>
+      <Cell label="Today" title={`Today · ${s.progress.callsToday} / ${s.progress.dailyQuota} calls`} bar={{ done: s.progress.callsToday, total: s.progress.dailyQuota }} style={{ minWidth: 100, flex: "1 1 100px" }}>
         {s.progress.callsToday}<span style={muted}> / {s.progress.dailyQuota} calls</span>
       </Cell>
 
-      <Cell label="Week" bar={{ done: s.goalDone, total: weekTarget }} style={{ ...divider, minWidth: 150, flex: "1 1 150px" }}>
+      <Cell label="Week" title={`Week · ${s.goalDone} / ${weekTarget} ${noun}`} bar={{ done: s.goalDone, total: weekTarget }} style={{ ...divider, minWidth: 110, flex: "1 1 110px" }}>
         {s.goalDone}<span style={muted}> / {weekTarget} {noun}</span>
       </Cell>
 
-      <Cell label="Meetings" style={{ ...divider, minWidth: 100 }}>
+      <Cell label="Meetings" title={`Meetings · ${s.progress.meetingsWeek} this week`} style={{ ...divider, minWidth: 84 }}>
         {s.progress.meetingsWeek}<span style={muted}> this week</span>
       </Cell>
 
       {/* Connect / NRP — the joignabilité rates the experts watch. NRP made
           first-class per its operational weight; full breakdown in "Détails". */}
-      <Cell label="Connexion / NRP" style={{ ...divider, minWidth: 150 }}>
+      <Cell label="Connexion / NRP" title={`Connexion / NRP · ${fmtPct(connectRate)} connectés · ${fmtPct(nrpRate)} NRP (cette semaine)`} style={{ ...divider, minWidth: 120 }}>
         {fmtPct(connectRate)}
         <span style={muted}> conn · </span>
-        <span style={{ color: nrpRate !== null ? "rgb(185,28,28)" : "var(--color-text-primary)" }}>{fmtPct(nrpRate)}</span>
+        <span style={{ color: nrpRate !== null ? "var(--color-error)" : "var(--color-text-primary)" }}>{fmtPct(nrpRate)}</span>
         <span style={muted}> NRP</span>
       </Cell>
 
-      <Cell label="Cadence" style={{ ...divider, minWidth: 200, flex: "1 1 200px" }}>
-        <span style={{ fontWeight: 400, fontSize: "12px", color: "var(--color-text-secondary)" }}>
+      <Cell label="Cadence" title={`Cadence · ${s.cadence.dueToday} due · ${s.cadence.queued} in cadence · ${reached} reached · ${s.cadence.exhausted} exhausted`} style={{ ...divider, minWidth: 150, flex: "1 1 150px" }}>
+        <span
+          style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}
+        >
           {s.cadence.dueToday} due · {s.cadence.queued} in cadence · {reached} reached · {s.cadence.exhausted} exhausted
         </span>
       </Cell>
-
-      {cov > 0 && (
-        <Cell label="Callable" style={{ ...divider, minWidth: 120 }}>
-          {s.coverage.withPhone}<span style={muted}> / {cov} have a phone</span>
-        </Cell>
-      )}
 
       {/* Script impact — meetings from calls dialled WITH a grounded reason
           line vs without. Hidden until both buckets carry a minimal sample,
           so we never display noise as insight. */}
       {s.scriptImpact && impactDisplayable(s.scriptImpact) && (
-        <Cell label="Script" style={{ ...divider, minWidth: 210 }}>
-          <span style={{ fontWeight: 400, fontSize: "12px", color: "var(--color-text-secondary)" }}>
+        <Cell label="Script" title={`Script · raison ancrée ${s.scriptImpact.withReason.meetings}/${s.scriptImpact.withReason.calls} RDV · sans ${s.scriptImpact.withoutReason.meetings}/${s.scriptImpact.withoutReason.calls}`} style={{ ...divider, minWidth: 150 }}>
+          <span
+            style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}
+          >
             raison ancrée {s.scriptImpact.withReason.meetings}/{s.scriptImpact.withReason.calls} RDV · sans {s.scriptImpact.withoutReason.meetings}/{s.scriptImpact.withoutReason.calls}
           </span>
         </Cell>
@@ -182,12 +182,12 @@ export function CampaignFunnelBar() {
         <button
           type="button"
           onClick={() => setShowMetrics(true)}
-          className="ml-auto mr-3 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
+          className="ml-auto mr-3 flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
           style={{ color: "var(--color-text-secondary)", border: "1px solid var(--color-border-default)" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
         >
-          <BarChart3 className="h-3.5 w-3.5" />
+          <BarChart3 className="h-3 w-3" />
           Détails
         </button>
       </div>

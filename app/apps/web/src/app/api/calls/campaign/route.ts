@@ -78,7 +78,10 @@ async function getActiveCampaign(tenantId: string, ownerId: string) {
 
 /** Today's targets for one rep, mapped to the cockpit's queue-item shape. */
 async function todayQueue(tenantId: string, ownerId: string) {
-  const rows = await getTodaysCallList(tenantId, new Date(), ownerId);
+  const all = await getTodaysCallList(tenantId, new Date(), ownerId);
+  // Defence in depth (the query already filters phone): never surface a prospect
+  // without a dialable number, even one whose phone was cleared after enqueue.
+  const rows = all.filter((r) => r.phone != null && r.phone.trim() !== "");
   const companyIds = [...new Set(rows.map((r) => r.companyId).filter(Boolean))] as string[];
   const cmap: Record<string, { name: string; domain: string | null }> = {};
   if (companyIds.length > 0) {
@@ -95,7 +98,10 @@ async function todayQueue(tenantId: string, ownerId: string) {
     companyName: r.companyId ? cmap[r.companyId]?.name ?? null : null,
     companyDomain: r.companyId ? cmap[r.companyId]?.domain ?? null : null,
     phone: r.phone ?? "",
-    score: r.score ?? 0,
+    // contacts.score is stored 0..100; the cockpit (page.tsx) expects a 0..1
+    // composite like lib/voice/queue.ts returns, then renders it ×100. Without
+    // this /100 the queue badge showed the raw value ×100 (e.g. "10000").
+    score: Math.min(1, (r.score ?? 0) / 100),
     intentScore: Math.min(1, (r.score ?? 0) / 100),
     accessibilityScore: 0.7,
     dealValueWeight: 1,
