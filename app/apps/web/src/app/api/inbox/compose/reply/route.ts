@@ -1,4 +1,7 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
+import { db } from "@/db";
+import { contacts } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { buildConversations } from "@/lib/inbox/conversations";
 import { loadConversationRows } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
@@ -7,6 +10,39 @@ import type { ThreadMessage } from "@/lib/inbox/summarize-thread";
 import { getAiProfile, aiEnabled } from "@/lib/inbox/ai-profile";
 import { getInboxMemory, buildMemoryPrompt } from "@/lib/inbox/ai-memory";
 import { getVoicePrefs, buildVoicePrompt } from "@/lib/inbox/voice-prefs";
+import {
+  getWritingStyle,
+  selectAudience,
+  buildWritingStylePrompt,
+  type RecipientSegment,
+} from "@/lib/inbox/writing-style";
+
+/**
+ * Resolve the conversation counterparty into an audience-routing segment (B2 R4.2):
+ * the reply recipient's email (→ domain) plus the matched contact's title/tags.
+ * Tags live in contacts.properties.tags (no dedicated column). Read-only.
+ */
+async function resolveRecipientSegment(
+  tenantId: string,
+  conversation: { fromAddress?: string | null; contactId?: string | null },
+): Promise<RecipientSegment> {
+  const email = conversation.fromAddress ?? null;
+  let title: string | null = null;
+  let tags: string[] = [];
+  if (conversation.contactId) {
+    const [c] = await db
+      .select({ title: contacts.title, properties: contacts.properties })
+      .from(contacts)
+      .where(and(eq(contacts.id, conversation.contactId), eq(contacts.tenantId, tenantId)))
+      .limit(1);
+    if (c) {
+      title = c.title ?? null;
+      const props = c.properties && typeof c.properties === "object" ? (c.properties as Record<string, unknown>) : {};
+      if (Array.isArray(props.tags)) tags = props.tags.filter((x): x is string => typeof x === "string");
+    }
+  }
+  return { email, title, tags };
+}
 
 /**
  * POST /api/inbox/compose/reply  { key }  (INBOX-C01 / G08)
@@ -46,9 +82,16 @@ export async function POST(req: Request) {
       at: m.at,
     }));
 
+    // B2: lead with the user's writing-style block (base prompt, or the audience
+    // variant the counterparty resolves to), then tone, then standing memory.
+    // Backward-compatible: an empty record yields the default prompt (R3.5).
+    const style = await getWritingStyle(authCtx.userId);
+    const recipient = await resolveRecipientSegment(authCtx.tenantId, conversation);
+    const audienceId = selectAudience(style, recipient)?.id;
+    const { prompt: stylePrompt } = buildWritingStylePrompt(style, audienceId);
     const voice = buildVoicePrompt(await getVoicePrefs(authCtx.userId));
     const { prompt: memory } = buildMemoryPrompt(await getInboxMemory(authCtx.userId));
-    const instructions = [voice, memory].filter(Boolean).join("\n\n");
+    const instructions = [stylePrompt, voice, memory].filter(Boolean).join("\n\n");
 
     const result: ReplyDraft = await composeReply(messages, { instructions });
     return Response.json(result);
