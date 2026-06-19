@@ -1,3 +1,5 @@
+import type { FollowupDue } from "@/lib/inbox/followup-due";
+
 export type InboxLane = "attention" | "snoozed" | "done" | "handled";
 
 /** Intention split (B3) — sub-segments the attention lane. */
@@ -26,6 +28,9 @@ export interface ConversationListItem {
   reasonSource: "reply" | "summary" | "sentiment" | "handled" | null;
   /** Hours overdue past the response SLA when awaiting our reply (INBOX-N04); null otherwise. */
   slaHoursOverdue: number | null;
+  /** B7: gentle-follow-up due time on an awaiting-their-reply thread; null otherwise.
+   *  SLA-exclusive — never set together with slaHoursOverdue. */
+  followup: FollowupDue | null;
   /** Importance tier 1–4 (1 hottest) that sorts the attention lane + cited factors (INBOX-T04). */
   importanceTier: 1 | 2 | 3 | 4;
   importanceFactors: string[];

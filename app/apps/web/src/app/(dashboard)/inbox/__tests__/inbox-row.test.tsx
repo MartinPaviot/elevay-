@@ -17,6 +17,7 @@ function sample(over: Partial<ConversationListItem> = {}): ConversationListItem 
     reason: "Reply to your outreach",
     reasonSource: "reply",
     slaHoursOverdue: null,
+    followup: null,
     importanceTier: 1,
     importanceFactors: ["recent reply"],
     labels: [],
@@ -67,5 +68,32 @@ describe("InboxRow (F1)", () => {
   it("renders the SLA-overdue chip when overdue", () => {
     render(<InboxRow item={sample({ slaHoursOverdue: 30 })} lane="attention" selected={false} multiSelected={false} hasSelection={false} onSelect={vi.fn()} />);
     expect(screen.getByText(/overdue/)).toBeTruthy();
+  });
+});
+
+describe("InboxRow follow-up chip (B7 B2.3)", () => {
+  const overdue = { dueAt: 1, stage: 1, overdue: true, daysUntilDue: 0, businessDaysOverdue: 3 };
+  const upcoming = { dueAt: 1, stage: 1, overdue: false, daysUntilDue: 2, businessDaysOverdue: 0 };
+  const props = { lane: "attention" as const, selected: false, multiSelected: false, hasSelection: false, onSelect: vi.fn() };
+
+  it("renders an overdue follow-up label", () => {
+    render(<InboxRow item={sample({ followup: overdue })} {...props} />);
+    expect(screen.getByText("Follow up overdue · 3d")).toBeTruthy();
+  });
+
+  it("renders an upcoming follow-up label", () => {
+    render(<InboxRow item={sample({ followup: upcoming })} {...props} />);
+    expect(screen.getByText("Follow up in 2d")).toBeTruthy();
+  });
+
+  it("renders no follow-up chip when dueAt is null", () => {
+    render(<InboxRow item={sample({ followup: { dueAt: null, stage: 0, overdue: false, daysUntilDue: 0, businessDaysOverdue: 0 } })} {...props} />);
+    expect(screen.queryByText(/Follow up/)).toBeNull();
+  });
+
+  it("never renders both the SLA chip and the follow-up chip", () => {
+    render(<InboxRow item={sample({ slaHoursOverdue: 30, followup: overdue })} {...props} />);
+    expect(screen.getByText("1d overdue")).toBeTruthy(); // SLA wins
+    expect(screen.queryByText(/Follow up/)).toBeNull(); // follow-up suppressed
   });
 });

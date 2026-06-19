@@ -14,6 +14,7 @@ import { timeAgo } from "./_time-ago";
 import { reasonTooltip, type ConversationListItem, type InboxLane } from "./_types";
 import { dirOf } from "@/lib/inbox/text-direction";
 import { decodeDisplay } from "@/lib/inbox/text-decode";
+import { followupLabel } from "@/lib/inbox/followup-due";
 import { SenderAvatar } from "./_sender-avatar";
 
 function priorityDot(priority: number): string {
@@ -48,6 +49,9 @@ export function InboxRow({
 }) {
   const c = item;
   const when = c.lastInboundAt ?? c.lastMessageAt;
+  // B7: the follow-up indicator is SLA-exclusive — only when no SLA chip shows
+  // (the two never co-occur on a real thread, but the guard makes it explicit).
+  const followupText = c.followup && c.slaHoursOverdue == null ? followupLabel(c.followup) : null;
   return (
     <button
       onClick={() => onSelect(c.key)}
@@ -138,6 +142,20 @@ export function InboxRow({
                 {c.slaHoursOverdue >= 24
                   ? `${Math.round(c.slaHoursOverdue / 24)}d overdue`
                   : `${Math.round(c.slaHoursOverdue)}h overdue`}
+              </span>
+            )}
+            {followupText && (
+              <span
+                className="flex shrink-0 items-center gap-1 rounded px-1 text-[10px] font-medium"
+                style={
+                  c.followup?.overdue
+                    ? { background: "var(--color-warning-soft)", color: "var(--color-warning)" }
+                    : { color: "var(--color-text-tertiary)" }
+                }
+                title="Awaiting their reply — a gentle follow-up is due"
+              >
+                <AlarmClock size={10} className="shrink-0" />
+                {followupText}
               </span>
             )}
             {showMailbox && c.mailboxLabel && (

@@ -234,6 +234,7 @@ export async function GET(req: Request) {
         reason: c.reason,
         reasonSource: c.reasonSource,
         slaHoursOverdue: c.slaHoursOverdue,
+        followup: c.followup,
         importanceTier: c.importanceTier,
         importanceFactors: c.importanceFactors,
         labels: applyLabelFilters(toLaneCandidate({ c, mb }), userFilters),
