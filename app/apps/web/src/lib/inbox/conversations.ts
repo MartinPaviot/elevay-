@@ -20,6 +20,8 @@ import { scoreImportance } from "@/lib/inbox/importance";
 import { resolveGeneralIntent, type GeneralIntent } from "@/lib/inbox/general-intent";
 import { isReplyWorthy } from "@/lib/inbox/reply-worthy";
 import { resolveSplit, type BuiltInSplit } from "@/lib/inbox/splits";
+import { classifyNoise } from "@/lib/inbox/noise";
+import { noiseOverrideMatches, type NoiseOverride } from "@/lib/inbox/noise-override-store";
 
 /** Hours awaiting our reply before a conversation is flagged overdue (INBOX-N04). */
 const SLA_THRESHOLD_HOURS = 24;
@@ -124,6 +126,9 @@ export interface Conversation {
   awaitingTheirReply: boolean;
   /** Intention split (B3): needs_reply / follow_ups / promotions / social / other. */
   split: BuiltInSplit;
+  /** Cold/automated/newsletter mail (B4) — floored in importance; never a
+   *  reply-worthy human thread (the override/reply-worthy/prior KEEP guards). */
+  noise: boolean;
   /** What the pipeline did, for the handled lane. Null elsewhere. */
   handledNote: string | null;
   lastInboundAt: string | null;
@@ -250,9 +255,12 @@ export function buildConversations(input: {
   outbound: OutboundRow[];
   triage: TriageRow[];
   now?: Date;
+  /** B4: the user's not-noise overrides (pure-builder input, like triage). */
+  noiseOverrides?: NoiseOverride[];
 }): Conversation[] {
   const now = input.now ?? new Date();
   const nowMs = now.getTime();
+  const noiseOverrides = input.noiseOverrides ?? [];
 
   const groups = new Map<string, { inbound: InboundRow[]; outbound: OutboundRow[] }>();
   const groupFor = (key: string) => {
@@ -474,6 +482,28 @@ export function buildConversations(input: {
       awaitingTheirReply,
     }).split;
 
+    // B4 noise: demote cold/automated/newsletter mail. hasPriorHumanReply (a real
+    // 1:1 — we've emailed this human) and the not-noise override are the KEEP
+    // guards classifyNoise applies before any demotion signal (cardinal sin can't
+    // fire). Soft demotion: a noisy attention thread is floored (tier 4 / score 0)
+    // so it sinks; the `noise` field + the route count let a Noise filter surface
+    // them. Read-time + reversible (the override un-demotes); no row is mutated.
+    const fromAddress = String(lastInboundMeta.from ?? "") || lastOutbound?.toAddress || "";
+    const hasPriorHumanReply = g.outbound.length > 0 && !inboundIsAutomated;
+    const overridden = noiseOverrideMatches(noiseOverrides, fromAddress, key);
+    const noise = classifyNoise({
+      isMachineSent: inboundIsAutomated,
+      isBulk: inboundIsAutomated,
+      generalIntent,
+      replyWorthy,
+      importanceTier: importance.tier,
+      hasPriorHumanReply,
+      overridden,
+    }).noise;
+    const demoteNoise = noise && lane === "attention";
+    const noiseTier: 1 | 2 | 3 | 4 = demoteNoise ? 4 : importance.tier;
+    const noiseScore = demoteNoise ? 0 : importance.score;
+
     conversations.push({
       key,
       lane,
@@ -484,7 +514,7 @@ export function buildConversations(input: {
         lastOutbound?.subject ||
         "(no subject)",
       contactId: lastInbound?.contactId ?? lastOutbound?.contactId ?? null,
-      fromAddress: String(lastInboundMeta.from ?? "") || lastOutbound?.toAddress || "",
+      fromAddress,
       snippet: normalizeSnippet(
         lastInbound?.rawContent ||
           (typeof lastInboundMeta.snippet === "string" ? lastInboundMeta.snippet : "") ||
@@ -493,8 +523,8 @@ export function buildConversations(input: {
       reason,
       reasonSource,
       slaHoursOverdue,
-      importanceScore: importance.score,
-      importanceTier: importance.tier,
+      importanceScore: noiseScore,
+      importanceTier: noiseTier,
       importanceFactors: importance.factors.map((f) => f.label),
       isBulk: inboundIsAutomated,
       replyWorthy,
@@ -502,6 +532,7 @@ export function buildConversations(input: {
       awaitingOurReply,
       awaitingTheirReply,
       split,
+      noise,
       handledNote,
       lastInboundAt: lastInbound ? toIso(lastInbound.occurredAt) : null,
       lastMessageAt: lastMessage?.at ?? null,

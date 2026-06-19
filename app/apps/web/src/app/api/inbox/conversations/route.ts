@@ -5,6 +5,7 @@ import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
 import { BUILT_IN_SPLITS, resolveCustomSplit } from "@/lib/inbox/splits";
 import { getUserSplits } from "@/lib/inbox/split-store";
+import { getNoiseOverrides } from "@/lib/inbox/noise-override-store";
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
 import { attributeMailbox, indexMailboxes } from "@/lib/inbox/mailbox-attribution";
@@ -60,9 +61,9 @@ export async function GET(req: Request) {
     const selectedMailbox =
       mailboxParam && scope.mailboxIds.has(mailboxParam) ? mailboxParam : null;
 
-    const allConversations = buildConversations(
-      scopeConversationRows(await loadConversationRows(authCtx.tenantId), scope),
-    );
+    const scopedRows = scopeConversationRows(await loadConversationRows(authCtx.tenantId), scope);
+    const noiseOverrides = await getNoiseOverrides(authCtx.userId);
+    const allConversations = buildConversations({ ...scopedRows, noiseOverrides });
 
     // Attribute every conversation to its owning mailbox ONCE, up front — the
     // rail's per-box counts and the per-mailbox filter both read it.
@@ -237,12 +238,14 @@ export async function GET(req: Request) {
         messageCount: c.messageCount,
         hasIntelligence: c.intelligence !== null,
         split: c.split,
+        noise: c.noise,
         mailboxId: mb.mailboxId,
         mailboxAddress: mb.mailboxAddress,
         mailboxLabel: mb.mailboxLabel,
       })),
       counts: { ...counts, outbound: Number(outboundCountRow?.count || 0) },
       splits,
+      noiseCount: visible.filter(({ c }) => c.noise).length,
       pagination: { page, pageSize: PAGE_SIZE, total: inLane.length },
       mailboxConnected: scope.hasMailbox,
       mailboxes,

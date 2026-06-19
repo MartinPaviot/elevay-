@@ -38,6 +38,8 @@ export interface ConversationListItem {
   hasIntelligence: boolean;
   /** Intention split this conversation resolves to (B3). */
   split: BuiltInSplit;
+  /** Cold/automated/newsletter mail (B4) — floored in importance. */
+  noise: boolean;
   // Which of the user's connected mailboxes this conversation belongs to.
   // Null when it can't be attributed (e.g. legacy rows). Drives the
   // per-mailbox filter + the "received on X" chip in the unified inbox.
