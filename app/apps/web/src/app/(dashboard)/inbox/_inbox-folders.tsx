@@ -9,7 +9,7 @@
  * state through callbacks; it owns no data.
  */
 
-import { Search, X, Inbox, AlarmClock, CheckCircle2, Bot, Send, Layers, Reply, Clock, Megaphone, Users, Plus, Mail } from "lucide-react";
+import { Inbox, AlarmClock, CheckCircle2, Bot, Send, Layers, Reply, Clock, Megaphone, Users, Plus, Mail } from "lucide-react";
 import type { InboxLane, MailboxSummary } from "./_types";
 import type { SplitCount } from "@/lib/inbox/splits";
 import { colorForMailbox } from "@/lib/inbox/mailbox-color";
@@ -94,8 +94,6 @@ export function InboxFolders({
   mailboxes,
   selectedMailbox,
   onSelectMailbox,
-  search,
-  onSearch,
   onSelectLane,
   onSelectSplit,
   onSelectCustomLane,
@@ -114,8 +112,6 @@ export function InboxFolders({
   /** The focused mailbox id, or null for "All inboxes". */
   selectedMailbox: string | null;
   onSelectMailbox: (id: string | null) => void;
-  search: string;
-  onSearch: (q: string) => void;
   /** Select a built-in lane (clears custom lane + split). */
   onSelectLane: (lane: LaneId) => void;
   /** Select an intention split (jumps to the attention lane). */
@@ -143,22 +139,7 @@ export function InboxFolders({
       className="flex w-[224px] shrink-0 flex-col overflow-y-auto border-r"
       style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
     >
-      {/* Search at the top of the folder column (Upstream pattern). */}
-      <div className="relative p-2">
-        <Search size={13} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
-        <input
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder="Search mail"
-          className="w-full rounded-md border py-1.5 pl-7 pr-7 text-[12px] outline-none"
-          style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
-        />
-        {search && (
-          <button onClick={() => onSearch("")} className="absolute right-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} title="Clear search">
-            <X size={12} />
-          </button>
-        )}
-      </div>
+      <div className="h-2" />
 
       <div className="flex-1 px-1.5 pb-3">
         {/* Upstream order: Inbox, the intention folders, then the email folders.

@@ -17,8 +17,6 @@ function base(over: Record<string, unknown> = {}) {
     mailboxes: [],
     selectedMailbox: null,
     onSelectMailbox: vi.fn(),
-    search: "",
-    onSearch: vi.fn(),
     onSelectLane: vi.fn(),
     onSelectSplit: vi.fn(),
     onSelectCustomLane: vi.fn(),

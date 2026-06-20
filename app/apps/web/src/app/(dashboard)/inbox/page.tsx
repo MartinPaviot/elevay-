@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Inbox, Mail, AlertCircle } from "lucide-react";
+import { Inbox, Mail, AlertCircle, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -837,8 +837,6 @@ export default function InboxPage() {
           mailboxes={mailboxes}
           selectedMailbox={selectedMailbox}
           onSelectMailbox={setSelectedMailbox}
-          search={search}
-          onSearch={setSearch}
           onSelectLane={(l) => {
             setCustomLaneId(null);
             setActiveSplit(null);
@@ -859,6 +857,26 @@ export default function InboxPage() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
+      {/* Top full-width search bar (Upstream): spans the content area. */}
+      {mailboxConnected && (
+        <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-border-default)" }}>
+          <div className="relative flex-1">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search mail — from: subject: is:unread"
+              className="w-full rounded-md border py-1.5 pl-8 pr-8 text-[13px] outline-none"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} title="Clear search">
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* Second nav axis: the split-tab strip (attention lane only). */}
       {mailboxConnected && tab === "attention" && !customLaneId && (
         <SplitStrip splits={splitCounts} noiseCount={noiseCount} active={activeSplit} onSelect={setActiveSplit} />
