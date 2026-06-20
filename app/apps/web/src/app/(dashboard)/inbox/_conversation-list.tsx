@@ -6,7 +6,7 @@
  */
 
 import { useRef, useCallback } from "react";
-import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX } from "lucide-react";
+import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX, Reply, Clock } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { type ConversationListItem, type InboxLane } from "./_types";
@@ -23,6 +23,22 @@ const EMPTY_COPY: Record<InboxLane, { title: string; description: string }> = {
   handled: {
     title: "Nothing handled by the agent yet",
     description: "Out-of-office, unsubscribes and bounces are processed automatically and reported here.",
+  },
+};
+
+// Per-split empty copy (Upstream parity): the AI-output tabs have their own
+// resting empty state, distinct from the lane's. Verbatim from Upstream's live
+// empty states (UP-audit-02/03).
+const SPLIT_EMPTY_COPY: Record<string, { icon: React.ReactNode; title: string; description: string }> = {
+  needs_reply: {
+    icon: <Reply size={28} />,
+    title: "No AI-generated reply drafts right now.",
+    description: "When the agent drafts a reply for you to review, it shows up here.",
+  },
+  follow_ups: {
+    icon: <Clock size={28} />,
+    title: "No follow-up suggestions right now.",
+    description: "When a waiting thread is due a nudge, the agent's suggestion shows up here.",
   },
 };
 
@@ -47,6 +63,7 @@ export function ConversationList({
   hasQuery = false,
   onClearSearch,
   onToggleStar,
+  activeSplit = null,
 }: {
   lane: InboxLane;
   conversations: ConversationListItem[];
@@ -67,6 +84,8 @@ export function ConversationList({
   onClearSearch?: () => void;
   /** Toggle a conversation's star (Upstream is:starred). */
   onToggleStar?: (key: string, starred: boolean) => void;
+  /** Active split id — drives the per-split resting empty copy (Upstream parity). */
+  activeSplit?: string | null;
 }) {
   const selectedSet = new Set(selectedKeys);
   const hasSelection = selectedKeys.length > 0;
@@ -90,13 +109,16 @@ export function ConversationList({
   if (conversations.length === 0) {
     // F3 R3.4/R3.5: an empty result under an active search is "no matches" (with a
     // way out), not the lane's resting empty copy.
+    const splitEmpty = activeSplit ? SPLIT_EMPTY_COPY[activeSplit] : undefined;
     const empty = hasQuery
       ? {
           icon: <SearchX size={28} />,
           title: "No conversations match the current search",
           description: "Try a different search, or clear it to see this lane.",
         }
-      : { icon: LANE_ICON[lane], title: EMPTY_COPY[lane].title, description: EMPTY_COPY[lane].description };
+      : splitEmpty
+        ? splitEmpty
+        : { icon: LANE_ICON[lane], title: EMPTY_COPY[lane].title, description: EMPTY_COPY[lane].description };
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState

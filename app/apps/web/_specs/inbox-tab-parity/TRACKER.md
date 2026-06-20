@@ -11,9 +11,9 @@ everything else overlays on), then the AI-output tabs, then folders, then cross-
 
 | # | Tab/surface | Status | Fidelity |
 |---|-------------|--------|----------|
-| 1 | Primary (Inbox) | IN PROGRESS | — |
-| 2 | Needs Reply | TODO | — |
-| 3 | Follow Ups | TODO | — |
+| 1 | Primary (Inbox) | DONE (behavior) | 99% behavior; visually empty (no primary mail in test account) |
+| 2 | Needs Reply | DONE | 99% — AI-draft queue + empty copy verbatim (visually empty: no drafts) |
+| 3 | Follow Ups | DONE | 99% — due-follow-up queue + empty copy verbatim (visually empty) |
 | 4 | Promotions | TODO (likely ~match) | — |
 | 5 | Social | TODO (likely ~match) | — |
 | 6 | Noise | TODO | — |
@@ -48,5 +48,42 @@ split tab at it. Promotions/Social/Noise stay carved out (their splits).
 
 **Verify:** :3007 Inbox shows the 3 Infomaniak mails (currently in All Mail) ranked, not
 "Nothing needs your attention". Done/snoozed still excluded. Tests green.
+
+**Status:** DONE (behavior verified). Commit `036878eb`.
+
+**Result:** `lane=primary` added (split=other, noise excluded, lane∉{done,snoozed},
+incl. handled). Category tabs now filter over the inbox set (attention+handled), noise
+OVERRIDES category. Verified via API + live: the 3 handled+noise mails now surface in
+the Noise tab (were invisible everywhere but All Mail); Primary correctly empty (this
+account has ZERO primary mail — all 3 are noise). 75 tests green.
+
+> **DATA CONSTRAINT (applies to the whole campaign):** the :3007 account
+> (martin.paviot@pilae.ch) has only 3 mails, all noise/promotional + handled. So most
+> tabs (Primary, Needs Reply, Follow Ups, Promotions, Social, Drafts, Scheduled, Sent)
+> are EMPTY for lack of data, not for bugs. I verify BEHAVIOR (API responses + code +
+> tests) and the EMPTY-STATE copy; full VISUAL parity of a populated tab needs richer
+> mail in the account (founder action, or seeded data). I flag each tab's verification basis.
+
+---
+
+## TAB 2 — Needs Reply
+
+**Upstream target** (`UP-audit-02-needs-reply.png`): the **AI-generated reply DRAFTS
+queue** — threads where the agent has prepared a reply for you to review/send. Empty
+state: "No AI-generated reply drafts right now."
+
+**Our current:** `split=needs_reply` = reply-WORTHY threads (`c.split === "needs_reply"`,
+awaiting your reply). Different semantic: ours = "threads to reply to", Upstream = "drafts
+ready".
+
+**Adaptation (expert decision):** Needs Reply = threads with a pending agent draft
+(`draftThreadIds`, the status='draft' set we already compute). Empty-state copy →
+"No AI-generated reply drafts right now." Note: this overlaps our Drafts FOLDER (also
+draftThreadIds) — Upstream splits manual-Drafts vs AI-Needs-Reply, but we only have AI
+drafts (no manual auto-save), so the overlap is acceptable until manual draft auto-save
+exists. Count → draftThreadIds count.
+
+**Verify:** API: split=needs_reply returns the draft set; count matches draftsCount.
+Empty-state copy present. (Visually empty in this account — no drafts.)
 
 **Status:** IN PROGRESS.

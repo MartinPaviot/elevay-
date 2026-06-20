@@ -199,8 +199,12 @@ export async function GET(req: Request) {
               // other built-in ids match c.split; else a custom per-sender split.
               // Noise overrides category (Upstream model): a noisy mail shows ONLY in
               // the Noise tab (+ All Mail), never in Primary/Promotions/Social/custom.
+              // Needs Reply is an OVERLAY (Upstream): the AI-reply-draft queue —
+              // threads that have a pending agent draft, regardless of category/noise.
               (splitParam === "noise"
                 ? c.noise
+                : splitParam === "needs_reply"
+                  ? draftThreadIds.has(c.key)
                 : !c.noise && (splitParam === "follow_ups"
                   ? isFollowupDue(c.followup)
                   : BUILT_IN_SPLIT_IDS.has(splitParam)
@@ -231,9 +235,13 @@ export async function GET(req: Request) {
       // Follow Ups is realigned to Upstream: the threads with a DUE follow-up
       // (B7), not every awaiting-their-reply thread.
       count:
-        b.id === "follow_ups"
-          ? inboxRows.filter(({ c }) => !c.noise && isFollowupDue(c.followup)).length
-          : inboxRows.filter(({ c }) => !c.noise && c.split === b.id).length,
+        b.id === "needs_reply"
+          // Upstream Needs Reply = the AI-reply-draft queue (threads with a pending
+          // agent draft), an overlay over the inbox — not the reply-worthy category.
+          ? inboxRows.filter(({ c }) => draftThreadIds.has(c.key)).length
+          : b.id === "follow_ups"
+            ? inboxRows.filter(({ c }) => !c.noise && isFollowupDue(c.followup)).length
+            : inboxRows.filter(({ c }) => !c.noise && c.split === b.id).length,
     }));
     const customSplitCounts = userSplits
       .map((s) => ({

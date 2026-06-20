@@ -1063,6 +1063,7 @@ export default function InboxPage() {
                   hasQuery={!!debouncedSearch}
                   onClearSearch={() => setSearch("")}
                   onToggleStar={handleToggleStar}
+                  activeSplit={activeSplit}
                 />
               );
             })()}
