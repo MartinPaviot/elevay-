@@ -23,7 +23,16 @@ everything else overlays on), then the AI-output tabs, then folders, then cross-
 | 10 | Scheduled | ~match | empty on prod (CLE-11 undeployed) |
 | 11 | All Mail | ~match | shows 3 |
 | 12 | Spam / Trash | TODO — MISSING | need lanes + routes + actions (bigger build) |
-| X | Cross-cutting | PARTIAL | per-folder header DONE (dynamic band title); TODO: URL routes (/inbox/[split]) · compose-new · read-state/unread · star LEADING |
+| X | Cross-cutting | PARTIAL | DONE: per-folder header (dynamic title) · **read/unread state** (dot+bold+mark-on-open+unread badge) · **mailboxes 500 fix** (prod-schema fallback). TODO: URL routes (/inbox/[split]) · compose-new · Spam/Trash · star LEADING + Draft badge |
+
+**"Recorrige tout" pass (2026-06-20):** added the biggest missing primitive —
+**read/unread state** (commit a31d3a68: read-store + /api/inbox/read + unread dot + bold
+sender + mark-on-open + Inbox unread badge; verified live: unread rows show blue dot+bold,
+opening clears it) — and fixed the live **`/api/settings/mailboxes` 500** (commit 6408238d:
+prod lacks `connected_mailboxes.shared`; resilient select fallback; now 200). 298 inbox/lib
+tests green. Remaining: compose-new (needs the From-selector, now unblocked), Spam/Trash
+folders, URL routes, star-leading + per-row Draft badge — all data-limited for visual verify
+(account has only 3 noise mails).
 
 **Done this session: foundational category model + Tabs 1/2/3/4/5/6** (commits 036878eb,
 a77b3bb0). The category-tab reshape (handled mail surfaces, noise overrides) fixed 4/5/6
