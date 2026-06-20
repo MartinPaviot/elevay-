@@ -15,6 +15,8 @@ function base(over: Record<string, unknown> = {}) {
     customLanes: [],
     bundleTotal: 0,
     starredCount: 0,
+    draftsCount: 0,
+    scheduledCount: 0,
     mailboxes: [],
     selectedMailbox: null,
     onSelectMailbox: vi.fn(),

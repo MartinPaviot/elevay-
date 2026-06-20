@@ -88,6 +88,8 @@ export default function InboxPage() {
   const [splitCounts, setSplitCounts] = useState<SplitCount[]>([]);
   const [noiseCount, setNoiseCount] = useState(0);
   const [starredCount, setStarredCount] = useState(0);
+  const [draftsCount, setDraftsCount] = useState(0);
+  const [scheduledCount, setScheduledCount] = useState(0);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
   // connect card before the first response.
@@ -186,6 +188,8 @@ export default function InboxPage() {
           splits?: SplitCount[];
           noiseCount?: number;
           starredCount?: number;
+          draftsCount?: number;
+          scheduledCount?: number;
           bundles?: BundleSource[];
           catchUpCount?: number;
           lastSeen?: string | null;
@@ -197,6 +201,8 @@ export default function InboxPage() {
         setSplitCounts(data.splits ?? []);
         setNoiseCount(data.noiseCount ?? 0);
         setStarredCount(data.starredCount ?? 0);
+        setDraftsCount(data.draftsCount ?? 0);
+        setScheduledCount(data.scheduledCount ?? 0);
         setBundles(data.bundles ?? []);
         setCatchUpCount(data.catchUpCount ?? 0);
         // First visit (no marker yet): stamp it once so future visits compute
@@ -853,6 +859,8 @@ export default function InboxPage() {
           customLanes={customLanes}
           bundleTotal={bundleTotal}
           starredCount={starredCount}
+          draftsCount={draftsCount}
+          scheduledCount={scheduledCount}
           mailboxes={mailboxes}
           selectedMailbox={selectedMailbox}
           onSelectMailbox={setSelectedMailbox}

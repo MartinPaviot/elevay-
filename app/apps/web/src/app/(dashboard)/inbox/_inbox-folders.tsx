@@ -95,6 +95,8 @@ export function InboxFolders({
   customLanes,
   bundleTotal,
   starredCount,
+  draftsCount,
+  scheduledCount,
   mailboxes,
   selectedMailbox,
   onSelectMailbox,
@@ -113,6 +115,9 @@ export function InboxFolders({
   bundleTotal: number;
   /** Count for the Starred folder (Upstream is:starred). */
   starredCount: number;
+  /** Counts for the Drafts + Scheduled folders. */
+  draftsCount: number;
+  scheduledCount: number;
   /** The user's connected mailboxes (the per-mailbox sub-segment shows with 2+). */
   mailboxes: MailboxSummary[];
   /** The focused mailbox id, or null for "All inboxes". */
@@ -170,6 +175,8 @@ export function InboxFolders({
         {lane("starred", starredCount)}
         {lane("snoozed", counts.snoozed)}
         {lane("outbound")}
+        {lane("drafts", draftsCount)}
+        {lane("scheduled", scheduledCount)}
 
         {/* Per-mailbox view (multi-mailbox users): scope the whole inbox to one
             connected box, or All inboxes. A sidebar sub-segment, shown with 2+. */}

@@ -48,6 +48,34 @@ export async function GET(req: Request) {
     const BUILT_IN_SPLIT_IDS = new Set<string>(BUILT_IN_SPLITS.map((b) => b.id));
     const lastSeen = await getLastSeen(authCtx.userId);
     const starredKeys = new Set(await getStarredKeys(authCtx.userId));
+
+    // Drafts / Scheduled (Upstream is:draft / is:scheduled). A reply draft
+    // (status="draft") or a held send (status="held" + future holdUntil) is
+    // attached to an existing thread but excluded from the conversation loader
+    // (sentAt is null). Query their threadIds so the folders can mark + filter
+    // the conversations that carry one — owner-scoped to the user's mailboxes.
+    const draftThreadIds = new Set<string>();
+    const scheduledThreadIds = new Set<string>();
+    if (scope.mailboxIds.size > 0) {
+      const rows = await db
+        .select({ threadId: outboundEmails.threadId, status: outboundEmails.status, holdUntil: outboundEmails.holdUntil })
+        .from(outboundEmails)
+        .where(
+          and(
+            eq(outboundEmails.tenantId, authCtx.tenantId),
+            inArray(outboundEmails.mailboxId, [...scope.mailboxIds]),
+            isNotNull(outboundEmails.threadId),
+            inArray(outboundEmails.status, ["draft", "held"]),
+          ),
+        );
+      const nowMs = Date.now();
+      for (const r of rows) {
+        if (!r.threadId) continue;
+        if (r.status === "draft") draftThreadIds.add(r.threadId);
+        else if (r.status === "held" && r.holdUntil && r.holdUntil.getTime() > nowMs) scheduledThreadIds.add(r.threadId);
+      }
+    }
+
     const customLane = userLanes.find((l) => l.id === laneParam) ?? null;
     const toLaneCandidate = (row: {
       c: { fromAddress: string; subject: string };
@@ -142,6 +170,10 @@ export async function GET(req: Request) {
         )
       : laneParam === "starred"
         ? visible.filter(({ c }) => starredKeys.has(c.key)) // Upstream is:starred — across all lanes
+      : laneParam === "drafts"
+        ? visible.filter(({ c }) => draftThreadIds.has(c.key)) // Upstream is:draft
+      : laneParam === "scheduled"
+        ? visible.filter(({ c }) => scheduledThreadIds.has(c.key)) // Upstream is:scheduled
       : customLane
         ? visible.filter((row) => laneMatches(toLaneCandidate(row), customLane))
         : splitParam
@@ -272,6 +304,8 @@ export async function GET(req: Request) {
       noiseCount: visible.filter(({ c }) => c.noise).length,
       followupsDueCount: visible.filter(({ c }) => isFollowupDue(c.followup)).length,
       starredCount: visible.filter(({ c }) => starredKeys.has(c.key)).length,
+      draftsCount: visible.filter(({ c }) => draftThreadIds.has(c.key)).length,
+      scheduledCount: visible.filter(({ c }) => scheduledThreadIds.has(c.key)).length,
       pagination: { page, pageSize: PAGE_SIZE, total: inLane.length },
       mailboxConnected: scope.hasMailbox,
       mailboxes,
