@@ -852,11 +852,24 @@ export default function InboxPage() {
     <div className="flex h-full flex-col animate-content-in">
       <PageHeader
         icon={<Inbox size={16} />}
-        title="Inbox"
+        // Folder/title reflects the active folder (Upstream shows the folder name as
+        // the header): Inbox / Starred / Sent / Drafts / Scheduled / All Mail / …
+        title={
+          customLaneId
+            ? customLanes.find((l) => l.id === customLaneId)?.name ?? "Inbox"
+            : tab === "attention"
+              ? "Inbox"
+              : tab === "outbound"
+                ? "Sent"
+                : TAB_LABELS[tab]
+        }
+        // The conversation-count subtitle only makes sense for the Inbox/Primary view.
         subtitle={
-          primaryCount > 0
-            ? `${primaryCount} conversation${primaryCount === 1 ? "" : "s"}`
-            : "All caught up"
+          tab === "attention" && !customLaneId
+            ? primaryCount > 0
+              ? `${primaryCount} conversation${primaryCount === 1 ? "" : "s"}`
+              : "All caught up"
+            : undefined
         }
       />
 

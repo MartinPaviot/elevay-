@@ -23,7 +23,7 @@ everything else overlays on), then the AI-output tabs, then folders, then cross-
 | 10 | Scheduled | ~match | empty on prod (CLE-11 undeployed) |
 | 11 | All Mail | ~match | shows 3 |
 | 12 | Spam / Trash | TODO — MISSING | need lanes + routes + actions (bigger build) |
-| X | Cross-cutting | TODO | URL routes (/inbox/[split]) · per-folder header · compose-new · read-state/unread |
+| X | Cross-cutting | PARTIAL | per-folder header DONE (dynamic band title); TODO: URL routes (/inbox/[split]) · compose-new · read-state/unread · star LEADING |
 
 **Done this session: foundational category model + Tabs 1/2/3/4/5/6** (commits 036878eb,
 a77b3bb0). The category-tab reshape (handled mail surfaces, noise overrides) fixed 4/5/6
