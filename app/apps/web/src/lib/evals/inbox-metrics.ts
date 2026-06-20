@@ -151,6 +151,37 @@ export function trapFactHits(text: string, trapFacts: string[]): number {
   return trapFacts.filter((f) => f && t.includes(normalizeFact(f))).length;
 }
 
+/**
+ * Monetary amounts asserted in `text`, normalized to their digit core. Catches
+ * "$4,800/month", "€1.200", "4800 USD", "12k". Used to detect NOVEL fabrications
+ * (a draft inventing a price the model was never given) — which trapFactHits
+ * can't, since it only matches a pre-listed set. ≥2 digits so "8 seats" / "a day
+ * or two" never register as money.
+ */
+export function moneyTokens(text: string): string[] {
+  const matches =
+    (text || "").match(
+      /(?:[$€£]\s?\d[\d.,]*\s?k?)|(?:\b\d[\d.,]*\s?(?:k|usd|eur|gbp|chf|dollars?|euros?)\b)/gi,
+    ) || [];
+  return [...new Set(matches.map((m) => {
+    const k = /k\b/i.test(m); // "12k" → 12000
+    const digits = m.replace(/[^\d]/g, "");
+    return k && digits ? `${digits}000` : digits;
+  }).filter((d) => d.length >= 2))];
+}
+
+/**
+ * Money amounts asserted in the DRAFT whose digits do not appear anywhere in the
+ * SOURCE — i.e. a fabricated price/figure (the cardinal sales-draft sin: a founder
+ * could send a wrong quote). The 2026-06-20 live finding (a draft inventing
+ * "$4,800/month" for an 8-seat ask with no price in the thread) is exactly this.
+ * Returns the fabricated digit cores; empty = grounded.
+ */
+export function unsourcedAmounts(draft: string, source: string): string[] {
+  const srcDigits = (source || "").replace(/[^\d]/g, "");
+  return moneyTokens(draft).filter((d) => !srcDigits.includes(d));
+}
+
 export type RefineInstruction =
   | { kind: "shorter" }
   | { kind: "longer" }
