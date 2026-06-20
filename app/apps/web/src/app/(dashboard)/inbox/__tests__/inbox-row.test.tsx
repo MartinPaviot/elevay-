@@ -37,12 +37,14 @@ function sample(over: Partial<ConversationListItem> = {}): ConversationListItem 
 }
 
 describe("InboxRow (F1)", () => {
-  it("renders sender (bold), subject (bold), snippet, timestamp on one 14px line", () => {
+  it("renders sender (semibold), subject (medium), snippet, timestamp on one 14px line", () => {
     const { container } = render(<InboxRow item={sample()} lane="attention" selected={false} multiSelected={false} hasSelection={false} onSelect={vi.fn()} />);
+    // Upstream calm hierarchy: sender stands out (semibold), subject is regular
+    // (medium), snippet is muted — not the old everything-bold heavy row.
     const sender = screen.getByText("Jane Doe");
-    expect(sender.className).toMatch(/font-bold/);
+    expect(sender.className).toMatch(/font-semibold/);
     const subject = screen.getByText("Re: pricing question");
-    expect(subject.className).toMatch(/font-bold/); // sender AND subject bold (Upstream)
+    expect(subject.className).toMatch(/font-medium/);
     expect(screen.getByText("Thanks — can you confirm the annual number?")).toBeTruthy();
     // The whole primary line is a single 14px truncating row.
     expect(container.querySelector(".text-\\[14px\\].truncate")).toBeTruthy();

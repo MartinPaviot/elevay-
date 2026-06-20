@@ -104,8 +104,8 @@ export const InboxRow = memo(function InboxRow({
             title={c.importanceFactors.length ? `Importance: ${c.importanceFactors.join(" · ")}` : undefined}
           />
         )}
-        <span className="font-bold">{decodeDisplay(c.displayName)}</span>
-        <span className="font-bold" dir={dirOf(decodeDisplay(c.subject))}>
+        <span className="font-semibold">{decodeDisplay(c.displayName)}</span>
+        <span className="font-medium" dir={dirOf(decodeDisplay(c.subject))}>
           {"  "}
           {decodeDisplay(c.subject)}
         </span>

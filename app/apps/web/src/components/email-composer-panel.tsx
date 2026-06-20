@@ -800,7 +800,7 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
               minHeight: "200px",
               whiteSpace: "pre-wrap",
             }}
-            placeholder="Write your email..."
+            placeholder="Write your reply — or hit ⌘/Ctrl+J to draft with AI"
           />
         </div>
 
