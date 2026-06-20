@@ -871,7 +871,7 @@ export default function InboxPage() {
           )}
           <div
             ref={listRef}
-            className="w-[360px] shrink-0 overflow-y-auto border-r"
+            className={`overflow-y-auto ${selectedKey ? "w-[380px] shrink-0 border-r" : "flex-1"}`}
             style={{ borderColor: "var(--color-border-default)" }}
           >
             {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
@@ -981,23 +981,25 @@ export default function InboxPage() {
                     setPage(next);
                     void loadLane(customLaneId ?? tab, next, true);
                   }}
-                  showMailbox={selectedMailbox === null}
+                  showMailbox={mailboxes.length >= 2 && selectedMailbox === null}
                   hasQuery={!!debouncedSearch}
                   onClearSearch={() => setSearch("")}
                 />
               );
             })()}
           </div>
-          <div className="min-w-0 flex-1">
-            <ConversationPane
-              conversationKey={selectedKey}
-              lane={customLaneId ? "attention" : tab === "outbound" || tab === "bundles" ? "attention" : tab}
-              replySignal={replySignal}
-              labelSignal={labelSignal}
-              onTriage={handleTriage}
-              apiRef={paneApiRef}
-            />
-          </div>
+          {selectedKey && (
+            <div className="min-w-0 flex-1">
+              <ConversationPane
+                conversationKey={selectedKey}
+                lane={customLaneId ? "attention" : tab === "outbound" || tab === "bundles" ? "attention" : tab}
+                replySignal={replySignal}
+                labelSignal={labelSignal}
+                onTriage={handleTriage}
+                apiRef={paneApiRef}
+              />
+            </div>
+          )}
         </div>
       )}
 
