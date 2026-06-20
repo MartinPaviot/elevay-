@@ -13,9 +13,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Inbox, Mail, Search, X } from "lucide-react";
+import { Inbox, Mail, Search, X, AlertCircle } from "lucide-react";
 import { PageHeader, FilterBar } from "@/components/ui/page-header";
-import { TableSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -32,6 +31,8 @@ import { CommandPalette } from "./_command-palette";
 import { buildInboxPaletteCommands, type PaletteCommand } from "@/lib/inbox/palette-commands";
 import { tomorrowMorning } from "@/lib/inbox/snooze-presets";
 import { MailboxRail } from "./_mailbox-rail";
+import { InboxListSkeleton } from "./_skeleton";
+import { pickListState } from "@/lib/inbox/list-state";
 import type { ConversationListItem, InboxLane, LaneCounts, MailboxSummary, SplitCount } from "./_types";
 import type { BundleSource } from "@/lib/inbox/bundle";
 import { registerShortcut } from "@/lib/hotkey-registry";
@@ -114,6 +115,9 @@ export default function InboxPage() {
   // Search (INBOX-Q04): debounced so each keystroke doesn't refetch.
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // F3: the last foreground load rejected — drives the list error state so a failed
+  // load shows a Retry, not a misleading empty lane (only meaningful when count===0).
+  const [listError, setListError] = useState(false);
   // Catch-me-up (INBOX-S03): new-since-last-seen count + a one-time init guard.
   const [catchUpCount, setCatchUpCount] = useState(0);
   const seenInitRef = useRef(false);
@@ -142,7 +146,10 @@ export default function InboxPage() {
   const loadLane = useCallback(
     async (lane: string, pageNum: number, append: boolean) => {
       if (append) setLoadingMore(true);
-      else setLoading(true);
+      else {
+        setLoading(true);
+        setListError(false); // clear the foreground error as a fresh load begins
+      }
       try {
         if (pendingTriage.current) await pendingTriage.current.catch(() => {});
         const mailboxQuery = selectedMailbox ? `&mailbox=${encodeURIComponent(selectedMailbox)}` : "";
@@ -180,6 +187,7 @@ export default function InboxPage() {
         setTotal(data.pagination.total);
         setConversations((prev) => (append ? [...prev, ...data.conversations] : data.conversations));
       } catch {
+        if (!append) setListError(true); // a foreground load failed -> error state, not empty
         toast("Couldn't load the inbox.", "error");
       } finally {
         setLoading(false);
@@ -983,26 +991,50 @@ export default function InboxPage() {
                 </button>
               </div>
             )}
-            {loading ? (
-              <TableSkeleton rows={8} cols={1} />
-            ) : (
-              <ConversationList
-                lane={customLaneId ? "attention" : tab === "outbound" || tab === "bundles" ? "attention" : tab}
-                conversations={conversations}
-                selectedKey={selectedKey}
-                onSelect={setSelectedKey}
-                selectedKeys={selection.keys}
-                onToggleSelect={handleToggleSelect}
-                hasMore={hasMore}
-                loadingMore={loadingMore}
-                onLoadMore={() => {
-                  const next = page + 1;
-                  setPage(next);
-                  void loadLane(customLaneId ?? tab, next, true);
-                }}
-                showMailbox={selectedMailbox === null}
-              />
-            )}
+            {(() => {
+              // F3: one decision drives skeleton / error+Retry / list (empty &
+              // no-results handled inside ConversationList). Rows win over a
+              // background load, so a refetch never blanks live rows.
+              const listState = pickListState({
+                loading,
+                error: listError,
+                count: conversations.length,
+                hasQuery: !!debouncedSearch,
+              });
+              if (listState === "loading") return <InboxListSkeleton />;
+              if (listState === "error")
+                return (
+                  <div className="flex h-full items-center justify-center p-6">
+                    <EmptyState
+                      icon={<AlertCircle size={28} />}
+                      title="Couldn't load this lane"
+                      description="Something went wrong reaching the inbox. Your conversations are safe — try again."
+                      actionLabel="Retry"
+                      onAction={() => void loadLane(customLaneId ?? tab, 1, false)}
+                    />
+                  </div>
+                );
+              return (
+                <ConversationList
+                  lane={customLaneId ? "attention" : tab === "outbound" || tab === "bundles" ? "attention" : tab}
+                  conversations={conversations}
+                  selectedKey={selectedKey}
+                  onSelect={setSelectedKey}
+                  selectedKeys={selection.keys}
+                  onToggleSelect={handleToggleSelect}
+                  hasMore={hasMore}
+                  loadingMore={loadingMore}
+                  onLoadMore={() => {
+                    const next = page + 1;
+                    setPage(next);
+                    void loadLane(customLaneId ?? tab, next, true);
+                  }}
+                  showMailbox={selectedMailbox === null}
+                  hasQuery={!!debouncedSearch}
+                  onClearSearch={() => setSearch("")}
+                />
+              );
+            })()}
           </div>
           <div className="min-w-0 flex-1">
             <ConversationPane

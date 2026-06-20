@@ -6,7 +6,7 @@
  */
 
 import { useRef } from "react";
-import { Inbox, CheckCircle2, AlarmClock, Bot } from "lucide-react";
+import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { type ConversationListItem, type InboxLane } from "./_types";
@@ -44,6 +44,8 @@ export function ConversationList({
   loadingMore,
   onLoadMore,
   showMailbox = false,
+  hasQuery = false,
+  onClearSearch,
 }: {
   lane: InboxLane;
   conversations: ConversationListItem[];
@@ -58,6 +60,10 @@ export function ConversationList({
   onLoadMore: () => void;
   /** Show the "received on X" chip — true in the "All inboxes" view. */
   showMailbox?: boolean;
+  /** F3: a search query is active — an empty result is "no matches", not an empty lane. */
+  hasQuery?: boolean;
+  /** F3: clear the search from the no-results empty state. */
+  onClearSearch?: () => void;
 }) {
   const selectedSet = new Set(selectedKeys);
   const hasSelection = selectedKeys.length > 0;
@@ -77,9 +83,24 @@ export function ConversationList({
   };
 
   if (conversations.length === 0) {
+    // F3 R3.4/R3.5: an empty result under an active search is "no matches" (with a
+    // way out), not the lane's resting empty copy.
+    const empty = hasQuery
+      ? {
+          icon: <SearchX size={28} />,
+          title: "No conversations match the current search",
+          description: "Try a different search, or clear it to see this lane.",
+        }
+      : { icon: LANE_ICON[lane], title: EMPTY_COPY[lane].title, description: EMPTY_COPY[lane].description };
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <EmptyState icon={LANE_ICON[lane]} title={EMPTY_COPY[lane].title} description={EMPTY_COPY[lane].description} />
+        <EmptyState
+          icon={empty.icon}
+          title={empty.title}
+          description={empty.description}
+          actionLabel={hasQuery && onClearSearch ? "Clear search" : undefined}
+          onAction={hasQuery ? onClearSearch : undefined}
+        />
       </div>
     );
   }
