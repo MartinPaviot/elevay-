@@ -19,13 +19,6 @@ import { decodeDisplay } from "@/lib/inbox/text-decode";
 import { followupLabel } from "@/lib/inbox/followup-due";
 import { SenderAvatar } from "./_sender-avatar";
 
-function priorityDot(priority: number): string {
-  if (priority === 1) return "var(--color-success)";
-  if (priority === 2) return "var(--color-info)";
-  if (priority === 3) return "var(--color-warning)";
-  return "var(--color-text-muted)";
-}
-
 export const InboxRow = memo(function InboxRow({
   item,
   lane,
@@ -102,13 +95,8 @@ export const InboxRow = memo(function InboxRow({
       <SenderAvatar name={decodeDisplay(c.displayName)} email={c.fromAddress} size={22} />
       {/* One truncated line: Sender · Subject · snippet (bold when unread, Upstream). */}
       <div className="min-w-0 flex-1 truncate text-[14px]" style={{ color: "var(--color-text-primary)" }}>
-        {lane === "attention" && (
-          <span
-            className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
-            style={{ background: priorityDot(c.importanceTier) }}
-            title={c.importanceFactors.length ? `Importance: ${c.importanceFactors.join(" · ")}` : undefined}
-          />
-        )}
+        {/* One leading indicator only (Upstream): the unread dot before the avatar.
+            Importance still ranks the list order (hottest first) — no second per-row dot. */}
         <span className={c.unread ? "font-bold" : "font-normal"}>{decodeDisplay(c.displayName)}</span>
         <span className={c.unread ? "font-medium" : "font-normal"} dir={dirOf(decodeDisplay(c.subject))}>
           {"  "}

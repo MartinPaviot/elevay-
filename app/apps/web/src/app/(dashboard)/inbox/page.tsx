@@ -990,11 +990,11 @@ export default function InboxPage() {
             {/* Catch-me-up (INBOX-S03) — new since you were last here. */}
             {catchUpCount > 0 && !debouncedSearch && selection.keys.length === 0 && (
               <div
-                className="flex items-center gap-2 border-b px-3 py-2"
-                style={{ background: "var(--color-accent-soft)", borderColor: "var(--color-border-default)" }}
+                className="flex items-center gap-2 border-b px-3 py-1.5"
+                style={{ borderColor: "var(--color-border-default)" }}
               >
-                <span className="text-[12px]" style={{ color: "var(--color-text-primary)" }}>
-                  <span className="font-medium">{catchUpCount}</span> new since you were last here
+                <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>{catchUpCount}</span> new since you were last here
                 </span>
                 <button
                   onClick={() => {
@@ -1002,7 +1002,7 @@ export default function InboxPage() {
                     void fetch("/api/inbox/seen", { method: "POST" }).catch(() => {});
                   }}
                   className="ml-auto text-[11px] font-medium hover:underline"
-                  style={{ color: "var(--color-accent)" }}
+                  style={{ color: "var(--color-text-tertiary)" }}
                 >
                   Mark all seen
                 </button>
