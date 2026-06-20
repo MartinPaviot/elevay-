@@ -175,7 +175,7 @@ export const InboxRow = memo(function InboxRow({
           </span>
         ))}
         {when && (
-          <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+          <span className="text-[14px]" style={{ color: "var(--color-text-tertiary)" }}>
             {timeAgo(when)}
           </span>
         )}

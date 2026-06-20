@@ -39,7 +39,7 @@ function Tab({
   return (
     <button
       onClick={onClick}
-      className="flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors"
+      className="flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[14px] font-normal transition-colors"
       style={{
         borderColor: active ? "var(--color-accent)" : "transparent",
         color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",

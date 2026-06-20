@@ -54,7 +54,7 @@ function FolderRow({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors ${
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors ${
         active ? "" : "hover:bg-[var(--color-bg-hover)]"
       }`}
       style={{
