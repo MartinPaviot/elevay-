@@ -7,12 +7,12 @@
  * /api/calls/script. { sector?, persona?, contactId? }
  */
 import { withAuthRLS } from "@/lib/auth/auth-utils";
-import { generateCallScript } from "@/lib/call-mode/tenant-script";
+import { generateCallScript, asScriptLanguage } from "@/lib/call-mode/tenant-script";
 import { buildEvidenceForContact } from "@/lib/call-mode/prospect-evidence";
 
 export async function POST(req: Request) {
   return withAuthRLS(async (authCtx) => {
-    const body = (await req.json().catch(() => ({}))) as { sector?: string; persona?: string; contactId?: string };
+    const body = (await req.json().catch(() => ({}))) as { sector?: string; persona?: string; contactId?: string; language?: string };
     const evidence = body.contactId
       ? await buildEvidenceForContact(authCtx.tenantId, body.contactId).catch(() => [])
       : [];
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
       sector: body.sector,
       persona: body.persona,
       evidence,
+      language: asScriptLanguage(body.language),
     });
     if (!result) {
       return Response.json({ error: "No language model configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY." }, { status: 503 });
