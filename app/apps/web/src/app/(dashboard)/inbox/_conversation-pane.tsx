@@ -96,6 +96,8 @@ export function ConversationPane({
   onTriage,
   onTrash,
   isTrashView,
+  onSpam,
+  isSpamView,
   apiRef,
 }: {
   conversationKey: string | null;
@@ -109,6 +111,10 @@ export function ConversationPane({
   onTrash?: (key: string, trashed: boolean) => void;
   /** True when the open thread is being viewed from the Trash folder (→ Restore). */
   isTrashView?: boolean;
+  /** Mark as spam (→ Spam) or "Not spam" (Upstream is:spam). */
+  onSpam?: (key: string, spam: boolean) => void;
+  /** True when the open thread is being viewed from the Spam folder (→ Not spam). */
+  isSpamView?: boolean;
   /** CLE-14: set by the page to drive reply/book/stop from the chat. */
   apiRef?: Ref<ConversationPaneApi | null>;
 }) {
@@ -572,12 +578,19 @@ export function ConversationPane({
   if (detail.enrollment) {
     moreItems.push({ label: "Stop sequence", icon: <OctagonX size={14} />, onClick: () => void stopSequence(), disabled: stopping });
   }
+  if (onSpam) {
+    moreItems.push({
+      label: isSpamView ? "Not spam" : "Mark as spam",
+      icon: isSpamView ? <RotateCcw size={14} /> : <ShieldAlert size={14} />,
+      onClick: () => onSpam(conv.key, !isSpamView),
+      divider: true,
+    });
+  }
   if (onTrash) {
     moreItems.push({
       label: isTrashView ? "Restore to inbox" : "Delete",
       icon: isTrashView ? <RotateCcw size={14} /> : <Trash2 size={14} />,
       onClick: () => onTrash(conv.key, !isTrashView),
-      divider: true,
     });
   }
 

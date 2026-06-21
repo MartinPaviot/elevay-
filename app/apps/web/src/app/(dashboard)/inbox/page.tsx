@@ -50,7 +50,7 @@ import {
   type SelectionState,
 } from "@/lib/inbox/selection";
 
-type Tab = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash";
+type Tab = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash" | "spam";
 
 /* ── CLE-14: page-action helpers (pure, shared) ── */
 
@@ -75,6 +75,7 @@ const TAB_LABELS: Record<Tab, string> = {
   scheduled: "Scheduled",
   all: "All Mail",
   trash: "Trash",
+  spam: "Spam",
 };
 
 
@@ -96,6 +97,7 @@ export default function InboxPage() {
   const [scheduledCount, setScheduledCount] = useState(0);
   const [allMailCount, setAllMailCount] = useState(0);
   const [trashCount, setTrashCount] = useState(0);
+  const [spamCount, setSpamCount] = useState(0);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
   // connect card before the first response.
@@ -210,6 +212,7 @@ export default function InboxPage() {
           scheduledCount?: number;
           allMailCount?: number;
           trashCount?: number;
+          spamCount?: number;
           primaryCount?: number;
           unreadCount?: number;
           bundles?: BundleSource[];
@@ -227,6 +230,7 @@ export default function InboxPage() {
         setScheduledCount(data.scheduledCount ?? 0);
         setAllMailCount(data.allMailCount ?? 0);
         setTrashCount(data.trashCount ?? 0);
+        setSpamCount(data.spamCount ?? 0);
         setBundles(data.bundles ?? []);
         setCatchUpCount(data.catchUpCount ?? 0);
         // First visit (no marker yet): stamp it once so future visits compute
@@ -490,6 +494,19 @@ export default function InboxPage() {
       body: JSON.stringify({ key, trashed }),
     }).catch(() => {});
     toast(trashed ? "Moved to Trash." : "Restored to the inbox.", "success");
+  }, [toast]);
+
+  // Mark as spam (→ Spam) or "Not spam" (restore). Same soft-flag pattern as Trash.
+  const handleSpam = useCallback((key: string, spam: boolean) => {
+    setConversations((prev) => prev.filter((c) => c.key !== key));
+    setSelectedKey((sel) => (sel === key ? null : sel));
+    setSpamCount((n) => Math.max(0, n + (spam ? 1 : -1)));
+    void fetch("/api/inbox/spam", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, spam }),
+    }).catch(() => {});
+    toast(spam ? "Marked as spam." : "Moved out of spam.", "success");
   }, [toast]);
 
   // Bulk triage the whole selection — reuses the per-key verb (a dedicated
@@ -953,6 +970,7 @@ export default function InboxPage() {
           scheduledCount={scheduledCount}
           allMailCount={allMailCount}
           trashCount={trashCount}
+          spamCount={spamCount}
           mailboxes={mailboxes}
           selectedMailbox={selectedMailbox}
           onSelectMailbox={setSelectedMailbox}
@@ -1157,6 +1175,8 @@ export default function InboxPage() {
                 onTriage={handleTriage}
                 onTrash={handleTrash}
                 isTrashView={tab === "trash"}
+                onSpam={handleSpam}
+                isSpamView={tab === "spam"}
                 apiRef={paneApiRef}
               />
             </div>

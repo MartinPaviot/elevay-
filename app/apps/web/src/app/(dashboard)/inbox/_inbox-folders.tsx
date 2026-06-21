@@ -9,12 +9,12 @@
  * state through callbacks; it owns no data.
  */
 
-import { Inbox, AlarmClock, CheckCircle2, Bot, Send, Layers, Reply, Clock, Megaphone, Users, Plus, Mail, Star, FileText, SendHorizontal, Mails, Trash2 } from "lucide-react";
+import { Inbox, AlarmClock, CheckCircle2, Bot, Send, Layers, Reply, Clock, Megaphone, Users, Plus, Mail, Star, FileText, SendHorizontal, Mails, Trash2, ShieldAlert } from "lucide-react";
 import type { InboxLane, MailboxSummary } from "./_types";
 import type { SplitCount } from "@/lib/inbox/splits";
 import { colorForMailbox } from "@/lib/inbox/mailbox-color";
 
-type LaneId = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash";
+type LaneId = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash" | "spam";
 
 const LANE_META: Record<LaneId, { label: string; icon: React.ReactNode }> = {
   attention: { label: "Inbox", icon: <Inbox size={15} /> },
@@ -28,6 +28,7 @@ const LANE_META: Record<LaneId, { label: string; icon: React.ReactNode }> = {
   scheduled: { label: "Scheduled", icon: <SendHorizontal size={15} /> },
   all: { label: "All Mail", icon: <Mails size={15} /> },
   trash: { label: "Trash", icon: <Trash2 size={15} /> },
+  spam: { label: "Spam", icon: <ShieldAlert size={15} /> },
 };
 
 const SPLIT_ICON: Record<string, React.ReactNode> = {
@@ -101,6 +102,7 @@ export function InboxFolders({
   scheduledCount,
   allMailCount,
   trashCount,
+  spamCount,
   mailboxes,
   selectedMailbox,
   onSelectMailbox,
@@ -124,6 +126,7 @@ export function InboxFolders({
   scheduledCount: number;
   allMailCount: number;
   trashCount: number;
+  spamCount: number;
   /** The user's connected mailboxes (the per-mailbox sub-segment shows with 2+). */
   mailboxes: MailboxSummary[];
   /** The focused mailbox id, or null for "All inboxes". */
@@ -184,6 +187,7 @@ export function InboxFolders({
         {lane("drafts", draftsCount)}
         {lane("scheduled", scheduledCount)}
         {lane("all", allMailCount)}
+        {lane("spam", spamCount)}
         {lane("trash", trashCount)}
 
         {/* Per-mailbox view (multi-mailbox users): scope the whole inbox to one
