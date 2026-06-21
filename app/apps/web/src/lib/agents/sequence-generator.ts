@@ -300,8 +300,15 @@ CRITICAL RULES:
  * Build a personalization brief that tells the LLM exactly which
  * facts to weave into the email. This prevents generic output.
  */
-function buildPersonalizationBrief(ctx: ProspectContext): string {
+export function buildPersonalizationBrief(ctx: ProspectContext): string {
   const facts: string[] = [];
+
+  // P0-2 — research first: the cached brief's angle/pains/competitor lead the
+  // brief so the LLM opens on a researched fact, not a firmographic merge-tag.
+  const rb = ctx.researchBrief;
+  if (rb?.bestAngle) facts.push(`- ANGLE (from research): ${rb.bestAngle} — lead with this`);
+  if (rb?.painPoints?.length) facts.push(`- PAIN POINTS (from research): ${rb.painPoints.join("; ")}`);
+  if (rb?.competitorDetected) facts.push(`- COMPETITOR DETECTED: ${rb.competitorDetected} — position against it`);
 
   // Signal-based hooks
   if (ctx.bestSignal) {

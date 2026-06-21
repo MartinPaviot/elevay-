@@ -4,8 +4,12 @@ import { sequences, sequenceSteps, contacts, companies } from "@/db/schema";
 import { eq, and, sql, isNull } from "drizzle-orm";
 import { buildProspectContext } from "@/lib/context/prospect-context";
 import { generateSequence } from "@/lib/agents/sequence-generator";
-import { buildIntelligenceBrief } from "@/lib/campaign-engine/build-intelligence-brief";
+import { buildIntelligenceBrief, toResearchBriefContext, briefIsEmpty } from "@/lib/campaign-engine/build-intelligence-brief";
+import type { IntelligenceBrief } from "@/lib/campaign-engine/types";
 import { selectStrategy } from "@/lib/campaign-engine/select-strategy";
+import { withTimeout } from "@/lib/utils/with-timeout";
+
+const TIMEOUT_BRIEF_MS = Number(process.env.GENERATE_BRIEF_TIMEOUT_MS ?? 8000);
 
 /**
  * POST /api/campaigns/generate
@@ -64,8 +68,15 @@ export async function POST(req: Request) {
     // Kick off intelligence brief in background (non-blocking enrichment for future use)
     const contactForBrief = resolvedContactId;
     const companyForBrief = companyId || (resolvedContactId ? (await db.select({ companyId: contacts.companyId }).from(contacts).where(and(eq(contacts.id, resolvedContactId), eq(contacts.tenantId, authCtx.tenantId), isNull(contacts.deletedAt))).limit(1))[0]?.companyId : null);
+    // P0-2 — AWAIT the research brief (bounded + fail-open) so generation can
+    // lead with it. Cache hit = instant; cold = bounded scrape; timeout/error =
+    // null -> firmographic flow. The brief NEVER blocks the response.
+    let resolvedBrief: IntelligenceBrief | null = null;
     if (companyForBrief) {
-      buildIntelligenceBrief(companyForBrief, authCtx.tenantId, contactForBrief || undefined).catch(() => {});
+      resolvedBrief = await withTimeout(
+        buildIntelligenceBrief(companyForBrief, authCtx.tenantId, contactForBrief || undefined),
+        TIMEOUT_BRIEF_MS,
+      );
     }
 
     let generated;
@@ -131,6 +142,10 @@ export async function POST(req: Request) {
         },
         previousEmails: [],
         activities: [],
+        researchBrief:
+          resolvedBrief && !briefIsEmpty(toResearchBriefContext(resolvedBrief))
+            ? toResearchBriefContext(resolvedBrief)
+            : undefined,
       };
 
       generated = await generateSequence(minimalCtx as any, { stepCount: stepCount || 5 });
