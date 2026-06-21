@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthContext } from "@/lib/auth/auth-utils";
+import { requireCapabilityForRequest } from "@/lib/auth/permissions";
 import { deliverInteractiveEmail } from "@/lib/emails/deliver-interactive";
 import { logger } from "@/lib/observability/logger";
 import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient-guardrail";
@@ -17,14 +18,18 @@ import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient
 const sendEmailSchema = z.object({
   to: z.string().email("Invalid recipient email address"),
   cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
   subject: z.string().min(1, "Subject is required").max(500),
   body: z.string().min(1, "Body is required").max(50_000),
   contactId: z.string().optional(),
   dealId: z.string().optional(),
+  // A2: send from this specific owned+active mailbox (re-resolved server-side).
+  mailboxId: z.string().optional(),
 });
 
 const STATUS_BY_CODE: Record<string, number> = {
   opted_out: 403,
+  blocked: 403,
   plan_limit: 429,
   not_configured: 503,
   send_failed: 502,
@@ -36,6 +41,11 @@ export async function POST(req: Request) {
   if (!authCtx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // CLE-12 — unified matrix gate on the fresh DB role. POST /api/emails/send
+  // requires outbound:send (member+); a viewer is already blocked at the edge.
+  const denied = requireCapabilityForRequest(authCtx, req);
+  if (denied) return denied;
 
   let parsed: z.infer<typeof sendEmailSchema>;
   try {
@@ -62,10 +72,12 @@ export async function POST(req: Request) {
     ownerAppUserId: authCtx.appUserId,
     to: parsed.to,
     cc: parsed.cc,
+    bcc: parsed.bcc,
     subject: parsed.subject,
     body: parsed.body,
     contactId: parsed.contactId,
     dealId: parsed.dealId,
+    mailboxId: parsed.mailboxId,
     source: "composer",
   });
 

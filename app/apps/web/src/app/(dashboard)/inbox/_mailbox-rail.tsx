@@ -9,6 +9,7 @@
 
 import { Inbox, Mail } from "lucide-react";
 import type { MailboxSummary } from "./_types";
+import { colorForMailbox } from "@/lib/inbox/mailbox-color";
 
 export function MailboxRail({
   mailboxes,
@@ -46,7 +47,16 @@ export function MailboxRail({
       {mailboxes.map((m) => (
         <RailRow
           key={m.id}
-          icon={<Mail size={14} />}
+          icon={
+            <span className="relative inline-flex items-center">
+              <Mail size={14} />
+              <span
+                aria-hidden
+                className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full"
+                style={{ background: colorForMailbox(m.id), boxShadow: "0 0 0 1.5px var(--color-bg-card)" }}
+              />
+            </span>
+          }
           label={m.label}
           sub={m.address}
           count={m.attention}
@@ -76,17 +86,13 @@ function RailRow({
   return (
     <button
       onClick={onClick}
-      className="mx-1.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
-      style={{
-        background: active ? "var(--color-accent-soft)" : "transparent",
-        boxShadow: active ? "inset 2px 0 0 var(--color-accent)" : "none",
-      }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--color-bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = "transparent";
-      }}
+      // F3 B7: hover via CSS (not an imperative style.background mutation) so the
+      // hover survives a re-render. Inline background would beat a hover: class, so
+      // the background lives entirely in classes here.
+      className={`mx-1.5 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+        active ? "bg-[var(--color-accent-soft)]" : "hover:bg-[var(--color-bg-hover)]"
+      }`}
+      style={{ boxShadow: active ? "inset 2px 0 0 var(--color-accent)" : "none" }}
     >
       <span
         className="shrink-0"

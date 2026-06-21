@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * Left-hand conversation list (master). Rows are light: name, subject,
- * snippet, reason line. Bodies live in the reading pane.
+ * Left-hand conversation list (master). Rows are rendered by InboxRow (F1);
+ * this component owns the empty state, hover-intent prefetch, and load-more.
  */
 
-import { Inbox, CheckCircle2, AlarmClock, Bot, Mail } from "lucide-react";
+import { useRef, useCallback } from "react";
+import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX, Reply, Clock } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { timeAgo } from "./_time-ago";
-import type { ConversationListItem, InboxLane } from "./_types";
+import { type ConversationListItem, type InboxLane } from "./_types";
+import { prefetchDetail } from "@/lib/inbox/detail-cache";
+import { InboxRow } from "./_inbox-row";
 
 const EMPTY_COPY: Record<InboxLane, { title: string; description: string }> = {
   attention: {
@@ -24,6 +26,22 @@ const EMPTY_COPY: Record<InboxLane, { title: string; description: string }> = {
   },
 };
 
+// Per-split empty copy (Upstream parity): the AI-output tabs have their own
+// resting empty state, distinct from the lane's. Verbatim from Upstream's live
+// empty states (UP-audit-02/03).
+const SPLIT_EMPTY_COPY: Record<string, { icon: React.ReactNode; title: string; description: string }> = {
+  needs_reply: {
+    icon: <Reply size={28} />,
+    title: "No AI-generated reply drafts right now.",
+    description: "When the agent drafts a reply for you to review, it shows up here.",
+  },
+  follow_ups: {
+    icon: <Clock size={28} />,
+    title: "No follow-up suggestions right now.",
+    description: "When a waiting thread is due a nudge, the agent's suggestion shows up here.",
+  },
+};
+
 const LANE_ICON: Record<InboxLane, React.ReactNode> = {
   attention: <Inbox size={28} />,
   snoozed: <AlarmClock size={28} />,
@@ -31,101 +49,107 @@ const LANE_ICON: Record<InboxLane, React.ReactNode> = {
   handled: <Bot size={28} />,
 };
 
-function priorityDot(priority: number): string {
-  if (priority === 1) return "var(--color-success)";
-  if (priority === 2) return "var(--color-info)";
-  if (priority === 3) return "var(--color-warning)";
-  return "var(--color-text-muted)";
-}
-
 export function ConversationList({
   lane,
   conversations,
   selectedKey,
   onSelect,
+  selectedKeys = [],
+  onToggleSelect,
   hasMore,
   loadingMore,
   onLoadMore,
   showMailbox = false,
+  hasQuery = false,
+  onClearSearch,
+  onToggleStar,
+  activeSplit = null,
 }: {
   lane: InboxLane;
   conversations: ConversationListItem[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  /** Multi-select set (INBOX-T09); empty = not in selection mode. */
+  selectedKeys?: string[];
+  /** Toggle a row into the multi-select set (shift = range). */
+  onToggleSelect?: (key: string, shift: boolean) => void;
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
   /** Show the "received on X" chip — true in the "All inboxes" view. */
   showMailbox?: boolean;
+  /** F3: a search query is active — an empty result is "no matches", not an empty lane. */
+  hasQuery?: boolean;
+  /** F3: clear the search from the no-results empty state. */
+  onClearSearch?: () => void;
+  /** Toggle a conversation's star (Upstream is:starred). */
+  onToggleStar?: (key: string, starred: boolean) => void;
+  /** Active split id — drives the per-split resting empty copy (Upstream parity). */
+  activeSplit?: string | null;
 }) {
+  const selectedSet = new Set(selectedKeys);
+  const hasSelection = selectedKeys.length > 0;
+  // Hover-intent prefetch (INBOX-K04): warm a thread's detail after the cursor
+  // rests on its row ~150ms, so a click/keyboard-open renders instantly. One
+  // timer for the whole list — only the last-hovered row is in flight.
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // F2: stable identities (they close over the ref only) so InboxRow's React.memo
+  // isn't broken by a fresh hover closure every render.
+  const armPrefetch = useCallback((key: string) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => prefetchDetail(key), 150);
+  }, []);
+  const cancelPrefetch = useCallback(() => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  }, []);
+
   if (conversations.length === 0) {
+    // F3 R3.4/R3.5: an empty result under an active search is "no matches" (with a
+    // way out), not the lane's resting empty copy.
+    const splitEmpty = activeSplit ? SPLIT_EMPTY_COPY[activeSplit] : undefined;
+    const empty = hasQuery
+      ? {
+          icon: <SearchX size={28} />,
+          title: "No conversations match the current search",
+          description: "Try a different search, or clear it to see this lane.",
+        }
+      : splitEmpty
+        ? splitEmpty
+        : { icon: LANE_ICON[lane], title: EMPTY_COPY[lane].title, description: EMPTY_COPY[lane].description };
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <EmptyState icon={LANE_ICON[lane]} title={EMPTY_COPY[lane].title} description={EMPTY_COPY[lane].description} />
+        <EmptyState
+          icon={empty.icon}
+          title={empty.title}
+          description={empty.description}
+          actionLabel={hasQuery && onClearSearch ? "Clear search" : undefined}
+          onAction={hasQuery ? onClearSearch : undefined}
+        />
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {conversations.map((c) => {
-        const selected = c.key === selectedKey;
-        const when = c.lastInboundAt ?? c.lastMessageAt;
-        return (
-          <button
-            key={c.key}
-            onClick={() => onSelect(c.key)}
-            className="block w-full border-b px-3.5 py-2.5 text-left transition-colors"
-            style={{
-              borderColor: "var(--color-border-default)",
-              background: selected ? "var(--color-accent-soft)" : "transparent",
-              boxShadow: selected ? "inset 2px 0 0 var(--color-accent)" : "none",
-            }}
-            data-conversation-key={c.key}
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[13px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-                {c.displayName}
-              </span>
-              {when && (
-                <span className="shrink-0 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  {timeAgo(when)}
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-              {c.subject}
-            </div>
-            {c.snippet && (
-              <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                {c.snippet}
-              </div>
-            )}
-            <div className="mt-1 flex items-center gap-1.5">
-              {lane === "attention" && (
-                <span
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: priorityDot(c.priority) }}
-                  aria-hidden
-                />
-              )}
-              <span className="min-w-0 truncate text-[11px] font-medium" style={{ color: lane === "handled" ? "var(--color-text-tertiary)" : "var(--color-accent)" }}>
-                {c.reason}
-              </span>
-              {showMailbox && c.mailboxLabel && (
-                <span
-                  className="ml-auto flex shrink-0 items-center gap-1 text-[10px]"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                  title={c.mailboxAddress ?? c.mailboxLabel}
-                >
-                  <Mail size={10} className="shrink-0" />
-                  <span className="max-w-[110px] truncate">{c.mailboxLabel}</span>
-                </span>
-              )}
-            </div>
-          </button>
-        );
-      })}
+      {conversations.map((c) => (
+        <InboxRow
+          key={c.key}
+          item={c}
+          lane={lane}
+          selected={c.key === selectedKey}
+          multiSelected={selectedSet.has(c.key)}
+          hasSelection={hasSelection}
+          showMailbox={showMailbox}
+          onSelect={onSelect}
+          onToggleSelect={onToggleSelect}
+          onHoverStart={armPrefetch}
+          onHoverEnd={cancelPrefetch}
+          onToggleStar={onToggleStar}
+        />
+      ))}
 
       {hasMore && (
         <div className="flex justify-center p-3">

@@ -2,10 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw } from "lucide-react";
+import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
+import { parseRecipients } from "@/lib/inbox/template-vars";
+import { REWRITE_PRESETS } from "@/lib/inbox/rewrite-presets";
+import { TRANSLATE_LANGUAGES } from "@/lib/inbox/translate-languages";
+import { pickDefaultFrom, mailboxDisplay, type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
+import { applySignature } from "@/lib/inbox/mailbox-signature";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -14,10 +19,13 @@ import { ContactCollisionNotice } from "@/components/collision/contact-collision
 export interface EmailComposerDraft {
   to: string;
   cc?: string;
+  bcc?: string;
   subject: string;
   body: string;
   contactId?: string;
   dealId?: string;
+  /** A2: the seeded send-from mailbox (the thread's own box on a reply). */
+  mailboxId?: string;
 }
 
 interface EmailComposerPanelProps {
@@ -25,6 +33,8 @@ interface EmailComposerPanelProps {
   onClose: () => void;
   /** Called after a successful send with the messageId */
   onSent?: (messageId: string) => void;
+  /** A2: the user's SENDABLE mailboxes for the From selector (empty hides it). */
+  mailboxes?: SendableMailbox[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -72,9 +82,13 @@ function EmailField({
   const inputRef = useRef<HTMLInputElement>(null);
 
   function addEmail(raw: string) {
-    const trimmed = raw.trim();
-    if (trimmed && trimmed.includes("@") && !emails.includes(trimmed)) {
-      onChange([...emails, trimmed]);
+    // parseRecipients handles "Name <email>", comma/semicolon lists and dedupe,
+    // so a pasted "a@b.c, d@e.f" becomes two pills in one go.
+    const { valid } = parseRecipients(raw);
+    if (valid.length > 0) {
+      const merged = [...emails];
+      for (const addr of valid) if (!merged.includes(addr)) merged.push(addr);
+      onChange(merged);
     }
     setInputValue("");
   }
@@ -134,6 +148,7 @@ const DRAFT_KEY = "elevay:email-draft";
 function saveDraftToStorage(data: {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   body: string;
   contactId?: string;
@@ -149,6 +164,7 @@ function saveDraftToStorage(data: {
 function loadDraftFromStorage(): {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   body: string;
   contactId?: string;
@@ -176,18 +192,21 @@ function clearDraftFromStorage() {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPanelProps) {
+export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: EmailComposerPanelProps) {
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
 
-  // Form state
-  const [toEmails, setToEmails] = useState<string[]>(
-    draft.to ? draft.to.split(",").map((e) => e.trim()).filter(Boolean) : []
-  );
-  const [ccEmails, setCcEmails] = useState<string[]>(
-    draft.cc ? draft.cc.split(",").map((e) => e.trim()).filter(Boolean) : []
-  );
-  const [showCc, setShowCc] = useState(false);
+  // A2: send-from selector. Seeded to the thread's box when still sendable, else
+  // the primary. Server re-resolves + refuses a non-owned/inactive box (403).
+  const [fromMailboxId, setFromMailboxId] = useState<string | undefined>(() => pickDefaultFrom(draft.mailboxId, mailboxes));
+  const [fromOpen, setFromOpen] = useState(false);
+
+  // Form state — parseRecipients keeps "Name <email>" and lists tidy.
+  const [toEmails, setToEmails] = useState<string[]>(parseRecipients(draft.to || "").valid);
+  const [ccEmails, setCcEmails] = useState<string[]>(parseRecipients(draft.cc || "").valid);
+  const [bccEmails, setBccEmails] = useState<string[]>(parseRecipients(draft.bcc || "").valid);
+  const [showCc, setShowCc] = useState(Boolean(draft.cc));
+  const [showBcc, setShowBcc] = useState(Boolean(draft.bcc));
   const [editSubject, setEditSubject] = useState(draft.subject);
   const [editBody, setEditBody] = useState(draft.body);
 
@@ -196,8 +215,22 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
   const [sendError, setSendError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
+  // Compose-AI (INBOX-C04/C07/C08): rewrite / translate / draft-from-bullets.
+  // All keep the prior body in rewriteUndo for a one-tap Undo.
+  const [rewriteOpen, setRewriteOpen] = useState(false);
+  const [rewriteInstruction, setRewriteInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteUndo, setRewriteUndo] = useState<string | null>(null);
+  const [translateOpen, setTranslateOpen] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftBullets, setDraftBullets] = useState("");
+  const [drafting, setDrafting] = useState(false);
+
   // Refs
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // B1: the always-visible "edit with AI" instruction field (Cmd/Ctrl+J target).
+  const aiInstructionRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -219,6 +252,34 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // A3: apply the From mailbox's signature on open + on From change. Idempotent
+  // (strip the prior "-- " block, append the new one once) so it is never
+  // duplicated and swaps cleanly when the From box changes.
+  useEffect(() => {
+    const sig = mailboxes.find((m) => m.id === fromMailboxId)?.signature;
+    setEditBody((b) => applySignature(b, sig));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromMailboxId, mailboxes]);
+
+  // B1 Cmd/Ctrl+J inside the composer = edit-with-AI (R2.1). With an instruction
+  // typed (and a body to act on), submit it through the EXISTING handleRewrite;
+  // otherwise focus the always-visible AI-instructions field so the user can type.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
+        e.preventDefault();
+        if (rewriteInstruction.trim() && editBody.trim() && !rewriting) {
+          void handleRewrite(rewriteInstruction);
+        } else {
+          aiInstructionRef.current?.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rewriteInstruction, editBody, rewriting]);
+
   // Auto-resize textarea
   const autoResize = useCallback(() => {
     const ta = bodyRef.current;
@@ -237,12 +298,94 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
     saveDraftToStorage({
       to: toEmails,
       cc: ccEmails,
+      bcc: bccEmails,
       subject: editSubject,
       body: editBody,
       contactId: draft.contactId,
       dealId: draft.dealId,
     });
     toast("Draft saved.", "success");
+  }
+
+  /* ── Rewrite (INBOX-C04) ─────────────────────────────────────── */
+
+  async function handleRewrite(instruction: string) {
+    if (!editBody.trim() || !instruction.trim() || rewriting) return;
+    setRewriting(true);
+    setRewriteOpen(false);
+    try {
+      const res = await fetch("/api/inbox/compose/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: editBody, instruction }),
+      });
+      const data = res.ok ? ((await res.json()) as { text?: string }) : {};
+      if (data.text && data.text.trim()) {
+        setRewriteUndo(editBody); // keep the original for one-tap undo
+        setEditBody(data.text.trim());
+        setRewriteInstruction("");
+        toast("Rewritten — undo if it's not right.", "success");
+      } else {
+        toast("Couldn't rewrite — kept your text.", "warning");
+      }
+    } catch {
+      toast("Couldn't rewrite — kept your text.", "warning");
+    } finally {
+      setRewriting(false);
+    }
+  }
+
+  async function handleTranslate(lang: string) {
+    if (!editBody.trim() || translating) return;
+    setTranslating(true);
+    setTranslateOpen(false);
+    try {
+      const res = await fetch("/api/inbox/compose/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: editBody, targetLang: lang }),
+      });
+      const data = res.ok ? ((await res.json()) as { text?: string }) : {};
+      if (data.text && data.text.trim()) {
+        setRewriteUndo(editBody);
+        setEditBody(data.text.trim());
+        toast(`Translated to ${lang} — undo if it's not right.`, "success");
+      } else {
+        toast("Couldn't translate — kept your text.", "warning");
+      }
+    } catch {
+      toast("Couldn't translate — kept your text.", "warning");
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  async function handleDraft() {
+    if (!draftBullets.trim() || drafting) return;
+    setDrafting(true);
+    try {
+      const res = await fetch("/api/inbox/compose/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bullets: draftBullets }),
+      });
+      const data = res.ok ? ((await res.json()) as { subject?: string; text?: string }) : {};
+      if (data.text && data.text.trim()) {
+        setRewriteUndo(editBody);
+        // Fill the subject only when it's still empty — never clobber a "Re:".
+        if (data.subject && data.subject.trim() && !editSubject.trim()) setEditSubject(data.subject.trim());
+        setEditBody(data.text.trim());
+        setDraftOpen(false);
+        setDraftBullets("");
+        toast("Drafted from your bullets — undo if it's not right.", "success");
+      } else {
+        toast("Couldn't draft — add a little more detail.", "warning");
+      }
+    } catch {
+      toast("Couldn't draft — try again.", "warning");
+    } finally {
+      setDrafting(false);
+    }
   }
 
   /* ── Send ───────────────────────────────────────────────────── */
@@ -271,10 +414,12 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
         body: JSON.stringify({
           to: toEmails[0],
           cc: ccEmails.length > 0 ? ccEmails : undefined,
+          bcc: bccEmails.length > 0 ? bccEmails : undefined,
           subject: editSubject,
           body: editBody,
           contactId: draft.contactId || undefined,
           dealId: draft.dealId || undefined,
+          mailboxId: fromMailboxId || undefined,
         }),
       });
 
@@ -367,6 +512,63 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
         )}
 
         {/* Email fields */}
+        {/* A2: From selector — which connected mailbox this leaves from. Default
+            = the thread's own box. One box → static label; many → a menu. */}
+        {mailboxes.length > 0 && (() => {
+          const selected = mailboxes.find((m) => m.id === fromMailboxId) ?? mailboxes[0];
+          return (
+            <div
+              className="flex items-center gap-2 px-4 py-2"
+              style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+            >
+              <span className="w-12 shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-tertiary)" }}>
+                From
+              </span>
+              {mailboxes.length === 1 ? (
+                <span className="text-[13px]" style={{ color: "var(--color-text-primary)" }}>
+                  {mailboxDisplay(selected)}
+                </span>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setFromOpen((v) => !v)}
+                    className="flex items-center gap-1 text-[13px]"
+                    style={{ color: "var(--color-text-primary)" }}
+                  >
+                    {mailboxDisplay(selected)}
+                    <ChevronDown size={12} style={{ color: "var(--color-text-tertiary)" }} />
+                  </button>
+                  {fromOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setFromOpen(false)} />
+                      <div
+                        className="absolute left-0 top-full z-20 mt-1 min-w-[220px] rounded-lg border p-1 shadow-lg"
+                        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                      >
+                        {mailboxes.map((m) => {
+                          const active = m.id === selected.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => { setFromMailboxId(m.id); setFromOpen(false); }}
+                              className="block w-full rounded px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
+                              style={{ color: active ? "var(--color-accent)" : "var(--color-text-primary)" }}
+                            >
+                              {m.label && m.label !== m.address ? `${m.label} <${m.address}>` : m.address}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         <EmailField
           label="To"
           emails={toEmails}
@@ -374,41 +576,30 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
           placeholder="recipient@example.com"
         />
 
-        {/* Cc toggle */}
-        {!showCc ? (
+        {/* Cc / Bcc — fields when open, compact toggles otherwise */}
+        {showCc && <EmailField label="Cc" emails={ccEmails} onChange={setCcEmails} />}
+        {showBcc && <EmailField label="Bcc" emails={bccEmails} onChange={setBccEmails} />}
+        <div
+          className="flex items-center gap-3 px-4 py-1.5"
+          style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+        >
           <button
-            onClick={() => setShowCc(true)}
-            className="flex items-center gap-1 px-4 py-1.5 text-[11px]"
-            style={{
-              color: "var(--color-text-muted)",
-              background: "none",
-              border: "none",
-              borderBottom: "0.5px solid var(--color-border-default)",
-              cursor: "pointer",
-            }}
+            onClick={() => setShowCc((v) => !v)}
+            className="flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--color-text-muted)", cursor: "pointer" }}
           >
-            <ChevronDown size={10} />
-            Cc
+            {showCc ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            {showCc ? "Hide Cc" : "Cc"}
           </button>
-        ) : (
-          <>
-            <EmailField label="Cc" emails={ccEmails} onChange={setCcEmails} />
-            <button
-              onClick={() => setShowCc(false)}
-              className="flex items-center gap-1 px-4 py-1 text-[11px]"
-              style={{
-                color: "var(--color-text-muted)",
-                background: "none",
-                border: "none",
-                borderBottom: "0.5px solid var(--color-border-default)",
-                cursor: "pointer",
-              }}
-            >
-              <ChevronUp size={10} />
-              Hide Cc
-            </button>
-          </>
-        )}
+          <button
+            onClick={() => setShowBcc((v) => !v)}
+            className="flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--color-text-muted)", cursor: "pointer" }}
+          >
+            {showBcc ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            {showBcc ? "Hide Bcc" : "Bcc"}
+          </button>
+        </div>
 
         {/* Subject */}
         <div
@@ -432,6 +623,171 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
 
         {/* Body — plain textarea, keeps markdown formatting */}
         <div className="flex-1 overflow-auto p-4">
+          {/* Rewrite toolbar (INBOX-C04): GTM presets + free-form, with undo. */}
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRewriteOpen((v) => !v)}
+                disabled={rewriting || !editBody.trim()}
+                className="gap-1.5"
+              >
+                {rewriting ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Rewrite
+              </Button>
+              {rewriteOpen && (
+                <div
+                  className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border p-1 shadow-lg"
+                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                >
+                  {REWRITE_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => void handleRewrite(p.instruction)}
+                      className="block w-full rounded px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
+                      style={{ color: "var(--color-text-primary)" }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                  <div className="my-1 border-t" style={{ borderColor: "var(--color-border-default)" }} />
+                  <div className="flex items-center gap-1 p-1">
+                    <input
+                      value={rewriteInstruction}
+                      onChange={(e) => setRewriteInstruction(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && rewriteInstruction.trim()) {
+                          e.preventDefault();
+                          void handleRewrite(rewriteInstruction);
+                        }
+                      }}
+                      placeholder="Tell the AI how…"
+                      className="min-w-0 flex-1 rounded border px-2 py-1 text-[12px] outline-none"
+                      style={{
+                        borderColor: "var(--color-border-default)",
+                        background: "var(--color-bg-page)",
+                        color: "var(--color-text-primary)",
+                      }}
+                    />
+                    <Button size="sm" onClick={() => void handleRewrite(rewriteInstruction)} disabled={!rewriteInstruction.trim()}>
+                      Go
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Translate (INBOX-C08) */}
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTranslateOpen((v) => !v)}
+                disabled={translating || !editBody.trim()}
+                className="gap-1.5"
+              >
+                {translating ? <RefreshCw size={12} className="animate-spin" /> : <Languages size={12} />}
+                Translate
+              </Button>
+              {translateOpen && (
+                <div
+                  className="absolute left-0 top-full z-20 mt-1 w-40 rounded-lg border p-1 shadow-lg"
+                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                >
+                  {TRANSLATE_LANGUAGES.map((l) => (
+                    <button
+                      key={l.code}
+                      onClick={() => void handleTranslate(l.label)}
+                      className="block w-full rounded px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
+                      style={{ color: "var(--color-text-primary)" }}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Draft from bullets (INBOX-C07) */}
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDraftOpen((v) => !v)}
+                disabled={drafting}
+                className="gap-1.5"
+              >
+                {drafting ? <RefreshCw size={12} className="animate-spin" /> : <ListPlus size={12} />}
+                Draft from bullets
+              </Button>
+              {draftOpen && (
+                <div
+                  className="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border p-2 shadow-lg"
+                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                >
+                  <textarea
+                    value={draftBullets}
+                    onChange={(e) => setDraftBullets(e.target.value)}
+                    rows={4}
+                    placeholder={"- what you want to say\n- another point"}
+                    className="w-full resize-none rounded border px-2 py-1 text-[12px] outline-none"
+                    style={{
+                      borderColor: "var(--color-border-default)",
+                      background: "var(--color-bg-page)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  />
+                  <div className="mt-1.5 flex justify-end">
+                    <Button size="sm" onClick={() => void handleDraft()} disabled={!draftBullets.trim() || drafting} loading={drafting}>
+                      Generate
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {rewriteUndo != null && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditBody(rewriteUndo);
+                  setRewriteUndo(null);
+                }}
+                className="gap-1"
+              >
+                <Undo2 size={12} /> Undo
+              </Button>
+            )}
+          </div>
+          {/* B1 edit-with-AI (Upstream canonical position): an always-visible
+              instruction field directly above the body. Submits to the SAME
+              handleRewrite (no new endpoint); Cmd/Ctrl+J focuses or submits it. */}
+          <div
+            className="mb-2 flex items-center gap-1.5 rounded-lg border px-2 py-1"
+            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
+          >
+            <Sparkles size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} aria-hidden />
+            <input
+              ref={aiInstructionRef}
+              value={rewriteInstruction}
+              onChange={(e) => setRewriteInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && rewriteInstruction.trim() && editBody.trim() && !rewriting) {
+                  e.preventDefault();
+                  void handleRewrite(rewriteInstruction);
+                }
+              }}
+              disabled={rewriting || !editBody.trim()}
+              placeholder="Hit Cmd/Ctrl+J to edit with AI"
+              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none disabled:opacity-60"
+              style={{ color: "var(--color-text-primary)" }}
+            />
+            {rewriting && (
+              <RefreshCw size={12} className="shrink-0 animate-spin" style={{ color: "var(--color-text-tertiary)" }} aria-hidden />
+            )}
+          </div>
           <textarea
             ref={bodyRef}
             value={editBody}
@@ -444,7 +800,7 @@ export function EmailComposerPanel({ draft, onClose, onSent }: EmailComposerPane
               minHeight: "200px",
               whiteSpace: "pre-wrap",
             }}
-            placeholder="Write your email..."
+            placeholder="Write your reply — or hit ⌘/Ctrl+J to draft with AI"
           />
         </div>
 

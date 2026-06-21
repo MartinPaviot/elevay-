@@ -18,16 +18,36 @@ export async function GET() {
   }
 
   // Personal: a user only sees the mailboxes they own.
-  const mailboxes = await db
-    .select()
-    .from(connectedMailboxes)
-    .where(
-      and(
-        eq(connectedMailboxes.tenantId, authCtx.tenantId),
-        eq(connectedMailboxes.userId, authCtx.userId),
-      ),
-    )
-    .orderBy(connectedMailboxes.createdAt);
+  const where = and(
+    eq(connectedMailboxes.tenantId, authCtx.tenantId),
+    eq(connectedMailboxes.userId, authCtx.userId),
+  );
+  // A worktree dev server can point at a prod DB that is BEHIND the Drizzle schema
+  // (e.g. the `shared` column isn't deployed yet) — `select()` of every column then
+  // 500s with `column "..." does not exist`, which emptied the inbox From-selector
+  // and broke this page. Fall back to a core, always-present subset so it keeps
+  // working instead of 500ing. (See reference_prod-schema-behind-drizzle.)
+  let mailboxes;
+  try {
+    mailboxes = await db.select().from(connectedMailboxes).where(where).orderBy(connectedMailboxes.createdAt);
+  } catch {
+    mailboxes = await db
+      .select({
+        id: connectedMailboxes.id,
+        tenantId: connectedMailboxes.tenantId,
+        userId: connectedMailboxes.userId,
+        emailAddress: connectedMailboxes.emailAddress,
+        displayName: connectedMailboxes.displayName,
+        provider: connectedMailboxes.provider,
+        status: connectedMailboxes.status,
+        domain: connectedMailboxes.domain,
+        createdAt: connectedMailboxes.createdAt,
+        updatedAt: connectedMailboxes.updatedAt,
+      })
+      .from(connectedMailboxes)
+      .where(where)
+      .orderBy(connectedMailboxes.createdAt);
+  }
 
   return Response.json({ mailboxes });
 }
@@ -111,6 +131,8 @@ export async function POST(req: Request) {
       resolvedCaldavUrl = null; // calendar simply stays unavailable
     }
 
+    // Idempotent on (tenant_id, email_address) (A1 R4): a re-connect updates the
+    // existing row in place instead of throwing on the unique constraint (500).
     const [mailbox] = await db
       .insert(connectedMailboxes)
       .values({
@@ -129,6 +151,24 @@ export async function POST(req: Request) {
         domain,
         // The user's existing mailbox is already warm — no cold-start warmup.
         status: "active",
+      })
+      .onConflictDoUpdate({
+        target: [connectedMailboxes.tenantId, connectedMailboxes.emailAddress],
+        set: {
+          userId: authCtx.userId,
+          displayName: displayName || email.split("@")[0],
+          provider: "smtp_custom",
+          eeAccountId,
+          imapHost,
+          imapPort: imapPortN,
+          smtpHost,
+          smtpPort: smtpPortN,
+          secretEncrypted,
+          caldavUrl: resolvedCaldavUrl,
+          domain,
+          status: "active",
+          updatedAt: new Date(),
+        },
       })
       .returning();
 
@@ -211,7 +251,8 @@ export async function POST(req: Request) {
     console.warn("EmailEngine not available, saving mailbox anyway:", err);
   }
 
-  // Save to database
+  // Save to database — idempotent on (tenant_id, email_address) (A1 R4): a
+  // re-link converges on one row instead of throwing on the unique constraint.
   const [mailbox] = await db
     .insert(connectedMailboxes)
     .values({
@@ -224,6 +265,17 @@ export async function POST(req: Request) {
       domain,
       status: "warming_up",
       warmupStartedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [connectedMailboxes.tenantId, connectedMailboxes.emailAddress],
+      set: {
+        userId: authCtx.userId,
+        displayName: displayName || email.split("@")[0],
+        provider,
+        eeAccountId,
+        domain,
+        updatedAt: new Date(),
+      },
     })
     .returning();
 

@@ -11,7 +11,8 @@
  * No emoji per the brand rule — Lucide icons only. Design-system tokens only.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import type { Ref } from "react";
 import { Check, CalendarClock, Phone, Pencil, Sparkles, Loader2, X, Plus, Trash2, AlertTriangle, ChevronRight, ChevronDown, ShieldQuestion } from "lucide-react";
 import { interpolateOpener, prefixObservation, defaultScriptFields, splitGuidance, withNoResponse, lineFor, lineForKey, peerLeadFor, resolveBranches, personaEnjeuIndex, enjeuKeyForIndex, type ScriptFields } from "@/lib/call-mode/call-scripts";
 import { deriveOpeningReason, type OpeningReasonInput } from "@/lib/call-mode/live-script";
@@ -36,6 +37,31 @@ const SECTOR_LABEL_KEY: Record<string, string> = {
   generic: "callScript.sector.generic",
 };
 
+/** CLE-09 §4 lift: the fields a registered editScript action may merge over the
+ *  current script. `noResponse` writes into `guidance` (same as the inline editor
+ *  field); `sector` overrides which sector the PUT targets. */
+export interface EditScriptFields {
+  opener?: string;
+  problems?: string[];
+  permissionCheck?: string;
+  bookingAsk?: string;
+  noResponse?: string;
+  sector?: string;
+}
+
+/**
+ * CLE-09 §4 lift: the imperative handle the script panel exposes so a registered
+ * page action can run the SAME regenerate/save the buttons run — one network copy
+ * each. `regenerate(sector?)` drafts into the panel for review (no auto-apply);
+ * `save(fields)` merges the supplied fields over the current script then PUTs.
+ * The page reads this via `apiRef`; it is null when no prospect is selected
+ * (panel unmounted) so the actions fail cleanly (E-5b).
+ */
+export interface ScriptPanelApi {
+  regenerate: (sector?: string) => Promise<{ ok: boolean; error?: string }>;
+  save: (fields?: EditScriptFields) => Promise<{ ok: boolean; error?: string }>;
+}
+
 export function CallScriptPanel({
   contactName,
   contactTitle,
@@ -48,6 +74,7 @@ export function CallScriptPanel({
   triggerText,
   replaceableTool,
   onContext,
+  apiRef,
 }: {
   contactName?: string | null;
   /** The contact's title — floats the enjeu their ROLE cares about (CFO → coût,
@@ -76,6 +103,8 @@ export function CallScriptPanel({
   /** Reports what the panel is showing (reason source, matched enjeu, tool) so
    *  the dial captures it as the call's scriptContext. */
   onContext?: (ctx: ScriptContext) => void;
+  /** CLE-09: set by the page to drive regenerate/save from the chat. */
+  apiRef?: Ref<ScriptPanelApi | null>;
 }) {
   const { toast } = useToast();
   const t = useT();
@@ -170,27 +199,51 @@ export function CallScriptPanel({
     color: "var(--color-text-primary)",
   } as const;
 
-  async function save() {
-    if (!draft) return;
+  // CLE-09 §4: save accepts optional merge fields so the agent path and the
+  // button share one PUT. The button passes nothing (saves the current draft);
+  // the action passes fields, which merge over draft ?? the saved fields. Same
+  // URL/body/effects in both cases; returns { ok, error? } for the action.
+  async function save(merge?: EditScriptFields): Promise<{ ok: boolean; error?: string }> {
+    // The button only saves while editing a draft; with no draft and no merge
+    // fields there is nothing to persist.
+    const base = draft ?? fields;
+    if (!draft && !merge) return { ok: false, error: "Rien à enregistrer." };
+    const sectorToUse = merge?.sector?.trim() || sector;
+    const merged: ScriptFields = {
+      opener: merge?.opener ?? base.opener,
+      problems: merge?.problems ?? base.problems,
+      permissionCheck: merge?.permissionCheck ?? base.permissionCheck,
+      bookingAsk: merge?.bookingAsk ?? base.bookingAsk,
+      guidance:
+        merge?.noResponse != null
+          ? withNoResponse(splitGuidance(base.guidance).tips, merge.noResponse)
+          : base.guidance,
+    };
     setSaving(true);
     try {
       const res = await fetch("/api/calls/script", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sector, fields: { ...draft, problems: draft.problems.filter((p) => p.trim()) } }),
+        body: JSON.stringify({ sector: sectorToUse, fields: { ...merged, problems: merged.problems.filter((p) => p.trim()) } }),
       });
       const data = await res.json();
-      if (!res.ok) { toast(data.error || t("callScript.saveFailed"), "error"); return; }
+      if (!res.ok) { toast(data.error || t("callScript.saveFailed"), "error"); return { ok: false, error: data.error || t("callScript.saveFailed") }; }
       setFields({ opener: data.script.opener, problems: data.script.problems ?? [], permissionCheck: data.script.permissionCheck, bookingAsk: data.script.bookingAsk, guidance: data.script.guidance ?? [] });
       setEditing(false);
       setDraft(null);
       setDraftGrounding([]);
       toast(t("callScript.saved"), "success");
-    } catch { toast(t("callScript.networkError"), "error"); }
+      return { ok: true };
+    } catch { toast(t("callScript.networkError"), "error"); return { ok: false, error: t("callScript.networkError") }; }
     finally { setSaving(false); }
   }
 
-  async function regenerate() {
+  // CLE-09 §4: regenerate accepts an optional sector override (the action may
+  // pass one); the button passes nothing and uses the panel's sector state. One
+  // POST copy; the draft loads into the panel in edit mode FOR REVIEW (never
+  // auto-applied). Returns { ok, error? } for the action.
+  async function regenerate(sectorOverride?: string): Promise<{ ok: boolean; error?: string }> {
+    const sectorToUse = sectorOverride?.trim() || sector;
     setGenerating(true);
     try {
       const res = await fetch("/api/calls/script/generate", {
@@ -198,10 +251,10 @@ export function CallScriptPanel({
         headers: { "Content-Type": "application/json" },
         // contactId grounds the draft on THIS prospect's server-side evidence;
         // language is the rep-selected output language for the script.
-        body: JSON.stringify({ sector, contactId: contactId ?? undefined, language: scriptLang }),
+        body: JSON.stringify({ sector: sectorToUse, contactId: contactId ?? undefined, language: scriptLang }),
       });
       const data = await res.json();
-      if (!res.ok) { toast(data.error || t("callScript.genFailed"), "error"); return; }
+      if (!res.ok) { toast(data.error || t("callScript.genFailed"), "error"); return { ok: false, error: data.error || t("callScript.genFailed") }; }
       const d: ScriptFields = { ...data.draft, guidance: data.draft.guidance ?? fields.guidance };
       setDraft(d);
       setDraftGrounding(Array.isArray(data.grounding) ? data.grounding : []);
@@ -212,9 +265,22 @@ export function CallScriptPanel({
           : t("callScript.draftToast"),
         "success",
       );
-    } catch { toast(t("callScript.networkError"), "error"); }
+      return { ok: true };
+    } catch { toast(t("callScript.networkError"), "error"); return { ok: false, error: t("callScript.networkError") }; }
     finally { setGenerating(false); }
   }
+
+  // CLE-09: expose regenerate/save to the page so the chat can drive them.
+  useImperativeHandle(
+    apiRef,
+    (): ScriptPanelApi => ({
+      regenerate: (s?: string) => regenerate(s),
+      save: (f?: EditScriptFields) => save(f),
+    }),
+    // sector/draft/fields are read live inside the closures; re-expose on change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sector, draft, fields, contactId],
+  );
 
   const view = editing && draft ? draft : fields;
   const { noResponse: viewNoResp, tips: viewTips } = splitGuidance(view.guidance);
@@ -290,7 +356,7 @@ export function CallScriptPanel({
           </span>
           <button
             type="button"
-            onClick={regenerate}
+            onClick={() => { void regenerate(); }}
             disabled={generating}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: "var(--color-text-secondary)" }}
@@ -309,7 +375,7 @@ export function CallScriptPanel({
             </button>
           ) : (
             <>
-              <button type="button" onClick={save} disabled={saving}
+              <button type="button" onClick={() => { void save(); }} disabled={saving}
                 className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium"
                 style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}>
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {t("callScript.save")}

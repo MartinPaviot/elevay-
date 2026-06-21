@@ -15,11 +15,11 @@ function stubFetch(json: unknown, ok = true) {
 }
 
 describe("ContactCollisionNotice", () => {
-  it("renders an English warning by default", async () => {
+  it("renders an English warning with lang='en' (composer + entity pages)", async () => {
     stubFetch({
       collision: { userName: "Marie Curie", channel: "email", outcome: null, daysAgo: 2, otherUserCount: 1 },
     });
-    const { container } = render(<ContactCollisionNotice contactId="c1" />);
+    const { container } = render(<ContactCollisionNotice contactId="c1" lang="en" />);
     await waitFor(() => expect(container.textContent).toContain("Marie Curie"));
     expect(container.textContent).toContain("already emailed this prospect");
     expect(container.textContent).toContain("2 days ago");
