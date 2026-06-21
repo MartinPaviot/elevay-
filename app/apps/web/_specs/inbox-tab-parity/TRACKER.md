@@ -48,9 +48,21 @@ a POPULATED inbox + drove the AI + measured. Fixes, all live-verified + committe
 - **No-fabrication eval + fix** (3ede4857): AI invented "$4,800/month" → unsourcedAmounts detector
   + compose-reply prompt defer + LLM-tier gate (0 fabrications), wired into eval:run.
 - **mailboxes 500 fix** (6408238d): prod-schema `shared` column → resilient select fallback.
-Reading view verified email-first with real data (OURS-thread-realdata.png). Remaining UI:
-thread toolbar overflow (busy action row — the risky 3-widget refactor), compose-new,
-Spam/Trash, URL routes, star-leading.
+Reading view verified email-first with real data (OURS-thread-realdata.png).
+
+**Remaining UI — DONE (2026-06-21):**
+- **Compose new email** (8f0e0149): Compose button → blank overlay composer, From populated.
+- **Open thread messages** (09d72dd8): no bordered card; messages flow open (Upstream).
+- **Compact thread toolbar** (7e7de605): primary [Generate draft][Reply][⋮More][Snooze][Done];
+  Book meeting/nudge/stop in MoreMenu; assign/labels/presence → header meta line.
+- **Trash folder** (84440fa9): trash-store + /api/inbox/trash; Delete/Restore in More; soft-delete
+  hidden from all lanes + All Mail. Verified live.
+- **Spam folder** (2d8a7c68): spam-store + /api/inbox/spam; Mark-as-spam/Not-spam. Sidebar now
+  mirrors Upstream's full folder set (… All Mail / Spam / Trash). Verified live.
+
+**Still remaining:** URL routes (/inbox/[split] — App Router restructure) · star LEADING (minor).
+Reseed cleanup: `scripts/_seed-inbox-test.ts --clean` (Tom is in Trash, Marc in Spam from the
+live verifications).
 
 **Done earlier: foundational category model + Tabs 1/2/3/4/5/6** (commits 036878eb,
 a77b3bb0). The category-tab reshape (handled mail surfaces, noise overrides) fixed 4/5/6
