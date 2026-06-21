@@ -7,6 +7,7 @@
 
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { buildRejectionCounterPrompt, type DominantInsight } from "@/lib/sequence-drafts/rejection-counter-prompt";
+import { gradeSequenceQuality } from "@/lib/evals/sequence-quality";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { llmCall } from "@/lib/ai/llm-call";
@@ -49,7 +50,15 @@ const generatedSequenceSchema = z.object({
   ).describe("Array of 3-5 email steps"),
 });
 
-export type GeneratedSequence = z.infer<typeof generatedSequenceSchema>;
+export type GeneratedSequence = z.infer<typeof generatedSequenceSchema> & {
+  steps: Array<
+    z.infer<typeof generatedSequenceSchema>["steps"][number] & {
+      // P0-3 — data-backed quality score attached after the evaluator loop.
+      qualityScore?: { composite: number; dimensions: Record<string, number> };
+    }
+  >;
+  sequenceQuality?: { composite: number; passed: boolean; iterations: number };
+};
 
 /**
  * Generate a complete multi-step outreach sequence.
@@ -70,23 +79,9 @@ export async function generateSequence(
 
   const basePrompt = buildGenerationPrompt(ctx, methodology, signalAngle, strategies, options?.meetingSlots, options?.knowledgeContext, options?.rejectionInsight ?? null);
 
-  // Standard generation (bulk campaigns)
-  if (!options?.evaluate) {
-    const { object } = await tracedGenerateObject({
-      model,
-      schema: generatedSequenceSchema,
-      prompt: basePrompt,
-      temperature: 0.5,
-      _trace: {
-        agentId: "generate-sequence",
-        tenantId: options?.tenantId,
-        inputPreview: `Sequence for ${ctx.contact.fullName} at ${ctx.company?.name || "unknown"} (${methodology.name})`,
-      },
-    });
-    return object as GeneratedSequence;
-  }
-
-  // Evaluator-optimizer loop (preview/single sequence)
+  // P0-3 — always run the evaluator-optimizer loop (bulk AND preview) so every
+  // generated sequence is graded by the data-backed scorer (gradeEmail) before
+  // it becomes a draft. The bulk path used to skip all quality gating.
   const generateFn = async (feedback?: string) => {
     const prompt = feedback
       ? `${basePrompt}\n\nPREVIOUS ATTEMPT FEEDBACK — fix these issues:\n${feedback}`
@@ -100,20 +95,28 @@ export async function generateSequence(
       _trace: {
         agentId: "generate-sequence",
         tenantId: options?.tenantId,
-        inputPreview: `Sequence for ${ctx.contact.fullName} (eval loop)`,
+        inputPreview: `Sequence for ${ctx.contact.fullName} at ${ctx.company?.name || "unknown"} (${methodology.name})`,
       },
     });
     return { text: JSON.stringify(object), usage: { promptTokens: 0, completionTokens: 0 } };
   };
 
-  const evaluateFn = async (output: string) => {
-    return evaluateSequenceQuality(output, ctx, methodology);
-  };
+  const evaluateFn = async (output: string) => gradeSequenceQuality(output, ctx, methodology);
 
   const { evaluatorOptimizerLoop } = await import("@/lib/evals/flywheel");
   const result = await evaluatorOptimizerLoop(generateFn, evaluateFn, 2);
 
-  return JSON.parse(result.output) as GeneratedSequence;
+  // Attach per-step + sequence-level quality to the result (R7).
+  const parsed = JSON.parse(result.output) as GeneratedSequence;
+  const finalEval = gradeSequenceQuality(result.output, ctx, methodology);
+  return {
+    ...parsed,
+    steps: parsed.steps.map((s) => {
+      const ps = finalEval.perStep.find((p) => p.stepNumber === s.stepNumber);
+      return ps ? { ...s, qualityScore: { composite: ps.composite, dimensions: ps.dimensions } } : s;
+    }),
+    sequenceQuality: { composite: finalEval.score, passed: finalEval.pass, iterations: result.iterations },
+  } as GeneratedSequence;
 }
 
 /**

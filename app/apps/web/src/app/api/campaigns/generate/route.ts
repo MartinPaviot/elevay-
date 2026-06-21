@@ -218,6 +218,14 @@ export async function POST(req: Request) {
       sequenceName: generated.sequenceName,
       reasoning: generated.sequenceReasoning,
       steps: generated.steps,
+      quality: {
+        composite: generated.sequenceQuality?.composite ?? null,
+        passed: generated.sequenceQuality?.passed ?? null,
+        perStep: generated.steps.map((s: { stepNumber: number; qualityScore?: { composite: number } }) => ({
+          stepNumber: s.stepNumber,
+          composite: s.qualityScore?.composite ?? null,
+        })),
+      },
       methodology: {
         seniority: resolvedContactId ? "detected" : "VP",
         signalUsed: null,
