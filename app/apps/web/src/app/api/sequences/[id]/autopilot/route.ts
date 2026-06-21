@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, contacts, companies } from "@/db/schema";
 import { eq, sql, and, isNotNull, gte, isNull } from "drizzle-orm";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
 import { recordAgentAction } from "@/lib/agents/agent-actions";
@@ -80,6 +81,9 @@ export async function POST(
       .orderBy(sql`${contacts.score} DESC NULLS LAST`)
       .limit(maxEnroll * 2); // fetch extra to account for already-enrolled / ineligible
 
+    // P0-5 — load the tenant suppression-list once; never enroll a burned address.
+    const suppressedSet = await loadSuppressedEmails(authCtx.tenantId, candidates.map((c) => c.email));
+
     // Filter to the eligible, not-yet-enrolled set (capped at maxEnroll).
     const toEnroll: string[] = [];
     let skippedCount = 0;
@@ -93,6 +97,7 @@ export async function POST(
         email: contact.email,
         deletedAt: contact.deletedAt,
         companyExcludedReason: contact.companyExcludedReason,
+        suppressedReason: contact.email && suppressedSet.has(contact.email.toLowerCase()) ? "hard_bounce" : null,
       });
       if (!eligibility.eligible) {
         skippedCount++;

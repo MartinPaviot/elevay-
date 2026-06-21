@@ -50,6 +50,7 @@ vi.mock("@/db/schema", () => ({
   sequenceEnrollments: { sequenceId: "sequence_id", contactId: "contact_id" },
   contacts: { id: "id", email: "email", score: "score", deletedAt: "deleted_at", companyId: "company_id", tenantId: "tenant_id" },
   companies: { id: "id", excludedReason: "excluded_reason" },
+  emailOptouts: { emailAddress: "email_address", tenantId: "tenant_id" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -59,6 +60,7 @@ vi.mock("drizzle-orm", () => ({
   isNotNull: vi.fn(),
   isNull: vi.fn(),
   gte: vi.fn(),
+  inArray: vi.fn(),
 }));
 
 import { getAuthContext } from "@/lib/auth/auth-utils";
@@ -131,6 +133,7 @@ describe("POST /api/sequences/[id]/autopilot", () => {
         { id: "c-ok", email: "a@x.com", deletedAt: null, companyExcludedReason: null },
         { id: "c-bad", email: "b@y.com", deletedAt: null, companyExcludedReason: "competitor" },
       ], // candidates (leftJoin companies)
+      [], // P0-5 loadSuppressedEmails — none suppressed
     ];
 
     const res = await POST(req(), { params: Promise.resolve({ id: "seq1" }) });
@@ -162,6 +165,7 @@ describe("POST /api/sequences/[id]/autopilot", () => {
         { id: "c-ok", email: "a@x.com", deletedAt: null, companyExcludedReason: null },
         { id: "c-bad", email: "b@y.com", deletedAt: null, companyExcludedReason: "competitor" },
       ], // candidates
+      [], // P0-5 loadSuppressedEmails — none suppressed
       [{ delayDays: 0 }], // first step (allowed path only)
     ];
 

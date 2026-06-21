@@ -34,6 +34,7 @@ import { escapeForPrompt, wrapUntrustedInput } from "@/lib/chat/prompt-safety";
 import { generateInviteToken } from "@/lib/auth/invite-token";
 import { makeTool, type ToolContext } from "./context";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadSuppressedEmails, isEmailSuppressed } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
 import { recordAgentAction } from "@/lib/agents/agent-actions";
@@ -623,11 +624,13 @@ RULES:
           }
           // Anti-ICP parity with /enroll: a flagged company's contact is never
           // enrolled, even when its id is passed explicitly. Also covers
-          // missing-email and soft-deleted via the shared helper.
+          // missing-email, soft-deleted, and suppressed (P0-5) via the helper.
+          const suppressed = await isEmailSuppressed(tenantId, contact.email);
           const eligibility = checkContactEligibility({
             email: contact.email,
             deletedAt: contact.deletedAt,
             companyExcludedReason: contact.companyExcludedReason,
+            suppressedReason: suppressed ? "hard_bounce" : null,
           });
           if (!eligibility.eligible) {
             skipped++;
@@ -720,6 +723,9 @@ RULES:
           .orderBy(sql`${contacts.score} DESC NULLS LAST`)
           .limit(maxEnroll * 2);
 
+        // P0-5 — load the tenant suppression-list once; never enroll a burned address.
+        const suppressedSet = await loadSuppressedEmails(tenantId, candidates.map((c) => c.email));
+
         const toEnroll: string[] = [];
         let skippedCount = 0;
         for (const contact of candidates) {
@@ -732,6 +738,7 @@ RULES:
             email: contact.email,
             deletedAt: contact.deletedAt,
             companyExcludedReason: contact.companyExcludedReason,
+            suppressedReason: contact.email && suppressedSet.has(contact.email.toLowerCase()) ? "hard_bounce" : null,
           });
           if (!eligibility.eligible) {
             skippedCount++;
