@@ -92,6 +92,24 @@ export const InboxRow = memo(function InboxRow({
       <span className="flex h-2 w-2 shrink-0 items-center justify-center" aria-hidden>
         {c.unread && <span className="h-2 w-2 rounded-full" style={{ background: "var(--color-accent)" }} />}
       </span>
+      {/* Star (Upstream): a LEADING toggle before the avatar — filled yellow when
+          starred, faint on hover otherwise. */}
+      {onToggleStar && (
+        <span
+          role="button"
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleStar(c.key, !c.starred);
+          }}
+          className={`shrink-0 cursor-pointer transition-opacity ${c.starred ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          style={{ color: c.starred ? "var(--color-warning)" : "var(--color-text-muted)" }}
+          title={c.starred ? "Unstar" : "Star"}
+          aria-label={c.starred ? "Unstar conversation" : "Star conversation"}
+        >
+          <Star size={14} style={{ fill: c.starred ? "var(--color-warning)" : "none" }} />
+        </span>
+      )}
       <SenderAvatar name={decodeDisplay(c.displayName)} email={c.fromAddress} size={22} />
       {/* One truncated line: Sender · Subject · snippet (bold when unread, Upstream). */}
       <div
@@ -118,24 +136,8 @@ export const InboxRow = memo(function InboxRow({
           </span>
         )}
       </div>
-      {/* Right cluster: star · SLA / follow-up chip · labels · time · mailbox dot. */}
+      {/* Right cluster: SLA / follow-up chip · labels · time · mailbox dot. */}
       <div className="flex shrink-0 items-center gap-2">
-        {onToggleStar && (
-          <span
-            role="button"
-            tabIndex={-1}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleStar(c.key, !c.starred);
-            }}
-            className={`shrink-0 cursor-pointer transition-opacity ${c.starred ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-            style={{ color: c.starred ? "var(--color-warning)" : "var(--color-text-muted)" }}
-            title={c.starred ? "Unstar" : "Star"}
-            aria-label={c.starred ? "Unstar conversation" : "Star conversation"}
-          >
-            <Star size={14} style={{ fill: c.starred ? "var(--color-warning)" : "none" }} />
-          </span>
-        )}
         {c.slaHoursOverdue != null && (
           <span
             className="flex items-center gap-1 text-[12px] opacity-0 transition-opacity group-hover:opacity-100"
