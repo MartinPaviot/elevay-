@@ -9,6 +9,7 @@ import { getUserSplits } from "@/lib/inbox/split-store";
 import { getNoiseOverrides } from "@/lib/inbox/noise-override-store";
 import { getStarredKeys } from "@/lib/inbox/starred-store";
 import { getReadMap, isUnread } from "@/lib/inbox/read-store";
+import { getTrashedKeys } from "@/lib/inbox/trash-store";
 import { getMailboxIdentities } from "@/lib/inbox/mailbox-identity";
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
@@ -50,6 +51,7 @@ export async function GET(req: Request) {
     const lastSeen = await getLastSeen(authCtx.userId);
     const starredKeys = new Set(await getStarredKeys(authCtx.userId));
     const readMap = await getReadMap(authCtx.userId);
+    const trashedKeys = new Set(await getTrashedKeys(authCtx.userId));
     const unreadOf = (c: { key: string; lastInboundAt: string | null; lastMessageAt: string | null }) =>
       isUnread(readMap[c.key], c.lastInboundAt ?? c.lastMessageAt);
 
@@ -130,9 +132,13 @@ export async function GET(req: Request) {
     }));
 
     // Narrow everything the list shows to the selected box, if any.
-    const visible = selectedMailbox
+    const visibleAll = selectedMailbox
       ? attributed.filter(({ mb }) => mb.mailboxId === selectedMailbox)
       : attributed;
+    // Trash (Upstream is:trash): a trashed conversation is hidden from every normal
+    // lane (incl. All Mail) and surfaced only in the Trash folder. Soft-delete.
+    const trashedRows = visibleAll.filter(({ c }) => trashedKeys.has(c.key));
+    const visible = visibleAll.filter(({ c }) => !trashedKeys.has(c.key));
 
     const counts = laneCounts(visible.map(({ c }) => c));
 
@@ -180,6 +186,8 @@ export async function GET(req: Request) {
         ? visible.filter(({ c }) => draftThreadIds.has(c.key)) // Upstream is:draft
       : laneParam === "scheduled"
         ? visible.filter(({ c }) => scheduledThreadIds.has(c.key)) // Upstream is:scheduled
+      : laneParam === "trash"
+        ? trashedRows // Trash — only trashed conversations (Upstream is:trash)
       : laneParam === "all"
         ? visible // All Mail — every conversation, no lane filter (still owner-scoped)
       : laneParam === "primary"
@@ -338,6 +346,7 @@ export async function GET(req: Request) {
       draftsCount: visible.filter(({ c }) => draftThreadIds.has(c.key)).length,
       scheduledCount: visible.filter(({ c }) => scheduledThreadIds.has(c.key)).length,
       allMailCount: visible.length,
+      trashCount: trashedRows.length,
       // Inbox/Primary count (Upstream model): all inbox mail except Promotions/Social/Noise.
       primaryCount: visible.filter(({ c }) => c.split !== "promotions" && c.split !== "social" && !c.noise && c.lane !== "done" && c.lane !== "snoozed").length,
       // Unread primary mail (the Upstream Inbox badge = unread count, not total).

@@ -50,7 +50,7 @@ import {
   type SelectionState,
 } from "@/lib/inbox/selection";
 
-type Tab = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all";
+type Tab = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash";
 
 /* ── CLE-14: page-action helpers (pure, shared) ── */
 
@@ -74,6 +74,7 @@ const TAB_LABELS: Record<Tab, string> = {
   drafts: "Drafts",
   scheduled: "Scheduled",
   all: "All Mail",
+  trash: "Trash",
 };
 
 
@@ -94,6 +95,7 @@ export default function InboxPage() {
   const [draftsCount, setDraftsCount] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
   const [allMailCount, setAllMailCount] = useState(0);
+  const [trashCount, setTrashCount] = useState(0);
   // The inbox is personal; false once a lane load confirms the user has no
   // connected mailbox of their own. Defaults true to avoid flashing the
   // connect card before the first response.
@@ -207,6 +209,7 @@ export default function InboxPage() {
           draftsCount?: number;
           scheduledCount?: number;
           allMailCount?: number;
+          trashCount?: number;
           primaryCount?: number;
           unreadCount?: number;
           bundles?: BundleSource[];
@@ -223,6 +226,7 @@ export default function InboxPage() {
         setDraftsCount(data.draftsCount ?? 0);
         setScheduledCount(data.scheduledCount ?? 0);
         setAllMailCount(data.allMailCount ?? 0);
+        setTrashCount(data.trashCount ?? 0);
         setBundles(data.bundles ?? []);
         setCatchUpCount(data.catchUpCount ?? 0);
         // First visit (no marker yet): stamp it once so future visits compute
@@ -473,6 +477,20 @@ export default function InboxPage() {
       body: JSON.stringify({ key, starred }),
     }).catch(() => {});
   }, []);
+
+  // Delete (→ Trash) or Restore a conversation. Soft-delete: optimistically pull it
+  // from the current list + close the pane, then persist via /api/inbox/trash.
+  const handleTrash = useCallback((key: string, trashed: boolean) => {
+    setConversations((prev) => prev.filter((c) => c.key !== key));
+    setSelectedKey((sel) => (sel === key ? null : sel));
+    setTrashCount((n) => Math.max(0, n + (trashed ? 1 : -1)));
+    void fetch("/api/inbox/trash", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, trashed }),
+    }).catch(() => {});
+    toast(trashed ? "Moved to Trash." : "Restored to the inbox.", "success");
+  }, [toast]);
 
   // Bulk triage the whole selection — reuses the per-key verb (a dedicated
   // /triage/bulk fan-out is residual). Optimistic; reports any failures.
@@ -934,6 +952,7 @@ export default function InboxPage() {
           draftsCount={draftsCount}
           scheduledCount={scheduledCount}
           allMailCount={allMailCount}
+          trashCount={trashCount}
           mailboxes={mailboxes}
           selectedMailbox={selectedMailbox}
           onSelectMailbox={setSelectedMailbox}
@@ -1136,6 +1155,8 @@ export default function InboxPage() {
                 replySignal={replySignal}
                 labelSignal={labelSignal}
                 onTriage={handleTriage}
+                onTrash={handleTrash}
+                isTrashView={tab === "trash"}
                 apiRef={paneApiRef}
               />
             </div>

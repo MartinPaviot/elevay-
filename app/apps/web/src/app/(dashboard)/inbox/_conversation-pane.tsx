@@ -25,6 +25,8 @@ import {
   ShieldAlert,
   ArrowRight,
   ListChecks,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +94,8 @@ export function ConversationPane({
   replySignal,
   labelSignal,
   onTriage,
+  onTrash,
+  isTrashView,
   apiRef,
 }: {
   conversationKey: string | null;
@@ -101,6 +105,10 @@ export function ConversationPane({
   /** B6: incremented by the page (`l` key / palette) to open the add-label input. */
   labelSignal?: number;
   onTriage: (key: string, action: "done" | "snooze" | "reopen", snoozeUntil?: string) => Promise<void>;
+  /** Delete (→ Trash) or Restore the conversation (Upstream is:trash). */
+  onTrash?: (key: string, trashed: boolean) => void;
+  /** True when the open thread is being viewed from the Trash folder (→ Restore). */
+  isTrashView?: boolean;
   /** CLE-14: set by the page to drive reply/book/stop from the chat. */
   apiRef?: Ref<ConversationPaneApi | null>;
 }) {
@@ -563,6 +571,14 @@ export function ConversationPane({
   }
   if (detail.enrollment) {
     moreItems.push({ label: "Stop sequence", icon: <OctagonX size={14} />, onClick: () => void stopSequence(), disabled: stopping });
+  }
+  if (onTrash) {
+    moreItems.push({
+      label: isTrashView ? "Restore to inbox" : "Delete",
+      icon: isTrashView ? <RotateCcw size={14} /> : <Trash2 size={14} />,
+      onClick: () => onTrash(conv.key, !isTrashView),
+      divider: true,
+    });
   }
 
   return (
