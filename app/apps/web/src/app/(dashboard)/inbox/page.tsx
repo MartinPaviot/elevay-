@@ -149,6 +149,50 @@ export default function InboxPage() {
   // otherwise read pre-commit state and show an empty lane).
   const pendingTriage = useRef<Promise<unknown> | null>(null);
 
+  // ── URL ↔ active-view sync — shareable/bookmarkable folders + splits that
+  // SURVIVE A RELOAD and respond to back/forward (the audit gap vs Upstream).
+  // One page, synced via the History API (a route restructure would break the
+  // sibling-relative imports). The ?conversation deep-link param is preserved. ──
+  const urlInitRef = useRef(false);
+  const applyUrlToState = useCallback((sp: URLSearchParams) => {
+    const lane = sp.get("lane");
+    const split = sp.get("split");
+    const folder = sp.get("folder") as Tab | null;
+    if (lane) { setCustomLaneId(lane); setActiveSplit(null); setTab("attention"); }
+    else if (split) { setCustomLaneId(null); setActiveSplit(split); setTab("attention"); }
+    else if (folder) { setCustomLaneId(null); setActiveSplit(null); setTab(folder); }
+    else { setCustomLaneId(null); setActiveSplit(null); setTab("attention"); }
+  }, []);
+  // Read the initial view from the URL once (client-only — window is set in effects).
+  useEffect(() => {
+    if (urlInitRef.current) return;
+    urlInitRef.current = true;
+    applyUrlToState(new URLSearchParams(window.location.search));
+  }, [applyUrlToState]);
+  // Push the active view into the URL. The `url !== current` guard makes a
+  // popstate-driven state change a no-op, so back/forward never loops.
+  useEffect(() => {
+    if (!urlInitRef.current) return;
+    const sp = new URLSearchParams(window.location.search);
+    sp.delete("folder");
+    sp.delete("split");
+    sp.delete("lane");
+    if (customLaneId) sp.set("lane", customLaneId);
+    else if (activeSplit) sp.set("split", activeSplit);
+    else if (tab !== "attention") sp.set("folder", tab);
+    const qs = sp.toString();
+    const url = qs ? `/inbox?${qs}` : "/inbox";
+    if (url !== window.location.pathname + window.location.search) {
+      window.history.pushState(null, "", url);
+    }
+  }, [tab, activeSplit, customLaneId]);
+  // Back / forward → re-read the URL into the active view.
+  useEffect(() => {
+    const onPop = () => applyUrlToState(new URLSearchParams(window.location.search));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [applyUrlToState]);
+
   // Deep-link (?conversation=<key>, e.g. from the /home Activity feed):
   // select that thread on arrival. Consumed once — later triage flows are
   // never pinned to it, and the param is stripped from the URL immediately.
