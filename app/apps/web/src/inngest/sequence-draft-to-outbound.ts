@@ -47,6 +47,7 @@ import {
 import { verifySignalUrlsBatch } from "@/lib/signals/url-verifier-cache";
 import { checkSpamSignals } from "@/lib/emails/email-spam-check";
 import { decideSpamGate } from "@/lib/sequence-drafts/spam-gate";
+import { toQualityScoreColumn } from "@/lib/evals/quality-score-column";
 import { logger } from "@/lib/observability/logger";
 
 type DispatchEvent = {
@@ -85,6 +86,8 @@ export const sequenceDraftToOutbound = inngest.createFunction(
         bodyText: sequenceDrafts.bodyText,
         status: sequenceDrafts.status,
         personalizationSources: sequenceDrafts.personalizationSources,
+        // P1-12 — carry the quality score onto the sent email for the back-test.
+        qualityScore: sequenceDrafts.qualityScore,
       })
       .from(sequenceDrafts)
       .where(
@@ -399,6 +402,8 @@ export const sequenceDraftToOutbound = inngest.createFunction(
           messageId: dedupKey,
           status: "queued",
           queuedAt: new Date(),
+          // P1-12 — the composite the email shipped at, for the nightly back-test.
+          qualityScore: toQualityScoreColumn(draft.qualityScore),
         })
         .returning({ id: outboundEmails.id }),
     );
