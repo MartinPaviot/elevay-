@@ -9,6 +9,13 @@ import { scrapeJobPostings } from "./sources/jobs";
 import { detectTechStack } from "./sources/tech-stack";
 import { fetchLinkedInActivity } from "./sources/linkedin";
 import { synthesizeBrief } from "./brief-synthesizer";
+import { runResearchAgent } from "./research-agent";
+import { enrichFirmographics } from "./sources/apollo-enrich";
+
+/** True for the tenant-budget cap error thrown by enforceLlmBudget (traced-ai). */
+function isBudgetError(err: unknown): boolean {
+  return !!err && typeof err === "object" && (err as { name?: string }).name === "BudgetExceededError";
+}
 
 interface BuildOptions {
   forceRefresh?: boolean;
@@ -47,26 +54,56 @@ export async function buildIntelligenceBrief(
     contact = c || null;
   }
 
-  // Parallel source fetching — soft-fail each
-  const sources = await fetchAllSources(company.domain, contact?.linkedinUrl || null, company.name);
+  // P1-9 — research path: the agentic loop (RESEARCH_AGENT_ENABLED) drives the
+  // sources and produces the synthesized fields, with the deterministic
+  // fetchAllSources + synthesizeBrief as a fail-open fallback. A budget cap is
+  // fail-CLOSED (re-trying in fallback would burn more of an over-cap tenant).
+  let sources: Awaited<ReturnType<typeof fetchAllSources>>;
+  let synthesized: Awaited<ReturnType<typeof synthesizeBrief>>;
 
-  // LLM synthesis
-  const synthesized = await synthesizeBrief(
-    {
-      website: sources.website,
-      news: sources.news,
-      jobs: sources.jobs,
-      techStack: sources.techStack,
-      linkedin: sources.linkedin,
-    },
-    {
-      name: company.name,
-      domain: company.domain,
-      industry: company.industry,
-      size: company.size,
-    },
-    contact
-  );
+  const runDeterministic = async () => {
+    const s = await fetchAllSources(company.domain, contact?.linkedinUrl || null, company.name);
+    const syn = await synthesizeBrief(
+      { website: s.website, news: s.news, jobs: s.jobs, techStack: s.techStack, linkedin: s.linkedin },
+      { name: company.name, domain: company.domain, industry: company.industry, size: company.size },
+      contact,
+    );
+    return { s, syn };
+  };
+
+  if (process.env.RESEARCH_AGENT_ENABLED === "1") {
+    try {
+      const r = await runResearchAgent({
+        tenantId,
+        companyName: company.name,
+        domain: company.domain,
+        contact,
+        // P1-10 — Apollo/registry firmographics via the existing waterfall, as
+        // the agent's enrichApollo tool. The model folds funding/headcount in.
+        enrichApollo: ({ domain }) => enrichFirmographics({ domain, companyName: company.name, tenantId }),
+      });
+      synthesized = r.synthesized;
+      sources = {
+        website: r.collected.website,
+        news: r.collected.news,
+        jobs: r.collected.jobs,
+        techStack: r.collected.techStack,
+        linkedin: null,
+        attempted: r.attempted,
+        succeeded: r.succeeded,
+        errors: r.errors,
+      };
+    } catch (err) {
+      if (isBudgetError(err)) throw err; // fail-closed on budget
+      const { s, syn } = await runDeterministic();
+      sources = s;
+      synthesized = syn;
+    }
+  } else {
+    const { s, syn } = await runDeterministic();
+    sources = s;
+    synthesized = syn;
+  }
 
   // Build the full brief
   const expiresAt = new Date();

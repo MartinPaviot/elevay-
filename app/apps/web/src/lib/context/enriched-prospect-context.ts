@@ -9,7 +9,7 @@
 
 import { db } from "@/db";
 import { activities, contextGraphEdges, contextGraphNodes } from "@/db/schema";
-import { and, desc, eq, or, inArray } from "drizzle-orm";
+import { and, desc, eq, or, inArray, isNull } from "drizzle-orm";
 import {
   buildProspectContext,
   formatContextForPrompt,
@@ -219,8 +219,10 @@ async function loadGraphFacts(
           inArray(contextGraphEdges.sourceNodeId, nodeIds),
           inArray(contextGraphEdges.targetNodeId, nodeIds),
         ),
-        // Only facts that haven't been invalidated
-        eq(contextGraphEdges.tExpired, null as unknown as Date),
+        // Only facts that haven't been invalidated. P1-16 — was
+        // `eq(tExpired, null)`, i.e. `t_expired = NULL` in SQL, which is ALWAYS
+        // false, so the memory graph returned NOTHING. `isNull` is the fix.
+        isNull(contextGraphEdges.tExpired),
       ),
     )
     .orderBy(desc(contextGraphEdges.tCreated))
@@ -232,6 +234,18 @@ async function loadGraphFacts(
     date: e.tValid?.toISOString().split("T")[0] ?? "unknown",
     confidence: typeof e.confidence === "number" ? e.confidence : 0.5,
   }));
+}
+
+/**
+ * P1-16 — public per-contact fact loader for the draft "Why this draft" panel
+ * and the generation prompt. Valid facts only (the isNull fix above now actually
+ * returns them), sorted confidence desc then date desc, capped at 8.
+ */
+export async function loadGraphFactsForContact(contactId: string, tenantId: string): Promise<GraphFact[]> {
+  const facts = await loadGraphFacts(contactId, tenantId);
+  return [...facts]
+    .sort((a, b) => b.confidence - a.confidence || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 8);
 }
 
 // ── Email Bodies ─────────────────────────────────────────
