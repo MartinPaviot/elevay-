@@ -10,9 +10,10 @@ Adding these columns to the Drizzle schema makes **every** `db.select().from(tab
 branch deploys before the columns exist in the target DB, those selects 500
 (prod schema-behind). So:
 
-1. Apply `app/apps/web/drizzle/manual/outbound-persistence-batch.sql` to the target
-   DB first (`pnpm db:push` or `pnpm db:migrate:apply` on **dev**; never auto-migrate
-   prod from an unmerged branch — apply it as a deploy step on prod).
+1. Apply `app/apps/web/drizzle/0082_outbound_persistence_batch.sql` to the target DB
+   first via `pnpm db:migrate:apply` (the custom runner picks up top-level `drizzle/*.sql`
+   not yet in `__elevay_migrations`, wraps each in a transaction). On **dev**; apply
+   as a deploy step on prod — never auto-migrate prod from an unmerged branch.
 2. Then merge + deploy this branch.
 
 The SQL is idempotent (`ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS`).

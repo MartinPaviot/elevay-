@@ -1,11 +1,12 @@
 -- Outbound persistence batch — P0-4 / P1-10 / P1-12 / P1-15.
+-- Idempotent + additive only (ADD COLUMN IF NOT EXISTS / CREATE TABLE IF NOT
+-- EXISTS, no DROP). The custom runner (scripts/apply-migrations.ts) wraps this in
+-- a transaction, so no explicit BEGIN/COMMIT here.
 --
--- Idempotent. Apply to the TARGET DB BEFORE deploying the matching schema change
--- (the Drizzle schema now references these columns, so unmigrated selects 500).
--- Apply on dev with `pnpm db:push` or `pnpm db:migrate:apply`, or run this file
--- directly with psql. DO NOT run against prod from an unmerged branch.
-
-BEGIN;
+-- Apply BEFORE deploying the matching schema change (the Drizzle schema now
+-- references these columns; an unmigrated select-all 500s). DB-first is correct:
+-- these nullable columns are harmless to the currently-deployed app (it doesn't
+-- reference them yet).
 
 -- P1-10 — firmographic/funding facts + per-field provenance on the brief.
 ALTER TABLE intelligence_briefs
@@ -42,5 +43,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS perso_calib_tenant_date_idx
   ON personalization_calibration (tenant_id, run_date);
 CREATE INDEX IF NOT EXISTS perso_calib_tenant_idx
   ON personalization_calibration (tenant_id);
-
-COMMIT;
