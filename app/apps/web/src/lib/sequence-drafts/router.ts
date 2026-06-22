@@ -57,6 +57,8 @@ export interface BuildDraftArgs {
   /** Citations from the personalisation step — each entry is an
    *  arbitrary object `{ kind, label, href, quote? }` shape. */
   personalizationSources?: Array<Record<string, unknown>>;
+  /** P1-15 — data-backed quality score (0-1) graded at generation. */
+  qualityScore?: number | null;
 }
 
 export interface DraftRowInsert {
@@ -74,6 +76,8 @@ export interface DraftRowInsert {
   spamScore: number;
   spamSeverity: string;
   spamWarnings: SpamWarning[];
+  // P1-15 — null when the grader couldn't score (fail-open).
+  qualityScore: number | null;
   status: "pending_approval";
   version: 1;
 }
@@ -96,6 +100,7 @@ export function buildDraftRow(args: BuildDraftArgs): DraftRowInsert {
     spamScore: spam.score,
     spamSeverity: spam.severity,
     spamWarnings: spam.warnings,
+    qualityScore: args.qualityScore ?? null,
     status: "pending_approval",
     version: 1,
   };
