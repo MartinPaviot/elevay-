@@ -59,7 +59,7 @@ export const InboxRow = memo(function InboxRow({
       onMouseEnter={() => onHoverStart?.(c.key)}
       onMouseLeave={onHoverEnd}
       title={reasonTitle}
-      className="group flex w-full items-center gap-2 border-b px-3 text-left transition-colors"
+      className="group flex w-full items-center gap-1.5 border-b px-3 text-left transition-colors"
       style={{
         height: "var(--inbox-row-height)",
         borderColor: "var(--color-border-default)",
@@ -87,13 +87,9 @@ export const InboxRow = memo(function InboxRow({
           {multiSelected ? <CheckSquare size={15} /> : <Square size={15} />}
         </span>
       )}
-      {/* Unread dot (Upstream): a fixed 8px leading slot so read/unread rows stay
-          column-aligned; the blue dot shows only when unread. */}
-      <span className="flex h-2 w-2 shrink-0 items-center justify-center" aria-hidden>
-        {c.unread && <span className="h-2 w-2 rounded-full" style={{ background: "var(--color-accent)" }} />}
-      </span>
-      {/* Star (Upstream): a LEADING toggle before the avatar — filled yellow when
-          starred, faint on hover otherwise. */}
+      {/* Star (Upstream): a LEADING toggle tight beside the checkbox — the unread
+          dot used to sit between them and blew the gap open; it now sits just
+          before the avatar. Filled yellow when starred, faint on hover. */}
       {onToggleStar && (
         <span
           role="button"
@@ -110,6 +106,11 @@ export const InboxRow = memo(function InboxRow({
           <Star size={14} style={{ fill: c.starred ? "var(--color-warning)" : "none" }} />
         </span>
       )}
+      {/* Unread dot (Upstream): a fixed 8px slot just before the avatar so
+          read/unread rows stay column-aligned; the blue dot shows only when unread. */}
+      <span className="flex h-2 w-2 shrink-0 items-center justify-center" aria-hidden>
+        {c.unread && <span className="h-2 w-2 rounded-full" style={{ background: "var(--color-accent)" }} />}
+      </span>
       <SenderAvatar name={decodeDisplay(c.displayName)} email={c.fromAddress} size={22} />
       {/* One truncated line: Sender · Subject · snippet (bold when unread, Upstream). */}
       <div
