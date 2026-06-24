@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Inbox, Mail, AlertCircle, Search, X, PenSquare } from "lucide-react";
+import { Inbox, Mail, AlertCircle, Search, X, PenSquare, ChevronLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -1045,11 +1045,40 @@ export default function InboxPage() {
               : "All caught up"
             : undefined
         }
-      />
+      >
+        {/* Action buttons live in the top bar (Upstream): Compose + search,
+            right of the title/conversation-count — frees the content column. */}
+        {mailboxConnected && (
+          <>
+            <Button size="sm" onClick={() => setComposeOpen(true)} className="shrink-0 gap-1.5" title="Compose a new email">
+              <PenSquare size={14} /> Compose
+            </Button>
+            {/* Width shrinks with the viewport so a half-screen window doesn't
+                over-fill the 44px header and wrap the title (regression guard). */}
+            <div className="relative w-40 min-w-0 sm:w-56 lg:w-80">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search mail — from: subject: is:unread"
+                className="w-full rounded-md border py-1.5 pl-8 pr-8 text-[13px] outline-none"
+                style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} title="Clear search">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </PageHeader>
 
       <div className="inbox-shell flex min-h-0 flex-1">
-      {/* Left: mailbox folders + Splits (the Upstream IA). */}
+      {/* Left: mailbox folders + Splits (the Upstream IA). Hidden when a thread
+          is open on a narrow/half-screen window so the reader goes single-pane. */}
       {mailboxConnected && (
+        <div className={selectedKey ? "hidden shrink-0 lg:flex" : "flex shrink-0"}>
         <InboxFolders
           tab={customLaneId ? "attention" : tab}
           customLaneId={customLaneId}
@@ -1086,35 +1115,16 @@ export default function InboxPage() {
           onNewLane={() => void handleNewLane()}
           onNewSplit={handleNewSplit}
         />
+        </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-      {/* Top full-width search bar (Upstream): spans the content area. */}
-      {mailboxConnected && (
-        <div className="flex items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-border-default)" }}>
-          <Button size="sm" onClick={() => setComposeOpen(true)} className="shrink-0 gap-1.5" title="Compose a new email">
-            <PenSquare size={14} /> Compose
-          </Button>
-          <div className="relative flex-1">
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search mail — from: subject: is:unread"
-              className="w-full rounded-md border py-1.5 pl-8 pr-8 text-[13px] outline-none"
-              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
-            />
-            {search && (
-              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} title="Clear search">
-                <X size={13} />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {/* Second nav axis: the split-tab strip (attention lane only). */}
+      {/* Second nav axis: the split-tab strip (attention lane only). Hidden in
+          the narrow single-pane reader so the open thread stands alone. */}
       {mailboxConnected && tab === "attention" && !customLaneId && (
-        <SplitStrip splits={splitCounts} noiseCount={noiseCount} active={activeSplit} onSelect={setActiveSplit} />
+        <div className={selectedKey ? "hidden lg:block" : "block"}>
+          <SplitStrip splits={splitCounts} noiseCount={noiseCount} active={activeSplit} onSelect={setActiveSplit} />
+        </div>
       )}
       {!mailboxConnected ? (
         <div className="flex flex-1 items-center justify-center">
@@ -1141,7 +1151,7 @@ export default function InboxPage() {
               sub-segment); the standalone rail is gone. */}
           <div
             ref={listRef}
-            className={`overflow-y-auto ${selectedKey ? "w-[260px] shrink-0 border-r" : "flex-1"}`}
+            className={`overflow-y-auto ${selectedKey ? "hidden border-r lg:block lg:w-[260px] lg:shrink-0" : "flex-1"}`}
             style={{ borderColor: "var(--color-border-default)" }}
           >
             {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
@@ -1261,7 +1271,17 @@ export default function InboxPage() {
             })()}
           </div>
           {selectedKey && (
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
+              {/* Single-pane back control: shown only on narrow widths where the
+                  list + rail are hidden. At lg+ the master-detail list is the way back. */}
+              <button
+                onClick={() => setSelectedKey(null)}
+                className="flex shrink-0 items-center gap-1 border-b px-3 py-2 text-[13px] font-medium lg:hidden"
+                style={{ borderColor: "var(--color-border-default)", color: "var(--color-text-secondary)" }}
+              >
+                <ChevronLeft size={15} /> Inbox
+              </button>
+              <div className="min-h-0 flex-1">
               <ConversationPane
                 conversationKey={selectedKey}
                 lane={customLaneId ? "attention" : tab === "snoozed" || tab === "done" || tab === "handled" ? tab : "attention"}
@@ -1274,6 +1294,7 @@ export default function InboxPage() {
                 isSpamView={tab === "spam"}
                 apiRef={paneApiRef}
               />
+              </div>
             </div>
           )}
         </div>

@@ -25,12 +25,12 @@ export function PageHeader({ icon, title, subtitle, children }: PageHeaderProps)
       {icon && (
         <span style={{ color: "var(--color-text-tertiary)" }}>{icon}</span>
       )}
-      <h1 className="text-[14px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+      <h1 className="shrink-0 whitespace-nowrap text-[14px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
         {title}
       </h1>
       {isBetaRoute(pathname) && <BetaTag />}
       {subtitle && (
-        <span className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+        <span className="shrink-0 whitespace-nowrap text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
           {subtitle}
         </span>
       )}
