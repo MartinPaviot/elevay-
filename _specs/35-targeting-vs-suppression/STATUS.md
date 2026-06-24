@@ -32,16 +32,34 @@ defaults **off** ⇒ zero change to live outreach until T14 flips it after T13.
   `filterConsentSuppressed` helper exists for optional import-time hardening +
   future 26/27 ingestion.
 
-## Remaining (need the running app / dev DB)
+## Done + verified (added)
 
-- **T11 — Account-page UI**: read-only suppression badge (type/scope/date/source),
-  manual "Do not contact" action, admin deactivate, targeting control. Needs (a)
-  account-detail API to return targeting_status + suppression summary, (b)
-  components on `accounts/[id]/page.tsx`, (c) live design-review pass (memory
-  `feedback_inbox-feel-gap`). Built + verified against the dev server, not blind.
-- **T13 run / T14 eval**: run the backfill on `leadsens-localdev`, capture counts,
-  flip `TARGETING_GATE_ENABLED=on`, run the E1-E12 acceptance + DB-level trigger
-  test, then merge on PASS. Prod migration ops-gated.
+| T11 | Account-page UI: detail API returns targeting_status + active account/
+domain suppression badges; `_targeting-suppression-panel` (read-only badge,
+manual DNC, admin deactivate); mounted in detail header | RTL (4 cases) + 42
+account tests green, tsc green |
+
+Verification totals: tsc green (whole web app); 77 spec-35 tests + 42 account
+tests green (pure logic, db-store, gate check-3, 5 chokepoints, panel UI).
+
+## Remaining — BLOCKED on confirmed-localdev DB + human OAuth
+
+- **DB-level (T9 trigger test, T13 backfill run, migrations 0092-0094)**: the
+  worktree `.env.local` DATABASE_URL is a Supabase pooler with dbname `postgres`
+  — project ref (localdev vs prod) is unverifiable, and memory
+  `reference_prod-schema-behind-drizzle` warns it may point at prod. Per the hard
+  rule (never migrate prod from an unmerged branch) these are NOT run here. Run on
+  a CONFIRMED `leadsens-localdev` URL: apply 0092-0094, run
+  `scripts/backfill-targeting-and-dnc.ts`, run the SQL-level trigger test.
+- **T14 live eval**: flip `TARGETING_GATE_ENABLED=on` (after backfill), Playwright
+  E1-E12 + a design-review pass. Needs the dev server + human OAuth (memory
+  `playwright-session-idle-logout`: re-auth is human-only). Merge on PASS;
+  prod migration ops-gated.
+
+## UI follow-up (polish, not blocking)
+
+- Admin-gating of the Deactivate button is server-enforced (403); client-side
+  hide-for-non-admins is a polish item (no role hook wired into the panel yet).
 
 ## Migrations to apply (dev, then ops-gated prod)
 
