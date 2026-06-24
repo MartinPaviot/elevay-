@@ -1,0 +1,27 @@
+# 26 — insights-pilae (`/insights/pilae`) — audit d'hydratation
+
+**Verdict global : H2 (partiel).** This page is genuinely wired to real, tenant-scoped data: a single client fetch to GET /api/insights/pilae, which runs three Drizzle queries all scoped by eq(deals.tenantId, authCtx.tenantId) / eq(tenants.id, authCtx.tenantId) against real columns (deals.projectAmount, deals.platformArr, deals.value, deals.stage, tenants.settings.deepDiveLoad). It is close to the Home reference bar but falls short of H1 on two counts: the three panels do NOT degrade independently (one shared fetch + one shared error banner — any failure blanks all panels), and the Bookings panel has no written empty state (it silently renders "—" / 0% when there are no deals). Funnel and Capacity panels do have proper written empty states. Worst meaningful state is H2.
+
+Entrée : `app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Page header (title + subtitle) | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:78 | static (PageHeader props hardcoded) | H0 | n/a | n/a | n/a | n/a | static | pure chrome — hardcoded title/subtitle, correctly static |
+| Bookings vs target — total bookings headline | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:156 | GET /api/insights/pilae bookings[].{projectBookings,platformArr,totalBookings} from SUM(deals.projectAmount/platformArr/value) scoped by tenantId — route.ts:68-102 | H2 | yes | none | blank | global | poll | real tenant-scoped data, but no written empty state: with zero deals it silently renders "—" (formatDealAmount(0)) and a 0% bar rather than a stated empty message; error is global not independent |
+| Bookings % of 1M€ target + progress bar | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:158 | derived from totalBookings vs BOOKINGS_TARGET_CENTS constant (page.tsx:46); numerator is real route data | H1 | yes | none | handled | global | poll | faithful — real bookings sum over a fixed 1M€ target constant (intended config, not fake data) |
+| Project bookings row | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:177 | SUM(deals.projectAmount) scoped by tenantId — route.ts:71 | H1 | yes | none | handled | global | poll | faithful real tenant-scoped sum |
+| Platform ARR (sub-category) row | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:178 | SUM(deals.platformArr) scoped by tenantId — route.ts:72 | H1 | yes | none | handled | global | poll | faithful; anti-ARR labelling respected (sub-category only) |
+| Legacy untagged row (conditional) | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:179 | SUM(deals.value) FILTER (projectAmount IS NULL AND platformArr IS NULL) scoped by tenantId — route.ts:73 | H1 | yes | none | handled | global | poll | faithful; self-hides when legacyTotal<=0 (proper empty self-hide) |
+| Funnel — total deal count headline | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:247 | count(*) per stage from deals scoped by tenantId+isNull(deletedAt) — route.ts:51-63 | H1 | yes | none | handled | global | poll | faithful real tenant-scoped count |
+| Funnel stage bars (per-stage count + bar) | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:256 | deals grouped by stage, count(*)::int scoped by tenantId — route.ts:51-63 | H1 | yes | none | handled | global | poll | faithful; has written empty state "No deals yet." at page.tsx:283-290 |
+| Deep-dive capacity (Paul) — count / cap + level pill + bar | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:354 | tenants.settings.deepDiveLoad (set by B7 weekly cron) scoped by eq(tenants.id, authCtx.tenantId) — route.ts:107-125 | H1 | yes | none | handled | global | poll | faithful; proper written empty state when cron hasn't run (page.tsx:302-322) and real per-tenant settings read |
+| Error banner | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:83 | fetch failure / non-OK status from /api/insights/pilae (page.tsx:58-64) | H2 | n/a | spinner | n/a | global | poll | error handling exists but is GLOBAL — a single failed fetch blanks all three panels rather than degrading independently (unlike the Home reference) |
+| Loading indicator | app/apps/web/src/app/(dashboard)/insights/pilae/page.tsx:102 | loading state of the single fetch (page.tsx:50,53-67) | H1 | n/a | none | n/a | n/a | poll | text "Loading…" shown on first load (no skeleton, but a stated loading state) |
+
+## Pires défauts
+
+1. Global (non-independent) error handling: the whole page is gated on a single `data` from one fetch and a single shared error banner — any non-OK response or network error blanks all three panels at once, violating the Home reference bar of independent per-lane degradation (page.tsx:83-101, fetch at page.tsx:57-64)
+2. Bookings panel has no written empty state: with zero deals it silently renders "—" and a 0% target bar instead of a stated empty message, unlike the Funnel ("No deals yet.") and Capacity panels (page.tsx:143-190)
+3. No per-panel loading skeletons and no stale guard during the 60s poll refresh: fetchData sets loading=true on every poll but panels keep showing prior data with no freshness indicator (page.tsx:53-74) — acceptable but below the H1 bar

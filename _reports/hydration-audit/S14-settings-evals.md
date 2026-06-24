@@ -1,0 +1,24 @@
+# S14 — settings-evals (`/settings/evals`) — audit d'hydratation
+
+**Verdict global : H2 (partiel).** This is an admin-only eval-harness CRUD dashboard (dev-only: page 404s in production via EVALS_PAGE_ENABLED), not a settings-toggle page. Every data-bearing element is wired to real, correctly tenant-scoped data — datasets/runs filter by eq(tenantId), the cases route adds an explicit cross-tenant assertDatasetInTenant guard, and the run-detail route scopes by and(eq(id),eq(tenantId)). No mock/placeholder data and no tenant-leak. Fidelity falls short of H1 only on state-handling: a global loading=true never renders a skeleton/spinner, every fetch failure is silently swallowed (no error UI), and several lists (cases, runs, results) have no written empty state — they render blank containers. A 'running' run also never auto-refreshes (no polling).
+
+Entrée : `app/apps/web/src/app/(dashboard)/settings/evals/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Datasets list (left rail) | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:158 | GET /api/eval/datasets, db.select(evalDatasets).where(eq(tenantId)) — app/apps/web/src/app/api/eval/datasets/route.ts:22-24 | H2 | yes | none | handled | silent | once | Real tenant-scoped data + written empty state (line 176-180), but no loading indicator (renders blank list while loading=true) and dsRes failure is silently swallowed (line 35, no else). |
+| Dataset caseCount counter | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:169 | GET /api/eval/datasets caseCount subquery — app/apps/web/src/app/api/eval/datasets/route.ts:21 | H1 | yes | none | handled | silent | once | Real per-dataset count via correlated subquery; the quoting-fix comment confirms it returns true counts, not 0. |
+| Cases list | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:269 | GET /api/eval/datasets/[id]/cases, eq(evalCases.datasetId) after assertDatasetInTenant — app/apps/web/src/app/api/eval/datasets/[id]/cases/route.ts:33-39 | H2 | yes | none | blank | silent | once | Real tenant-verified cases (cross-tenant guard present), but no empty state for a dataset with 0 cases (renders empty container) and loadCases failure silently swallowed (line 46). |
+| Recent Runs list | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:241 | GET /api/eval/runs, withAuthRLS + eq(evalRuns.tenantId) — app/apps/web/src/app/api/eval/runs/route.ts:12-15 | H2 | yes | none | none | silent | once | Real tenant-scoped runs with pass-rate badge; client-filtered by selectedDataset. Section hidden when 0 runs (no empty state), runRes failure silently swallowed; no polling so a 'running' run's status never auto-refreshes. |
+| Run summary cards (pass rate / mean score / cases / regressions) | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:298 | GET /api/eval/runs/[id] run.summary JSON — app/apps/web/src/app/api/eval/runs/[id]/route.ts:13-18 | H2 | yes | none | handled | silent | once | Real run summary, tenant-scoped via and(eq(id),eq(tenantId)); defaults to 0 when summary keys absent. loadRun failure silently swallowed (line 52). |
+| Regressions alert | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:332 | summary.regressions from GET /api/eval/runs/[id] — app/apps/web/src/app/api/eval/runs/[id]/route.ts:14 | H1 | yes | none | handled | n/a | once | Real regressions array from the run summary; renders only when present, faithful. |
+| Results table (per-case pass/score/latency/reasoning) | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:351 | GET /api/eval/runs/[id] results join evalResults×evalCases scoped by runId of tenant-verified run — app/apps/web/src/app/api/eval/runs/[id]/route.ts:20-34 | H2 | yes | none | blank | silent | once | Real per-case results, tenant-scoped through the run guard. No empty state if results empty (e.g. still-running run) and fetch failure silently swallowed. |
+| Header title/subtitle | app/apps/web/src/app/(dashboard)/settings/evals/evals-client.tsx:119 | static | H0 | n/a | n/a | n/a | n/a | static | Pure chrome/help copy — correctly static. |
+
+## Pires défauts
+
+1. No error handling anywhere: dsRes/runRes/loadCases/loadRun failures are silently swallowed, leaving stale or blank UI with no message (evals-client.tsx:35-36, 46, 52-55).
+2. Missing loading affordance: loading=true sets no skeleton/spinner; lists render blank during fetch and only the datasets rail has a real empty state (evals-client.tsx:21,176-180).
+3. Cases and results lists have no empty state — a 0-case dataset or still-running run renders an empty container instead of written guidance (evals-client.tsx:268-287, 350-379).

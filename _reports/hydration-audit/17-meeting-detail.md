@@ -1,0 +1,34 @@
+# 17 — meeting-detail (`/meetings/[id]`) — audit d'hydratation
+
+**Verdict global : H2 (partiel).** The meeting detail page is near reference-bar quality: nearly every data-bearing element is wired to real tenant-scoped data from GET /api/meetings/[id]/notes (every entity query carries eq(tenantId) + isNull(deletedAt)), each section self-hides or shows a written empty state, and the transcript-chunks and live-extraction lanes degrade independently. The page-level load has only a spinner and a 'Meeting not found' state (no distinct error vs empty), and most notes-section saves surface errors via toast rather than per-element error UI. The only real fidelity gap is the upcoming-meeting prep: it is generated on demand into component state and never re-hydrated on reload, so a previously prepared briefing silently disappears on refresh.
+
+Entrée : `app/apps/web/src/app/(dashboard)/meetings/[id]/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Meeting header (title, date, time, location) | page.tsx:938-954 | GET /api/meetings/[id]/notes route.ts:124-144 (activity.summary, meta.startTime/endTime/location) — eq(tenantId) | H1 | yes | spinner | handled | silent | once | faithful; tenant-scoped from activities.metadata, date formatted client-side |
+| Join link + meeting link | page.tsx:957-963 | notes route.ts:130 meta.meetingLink | H1 | yes | spinner | handled | silent | once | faithful; self-hides when null |
+| Sentiment badge | page.tsx:969 / SentimentBadge:125-136 | notes.sentiment, route.ts:147 meta.structuredNotes | H1 | yes | spinner | handled | silent | once | faithful; only renders when notes present |
+| Attendees chips (with contact links) | page.tsx:986-1001 | notes route.ts:130 meta.attendees | H1 | yes | spinner | handled | silent | once | faithful; self-hides when empty; deep-links to /contacts/:id when contactId present |
+| Recording video player | page.tsx:825-828 (TranscriptVideoPlayer) | notes route.ts:142 meta.recordingUrl | H1 | yes | none | handled | silent | once | faithful; component falls back to no-recording state when URL missing |
+| Transcript chunks viewer | page.tsx:839 (TranscriptChunks) / transcript-chunks.tsx:29-164 | GET /api/meetings/[id]/transcript-chunks route.ts:34-39 (raw postgres, WHERE tenant_id AND meeting_id) | H1 | yes | spinner | handled | independent | once | faithful; own loading + written empty state + error-as-warning degradation. Note: bypasses Drizzle, queries via process.env.DATABASE_URL directly, but is correctly tenant-scoped |
+| Review banner (buying signals preview + action-item preview) | page.tsx:843-929 | notes.buyingSignals / notes.actionItems, route.ts:147 meta.structuredNotes | H1 | yes | spinner | handled | silent | once | faithful; gated on needsReview (auto-transcribed + unprocessed); each sub-field self-hides |
+| Summary (inline-editable) | page.tsx:1013-1047 | notes.summary, route.ts:147 | H1 | yes | spinner | handled | global | once | faithful; written empty state 'No summary yet.'; PATCH persists tenant-scoped |
+| MEDDPICC scorecard / Account call-intel / Contact call-profile | page.tsx:1054-1062 (call-intel.tsx) | notes route.ts:74-102 deals/companies/contacts.properties via resolveMeetingCrmTargets — each eq(tenantId) | H1 | yes | spinner | handled | silent | once | faithful; each card self-returns null when empty; Approve/Dismiss posts to /api/call-intel/review (review mode) |
+| Coaching debrief | page.tsx:1063 / CoachingSection:176-216 | notes route.ts:106-122 coachingInsights row, eq(tenantId)+eq(activityId)+insightType | H1 | yes | spinner | handled | silent | once | faithful; only renders when a post_interaction coaching row exists for this activity |
+| Key Points (count badge + list, inline-editable) | page.tsx:1066-1128 | notes.keyPoints, route.ts:147 | H1 | yes | spinner | handled | global | once | faithful; count in title, written empty 'No key points yet.' |
+| Action Items list + 'N task(s) created in CRM' | page.tsx:1131-1163 | notes.actionItems + data.tasks (linkedTasks), route.ts:36-47 tasks eq(tenantId)+inArray(generatedTaskIds) | H1 | yes | spinner | blank | silent | once | faithful; section self-hides when no action items; linked-task count from tenant-scoped tasks query |
+| Decisions (count + list, inline-editable) | page.tsx:1167-1232 | notes.decisions, route.ts:147 | H1 | yes | spinner | handled | global | once | faithful; written empty state inviting Edit |
+| Buying Signals grid (8 cards) | page.tsx:1235-1248 / BuyingSignalCard:159-169 | notes.buyingSignals, route.ts:147 | H1 | yes | spinner | handled | silent | once | faithful; each card returns null when its value is empty |
+| Follow-Up Email Draft (subject/body + sent-at) | page.tsx:1251-1333 | followUpDraft + data.followUpSentAt, route.ts:53-62,149 meta.followUpEmailDraft normalized | H1 | yes | spinner | handled | global | once | faithful; route normalizes legacy string vs {subject,body}; written 'No draft body yet.'; sent banner with date |
+| Live extraction (during active recording) | page.tsx:975-983 (LiveExtraction) | meta.recordingStatus gate; LiveExtraction polls /api/meetings/[id]/live | H1 | yes | spinner | handled | independent | poll | faithful; only mounts when recordingStatus is recording/in_call/done+partial |
+| Upcoming-meeting prep briefing | page.tsx:1400-1424 | on-demand POST /api/meetings/prep -> local state meetingPrep; NOT auto-hydrated on load | H2 | yes | spinner | handled | silent | once | prep is only generated on button click and held in component state; a previously generated briefing is not re-fetched/persisted into the page on reload — refresh loses it and shows the generate CTA again. Action-driven, not hydrated. |
+| Coaching deep-link banner (?t=) | page.tsx:793-818 | searchParams 't' (URL), formatSecondsAsTimestamp | H0 | n/a | none | n/a | n/a | static | chrome driven by URL param, not data — appropriate |
+
+## Pires défauts
+
+1. page.tsx:1400-1424 — upcoming-meeting prep is action-only: generated into local state (setMeetingPrep) via POST /api/meetings/prep and never re-fetched on load, so any prior briefing is lost on reload and the page reverts to the 'Generate Prep Now' CTA (H2 — silent stale/loss).
+2. page.tsx:273-279 — fetchMeeting swallows non-OK responses and network errors silently (empty catch, no error state); a 500 from the notes route renders the same 'Meeting not found' as a real 404, conflating error with empty at the page level.
+3. transcript-chunks/route.ts:14,32 — the transcript-chunks route bypasses Drizzle and opens a raw postgres connection from process.env.DATABASE_URL per request (still tenant-scoped, but a connection-handling/architecture smell vs the rest of the page using the shared db client).
