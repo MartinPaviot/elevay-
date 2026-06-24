@@ -215,6 +215,13 @@ export const contacts = pgTable(
     // blocks KNOWN-invalid; strict valid-only is the eventual state once the
     // verification job (findAndVerifyEmail) populates this.
     emailStatus: text("email_status"),
+    // Spec 33 — lawful-basis compliance. lawfulBasis: { type, assessmentId?,
+    // consentAt? } per lib/compliance/lawful-basis. jurisdiction: FR/CH/EU/…
+    // `source` provenance reuses sourceSystem above. NULL until backfilled; the
+    // gate is block-by-default, so it stays behind LAWFUL_BASIS_GATE (off) until
+    // the audience is backfilled — enforcing it on NULL halts every send.
+    lawfulBasis: jsonb("lawful_basis"),
+    jurisdiction: text("jurisdiction"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
