@@ -76,3 +76,13 @@ export const dealStageEnum = pgEnum("deal_stage", [
   "won",
   "lost",
 ]);
+
+// Spec 35 — reversible targeting state for an account (companies row). Distinct
+// from suppression (irreversible consent). `unreviewed` is the default-deny
+// state under SAFE_MODE; only `targeted` accounts are eligible for autonomous
+// outbound. `archived` is a reversible "not now" — it can be re-targeted later.
+export const targetingStatusEnum = pgEnum("targeting_status", [
+  "unreviewed",
+  "targeted",
+  "archived",
+]);
