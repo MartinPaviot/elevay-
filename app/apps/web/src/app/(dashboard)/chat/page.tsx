@@ -22,6 +22,7 @@ import { useToast } from "@/components/ui/toast";
 import { ElevayMark } from "@/components/ui/elevay-mark";
 import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles, ArrowUpRight } from "lucide-react";
 import { trackEvent } from "@/components/posthog-provider";
+import { starterSuggestions, STARTER_SUGGESTION_COUNT } from "./_starter-suggestions";
 
 /** Pick a lucide icon for a starter suggestion by intent, so the empty
  *  state reads as a set of capabilities rather than a wall of grey text.
@@ -64,6 +65,7 @@ export default function ChatPage() {
   const savingRef = useRef(false);
   const [emailComposer, setEmailComposer] = useState<EmailComposerDraft | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
 
   // Command layer: execute UI directives carried on tool results (open a
   // record/view, or the composer) exactly once per turn. Replayed thread
@@ -142,7 +144,9 @@ export default function ChatPage() {
         if (data.suggestions) setSuggestions(data.suggestions);
         if (data.firstName) setFirstName(data.firstName);
       } catch {
-        // Silent fail — static fallback will show if suggestions remain empty
+        // Silent fail — generic fallback will show once loaded
+      } finally {
+        setSuggestionsLoaded(true);
       }
     })();
   }, []);
@@ -516,17 +520,23 @@ export default function ChatPage() {
               className="mt-3 w-full overflow-hidden rounded-xl border"
               style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
             >
-              {(suggestions.length > 0
-                ? suggestions
-                : [
-                    "What should I focus on today?",
-                    "Summarize my active opportunities",
-                    "Which deals are at risk of stalling?",
-                    "Research my top accounts to refine my ICP",
-                  ]
-              )
-                .slice(0, 4)
-                .map((suggestion, i) => {
+              {(() => {
+                const starter = starterSuggestions(suggestionsLoaded, suggestions);
+                if (starter === null) {
+                  // Still loading — skeleton rows matching the final shape so the
+                  // personalised prompts don't visibly swap in over the fallback.
+                  return Array.from({ length: STARTER_SUGGESTION_COUNT }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex w-full items-center gap-3 px-4 py-3"
+                      style={{ borderTop: i ? "1px solid var(--color-border-default)" : undefined }}
+                    >
+                      <div className="h-4 w-4 shrink-0 animate-pulse rounded" style={{ background: "var(--color-bg-hover)" }} />
+                      <div className="h-3.5 flex-1 animate-pulse rounded" style={{ background: "var(--color-bg-hover)", maxWidth: `${72 - i * 10}%` }} />
+                    </div>
+                  ));
+                }
+                return starter.map((suggestion, i) => {
                   const Icon = suggestionIcon(suggestion);
                   return (
                     <button
@@ -545,7 +555,8 @@ export default function ChatPage() {
                       <ArrowUpRight size={14} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                     </button>
                   );
-                })}
+                });
+              })()}
             </div>
           </div>
         )}
