@@ -79,3 +79,16 @@ Order: 02 chat · 03 inbox · 06 account-brain · 07 contacts · 08 contact-deta
 
 Common change per page: swallowed `console.warn` fetch failures → per-lane written
 error+retry; global spinner → shape-matching skeleton where a lane loads alone.
+
+### P1 progress (spine order)
+- [x] **02 chat** — starter suggestions had no loading state → visibly swapped the
+  canned fallback to fetched copy. Added `suggestionsLoaded` + skeleton rows while
+  the fetch is in flight; pure decision extracted to `_starter-suggestions.ts` and
+  unit-tested (`starter-suggestions.test.ts`, 4/4). 188 chat-suite tests green (no
+  regression). NOTE follow-up (not hydration): chat thread route authorizes by
+  userId only, not tenantId — defense-in-depth, safe while users are single-tenant.
+- [ ] 03 inbox · 06 account-brain · 07 contacts · 08 contact-detail · 09 contacts-merge
+  · 10 opportunities · 12 sequences · 13 sequence-detail · 16 meetings · 17 meeting-detail
+  · 19 tasks · 20 call-mode · 23 reports · 24 insights · 26 insights-pilae
+  · 27 insights-playbook · 30 notes · 31 graph · 32 voice-of-customer · 35 tam-review
+  · then T2 H2 settings.
