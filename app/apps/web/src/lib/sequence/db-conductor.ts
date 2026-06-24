@@ -18,8 +18,9 @@
  */
 
 import { db as defaultDb } from "@/db";
-import { sequenceEnrollments, sequenceSteps, contacts, outboundEmails } from "@/db/schema";
+import { sequenceEnrollments, sequenceSteps, contacts, outboundEmails, tenants } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { decideRouteMode } from "@/lib/sequence-drafts/router";
 import { advance } from "./engine";
 import type { SequenceDefinition, SequenceStep, Enrollment, EnrollmentStatus, StepState } from "./types";
 import { isEmailKnownUnsendable } from "@/lib/contacts/email/db-status";
@@ -127,6 +128,15 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
   const [contact] = await database.select({ id: contacts.id, email: contacts.email, tenantId: contacts.tenantId, emailStatus: contacts.emailStatus, firstName: contacts.firstName, lastName: contacts.lastName, title: contacts.title }).from(contacts).where(eq(contacts.id, row.contactId)).limit(1);
   if (!contact?.email) return { enrollmentId, ran: false, reason: "no contact email" };
   const tenantId = contact.tenantId;
+
+  // Spec 25 parity — respect manual-approval mode. The legacy sendSequenceStep
+  // bails on manual so routeSequenceStepToDraft writes a draft; that draft router
+  // STILL runs under V2, so V2 must also bail or a manual tenant gets
+  // double-processed (an auto-queued outbound AND a draft).
+  const [tenantRow] = await database.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+  if (decideRouteMode((tenantRow?.settings as Record<string, unknown> | null) ?? null) === "manual") {
+    return { enrollmentId, ran: false, reason: "manual approval — draft router handles it" };
+  }
 
   const stepRows = (await database.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, row.sequenceId))) as unknown as StepRow[];
   const def = buildDefinition(row.sequenceId, stepRows);
