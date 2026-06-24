@@ -56,7 +56,7 @@ vi.mock("@/db", () => ({
 
 // getTenantSettings + DEFAULTS — DEFAULTS mirrors tenant-settings.ts. Hoisted so
 // the vi.mock factory (also hoisted) can reference it without a TDZ error.
-const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState } = vi.hoisted(() => ({
+const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState, guardState } = vi.hoisted(() => ({
   DEFAULTS: {
     sendingMailboxMode: "primary-with-caps" as const,
     sendingDailyCapPrimary: 20,
@@ -77,6 +77,8 @@ const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingSt
   // Spec-33 lawful-basis verdict — mocked at the boundary. Default allowed
   // mirrors the flag-OFF no-op (the gate's own default in production).
   lawfulState: { result: { allowed: true } as { allowed: boolean; reason?: string } },
+  // Spec-27 deliverability guard — mocked at the boundary. Default not tripped.
+  guardState: { tripped: false },
 }));
 
 vi.mock("@/lib/suppression/db-store", () => ({
@@ -91,6 +93,10 @@ vi.mock("@/lib/contacts/email/db-status", async (orig) => ({
 // Spec-33 lawful-basis gate mocked at the boundary; default allowed = flag-off no-op.
 vi.mock("@/lib/compliance/lawful-basis/db-gate", () => ({
   evaluateLawfulBasisForSend: vi.fn(async () => lawfulState.result),
+}));
+// Spec-27 deliverability guard mocked at the boundary; default not tripped (healthy).
+vi.mock("@/lib/deliverability/db-guard", () => ({
+  guardTrippedForTenant: vi.fn(async () => guardState.tripped),
 }));
 vi.mock("@/lib/config/tenant-settings", () => ({
   DEFAULTS,
@@ -121,6 +127,7 @@ beforeEach(() => {
   targetingState.accountKey = null;
   delete process.env.TARGETING_GATE_ENABLED;
   lawfulState.result = { allowed: true };
+  guardState.tripped = false;
 });
 
 describe("isSuppressed", () => {
@@ -325,6 +332,33 @@ describe("evaluateSend — uses caller-supplied settings without re-reading", ()
     });
     expect(r.send).toBe(false);
     if (!r.send) expect(r.code).toBe("cold-on-primary-blocked");
+  });
+});
+
+describe("evaluateSend — spec-27 deliverability guard", () => {
+  it("blocks every send with code 'deliverability_paused' when the tenant guard is tripped", async () => {
+    guardState.tripped = true;
+    activityRows = [{ tenantId: "t1", to: "x@a.com" }]; // warm, would otherwise send
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    expect(r.send).toBe(false);
+    if (!r.send) {
+      expect(r.code).toBe("deliverability_paused");
+      expect(r.reason).toContain("deliverability");
+    }
+  });
+
+  it("is a no-op when the guard is healthy (not tripped) — send proceeds", async () => {
+    guardState.tripped = false;
+    activityRows = [{ tenantId: "t1", to: "x@a.com" }];
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    expect(r.send).toBe(true);
+  });
+
+  it("opt-out still takes precedence over the deliverability guard", async () => {
+    guardState.tripped = true;
+    optoutRows = [{ tenantId: "t1", emailAddress: "x@a.com" }];
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    if (!r.send) expect(r.code).toBe("opted_out"); // opt-out checked first
   });
 });
 
