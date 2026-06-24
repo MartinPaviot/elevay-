@@ -56,7 +56,7 @@ vi.mock("@/db", () => ({
 
 // getTenantSettings + DEFAULTS — DEFAULTS mirrors tenant-settings.ts. Hoisted so
 // the vi.mock factory (also hoisted) can reference it without a TDZ error.
-const { DEFAULTS, settingsState, suppressionState, emailStatusState } = vi.hoisted(() => ({
+const { DEFAULTS, settingsState, suppressionState, emailStatusState, lawfulState } = vi.hoisted(() => ({
   DEFAULTS: {
     sendingMailboxMode: "primary-with-caps" as const,
     sendingDailyCapPrimary: 20,
@@ -71,6 +71,9 @@ const { DEFAULTS, settingsState, suppressionState, emailStatusState } = vi.hoist
   suppressionState: { hit: null as null | { entry: { type: string; level: string } } },
   // Spec-17 email status — likewise mocked at the boundary. null = unverified.
   emailStatusState: { status: null as string | null },
+  // Spec-33 lawful-basis verdict — mocked at the boundary. Default allowed
+  // mirrors the flag-OFF no-op (the gate's own default in production).
+  lawfulState: { result: { allowed: true } as { allowed: boolean; reason?: string } },
 }));
 
 vi.mock("@/lib/suppression/db-store", () => ({
@@ -81,6 +84,10 @@ vi.mock("@/lib/suppression/db-store", () => ({
 vi.mock("@/lib/contacts/email/db-status", async (orig) => ({
   ...(await orig<typeof import("@/lib/contacts/email/db-status")>()),
   loadEmailStatus: vi.fn(async () => emailStatusState.status),
+}));
+// Spec-33 lawful-basis gate mocked at the boundary; default allowed = flag-off no-op.
+vi.mock("@/lib/compliance/lawful-basis/db-gate", () => ({
+  evaluateLawfulBasisForSend: vi.fn(async () => lawfulState.result),
 }));
 vi.mock("@/lib/config/tenant-settings", () => ({
   DEFAULTS,
@@ -100,6 +107,7 @@ beforeEach(() => {
   settingsState.settingsToReturn = { ...DEFAULTS };
   suppressionState.hit = null;
   emailStatusState.status = null;
+  lawfulState.result = { allowed: true };
 });
 
 describe("isSuppressed", () => {
@@ -184,6 +192,33 @@ describe("evaluateSend — spec-17 email-verification gate (SAFE: known-invalid 
     emailStatusState.status = "invalid";
     const r = await evaluateSend({ tenantId: "t1", toAddress: "x@competitor.com", sentTodayFromPrimary: 0 });
     if (!r.send) expect(r.code).toBe("suppressed"); // suppression checked first
+  });
+});
+
+describe("evaluateSend — spec-33 lawful-basis gate (flag-gated, block-by-default)", () => {
+  it("is a no-op when allowed (the flag-OFF default) — send proceeds", async () => {
+    lawfulState.result = { allowed: true };
+    activityRows = [{ tenantId: "t1", to: "x@a.com" }]; // warm, would otherwise send
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    expect(r.send).toBe(true);
+  });
+
+  it("blocks with code 'lawful_basis_blocked' when the gate refuses (flag on)", async () => {
+    lawfulState.result = { allowed: false, reason: "no_lawful_basis" };
+    activityRows = [{ tenantId: "t1", to: "x@a.com" }];
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    expect(r.send).toBe(false);
+    if (!r.send) {
+      expect(r.code).toBe("lawful_basis_blocked");
+      expect(r.reason).toContain("no_lawful_basis");
+    }
+  });
+
+  it("invalid-email (spec-17) takes precedence over the lawful-basis check", async () => {
+    emailStatusState.status = "invalid";
+    lawfulState.result = { allowed: false, reason: "no_lawful_basis" };
+    const r = await evaluateSend({ tenantId: "t1", toAddress: "x@a.com", sentTodayFromPrimary: 0 });
+    if (!r.send) expect(r.code).toBe("invalid_email"); // email-status checked first
   });
 });
 
