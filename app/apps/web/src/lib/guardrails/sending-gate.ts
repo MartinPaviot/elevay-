@@ -43,6 +43,7 @@ import {
   type TargetingStatus,
 } from "@/lib/targeting/status";
 import { evaluateLawfulBasisForSend } from "@/lib/compliance/lawful-basis/db-gate";
+import { guardTrippedForTenant } from "@/lib/deliverability/db-guard";
 
 /** Spec 35 — SAFE_MODE targeting gate rollout guard (default off; flipped on at
  *  T14 after the targeting backfill so no currently-allowed send breaks). */
@@ -61,7 +62,8 @@ export type SendingGateOutcome =
         | "suppressed"
         | "invalid_email"
         | "lawful_basis_blocked"
-        | "not_targeted";
+        | "not_targeted"
+        | "deliverability_paused";
       reason: string;
     };
 
@@ -223,6 +225,18 @@ export async function evaluateSend(
         send: false,
         code: "lawful_basis_blocked",
         reason: `No valid lawful basis to send (${lawful.reason})`,
+      };
+    }
+
+    // Spec 27 — deliverability guard. Block ALL of a tenant's sends (legacy +
+    // V2) when its bounce/spam rate has breached threshold (auto-pause), until it
+    // recovers after the cool-off. No-op when healthy / below the min sample.
+    // Evaluated per call here (a monitor cron would amortize the health query).
+    if (await guardTrippedForTenant(args.tenantId)) {
+      return {
+        send: false,
+        code: "deliverability_paused",
+        reason: "Sending paused — deliverability guard tripped (bounce/spam breach)",
       };
     }
 
