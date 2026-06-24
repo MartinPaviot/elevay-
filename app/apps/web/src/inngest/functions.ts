@@ -17,6 +17,8 @@ import { generateAccountSummary } from "@/lib/ai/ai-account-summary";
 import { buildProspectContext } from "@/lib/context/prospect-context";
 import { personalizeStepEmail } from "@/lib/agents/sequence-generator";
 import { STEP_STRATEGIES } from "@/lib/scoring/outbound-methodologies";
+import { generateCopyMessage, persistShadowSample, isCopyEnginePrimaryEnabled } from "@/lib/copy/personalization/db-shadow";
+import { resolveTenantCopyLang } from "@/lib/copy/assets/db-store";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { logger } from "@/lib/observability/logger";
 import { decideRouteMode } from "@/lib/sequence-drafts/router";
@@ -689,6 +691,33 @@ export const sendSequenceStep = inngest.createFunction(
       body = personalized.out.body;
     } else {
       personalisationFallbackReason = personalized.reason;
+    }
+
+    // Spec 19/20 CUTOVER (auto-mode) — when COPY_ENGINE_PRIMARY is on, the grounded
+    // copy engine becomes the primary copy for this auto-send, but ONLY when it
+    // produced a genuinely grounded (high-personalization) message; otherwise the
+    // legacy personalisation above is kept. Never DEGRADES — grounded when grounded,
+    // legacy otherwise. Best-effort; persists the sample for audit.
+    const copyPrimary = await step.run("copy-engine-primary", async () => {
+      if (!isCopyEnginePrimaryEnabled()) return null;
+      try {
+        const lang = await resolveTenantCopyLang(tenantId);
+        const out = await generateCopyMessage(contact.id, tenantId, { lang });
+        if (out.ran && out.message && out.message.personalization_level === "high") {
+          await persistShadowSample(tenantId, contact.id, lang, out.message, out.evidenceCount ?? 0);
+          return { subject: out.message.subject ?? subject, body: out.message.body };
+        }
+      } catch (err) {
+        logger.warn("send-sequence-step.copy_engine_primary_failed", {
+          tenantId, enrollmentId, err: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return null; // fall back to the legacy personalisation
+    });
+    if (copyPrimary) {
+      subject = copyPrimary.subject;
+      body = copyPrimary.body;
+      personalisationFallbackReason = null; // grounded copy is not a template fallback
     }
 
     // Check opt-out before sending (within the contact's actual tenant)
