@@ -1,0 +1,21 @@
+# S26 — settings-inbox-notifications (`/settings/inbox-notifications`) — audit d'hydratation
+
+**Verdict global : H2 (partiel).** A genuinely wired settings page. All controls load their current value from real owner-scoped persisted config (GET /api/inbox/notifications -> getNotificationPrefs(userId), user_preferences JSONB keyed on userId+resource+key) and a Save round-trips via PUT -> saveNotificationPrefs with the server response reflected back into state, plus a loading spinner. Scoping is owner-level (per-user), which is correct for personal notification prefs rather than a defect. The one real gap is that a failing GET is swallowed silently (.catch(()=>{})), so a 500/network error renders the default form with no error surface — an H2 silent-stale/missing-error-state issue across the form.
+
+Entrée : `app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Page title + intro copy (Notifications header, description) | app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:111-116 | static (hardcoded chrome) | H0 | n/a | n/a | n/a | n/a | static | Pure help/label copy, correctly static. |
+| Per-event opt-in toggles (Important inbound, Reply overdue, Reply received, Meeting booked, Mentions, Newsletters & bulk) | app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:123-140 (enabled() 67-70) | GET /api/inbox/notifications -> getNotificationPrefs(userId) at app/apps/web/src/lib/inbox/notification-prefs.ts:99-114 (eq userId+resource+key); event list NOTIFICATION_EVENTS:26-33; persist PUT -> saveNotificationPrefs:116-129 | H1 | yes | spinner | handled | silent | once | Checked state derives from loaded prefs.events with per-event default fallback; save upserts and PUT response is set back into state (page.tsx:90-92). Faithful round-trip. |
+| Digest cadence selector (Off / Morning / Morning + evening) | app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:148-166 | GET prefs.digest -> getNotificationPrefs at notification-prefs.ts:99-114; clamped on save clampPrefs:86-97; persist saveNotificationPrefs:116-129 | H1 | yes | spinner | handled | silent | once | Selected segment reflects loaded prefs.digest; value clamped to enum and persisted, server echo set back into state. Faithful. |
+| Do-not-disturb quiet window (From / To time inputs) | app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:175-189 | GET prefs.dndStart/dndEnd -> getNotificationPrefs:99-114; validated via parseHM/clampPrefs (notification-prefs.ts:54-97); persist saveNotificationPrefs:116-129 | H1 | yes | spinner | handled | silent | once | Time inputs bound to loaded prefs.dndStart/dndEnd (null->empty); clamped (both-or-neither) and persisted; round-trips via PUT echo. Faithful. |
+| Save button + 'Saved.' confirmation | app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:194-204 (save() 80-99) | PUT /api/inbox/notifications -> saveNotificationPrefs(userId, prefs) at notification-prefs.ts:116-129 | H2 | yes | spinner | n/a | silent | once | Persists and reflects server state back on success, but the catch is empty (page.tsx:94-95) so a failed PUT shows neither error nor 'Saved' — save failure is silent. |
+
+## Pires défauts
+
+1. GET failure swallowed silently: fetch(...).catch(()=>{}) at app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:58 — on a 500/network error the form falls back to hardcoded defaults (events:{}, digest:'morning') with no error banner, so the user could edit/save against stale defaults unknowingly.
+2. Save failure silent: save() catch block is empty at app/apps/web/src/app/(dashboard)/settings/inbox-notifications/page.tsx:94-95 and only sets saved=true on r.ok — a failed PUT leaves no error feedback, the user assumes their prefs saved.
+3. No explicit empty state distinct from defaults: a fresh user (no user_preferences row) is served DEFAULT_PREFS (notification-prefs.ts:112) which is correct, but the UI cannot distinguish 'never configured' from 'GET failed' since both render the same default form (page.tsx:43,54-56).

@@ -1,0 +1,23 @@
+# S04 — settings-notifications (`/settings/notifications`) — audit d'hydratation
+
+**Verdict global : H4 (non câblé).** The email and in-app per-preference toggles are faithfully wired: their values load from the user's persisted notificationPreferences jsonb, each flip PUTs through one shared endpoint, and they round-trip on reload (H1, tenant/user-scoped). The Slack integration block is the defect: the page reads data.slackWebhook on load (page.tsx:68) and PUT persists the webhook to tenants.settings.slackWebhookUrl (route.ts:57-66), but the GET handler never returns slackWebhook (route.ts:39-43), so the webhook input and the derived Connected badge / Slack toggle column always rehydrate to their default empty/disconnected state after reload — the saved value is silently lost on read. Header and preference labels are correctly static H0.
+
+Entrée : `app/apps/web/src/app/(dashboard)/settings/notifications/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Page header (title/subtitle) | (dashboard)/settings/notifications/page.tsx:167-170 | static SettingsHeader copy | H0 | n/a | n/a | n/a | n/a | static | Pure chrome/help text — correctly static. |
+| Slack webhook URL input | (dashboard)/settings/notifications/page.tsx:189-194 | GET /api/notifications/preferences reads data.slackWebhook (page.tsx:68) but the GET handler NEVER returns slackWebhook (route.ts:39-43); PUT persists it to tenants.settings.slackWebhookUrl (route.ts:57-66) | H4 | yes | skeleton | blank | global | once | Unwired on load: PUT saves the webhook to tenant settings, but GET never returns slackWebhook, so the input always rehydrates blank. Value never round-trips on reload — control always shows its default (empty). |
+| Slack 'Connected' badge + status copy | (dashboard)/settings/notifications/page.tsx:179-186 | derived from slackWebhook state (slackConnected = !!slackWebhook), which is never populated by GET (route.ts:39-43) | H4 | yes | none | handled | global | once | Always renders 'not connected' after reload because slackWebhook never hydrates; only flips to Connected within the same session after a manual save. Stored-state-blind. |
+| Slack per-pref toggle column | (dashboard)/settings/notifications/page.tsx:233-239,234 | pref.slack from GET preferences jsonb (route.ts:42); PUT stores slack per key (route.ts:54,82-83 client) | H2 | yes | skeleton | handled | global | once | Slack column only renders when slackConnected is true, which depends on the non-hydrating webhook — so after reload the whole Slack column shows '--' and the persisted slack toggles are hidden even though they round-trip in the jsonb. Default GET payload (route.ts:24-35) also omits a slack key, so a brand-new user's slack prefs are always default false. |
+| Email toggle (per preference) | (dashboard)/settings/notifications/page.tsx:241-243,242 | saved[p.key].email from GET preferences jsonb (page.tsx:63; route.ts:42); persisted via PUT upsert (route.ts:75-93) | H1 | yes | skeleton | handled | global | once | Faithful: loads stored per-key email flag, falls back to sensible default when unset, and each toggle PUTs immediately and round-trips on reload. |
+| In-app toggle (per preference) | (dashboard)/settings/notifications/page.tsx:245-247,246 | saved[p.key].inApp from GET preferences jsonb (page.tsx:64; route.ts:42); persisted via PUT upsert (route.ts:75-93) | H1 | yes | skeleton | handled | global | once | Faithful: stored per-key inApp flag loaded + persisted + round-trips. |
+| Preference rows (label/description/category grouping) | (dashboard)/settings/notifications/page.tsx:213-231 | static DEFAULT_PREFS array (page.tsx:29-40); categories derived from it | H0 | n/a | skeleton | none | n/a | static | Labels/descriptions/category structure are hardcoded catalog text (not tenant data) — appropriately static; only the toggle values are data-bearing. |
+
+## Pires défauts
+
+1. Slack webhook input never hydrates: GET handler omits slackWebhook from its response (route.ts:39-43) while the client reads data.slackWebhook (page.tsx:68) — saved webhook persists to tenants.settings but reloads blank (H4 unwired load).
+2. Slack 'Connected' badge + the entire Slack toggle column are gated on slackConnected (page.tsx:163,234), which depends on the non-hydrating webhook — after any reload they always show disconnected/'--' regardless of stored config (route.ts:39-43).
+3. Default GET preferences payload (route.ts:24-35) omits a slack channel key for every preference, so new users' Slack toggles can never reflect a stored value and always default to false.
