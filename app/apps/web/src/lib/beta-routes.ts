@@ -4,11 +4,12 @@
  * expectations are set honestly per-surface.
  *
  * Verified-solid pages are intentionally ABSENT (no Beta tag): Up next (home),
- * Accounts, Contacts, Opportunities, Inbox, Chat. Everything else carries the
+ * Accounts, Contacts, Opportunities, Chat. Everything else carries the
  * tag until it's been hardened. Single source of truth for both the sidebar
  * and PageHeader.
  */
 export const BETA_ROUTES = [
+  "/inbox",
   "/knowledge",
   "/skills",
   "/call-mode",
