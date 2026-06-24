@@ -87,7 +87,14 @@ error+retry; global spinner → shape-matching skeleton where a lane loads alone
   unit-tested (`starter-suggestions.test.ts`, 4/4). 188 chat-suite tests green (no
   regression). NOTE follow-up (not hydration): chat thread route authorizes by
   userId only, not tenantId — defense-in-depth, safe while users are single-tenant.
-- [ ] 03 inbox · 06 account-brain · 07 contacts · 08 contact-detail · 09 contacts-merge
+- [x] **03 inbox** — two secondary lanes swallowed load failures. Outbound table
+  (`_outbound-table.tsx`): `.catch(console.error)` → misleading empty table; now an
+  r.ok guard + retryable `EmptyState variant="error"`. Capture-review drawer
+  (`_capture-review.tsx`): swallowed errors / no way to tell empty-vs-failed; route
+  now returns 500 on error and the drawer shows a retry bar while keeping self-hide
+  on a genuinely empty queue. Capture route confirmed tenant-scoped (no leak).
+  Test: `capture-review.test.tsx` (error/empty/data). 80 inbox tests green.
+- [ ] 06 account-brain · 07 contacts · 08 contact-detail · 09 contacts-merge
   · 10 opportunities · 12 sequences · 13 sequence-detail · 16 meetings · 17 meeting-detail
   · 19 tasks · 20 call-mode · 23 reports · 24 insights · 26 insights-pilae
   · 27 insights-playbook · 30 notes · 31 graph · 32 voice-of-customer · 35 tam-review

@@ -10,7 +10,7 @@
  * empty, so it never adds chrome for tenants on auto-capture.
  */
 import { useEffect, useState } from "react";
-import { Inbox, Check, X, Loader2 } from "lucide-react";
+import { Inbox, Check, X, Loader2, AlertCircle } from "lucide-react";
 
 interface PendingCapture {
   id: string;
@@ -23,19 +23,30 @@ export function CaptureReviewDrawer() {
   const [captures, setCaptures] = useState<PendingCapture[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(false);
     fetch("/api/inbox/captures")
-      .then((r) => (r.ok ? r.json() : { captures: [] }))
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d: { captures?: PendingCapture[] }) => {
         if (!cancelled && Array.isArray(d.captures)) setCaptures(d.captures);
       })
-      .catch(() => {});
+      // Previously swallowed (.catch(() => {})), so a failing approval queue
+      // rendered nothing — indistinguishable from "no captures". Surface a
+      // retryable signal instead so a broken queue is visible.
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   async function review(id: string, action: "approve" | "reject") {
     setBusy(id);
@@ -53,10 +64,31 @@ export function CaptureReviewDrawer() {
     }
   }
 
-  if (captures.length === 0) return null;
+  if (captures.length === 0 && !error) return null;
 
   return (
     <div className="border-b" style={{ borderColor: "var(--color-border-default)" }}>
+      {captures.length === 0 && error ? (
+        <div
+          className="flex w-full items-center justify-between gap-2 px-4 py-2 text-[12px]"
+          style={{ color: "var(--color-text-secondary)" }}
+          role="alert"
+        >
+          <span className="flex items-center gap-1.5">
+            <AlertCircle size={13} className="shrink-0" style={{ color: "var(--color-error)" }} />
+            Couldn&apos;t load captures to review
+          </span>
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="rounded px-2 py-0.5 text-[11px] font-medium"
+            style={{ border: "1px solid var(--color-border-default)", color: "var(--color-text-secondary)" }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+      <>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -111,6 +143,8 @@ export function CaptureReviewDrawer() {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );
