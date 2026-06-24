@@ -207,5 +207,14 @@ error+retry; global spinner → shape-matching skeleton where a lane loads alone
   connection — "independent per-lane degradation" there is theoretical (a panel can't
   fail while siblings succeed), and stale data already survives a poll failure
   (`data` retained, banner shown). Insane-refactor avoided per "ne fais rien d'insensé".
-- [ ] 27 insights-playbook · 30 notes · 31 graph · 32 voice-of-customer · 35 tam-review
+- [x] **27 insights-playbook** — near-H1 already (real tenant-scoped GET /api/playbook,
+  written empty + independent error + write-path validation). Sole H2: the "Loading…"
+  cue was gated on `entries.length===0` (page.tsx:133), so a type-filter switch
+  re-fetched while the previous filter's cards stayed on screen with no cue (silent
+  stale, wrong-filter flash). Extracted pure `playbookListState(loading,count)` →
+  initial-loading | refreshing | empty | list (`_list-state.ts` + 5 tests); the
+  "refreshing" branch keeps the list but dims it (opacity .5) + `aria-busy` + a
+  "Refreshing…" label. Follow-ups (lower, not done): no focus/poll revalidation so
+  LLM-captured entries need a manual reload; `updatedAt` fetched but never shown.
+- [ ] 30 notes · 31 graph · 32 voice-of-customer · 35 tam-review
   · then T2 H2 settings.

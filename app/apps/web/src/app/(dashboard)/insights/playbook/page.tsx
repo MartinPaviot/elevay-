@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { PLAYBOOK_ENTRY_TYPES } from "@/lib/playbook/capture";
+import { playbookListState } from "./_list-state";
 import { Plus, Star } from "lucide-react";
 
 type PlaybookEntry = {
@@ -130,22 +131,41 @@ export default function PlaybookPage() {
           </div>
         )}
 
-        {loading && entries.length === 0 && (
-          <p
-            className="text-[12px]"
-            style={{ color: "var(--color-text-tertiary)" }}
-          >
-            Loading…
-          </p>
-        )}
-        {!loading && entries.length === 0 && (
-          <EmptyState />
-        )}
-        <div className="space-y-2">
-          {entries.map((e) => (
-            <EntryCard key={e.id} entry={e} />
-          ))}
-        </div>
+        {(() => {
+          const listState = playbookListState(loading, entries.length);
+          return (
+            <>
+              {listState === "initial-loading" && (
+                <p
+                  className="text-[12px]"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Loading…
+                </p>
+              )}
+              {listState === "refreshing" && (
+                // Re-fetch cue (was H2: a filter switch silently kept the
+                // previous filter's cards with no loading indicator).
+                <p
+                  className="mb-2 text-[11px]"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Refreshing…
+                </p>
+              )}
+              {listState === "empty" && <EmptyState />}
+              <div
+                className="space-y-2 transition-opacity"
+                aria-busy={listState === "refreshing"}
+                style={{ opacity: listState === "refreshing" ? 0.5 : 1 }}
+              >
+                {entries.map((e) => (
+                  <EntryCard key={e.id} entry={e} />
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
