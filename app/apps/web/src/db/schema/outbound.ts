@@ -414,17 +414,28 @@ export const suppression = pgTable(
     id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
     // NULL = global scope; otherwise the owning workspace.
     tenantId: text("tenant_id").references(() => tenants.id),
-    level: text("level").notNull(), // 'address' | 'domain'
-    value: text("value").notNull(), // normalized email or domain
-    type: text("type").notNull(), // opt_out | hard_bounce | manual_dnc | competitor | existing_customer
+    level: text("level").notNull(), // 'address' | 'domain' | 'account' (spec 35; value = company identity_key)
+    value: text("value").notNull(), // normalized email | domain | account identity_key
+    type: text("type").notNull(), // opt_out | hard_bounce | manual_dnc | competitor | existing_customer | complaint (spec 35)
     reason: text("reason"),
     permanent: boolean("permanent").notNull().default(true),
     expiresAt: timestamp("expires_at", { withTimezone: true }), // cool-off for non-permanent bounces
+    // Spec 35 — lifecycle + provenance. `status` lets an admin deactivate a
+    // reversible entry (manual_dnc / existing_customer / hard_bounce) while the
+    // row + history survive; opt_out/complaint are frozen by a DB trigger (0095).
+    // `source` is the ingestion origin; created_by/deactivated_by are actors for
+    // the audit trail (full history lives in the signed audit log via logAudit).
+    status: text("status").notNull().default("active"), // 'active' | 'inactive'
+    source: text("source"), // unsubscribe | resend_webhook | reply_classifier | dsar | manual_ui | migration
+    createdBy: text("created_by"),
+    deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    deactivatedBy: text("deactivated_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (table) => [
     // NULLS NOT DISTINCT enforced in the migration so global rows dedup too.
     uniqueIndex("suppression_scope_value_idx").on(table.tenantId, table.level, table.value),
+    index("suppression_status_idx").on(table.tenantId, table.status),
   ]
 );
 

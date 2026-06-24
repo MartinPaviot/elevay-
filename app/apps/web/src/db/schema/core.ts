@@ -13,7 +13,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { activityTypeEnum, channelEnum, directionEnum, sentimentEnum, dealStageEnum } from "./enums";
+import { activityTypeEnum, channelEnum, directionEnum, sentimentEnum, dealStageEnum, targetingStatusEnum } from "./enums";
 
 // === CORE TABLES ===
 
@@ -76,6 +76,13 @@ export const companies = pgTable(
     // "do_not_contact_request").
     excludedReason: text("excluded_reason"),
     excludedAt: timestamp("excluded_at", { withTimezone: true }),
+    // Spec 35 — reversible targeting state, the source of truth for the
+    // SAFE_MODE default-deny send gate. Kept in lockstep with the legacy
+    // excludedReason/deletedAt flags during the transition (design D5): exclude
+    // /delete => 'archived', include/restore => 'targeted'. Default 'unreviewed'.
+    targetingStatus: targetingStatusEnum("targeting_status")
+      .notNull()
+      .default("unreviewed"),
     // Priority score (B3, _specs/pilae-machine).
     // Composite of signal lift multiplier × ICP fit score × contact
     // accessibility. Recomputed by the `signal.score.daily` Inngest
@@ -118,6 +125,10 @@ export const companies = pgTable(
       .where(sql`identity_key is not null and deleted_at is null`),
     index("companies_logo_resolved_at_idx").on(table.logoResolvedAt),
     index("companies_excluded_at_idx").on(table.excludedAt),
+    index("companies_targeting_status_idx").on(
+      table.tenantId,
+      table.targetingStatus,
+    ),
     index("companies_priority_score_idx").on(
       table.tenantId,
       table.priorityScore,
