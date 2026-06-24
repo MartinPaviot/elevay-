@@ -1073,6 +1073,9 @@ export default function InboxPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                // Stable accessible name: the placeholder swaps with width, so the
+                // name can't depend on it (a11y — screen readers need a constant label).
+                aria-label="Search mail"
                 placeholder={wideSearch ? "Search mail — from: subject: is:unread" : "Search mail"}
                 className="w-full rounded-md border py-1.5 pl-8 pr-8 text-[13px] outline-none"
                 style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
@@ -1092,10 +1095,12 @@ export default function InboxPage() {
           stays 3-column only while the reading pane is actually comfortable
           (≥ ~600px) on any monitor, and collapses to single-pane otherwise. */}
       <div className="inbox-shell @container flex min-h-0 flex-1">
-      {/* Left: mailbox folders + Splits (the Upstream IA). Hidden when a thread
-          is open and the inbox area is too narrow for 3 columns (single-pane). */}
+      {/* Left: mailbox folders + Splits (the Upstream IA). Collapses to single-pane
+          only when a full-width reader is actually shown — i.e. a thread is open AND
+          we're in the list/pane branch (not the outbound/bundles table, where a stale
+          selectedKey would otherwise hide the rail with no way back). */}
       {mailboxConnected && (
-        <div className={selectedKey ? "hidden shrink-0 @min-[1100px]:flex" : "flex shrink-0"}>
+        <div className={selectedKey && !((tab === "outbound" || tab === "bundles") && !customLaneId) ? "hidden shrink-0 @min-[1100px]:flex" : "flex shrink-0"}>
         <InboxFolders
           tab={customLaneId ? "attention" : tab}
           customLaneId={customLaneId}
