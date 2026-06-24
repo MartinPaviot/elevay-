@@ -60,6 +60,8 @@ export function OutboundTable({ apiRef }: { apiRef?: Ref<OutboundTableApi | null
   const [total, setTotal] = useState(0);
   const [draftingFor, setDraftingFor] = useState<string | null>(null);
   const [composer, setComposer] = useState<EmailComposerDraft | null>(null);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const pageSize = 30;
 
@@ -79,16 +81,23 @@ export function OutboundTable({ apiRef }: { apiRef?: Ref<OutboundTableApi | null
 
   useEffect(() => {
     setLoading(true);
+    setError(false);
     fetch(`/api/inbox?filter=${filter}&page=${page}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         setEmails(data.emails || []);
         setCounts(data.counts || { total: 0, replied: 0, awaiting: 0, bounced: 0 });
         setTotal(Number(data.pagination?.total || 0));
       })
-      .catch(console.error)
+      // A failed load previously fell through to a misleading empty table
+      // (.catch(console.error)). Show a retryable error state instead — the
+      // same independent-degradation bar the conversation list already meets.
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [filter, page]);
+  }, [filter, page, reloadKey]);
 
   async function draftAiReply(email: OutboundEmail) {
     if (!email.replySnippet) return;
@@ -177,6 +186,14 @@ export function OutboundTable({ apiRef }: { apiRef?: Ref<OutboundTableApi | null
       <div className="flex-1 overflow-auto">
         {loading ? (
           <TableSkeleton rows={8} cols={6} />
+        ) : error ? (
+          <EmptyState
+            variant="error"
+            title="Couldn't load sent emails"
+            description="Something went wrong loading this lane. Your email isn't lost — try again."
+            actionLabel="Retry"
+            onAction={() => setReloadKey((k) => k + 1)}
+          />
         ) : emails.length === 0 ? (
           <EmptyState
             icon={<Inbox size={28} />}
