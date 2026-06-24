@@ -38,13 +38,19 @@ import {
   loadEmailStatus,
   isEmailKnownUnsendable,
 } from "@/lib/contacts/email/db-status";
+import { evaluateLawfulBasisForSend } from "@/lib/compliance/lawful-basis/db-gate";
 
 /** Why the gate refused a send (or that it allows). */
 export type SendingGateOutcome =
   | { send: true; reason: string }
   | {
       send: false;
-      code: SendingBlockReason | "opted_out" | "suppressed" | "invalid_email";
+      code:
+        | SendingBlockReason
+        | "opted_out"
+        | "suppressed"
+        | "invalid_email"
+        | "lawful_basis_blocked";
       reason: string;
     };
 
@@ -168,6 +174,19 @@ export async function evaluateSend(
         send: false,
         code: "invalid_email",
         reason: `Recipient email is verified ${emailStatus} (undeliverable)`,
+      };
+    }
+
+    // Spec 33 — lawful-basis compliance gate. BLOCK-BY-DEFAULT BY DESIGN, so it
+    // is OFF unless LAWFUL_BASIS_GATE is set: disabled = no-op (no query). Once
+    // the audience is backfilled (lawful_basis / jurisdiction / source) and the
+    // flag is flipped on, a contact without a valid recorded basis is blocked.
+    const lawful = await evaluateLawfulBasisForSend(args.tenantId, args.toAddress);
+    if (!lawful.allowed) {
+      return {
+        send: false,
+        code: "lawful_basis_blocked",
+        reason: `No valid lawful basis to send (${lawful.reason})`,
       };
     }
 
