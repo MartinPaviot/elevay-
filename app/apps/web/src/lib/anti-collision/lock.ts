@@ -17,8 +17,15 @@ export interface CollisionLock {
    * contact forever.
    */
   acquire(contactId: string, enrollmentId: string, ttlMs: number): Promise<boolean>;
-  /** Release the lock unconditionally. Idempotent — releasing a free lock is a no-op. */
-  release(contactId: string): Promise<void>;
+  /**
+   * Release the lock. When `enrollmentId` is given, release ONLY if that
+   * enrollment is the CURRENT holder (fencing): a stale/duplicate/late release
+   * from a PRIOR holder must not free a SUCCESSOR's lock, or a re-enrolled
+   * contact (nurture-recycle) gets unlocked mid-sequence and a collision slips
+   * enforcement. Omit `enrollmentId` for an unconditional release. Idempotent
+   * either way — releasing a free lock (or one held by another) is a no-op.
+   */
+  release(contactId: string, enrollmentId?: string): Promise<void>;
   /** Current holder's enrollmentId, or null if free/expired. For collision diagnostics. */
   holder(contactId: string): Promise<string | null>;
 }
@@ -55,7 +62,11 @@ export class InMemoryCollisionLock implements CollisionLock {
     return true;
   }
 
-  async release(contactId: string): Promise<void> {
+  async release(contactId: string, enrollmentId?: string): Promise<void> {
+    if (enrollmentId !== undefined) {
+      const cur = this.locks.get(contactId);
+      if (cur && cur.enrollmentId !== enrollmentId) return; // held by a successor — leave it
+    }
     this.locks.delete(contactId);
   }
 

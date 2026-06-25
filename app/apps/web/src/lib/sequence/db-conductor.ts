@@ -194,7 +194,7 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
       return hit !== null;
     },
     acquireLock: async () => true, // already enrolled; advance never acquires.
-    releaseLock: async () => releaseEnrollment(tenantId, contact.id),
+    releaseLock: async () => releaseEnrollment(tenantId, contact.id, enrollmentId),
     pullVariant: async (step) => {
       lastFallbackReason = null;
       const sr = stepRows.find((s) => s.id === step.id);

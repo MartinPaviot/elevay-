@@ -42,9 +42,13 @@ describe("DbCollisionLock", () => {
     expect(await new DbCollisionLock("t1", stubDb({ selectRows: [] })).holder("c1")).toBeNull();
   });
 
-  it("release issues a delete", async () => {
+  it("release issues a delete (unfenced and fenced both delete; the fenced WHERE adds enrollment_id — SQL verified live)", async () => {
     const db = stubDb();
-    await new DbCollisionLock("t1", db).release("c1");
-    expect(db._deleteWhere).toHaveBeenCalledOnce();
+    const lock = new DbCollisionLock("t1", db);
+    await lock.release("c1"); // unconditional: WHERE contact_id = c1
+    await lock.release("c1", "e1"); // fenced: WHERE contact_id = c1 AND enrollment_id = e1
+    expect(db._deleteWhere).toHaveBeenCalledTimes(2);
+    // The two predicates are distinct objects (the fenced one is the compound and()).
+    expect(db._deleteWhere.mock.calls[0][0]).not.toBe(db._deleteWhere.mock.calls[1][0]);
   });
 });
