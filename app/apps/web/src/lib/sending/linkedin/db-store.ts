@@ -12,8 +12,8 @@
 import { db } from "@/db";
 import { linkedinActionEvent } from "@/db/schema";
 import { and, eq, gte, sql } from "drizzle-orm";
-import type { LinkedInActionType } from "./port";
-import type { LinkedInResult, LinkedInIdempotencyStore } from "./linkedin";
+import type { LinkedInActionType, LinkedInResult } from "./port";
+import type { LinkedInIdempotencyStore } from "./linkedin";
 
 /** Per-(step, contact, seat) context — known before dispatch loads the seat. */
 export interface LinkedInPersistenceCtx {
