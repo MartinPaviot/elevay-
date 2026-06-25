@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const buildIntelligenceBrief = vi.fn(async () => ({}));
+const buildIntelligenceBrief = vi.fn();
 const generateCopyMessage = vi.fn();
 vi.mock("@/lib/campaign-engine/build-intelligence-brief", () => ({ buildIntelligenceBrief: (...a: unknown[]) => buildIntelligenceBrief(...a) }));
 vi.mock("@/lib/copy/personalization/db-shadow", () => ({ generateCopyMessage: (...a: unknown[]) => generateCopyMessage(...a) }));
