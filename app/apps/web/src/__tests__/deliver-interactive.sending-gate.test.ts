@@ -60,7 +60,13 @@ vi.mock("@/lib/emails/recipient-guardrail", () => ({
 }));
 
 const evaluateSend = vi.fn();
-vi.mock("@/lib/guardrails/sending-gate", () => ({ evaluateSend: (...a: unknown[]) => evaluateSend(...a) }));
+// isInteractiveRecipientSendable is the test-mode chokepoint deliverInteractiveEmail
+// hits first; default it to "sendable" so these gate tests exercise evaluateSend.
+const isInteractiveRecipientSendable = vi.fn().mockResolvedValue(true);
+vi.mock("@/lib/guardrails/sending-gate", () => ({
+  evaluateSend: (...a: unknown[]) => evaluateSend(...a),
+  isInteractiveRecipientSendable: (...a: unknown[]) => isInteractiveRecipientSendable(...a),
+}));
 
 const resendSend = vi.fn().mockResolvedValue({ data: { id: "m1" }, error: null });
 vi.mock("resend", () => ({ Resend: vi.fn(() => ({ emails: { send: resendSend } })) }));
