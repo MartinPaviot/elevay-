@@ -13,6 +13,8 @@
  * threadId lookup ran — starving the reply loop (processReply → reply-handler →
  * hot-lead alert).
  */
-export function canDetectReplyFromThread(opts: { threadId?: string | null }): boolean {
+export function canDetectReplyFromThread<T extends { threadId?: string | null }>(
+  opts: T,
+): opts is T & { threadId: string } {
   return Boolean(opts.threadId);
 }
