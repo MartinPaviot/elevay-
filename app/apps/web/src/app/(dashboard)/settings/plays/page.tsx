@@ -36,6 +36,7 @@ export default function PlaysSettingsPage() {
   const { toast } = useToast();
   const [plays, setPlays] = useState<Play[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState<Play | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({
@@ -47,14 +48,20 @@ export default function PlaysSettingsPage() {
   });
 
   async function fetchPlays() {
+    setLoadError(false);
     try {
       const res = await fetch("/api/settings/plays");
       if (res.ok) {
         const data = await res.json();
         setPlays(data.plays || []);
+      } else {
+        // Was silent: a 500 left plays=[] → the "No plays yet" empty state,
+        // masking a backend failure as an empty workspace.
+        setLoadError(true);
       }
     } catch (e) {
       console.warn("plays: fetch failed", e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -122,11 +129,15 @@ export default function PlaysSettingsPage() {
 
   async function handleToggle(play: Play) {
     try {
-      await fetch(`/api/settings/plays/${play.id}`, {
+      const res = await fetch(`/api/settings/plays/${play.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !play.isActive }),
       });
+      if (!res.ok) {
+        toast("Failed to toggle play", "error");
+        return;
+      }
       fetchPlays();
     } catch {
       toast("Failed to toggle play", "error");
@@ -135,7 +146,12 @@ export default function PlaysSettingsPage() {
 
   async function handleDelete(play: Play) {
     try {
-      await fetch(`/api/settings/plays/${play.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/settings/plays/${play.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        // Was a false success: the toast fired even on a 500.
+        toast("Failed to delete play", "error");
+        return;
+      }
       toast("Play deleted", "success");
       fetchPlays();
     } catch {
@@ -162,6 +178,19 @@ export default function PlaysSettingsPage() {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: "var(--color-bg-secondary)" }} />
           ))}
+        </div>
+      ) : loadError && !creating ? (
+        <div role="alert" className="flex flex-col items-center justify-center py-16 rounded-lg" style={{ background: "var(--color-bg-secondary)" }}>
+          <Layers size={32} style={{ color: "var(--color-error, #b91c1c)" }} />
+          <h3 className="mt-3 text-[14px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+            Couldn&apos;t load your plays
+          </h3>
+          <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+            Something went wrong. This is not an empty list.
+          </p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={fetchPlays}>
+            Retry
+          </Button>
         </div>
       ) : plays.length === 0 && !creating ? (
         <div className="flex flex-col items-center justify-center py-16 rounded-lg" style={{ background: "var(--color-bg-secondary)" }}>
