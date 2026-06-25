@@ -181,7 +181,10 @@ export async function generateMessage(deps: GenerateMessageDeps): Promise<Messag
   const cited = new Set(result.value.citedIds);
   return {
     body: assembleBody(deps.assets, result.value.line.trim()),
-    subject: result.value.subject,
+    // Normalize an empty/whitespace model subject to undefined so the cutover sites'
+    // `message.subject ?? legacySubject` falls back to the legacy subject instead of
+    // clobbering it with a blank line. A high-personalization BODY is still shipped.
+    subject: result.value.subject?.trim() || undefined,
     evidence: usable.filter((c) => cited.has(c.id)),
     personalization_level: "high",
     roleClass: deps.roleClass,
