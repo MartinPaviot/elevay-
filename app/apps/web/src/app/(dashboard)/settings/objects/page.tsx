@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SettingsHeader } from "@/components/ui/settings-header";
+import { useToast } from "@/components/ui/toast";
 import {
   Plus,
   X,
@@ -78,8 +79,10 @@ interface ObjectTypeDef {
 }
 
 export default function CustomObjectsSettingsPage() {
+  const { toast } = useToast();
   const [objectTypes, setObjectTypes] = useState<ObjectTypeDef[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingType, setEditingType] = useState<ObjectTypeDef | null>(null);
   const [saving, setSaving] = useState(false);
@@ -95,13 +98,28 @@ export default function CustomObjectsSettingsPage() {
   const [newFieldOptions, setNewFieldOptions] = useState("");
   const [newFieldRequired, setNewFieldRequired] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/custom-objects")
-      .then((r) => (r.ok ? r.json() : { objectTypes: [] }))
-      .then((data) => setObjectTypes(data.objectTypes || []))
-      .catch((e) => console.warn("custom-objects: fetch failed", e))
-      .finally(() => setLoading(false));
+  const fetchObjectTypes = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const r = await fetch("/api/custom-objects");
+      if (r.ok) {
+        const data = await r.json();
+        setObjectTypes(data.objectTypes || []);
+      } else {
+        // A 500 used to coerce into an empty list, looking identical to a
+        // tenant with no custom objects. Surface it instead.
+        setLoadError(true);
+      }
+    } catch (e) {
+      console.warn("custom-objects: fetch failed", e);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchObjectTypes(); }, [fetchObjectTypes]);
 
   function openCreate() {
     setEditingType(null);
@@ -188,9 +206,13 @@ export default function CustomObjectsSettingsPage() {
           setObjectTypes([...objectTypes, data.objectType]);
         }
         setShowModal(false);
+      } else {
+        // Was silent: the modal stayed open with no reason. Tell the user.
+        const detail = await res.json().catch(() => null);
+        toast(detail?.error || "Couldn't save the object type.", "error");
       }
     } catch {
-      console.error("Failed to save object type");
+      toast("Couldn't save the object type.", "error");
     } finally {
       setSaving(false);
     }
@@ -206,9 +228,14 @@ export default function CustomObjectsSettingsPage() {
       if (res.ok) {
         setObjectTypes(objectTypes.filter((ot) => ot.id !== id));
         setDeleteConfirm(null);
+      } else {
+        // Was silent: the row stayed with no reason and a false sense of
+        // success. Keep the confirm open and tell the user.
+        const detail = await res.json().catch(() => null);
+        toast(detail?.error || "Couldn't delete the object type.", "error");
       }
     } catch {
-      console.error("Failed to delete object type");
+      toast("Couldn't delete the object type.", "error");
     }
   }
 
@@ -247,6 +274,21 @@ export default function CustomObjectsSettingsPage() {
             <div key={i} className="skeleton h-16 rounded-md" />
           ))}
         </div>
+      ) : loadError ? (
+        <Card className="mt-3">
+          <div role="alert" className="py-10 text-center">
+            <p className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
+              Couldn&apos;t load your object types. This is not an empty list.
+            </p>
+            <button
+              onClick={fetchObjectTypes}
+              className="mt-2 text-[12px] font-medium"
+              style={{ color: "var(--color-accent)" }}
+            >
+              Retry
+            </button>
+          </div>
+        </Card>
       ) : objectTypes.length === 0 ? (
         <Card className="mt-3">
           <div className="py-10 text-center">
