@@ -33,7 +33,7 @@
 import { inngest } from "./client";
 import { db } from "@/db";
 import { companies, contacts, tenants } from "@/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   computeAccessibility,
   computePriorityScore,
@@ -241,7 +241,13 @@ export const signalScoreDaily = inngest.createFunction(
               .where(
                 and(
                   eq(companies.tenantId, t.id),
-                  sql`${companies.id} = ANY(${ids})`,
+                  // inArray → `id IN ($1,$2,…)`. The previous raw
+                  // `id = ANY(${ids})` rendered as `ANY(($1,$2,…))` — a ROW
+                  // constructor, which Postgres rejects ("op ANY/ALL (array)
+                  // requires array on right side"). That made this UPDATE throw
+                  // on EVERY run, so priority_score was never persisted in prod
+                  // (0/4369 companies scored). Verified via rolled-back repro.
+                  inArray(companies.id, ids),
                 ),
               );
             scored += chunk.length;
