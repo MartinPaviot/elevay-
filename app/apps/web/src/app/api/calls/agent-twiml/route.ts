@@ -93,10 +93,10 @@ export async function POST(req: Request) {
   const recordingStatusUrl = `${publicBase}/api/calls/recording-status`;
 
   // The disclosure is whispered TO THE PROSPECT via <Number url> (not played on
-  // this agent leg, which would announce to the rep). Only when recording in a
-  // consent region (recording.disclosureUrl is set).
-  const disclosureWhisperUrl = recording.disclosureUrl
-    ? `${publicBase}/api/calls/disclosure-whisper?u=${encodeURIComponent(recording.disclosureUrl)}`
+  // this agent leg, which would announce to the rep). Attached whenever we
+  // record in a consent region; the whisper route renders MP3 or TTS from env.
+  const disclosureWhisperUrl = recording.requiresDisclosure
+    ? `${publicBase}/api/calls/disclosure-whisper`
     : undefined;
 
   const twiml = await buildAgentTwiml({

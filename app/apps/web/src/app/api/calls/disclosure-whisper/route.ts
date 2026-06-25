@@ -1,15 +1,15 @@
 /**
- * POST /api/calls/disclosure-whisper?u=<encoded mp3 url>
+ * POST /api/calls/disclosure-whisper
  *
  * <Number url> whisper target for the bridged Call Mode call. Twilio fetches
  * this on the PROSPECT leg when they answer, before bridging, so the prospect
  * hears the recording disclosure (two-party consent — CH/FR). Returns a single
- * <Play>; control then returns to the parent <Dial> and the legs bridge.
+ * <Play> (recorded MP3) or <Say> (TTS) depending on what's configured; control
+ * then returns to the parent <Dial> and the legs bridge.
  *
- * Signature is HMAC-validated. The audio URL is passed as the `u` query param
- * (it's the public disclosure MP3, not a secret) and validated against the
- * configured `VOICE_DISCLOSURE_AUDIO_URL` so a forged request can't make us
- * play arbitrary audio to a prospect.
+ * Signature is HMAC-validated. The disclosure content is read server-side from
+ * env (`VOICE_DISCLOSURE_AUDIO_URL` preferred, else `VOICE_DISCLOSURE_TEXT`),
+ * never from the request — a forged call can't make us announce arbitrary text.
  */
 
 import { buildDisclosureWhisperTwiml } from "@/lib/voice/twilio";
@@ -42,14 +42,15 @@ export async function POST(req: Request) {
     return new Response("Invalid signature", { status: 403 });
   }
 
-  // Only ever play the workspace's configured disclosure — never arbitrary
-  // audio from the query string.
-  const configured = process.env.VOICE_DISCLOSURE_AUDIO_URL;
-  const requested = url.searchParams.get("u");
-  if (!configured || requested !== configured) {
-    // Nothing valid to announce → empty response; the <Dial> just bridges.
+  // Read the disclosure from env only — MP3 preferred, else TTS text.
+  const audioUrl = process.env.VOICE_DISCLOSURE_AUDIO_URL || undefined;
+  const text = process.env.VOICE_DISCLOSURE_TEXT || undefined;
+  if (!audioUrl && !text) {
+    // Nothing configured to announce → empty response; the <Dial> just bridges.
+    // (The recording policy refuses to record in this case, so we shouldn't
+    // get here while recording — defensive.)
     return xml("<Response/>");
   }
 
-  return xml(await buildDisclosureWhisperTwiml({ audioUrl: configured }));
+  return xml(await buildDisclosureWhisperTwiml({ audioUrl, text }));
 }

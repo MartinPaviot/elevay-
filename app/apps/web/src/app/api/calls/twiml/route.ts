@@ -98,6 +98,7 @@ export async function POST(req: Request) {
     transcriptionCallbackUrl,
     languageCode,
     disclosureUrl: recording.disclosureUrl,
+    disclosureText: recording.disclosureText,
     recordingStatusUrl,
     record: recording.record,
   });

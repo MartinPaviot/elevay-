@@ -106,7 +106,7 @@ describe("buildAgentTwiml — bridged Call Mode leg", () => {
 });
 
 describe("buildDisclosureWhisperTwiml", () => {
-  it("plays the disclosure and returns to <Dial> (no hangup)", async () => {
+  it("plays the MP3 disclosure and returns to <Dial> (no hangup)", async () => {
     const xml = await buildDisclosureWhisperTwiml({
       audioUrl: "https://cdn.example.com/disclosure-fr.mp3",
     });
@@ -114,6 +114,25 @@ describe("buildDisclosureWhisperTwiml", () => {
     expect(xml).toContain("disclosure-fr.mp3");
     expect(xml).not.toContain("<Hangup");
     expect(xml).not.toContain("<Dial");
+  });
+
+  it("speaks the TTS text via <Say fr-FR> when no MP3 is given", async () => {
+    const xml = await buildDisclosureWhisperTwiml({
+      text: "Cet appel est enregistré.",
+    });
+    expect(xml).toContain("<Say");
+    expect(xml).toContain("fr-FR");
+    expect(xml).toContain("Cet appel est enregistr");
+    expect(xml).not.toContain("<Play>");
+  });
+
+  it("prefers the MP3 when both are given", async () => {
+    const xml = await buildDisclosureWhisperTwiml({
+      audioUrl: "https://cdn.example.com/disclosure-fr.mp3",
+      text: "fallback",
+    });
+    expect(xml).toContain("<Play>");
+    expect(xml).not.toContain("<Say");
   });
 });
 

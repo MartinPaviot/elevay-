@@ -357,7 +357,11 @@ export async function buildTwiml(opts: {
   transcriptionCallbackUrl: string;
   /** BCP-47 language for transcription (default fr-FR for the romand wedge). */
   languageCode?: string;
+  /** Disclosure MP3 played to the prospect before <Dial> (direct-to-prospect
+   *  path, so a top-level <Play> reaches the called party). */
   disclosureUrl?: string;
+  /** TTS disclosure spoken via <Say> when no MP3 is configured. */
+  disclosureText?: string;
   recordingStatusUrl: string;
   /**
    * Whether to capture audio. The route decides this via
@@ -371,6 +375,7 @@ export async function buildTwiml(opts: {
     twiml: {
       VoiceResponse: new () => {
         play: (url: string) => unknown;
+        say: (attrs: { language?: string }, msg: string) => unknown;
         start: () => { transcription: (opts: Record<string, unknown>) => unknown };
         dial: (
           opts: { callerId: string; record?: string; recordingStatusCallback?: string },
@@ -386,6 +391,9 @@ export async function buildTwiml(opts: {
     // Disclosure plays once at connect — required by two-party-consent
     // regions (France + several US states). Pre-recorded MP3, ~5s.
     r.play(opts.disclosureUrl);
+  } else if (opts.disclosureText) {
+    // No MP3 configured — speak the disclosure via TTS instead.
+    r.say({ language: "fr-FR" }, opts.disclosureText);
   }
   // Twilio-native real-time transcription (Deepgram nova-3 under the hood).
   // It POSTs transcript events to our webhook → calls.transcript → SSE → UI.
@@ -561,20 +569,26 @@ export async function buildVoicemailDropTwiml(opts: {
  * <Dial> afterward and the legs bridge.
  */
 export async function buildDisclosureWhisperTwiml(opts: {
-  audioUrl: string;
+  audioUrl?: string;
+  text?: string;
 }): Promise<string> {
   const twilio = await loadTwilio();
   const VoiceResponse = (twilio as unknown as {
     twiml: {
       VoiceResponse: new () => {
         play: (url: string) => unknown;
+        say: (attrs: { language?: string }, msg: string) => unknown;
         toString: () => string;
       };
     };
   }).twiml.VoiceResponse;
 
   const r = new VoiceResponse();
-  r.play(opts.audioUrl);
+  // Prefer a recorded MP3 (a real human voice) when configured; otherwise speak
+  // the configured French disclosure via Twilio TTS — so recording can be
+  // enabled in CH/FR without hosting an audio file.
+  if (opts.audioUrl) r.play(opts.audioUrl);
+  else if (opts.text) r.say({ language: "fr-FR" }, opts.text);
   return r.toString();
 }
 

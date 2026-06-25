@@ -45,7 +45,9 @@ export async function GET() {
       recording: {
         available: process.env.VOICE_RECORDING_ENABLED === "true",
         enabled: settings.callRecordingEnabled === true,
-        disclosureConfigured: !!process.env.VOICE_DISCLOSURE_AUDIO_URL,
+        disclosureConfigured:
+          !!process.env.VOICE_DISCLOSURE_AUDIO_URL ||
+          !!process.env.VOICE_DISCLOSURE_TEXT,
       },
     });
   });

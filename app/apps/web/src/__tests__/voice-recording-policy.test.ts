@@ -39,36 +39,57 @@ describe("resolveCallRecording", () => {
       workspaceEnabled: true,
       deploymentEnabled: true,
       disclosureUrl: null,
+      disclosureText: null,
     });
     expect(d.record).toBe(true);
+    expect(d.requiresDisclosure).toBe(false);
     expect(d.disclosureUrl).toBeUndefined();
     expect(d.consent).toBe("n_a");
     expect(d.reason).toBe("recorded");
   });
 
-  it("refuses to record a consent region without a disclosure (never silently)", () => {
+  it("refuses to record a consent region with NEITHER mp3 nor text (never silently)", () => {
     const d = resolveCallRecording({
       toNumber: FR,
       workspaceEnabled: true,
       deploymentEnabled: true,
       disclosureUrl: null,
+      disclosureText: null,
     });
     expect(d.record).toBe(false);
     expect(d.reason).toBe("disclosure_missing");
+    expect(d.requiresDisclosure).toBe(false);
     expect(d.consent).toBe("n_a");
   });
 
-  it("records a consent region WITH a disclosure, playing it, consent given", () => {
+  it("records a consent region with an MP3 disclosure, consent given", () => {
     const d = resolveCallRecording({
       toNumber: FR,
       workspaceEnabled: true,
       deploymentEnabled: true,
       disclosureUrl: "https://cdn/disclosure-fr.mp3",
+      disclosureText: null,
     });
     expect(d.record).toBe(true);
+    expect(d.requiresDisclosure).toBe(true);
     expect(d.disclosureUrl).toBe("https://cdn/disclosure-fr.mp3");
     expect(d.consent).toBe("given");
     expect(d.reason).toBe("recorded");
+  });
+
+  it("records a consent region with only a TTS text disclosure (no MP3 needed)", () => {
+    const d = resolveCallRecording({
+      toNumber: FR,
+      workspaceEnabled: true,
+      deploymentEnabled: true,
+      disclosureUrl: null,
+      disclosureText: "Cet appel est enregistré.",
+    });
+    expect(d.record).toBe(true);
+    expect(d.requiresDisclosure).toBe(true);
+    expect(d.disclosureUrl).toBeUndefined();
+    expect(d.disclosureText).toBe("Cet appel est enregistré.");
+    expect(d.consent).toBe("given");
   });
 
   it("reads VOICE_RECORDING_ENABLED / VOICE_DISCLOSURE_AUDIO_URL from env when not overridden", () => {
