@@ -81,6 +81,14 @@ export default auth((req) => {
     "/api/health",
     "/api/unsubscribe",
     "/api/webhooks",
+    // Unipile (spec 36) callbacks — hosted-auth account status + inbound
+    // messages. Unipile POSTs these with NO session; they self-authenticate via
+    // the ?token=UNIPILE_WEBHOOK_SECRET we put in notify_url (verifyWebhookToken,
+    // fail-closed). Without this the session gate 307-redirects them to /sign-in
+    // and the seat never flips to connected. startsWith → covers
+    // account-webhook + message-webhook; does NOT match /api/linkedin/connect
+    // (that stays auth-gated, member self-serve).
+    "/api/linkedin/unipile",
     // Twilio voice webhooks — Twilio POSTs these with no session; `twiml`,
     // `recording-status` and `transcription` self-authenticate via the Twilio
     // request signature (HMAC), and `twiml-fallback` is a constant,
