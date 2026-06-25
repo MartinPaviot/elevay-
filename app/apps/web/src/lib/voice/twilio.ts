@@ -357,14 +357,25 @@ export async function buildTwiml(opts: {
   transcriptionCallbackUrl: string;
   /** BCP-47 language for transcription (default fr-FR for the romand wedge). */
   languageCode?: string;
+  /** Disclosure MP3 played to the prospect before <Dial> (direct-to-prospect
+   *  path, so a top-level <Play> reaches the called party). */
   disclosureUrl?: string;
+  /** TTS disclosure spoken via <Say> when no MP3 is configured. */
+  disclosureText?: string;
   recordingStatusUrl: string;
+  /**
+   * Whether to capture audio. The route decides this via
+   * `lib/voice/recording-policy.resolveCallRecording` (deployment + workspace
+   * opt-in + a lawful disclosure). Default false — we never record silently.
+   */
+  record?: boolean;
 }): Promise<string> {
   const twilio = await loadTwilio();
   const VoiceResponse = (twilio as unknown as {
     twiml: {
       VoiceResponse: new () => {
         play: (url: string) => unknown;
+        say: (attrs: { language?: string }, msg: string) => unknown;
         start: () => { transcription: (opts: Record<string, unknown>) => unknown };
         dial: (
           opts: { callerId: string; record?: string; recordingStatusCallback?: string },
@@ -380,6 +391,9 @@ export async function buildTwiml(opts: {
     // Disclosure plays once at connect — required by two-party-consent
     // regions (France + several US states). Pre-recorded MP3, ~5s.
     r.play(opts.disclosureUrl);
+  } else if (opts.disclosureText) {
+    // No MP3 configured — speak the disclosure via TTS instead.
+    r.say({ language: "fr-FR" }, opts.disclosureText);
   }
   // Twilio-native real-time transcription (Deepgram nova-3 under the hood).
   // It POSTs transcript events to our webhook → calls.transcript → SSE → UI.
@@ -396,14 +410,15 @@ export async function buildTwiml(opts: {
     outboundTrackLabel: "agent",
     partialResults: false,
   });
-  // Dial the prospect with the tenant's caller-id. Recording is opt-in only
-  // (VOICE_RECORDING_ENABLED) — we never capture silently, since CH/FR require
-  // an audible disclosure and recording without it is unlawful (CH criminal).
-  const recordingEnabled = process.env.VOICE_RECORDING_ENABLED === "true";
+  // Dial the prospect with the tenant's caller-id. Recording is opt-in only —
+  // the route resolves `opts.record` through recording-policy (deployment +
+  // workspace opt-in + a lawful disclosure). We never capture silently, since
+  // CH/FR require an audible disclosure and recording without it is unlawful
+  // (CH criminal).
   const dialOpts: { callerId: string; record?: string; recordingStatusCallback?: string } = {
     callerId: opts.fromNumber,
   };
-  if (recordingEnabled) {
+  if (opts.record) {
     dialOpts.record = "record-from-answer-dual";
     dialOpts.recordingStatusCallback = opts.recordingStatusUrl;
   }
@@ -442,8 +457,18 @@ export async function buildAgentTwiml(opts: {
   /** Status callback for the prospect (child) leg → connectedAt/endedAt. */
   dialStatusCallbackUrl: string;
   languageCode?: string;
-  disclosureUrl?: string;
+  /**
+   * Webhook that returns the disclosure <Play> TwiML, set as the <Number>
+   * whisper `url`. Twilio runs it ON THE PROSPECT when they answer, before the
+   * legs bridge — so the PROSPECT (not the rep) hears the recording notice,
+   * which is the whole point of two-party consent. Captured by
+   * record-from-answer-dual as proof. (A top-level <Play> here would play to
+   * the agent/browser leg, not the prospect — wrong party.)
+   */
+  disclosureWhisperUrl?: string;
   recordingStatusUrl: string;
+  /** See buildTwiml — resolved by the route via recording-policy. */
+  record?: boolean;
 }): Promise<string> {
   const twilio = await loadTwilio();
   const VoiceResponse = (twilio as unknown as {
@@ -467,9 +492,9 @@ export async function buildAgentTwiml(opts: {
   }).twiml.VoiceResponse;
 
   const r = new VoiceResponse();
-  if (opts.disclosureUrl) {
-    r.play(opts.disclosureUrl);
-  }
+  // NOTE: no top-level <Play> here — this TwiML runs on the AGENT (browser)
+  // leg, so a top-level play would announce to the rep, not the prospect. The
+  // disclosure is whispered to the prospect via the <Number url> below.
   r.start().transcription({
     statusCallbackUrl: opts.transcriptionCallbackUrl,
     track: "both_tracks",
@@ -485,14 +510,13 @@ export async function buildAgentTwiml(opts: {
     profanityFilter: false,
     hints: TRANSCRIPTION_HINTS,
   });
-  const recordingEnabled = process.env.VOICE_RECORDING_ENABLED === "true";
   const dialOpts: {
     callerId: string;
     answerOnBridge?: boolean;
     record?: string;
     recordingStatusCallback?: string;
   } = { callerId: opts.fromNumber, answerOnBridge: true };
-  if (recordingEnabled) {
+  if (opts.record) {
     dialOpts.record = "record-from-answer-dual";
     dialOpts.recordingStatusCallback = opts.recordingStatusUrl;
   }
@@ -502,6 +526,9 @@ export async function buildAgentTwiml(opts: {
       statusCallback: opts.dialStatusCallbackUrl,
       statusCallbackEvent: "initiated ringing answered completed",
       statusCallbackMethod: "POST",
+      // Whisper the recording disclosure to the prospect on answer (before
+      // bridge). Only present when we're recording in a consent region.
+      ...(opts.disclosureWhisperUrl ? { url: opts.disclosureWhisperUrl } : {}),
     },
     opts.toNumber,
   );
@@ -531,6 +558,37 @@ export async function buildVoicemailDropTwiml(opts: {
   const r = new VoiceResponse();
   r.play(opts.audioUrl);
   r.hangup();
+  return r.toString();
+}
+
+/**
+ * Build the disclosure-whisper TwiML — served by /api/calls/disclosure-whisper
+ * and set as the <Number url> on the bridged agent call. Twilio runs it on the
+ * PROSPECT leg when they answer, before bridging, so the prospect hears the
+ * recording notice (two-party consent). Just a <Play>; control returns to the
+ * <Dial> afterward and the legs bridge.
+ */
+export async function buildDisclosureWhisperTwiml(opts: {
+  audioUrl?: string;
+  text?: string;
+}): Promise<string> {
+  const twilio = await loadTwilio();
+  const VoiceResponse = (twilio as unknown as {
+    twiml: {
+      VoiceResponse: new () => {
+        play: (url: string) => unknown;
+        say: (attrs: { language?: string }, msg: string) => unknown;
+        toString: () => string;
+      };
+    };
+  }).twiml.VoiceResponse;
+
+  const r = new VoiceResponse();
+  // Prefer a recorded MP3 (a real human voice) when configured; otherwise speak
+  // the configured French disclosure via Twilio TTS — so recording can be
+  // enabled in CH/FR without hosting an audio file.
+  if (opts.audioUrl) r.play(opts.audioUrl);
+  else if (opts.text) r.say({ language: "fr-FR" }, opts.text);
   return r.toString();
 }
 
