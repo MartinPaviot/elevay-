@@ -41,8 +41,16 @@ export class DbCollisionLock implements CollisionLock {
     return rows.length > 0;
   }
 
-  async release(contactId: string): Promise<void> {
-    await this.database.delete(enrollmentLock).where(eq(enrollmentLock.contactId, contactId));
+  async release(contactId: string, enrollmentId?: string): Promise<void> {
+    // Fencing: when the holder is known, delete ONLY our own row. If the lock was
+    // already reclaimed by a successor (enrollment_id differs), this matches 0 rows
+    // — a late/duplicate release can't free the successor's lock and open a
+    // collision. Omit enrollmentId for the unconditional release.
+    const where =
+      enrollmentId !== undefined
+        ? and(eq(enrollmentLock.contactId, contactId), eq(enrollmentLock.enrollmentId, enrollmentId))
+        : eq(enrollmentLock.contactId, contactId);
+    await this.database.delete(enrollmentLock).where(where);
   }
 
   async holder(contactId: string): Promise<string | null> {

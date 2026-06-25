@@ -70,10 +70,19 @@ export async function guardEnrollment(args: {
   }
 }
 
-/** Release a contact's lock on a terminal enrollment event (complete / reply / opt-out). Never throws. */
-export async function releaseEnrollment(tenantId: string | null, contactId: string): Promise<void> {
+/**
+ * Release a contact's lock on a terminal enrollment event (complete / reply /
+ * opt-out). Never throws. Pass `enrollmentId` to FENCE the release to the holder
+ * (a late/duplicate terminal event for a prior enrollment can't free a
+ * re-enrolled contact's lock); omit it for an unconditional release.
+ */
+export async function releaseEnrollment(
+  tenantId: string | null,
+  contactId: string,
+  enrollmentId?: string,
+): Promise<void> {
   try {
-    await releaseEnrollmentLock(contactId, { lock: collisionLockForTenant(tenantId) });
+    await releaseEnrollmentLock(contactId, { lock: collisionLockForTenant(tenantId) }, enrollmentId);
   } catch {
     /* best-effort; the TTL self-heals a stuck lock */
   }
@@ -81,9 +90,11 @@ export async function releaseEnrollment(tenantId: string | null, contactId: stri
 
 /**
  * Release by enrollment id — resolves the enrollment's contact, then frees the
- * lock. For terminal-status sites that hold only the enrollmentId. The DELETE
- * keys on the globally-unique contactId, so tenant binding is unneeded here.
- * Never throws (best-effort; the 30-day TTL self-heals if this is ever missed).
+ * lock, FENCED to this enrollment so a late/duplicate terminal event can't free a
+ * successor's lock (the re-enrol/nurture-recycle race). For terminal-status sites
+ * that hold only the enrollmentId. The DELETE keys on the globally-unique
+ * contactId + this enrollmentId, so tenant binding is unneeded here. Never throws
+ * (best-effort; the 30-day TTL self-heals if this is ever missed).
  */
 export async function releaseEnrollmentById(enrollmentId: string): Promise<void> {
   try {
@@ -92,7 +103,7 @@ export async function releaseEnrollmentById(enrollmentId: string): Promise<void>
       .from(sequenceEnrollments)
       .where(eq(sequenceEnrollments.id, enrollmentId))
       .limit(1);
-    if (row?.contactId) await releaseEnrollment(null, row.contactId);
+    if (row?.contactId) await releaseEnrollment(null, row.contactId, enrollmentId);
   } catch {
     /* best-effort */
   }

@@ -219,7 +219,7 @@ export async function PUT(
     // the contact can be re-enrolled. Paused keeps the lock (still "in" a
     // sequence); the 30-day TTL self-heals if release is ever missed.
     if (status === "completed") {
-      await releaseEnrollment(authCtx.tenantId, enrollment.contactId);
+      await releaseEnrollment(authCtx.tenantId, enrollment.contactId, enrollmentId);
     }
 
     return Response.json({ success: true, enrollmentId, status });

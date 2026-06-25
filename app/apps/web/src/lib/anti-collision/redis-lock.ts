@@ -46,8 +46,18 @@ export class RedisCollisionLock implements CollisionLock {
     return (await this.holder(contactId)) === enrollmentId;
   }
 
-  async release(contactId: string): Promise<void> {
-    await this.call([["DEL", KEY_PREFIX + contactId]]);
+  async release(contactId: string, enrollmentId?: string): Promise<void> {
+    const key = KEY_PREFIX + contactId;
+    if (enrollmentId === undefined) {
+      await this.call([["DEL", key]]);
+      return;
+    }
+    // Fencing: atomic compare-and-delete — DEL only if WE are still the holder, so
+    // a late/duplicate release can't free a successor's lock (the classic
+    // check-then-del race is closed by doing it in one Lua eval).
+    await this.call([
+      ["EVAL", "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end", "1", key, enrollmentId],
+    ]);
   }
 
   async holder(contactId: string): Promise<string | null> {

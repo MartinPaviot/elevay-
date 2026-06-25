@@ -54,10 +54,17 @@ export async function acquireEnrollmentLock(
   return won;
 }
 
-/** AC3. Release the contact's lock. Idempotent — safe to call on any terminal
- * enrollment event (completed / replied / opted-out) without first checking. */
-export function releaseEnrollmentLock(contactId: string, deps: Pick<AntiCollisionDeps, "lock">): Promise<void> {
-  return deps.lock.release(contactId);
+/** AC3. Release the contact's lock on a terminal enrollment event (completed /
+ * replied / opted-out). Idempotent. Pass `enrollmentId` so the release is FENCED
+ * to the holder — a late/duplicate terminal event for a PRIOR enrollment then
+ * can't free a re-enrolled contact's lock (omitting it keeps the old
+ * unconditional behavior). */
+export function releaseEnrollmentLock(
+  contactId: string,
+  deps: Pick<AntiCollisionDeps, "lock">,
+  enrollmentId?: string,
+): Promise<void> {
+  return deps.lock.release(contactId, enrollmentId);
 }
 
 export interface ActiveEnrollment {

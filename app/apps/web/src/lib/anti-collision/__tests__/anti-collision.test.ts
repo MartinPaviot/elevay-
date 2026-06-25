@@ -70,6 +70,31 @@ describe("releaseEnrollmentLock — AC3 release on terminal event", () => {
     const { deps: d } = deps();
     await expect(releaseEnrollmentLock("never-locked", d)).resolves.toBeUndefined();
   });
+
+  it("a FENCED release (enrollmentId) does NOT free a SUCCESSOR's lock — the re-enrol/nurture-recycle race", async () => {
+    const { deps: d } = deps();
+    await acquireEnrollmentLock("contact-1", "enroll-A", d); // A holds it
+    await releaseEnrollmentLock("contact-1", d, "enroll-A"); // A completes, frees its own
+    await acquireEnrollmentLock("contact-1", "enroll-B", d); // re-enrolled as B
+    // A late/duplicate terminal event for the PRIOR enrollment A must not free B's lock:
+    await releaseEnrollmentLock("contact-1", d, "enroll-A");
+    // B still holds it → a third, different enroll is still blocked (no collision).
+    expect(await acquireEnrollmentLock("contact-1", "enroll-C", d)).toBe(false);
+  });
+
+  it("a FENCED release by the actual holder frees the lock", async () => {
+    const { deps: d } = deps();
+    await acquireEnrollmentLock("contact-1", "enroll-A", d);
+    await releaseEnrollmentLock("contact-1", d, "enroll-A"); // the holder releases
+    expect(await acquireEnrollmentLock("contact-1", "enroll-B", d)).toBe(true);
+  });
+
+  it("an UNFENCED release (no enrollmentId) frees whoever holds it (back-compat)", async () => {
+    const { deps: d } = deps();
+    await acquireEnrollmentLock("contact-1", "enroll-A", d);
+    await releaseEnrollmentLock("contact-1", d); // unconditional
+    expect(await acquireEnrollmentLock("contact-1", "enroll-B", d)).toBe(true);
+  });
 });
 
 describe("lock TTL — crashed enrollment self-heals", () => {
