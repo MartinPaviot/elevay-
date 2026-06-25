@@ -1,0 +1,24 @@
+# S08 — settings-data-model (`/settings/data-model`) — audit d'hydratation
+
+**Verdict global : H2 (partiel).** The custom-fields manager is genuinely wired: it loads from a real tenant-scoped GET (tenant.settings.customFields filtered by eq(tenants.id, authCtx.tenantId)) and every mutation (add/remove/rename/options/AI-fill mode) persists via a PUT round-trip with admin + capability gates. Loading skeleton and empty state are handled. Two real gaps keep it off H1: the read path silently coerces a non-ok response (incl. 500) into an empty list and only console.warns on a thrown fetch, so a failed/stale load is invisible; and saveFields only sets an error on a thrown network fetch, not on a non-ok HTTP response (403/500 return ok=false without throwing), so a persist failure can be silent while local state shows the change. Built-in field rows and entity tabs are static chrome (correctly H0).
+
+Entrée : `app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx`.
+
+## Éléments
+
+| Élément | file:line | Source (file:line) | État | Tenant | Loading | Empty | Error | Fresh | Note |
+|---------|-----------|--------------------|------|--------|---------|-------|-------|-------|------|
+| Custom fields list (per active entity) | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:246 | GET /api/settings/data-model -> tenant.settings.customFields, route.ts:14-20 (eq(tenants.id, authCtx.tenantId)); load at page.tsx:51-57 | H2 | yes | skeleton | handled | silent | once | Real tenant-scoped load, but the read swallows non-ok/500 into {fields:[]} (page.tsx:53) and only console.warns on throw (page.tsx:55) -> a failed or stale load renders as the empty state with no error surfaced. |
+| Create field (name/type/options/AI mode) submit | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:83 | PUT /api/settings/data-model -> db.update(tenants).set({settings.customFields}) route.ts:48-50; saveFields page.tsx:157-168 | H2 | yes | spinner | n/a | silent | once | Persists tenant-scoped and reflects in local state, but saveFields only setError on a thrown fetch (network); a non-ok HTTP response (403/500, ok=false, no throw) is ignored -> persist failure can be silent while UI shows success. |
+| Remove field (X) | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:109 | PUT /api/settings/data-model (saveFields page.tsx:157-168) -> route.ts:48-50 | H2 | yes | none | n/a | silent | once | Optimistic removal persists tenant-scoped, but same silent non-ok save failure path; no per-action loading state. |
+| Inline rename field | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:125 | PUT /api/settings/data-model (saveFields) -> route.ts:48-50 | H2 | yes | none | n/a | silent | once | Round-trips with a case-insensitive dupe guard (findDupeName); persist failure still silent on non-ok HTTP. |
+| Edit select options (CSV) | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:144 | PUT /api/settings/data-model (saveFields) -> route.ts:48-50 | H2 | yes | none | n/a | silent | once | Options edit persists tenant-scoped; same silent non-ok save path. |
+| AI fill mode toggle (off/suggest/auto) per field | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:381 | updateFieldAiMode -> PUT /api/settings/data-model (saveFields) -> route.ts:48-50 | H2 | yes | none | n/a | silent | once | Current value comes from loaded field.aiFillMode and persists on click; same silent non-ok save failure path. |
+| Built-in fields list (Name/Domain/.../Close Date) | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:198 | static array literal page.tsx:198-203 (no data source) | H0 | n/a | none | n/a | n/a | static | Hardcoded reference list of schema fields with a static 'Text' type label; pure chrome, correctly static. |
+| Entity type tabs (Companies/Contacts/Deals) | app/apps/web/src/app/(dashboard)/settings/data-model/page.tsx:180 | client UI state activeEntity (static ENTITY_TYPES) page.tsx:11,45 | H0 | n/a | none | n/a | n/a | static | Pure client-side view filter, not data-bearing config. |
+
+## Pires défauts
+
+1. Read path hides failures: non-ok/500 responses are coerced to {fields:[]} and a thrown fetch only console.warns, so a failed or stale load is indistinguishable from a genuinely empty list (page.tsx:53-56).
+2. Save path can fail silently: saveFields only setError on a thrown fetch; a non-ok HTTP response (403 capability-denied, 404 workspace-not-found, 500) returns ok=false without throwing, so the optimistic local change is shown as saved even when persistence failed (page.tsx:157-168).
+3. No save round-trip confirmation/refetch after PUT: local state is the source of truth post-mutation and the PUT response body is never read, so server-side rejection or normalization is never reflected back (page.tsx:160-164).

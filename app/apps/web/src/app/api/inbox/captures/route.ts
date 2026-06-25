@@ -24,8 +24,10 @@ export async function GET() {
     });
     return Response.json({ captures });
   } catch (error) {
+    // Return a real error status (not 200 + empty) so the inbox capture drawer
+    // can tell a genuinely-empty queue from a failed one and show a retry.
     console.error("Failed to list pending captures:", error);
-    return Response.json({ captures: [] });
+    return Response.json({ error: "Failed to list captures" }, { status: 500 });
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SettingsHeader } from "@/components/ui/settings-header";
@@ -42,19 +42,35 @@ interface CustomField {
 export default function DataModelPage() {
   const [fields, setFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeEntity, setActiveEntity] = useState<EntityType>("company");
   const [showAdd, setShowAdd] = useState(false);
   const [newField, setNewField] = useState({ name: "", type: "text", aiFillMode: "off", options: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/settings/data-model")
-      .then((r) => r.ok ? r.json() : { fields: [] })
-      .then((data) => setFields(data.fields || []))
-      .catch((e) => console.warn("data-model: fetch failed", e))
-      .finally(() => setLoading(false));
+  const fetchFields = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const r = await fetch("/api/settings/data-model");
+      if (r.ok) {
+        const data = await r.json();
+        setFields(data.fields || []);
+      } else {
+        // A 500 used to coerce into an empty field list, indistinguishable
+        // from a tenant with no custom fields.
+        setLoadError(true);
+      }
+    } catch (e) {
+      console.warn("data-model: fetch failed", e);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchFields(); }, [fetchFields]);
 
   const entityFields = fields.filter((f) => f.entityType === activeEntity);
 
@@ -157,11 +173,17 @@ export default function DataModelPage() {
   async function saveFields(fieldsToSave: CustomField[]) {
     setError("");
     try {
-      await fetch("/api/settings/data-model", {
+      const res = await fetch("/api/settings/data-model", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fields: fieldsToSave }),
       });
+      if (!res.ok) {
+        // The PUT was never status-checked, so a 403/404/500 looked like a
+        // successful save (the optimistic UI update stuck). Surface it.
+        const detail = await res.json().catch(() => null);
+        setError(detail?.error || "Failed to save fields. Your change may not have been saved.");
+      }
     } catch {
       setError("Failed to save fields");
     }
@@ -174,6 +196,15 @@ export default function DataModelPage() {
         subtitle="Customize the fields Elevay tracks for each entity type."
       />
       {error && <p className="mt-2 text-[12px]" style={{ color: "var(--color-error)" }}>{error}</p>}
+
+      {loadError && (
+        <div role="alert" className="mt-2 flex items-center gap-3 text-[12px]" style={{ color: "var(--color-error, #b91c1c)" }}>
+          <span>Couldn&apos;t load your custom fields. This is not an empty data model.</span>
+          <button onClick={fetchFields} className="font-medium underline" style={{ color: "var(--color-accent)" }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Entity type tabs */}
       <div className="mt-6 flex gap-1">
