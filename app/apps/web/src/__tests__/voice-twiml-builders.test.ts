@@ -1,17 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { buildTwiml, buildVoicemailDropTwiml, buildFallbackTwiml } from "@/lib/voice/twilio";
+import { describe, it, expect } from "vitest";
+import {
+  buildTwiml,
+  buildAgentTwiml,
+  buildDisclosureWhisperTwiml,
+  buildVoicemailDropTwiml,
+  buildFallbackTwiml,
+} from "@/lib/voice/twilio";
 
 /**
  * Exercises the TwiML composition helpers against the real Twilio SDK
  * VoiceResponse — that's the surface Twilio actually validates against
  * at runtime so we don't want a hand-rolled assertion that drifts.
  */
-
-// Recording is opt-in (VOICE_RECORDING_ENABLED). Default every test to OFF so
-// assertions are deterministic regardless of the ambient env.
-beforeEach(() => {
-  delete process.env.VOICE_RECORDING_ENABLED;
-});
 
 describe("buildTwiml — outbound call composition", () => {
   it("includes <Transcription> (Deepgram) and <Dial> + <Number>", async () => {
@@ -29,18 +29,19 @@ describe("buildTwiml — outbound call composition", () => {
     expect(xml).toContain("+33122334455");
     expect(xml).toContain("<Number");
     expect(xml).toContain("+33612345678");
-    // Recording is opt-in — off by default, so nothing is captured/announced.
+    // Recording is opt-in — off unless the route resolves record:true, so
+    // nothing is captured/announced by default.
     expect(xml).not.toContain("recordingStatusCallback=");
     expect(xml).not.toContain("record-from-answer-dual");
   });
 
-  it("records only when VOICE_RECORDING_ENABLED=true (never silently)", async () => {
-    process.env.VOICE_RECORDING_ENABLED = "true";
+  it("records only when record:true is passed (never silently)", async () => {
     const xml = await buildTwiml({
       toNumber: "+33612345678",
       fromNumber: "+33122334455",
       transcriptionCallbackUrl: "https://example.com/api/calls/transcription?callId=abc",
       recordingStatusUrl: "https://example.com/api/calls/recording-status",
+      record: true,
     });
     expect(xml).toContain("record-from-answer-dual");
     expect(xml).toContain("recordingStatusCallback=");
@@ -66,6 +67,53 @@ describe("buildTwiml — outbound call composition", () => {
       recordingStatusUrl: "https://example.com/api/calls/recording-status",
     });
     expect(xml).not.toContain("<Play>");
+  });
+});
+
+describe("buildAgentTwiml — bridged Call Mode leg", () => {
+  const base = {
+    toNumber: "+33612345678",
+    fromNumber: "+33122334455",
+    transcriptionCallbackUrl: "https://example.com/api/calls/transcription?callId=abc",
+    dialStatusCallbackUrl: "https://example.com/api/calls/dial-status?callId=abc",
+    recordingStatusUrl: "https://example.com/api/calls/recording-status",
+  };
+
+  it("never plays the disclosure on the agent leg (a top-level <Play> would announce to the rep)", async () => {
+    const xml = await buildAgentTwiml({
+      ...base,
+      record: true,
+      disclosureWhisperUrl: "https://example.com/api/calls/disclosure-whisper?u=x",
+    });
+    // No top-level <Play> — the disclosure must reach the PROSPECT, not the rep.
+    expect(xml).not.toContain("<Play>");
+    // It is whispered to the prospect via the <Number url> instead.
+    expect(xml).toContain("disclosure-whisper");
+    expect(xml).toContain("<Number");
+  });
+
+  it("records (record-from-answer-dual) only when record:true", async () => {
+    const off = await buildAgentTwiml(base);
+    expect(off).not.toContain("record-from-answer-dual");
+    const on = await buildAgentTwiml({ ...base, record: true });
+    expect(on).toContain("record-from-answer-dual");
+  });
+
+  it("omits the whisper url when no disclosure is supplied", async () => {
+    const xml = await buildAgentTwiml({ ...base, record: true });
+    expect(xml).not.toContain("disclosure-whisper");
+  });
+});
+
+describe("buildDisclosureWhisperTwiml", () => {
+  it("plays the disclosure and returns to <Dial> (no hangup)", async () => {
+    const xml = await buildDisclosureWhisperTwiml({
+      audioUrl: "https://cdn.example.com/disclosure-fr.mp3",
+    });
+    expect(xml).toContain("<Play>");
+    expect(xml).toContain("disclosure-fr.mp3");
+    expect(xml).not.toContain("<Hangup");
+    expect(xml).not.toContain("<Dial");
   });
 });
 

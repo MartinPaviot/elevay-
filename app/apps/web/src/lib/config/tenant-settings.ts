@@ -76,6 +76,15 @@ export interface TenantSettings {
    * contrarian reframe; fits fondations/parapublic/santé) or "challenger"
    * (one grounded factual reframe allowed). Founder-set. */
   scriptPosture?: "consultative" | "challenger";
+  /**
+   * Workspace opt-in for recording Call Mode conversations (the Twilio
+   * cold-call path — distinct from `recordingEnabled`, which is the Recall
+   * meeting-bot for visios). Default off. Recording also requires the
+   * deployment kill-switch `VOICE_RECORDING_ENABLED=true` and, in two-party-
+   * consent regions (CH/FR), a configured `VOICE_DISCLOSURE_AUDIO_URL`;
+   * `lib/voice/recording-policy.resolveCallRecording` enforces all three so we
+   * never capture silently. */
+  callRecordingEnabled?: boolean;
 
   // ── ICP (Ideal Customer Profile) ──
   targetIndustries?: string[];
