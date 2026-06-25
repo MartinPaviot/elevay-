@@ -1,4 +1,4 @@
-import { getAuthContext } from "@/lib/auth/auth-utils";
+import { getAuthContext, requireAdmin } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
 import { subscriptions, usageEvents } from "@/db/billing-schema";
 import { connectedMailboxes } from "@/db/schema";
@@ -37,6 +37,9 @@ export async function GET() {
   if (!authCtx) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Admin-only — workspace billing/usage meters are a privileged view.
+  const adminCheck = requireAdmin(authCtx);
+  if (adminCheck) return adminCheck;
 
   try {
     const tenantId = authCtx.tenantId;
