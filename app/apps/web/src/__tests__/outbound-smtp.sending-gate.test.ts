@@ -112,7 +112,7 @@ vi.mock("@/lib/integrations/smtp-send", () => ({ sendViaSmtp: (...a: unknown[]) 
 const evaluateSend = vi.fn();
 vi.mock("@/lib/guardrails/sending-gate", () => ({ evaluateSend: (...a: unknown[]) => evaluateSend(...a) }));
 
-const isWithinSendWindowMock = vi.fn(() => true);
+const isWithinSendWindowMock = vi.fn();
 vi.mock("@/lib/emails/send-window", () => ({ isWithinSendWindow: (...a: unknown[]) => isWithinSendWindowMock(...a) }));
 vi.mock("@/lib/config/tenant-settings", () => ({ getTenantSettings: vi.fn(async () => ({ timezone: "Europe/Paris" })) }));
 
