@@ -34,6 +34,12 @@ const FIXTURE_VOICE = {
   voice: { tone: "neutral", customGuidance: "be punchy" },
 };
 const FIXTURE_AUTO = { autoDraft: { enabled: true } };
+const FIXTURE_MEMORY = {
+  memory: {
+    standingInstructions: [{ id: "1", text: "Keep replies under 120 words" }],
+    aboutMe: { signOffName: "M. Paviot", companyLine: "Elevay — GTM for founders", keyColleagues: ["Anna"] },
+  },
+};
 
 let fetchMock: ReturnType<typeof vi.fn>;
 function jsonRes(data: unknown, ok = true) {
@@ -49,6 +55,8 @@ function router(url: string, init?: RequestInit): Response {
   if (u === "/api/inbox/writing-style/derive") return jsonRes({ proposal: { status: "idle" } });
   if (u === "/api/inbox/auto-draft" && m === "GET") return jsonRes(FIXTURE_AUTO);
   if (u === "/api/inbox/auto-draft" && m === "PUT") return jsonRes(FIXTURE_AUTO);
+  if (u === "/api/inbox/memory" && m === "GET") return jsonRes(FIXTURE_MEMORY);
+  if (u === "/api/inbox/memory" && m === "PUT") return jsonRes(FIXTURE_MEMORY);
   return jsonRes({});
 }
 function bodyOf(call: unknown[]) {
@@ -85,5 +93,32 @@ describe("Voice & Writing — folded-in inbox-voice config", () => {
     expect(bodyOf(callsTo("/api/inbox/voice", "PUT")[0])).toEqual({ tone: "neutral", customGuidance: "be punchy" });
     expect(callsTo("/api/inbox/auto-draft", "PUT").length).toBe(1);
     expect(bodyOf(callsTo("/api/inbox/auto-draft", "PUT")[0])).toEqual({ enabled: true });
+  });
+});
+
+describe("Voice & Writing — folded-in inbox-memory config", () => {
+  it("loads standing instructions + company line from /api/inbox/memory", async () => {
+    render(<WritingStylePage />);
+    await waitFor(() => expect(screen.getByText("Standing instructions")).toBeTruthy(), { timeout: 8000 });
+    expect((screen.getByDisplayValue("Keep replies under 120 words") as HTMLInputElement)).toBeTruthy();
+    expect((screen.getByDisplayValue("Elevay — GTM for founders") as HTMLInputElement)).toBeTruthy();
+    // NO second sign-off field here — writing-style.signOff is the single source,
+    // so memory.signOffName ("M. Paviot") is never rendered as an editable field.
+    expect(screen.queryByDisplayValue("M. Paviot")).toBeNull();
+  });
+
+  it("Save round-trips the full memory (preserving signOffName/keyColleagues) to /api/inbox/memory", async () => {
+    render(<WritingStylePage />);
+    await waitFor(() => expect(screen.getByText("Standing instructions")).toBeTruthy(), { timeout: 8000 });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => expect(callsTo("/api/inbox/memory", "PUT").length).toBe(1));
+    const body = bodyOf(callsTo("/api/inbox/memory", "PUT")[0]) as typeof FIXTURE_MEMORY.memory;
+    // standing instructions + company line round-trip; signOffName/keyColleagues preserved untouched
+    expect(body.standingInstructions).toEqual([{ id: "1", text: "Keep replies under 120 words" }]);
+    expect(body.aboutMe.companyLine).toBe("Elevay — GTM for founders");
+    expect(body.aboutMe.signOffName).toBe("M. Paviot");
+    expect(body.aboutMe.keyColleagues).toEqual(["Anna"]);
   });
 });
