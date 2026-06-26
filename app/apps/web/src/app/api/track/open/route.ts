@@ -2,6 +2,8 @@ import { db } from "@/db";
 import { outboundEmails, activities } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { verifyTrackingId } from "@/lib/emails/tracking-token";
+import { inngest } from "@/inngest/client";
+import { isCadenceBranchingEnabled, buildEngagementEvent } from "@/lib/emails/engagement-event";
 
 // 1x1 transparent GIF
 const PIXEL = Buffer.from(
@@ -49,7 +51,7 @@ async function recordOpen(emailId: string) {
   try {
     // Only record first open
     const [email] = await db
-      .select({ id: outboundEmails.id, openedAt: outboundEmails.openedAt, contactId: outboundEmails.contactId, tenantId: outboundEmails.tenantId })
+      .select({ id: outboundEmails.id, openedAt: outboundEmails.openedAt, contactId: outboundEmails.contactId, tenantId: outboundEmails.tenantId, enrollmentId: outboundEmails.enrollmentId })
       .from(outboundEmails)
       .where(and(eq(outboundEmails.id, emailId), isNull(outboundEmails.openedAt)))
       .limit(1);
@@ -75,6 +77,14 @@ async function recordOpen(emailId: string) {
         summary: "Opened email",
         metadata: { outboundEmailId: emailId },
       });
+    }
+
+    // Cadence branching (gap #2): feed the dormant decision engine so a sequenced
+    // email's first open can branch the cadence (contextual follow-up / wait). Flag-
+    // gated + only for sequenced sends; best-effort so it never breaks the pixel.
+    if (isCadenceBranchingEnabled()) {
+      const ev = buildEngagementEvent("opened", email);
+      if (ev) await inngest.send(ev).catch(() => {});
     }
   } catch {
     // Non-critical — don't fail the pixel

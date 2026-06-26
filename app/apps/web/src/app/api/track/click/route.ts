@@ -3,6 +3,8 @@ import { outboundEmails, activities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { verifyTrackingId } from "@/lib/emails/tracking-token";
+import { inngest } from "@/inngest/client";
+import { isCadenceBranchingEnabled, buildEngagementEvent } from "@/lib/emails/engagement-event";
 
 /**
  * Click tracking redirect endpoint.
@@ -51,7 +53,7 @@ export async function GET(req: Request) {
 async function recordClick(emailId: string, url: string) {
   try {
     const [email] = await db
-      .select({ id: outboundEmails.id, contactId: outboundEmails.contactId, tenantId: outboundEmails.tenantId, clickedAt: outboundEmails.clickedAt })
+      .select({ id: outboundEmails.id, contactId: outboundEmails.contactId, tenantId: outboundEmails.tenantId, clickedAt: outboundEmails.clickedAt, enrollmentId: outboundEmails.enrollmentId })
       .from(outboundEmails)
       .where(eq(outboundEmails.id, emailId))
       .limit(1);
@@ -64,6 +66,14 @@ async function recordClick(emailId: string, url: string) {
         .update(outboundEmails)
         .set({ clickedAt: new Date(), updatedAt: new Date() })
         .where(eq(outboundEmails.id, emailId));
+
+      // Cadence branching (gap #2): a click is the strongest engagement signal — feed
+      // the decision engine so it can branch (e.g. accelerate / send a value follow-up).
+      // First click only, flag-gated, sequenced sends only, best-effort.
+      if (isCadenceBranchingEnabled()) {
+        const ev = buildEngagementEvent("clicked", email);
+        if (ev) await inngest.send(ev).catch(() => {});
+      }
     }
 
     // Log activity for every click
