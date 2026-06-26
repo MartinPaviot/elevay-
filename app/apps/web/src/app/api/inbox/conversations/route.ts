@@ -23,9 +23,15 @@ import { bundleConversations } from "@/lib/inbox/bundle";
 import { matchesSearch, isActiveQuery, parseSearchQuery } from "@/lib/inbox/search-match";
 import { selectCatchUp } from "@/lib/inbox/catch-up";
 import { getLastSeen } from "@/lib/inbox/seen-store";
+import { defaultInboxSort, isInboxSort, sortRows } from "@/lib/inbox/inbox-sort";
 
 const LANES: Lane[] = ["attention", "handled", "snoozed", "done"];
-const PAGE_SIZE = 30;
+// Local-first (Superhuman/Upstream model): the route returns the WHOLE lane in one
+// shot and the client holds it, so sort/filter/load-more are instant client-side
+// with zero per-action round-trip. Capped so a pathological lane can't ship an
+// unbounded payload; past the cap we flag `truncated` (never a silent cut) and the
+// rare >500 tail falls back to "refine with search". 500 covers any personal lane.
+const LIST_CAP = 500;
 
 export async function GET(req: Request) {
   const authCtx = await getAuthContext();
@@ -35,7 +41,6 @@ export async function GET(req: Request) {
     const url = new URL(req.url, "http://localhost");
     const laneParam = url.searchParams.get("lane") || "attention";
     const lane: Lane = (LANES as string[]).includes(laneParam) ? (laneParam as Lane) : "attention";
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
 
     // The inbox is personal: scope to the signed-in user's own mailbox(es),
     // never the whole workspace. No mailbox connected → an empty inbox.
@@ -234,7 +239,37 @@ export async function GET(req: Request) {
                     : resolveCustomSplit(c.fromAddress, userSplits)?.id === splitParam)),
             )
           : visible.filter(({ c }) => c.lane === lane);
-    const pageRows = inLane.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    // Sort the FULL filtered set before paginating — the sort control is an
+    // email-client folder sort, not a per-page reshuffle. The UI sends an
+    // explicit ?sort=; absent one we use the per-view default (triage ranks by
+    // priority, every folder is chronological). For `sender` we need display
+    // names over the whole set, so fetch them up front; other modes sort on
+    // fields already in memory and only name the visible page (below).
+    const sortParam = url.searchParams.get("sort");
+    const sortMode = isInboxSort(sortParam) ? sortParam : defaultInboxSort(laneParam, !!splitParam);
+    let names = await contactNameMap(
+      authCtx.tenantId,
+      (sortMode === "sender" ? inLane : []).map(({ c }) => c.contactId).filter(Boolean) as string[],
+    );
+    const displayNameOf = (c: { contactId: string | null; fromAddress: string }) =>
+      (c.contactId && names[c.contactId]?.name) || c.fromAddress || "Unknown sender";
+    const sorted = sortRows(inLane, sortMode, ({ c }) => ({
+      importanceTier: c.importanceTier,
+      importanceScore: c.importanceScore,
+      followupOverdue: !!c.followup?.overdue,
+      lastInboundAt: c.lastInboundAt,
+      lastMessageAt: c.lastMessageAt,
+      unread: unreadOf(c),
+      sortName: displayNameOf(c).toLowerCase(),
+    }));
+    // Local-first: return the whole lane (capped), not a page. The client sorts +
+    // windows it. `truncated` is surfaced so a >cap lane is never a silent cut.
+    const truncated = sorted.length > LIST_CAP;
+    if (truncated) {
+      console.warn(`inbox lane "${laneParam}" truncated: ${sorted.length} → ${LIST_CAP} (tenant ${authCtx.tenantId})`);
+    }
+    const pageRows = sorted.slice(0, LIST_CAP);
 
     // Per-custom-lane counts for the tabs (honour "hide when empty").
     const customLanes = userLanes
@@ -313,10 +348,14 @@ export async function GET(req: Request) {
         ).sinceCount
       : 0;
 
-    const names = await contactNameMap(
-      authCtx.tenantId,
-      pageRows.map(({ c }) => c.contactId).filter(Boolean) as string[],
-    );
+    // `sender` already fetched names over the whole set; other modes only need
+    // the visible page's contacts.
+    if (sortMode !== "sender") {
+      names = await contactNameMap(
+        authCtx.tenantId,
+        pageRows.map(({ c }) => c.contactId).filter(Boolean) as string[],
+      );
+    }
 
     return Response.json({
       conversations: pageRows.map(({ c, mb }) => ({
@@ -335,6 +374,9 @@ export async function GET(req: Request) {
         starred: starredKeys.has(c.key),
         unread: unreadOf(c),
         importanceTier: c.importanceTier,
+        // Surfaced so the client can replicate the `priority` sort EXACTLY for
+        // the instant optimistic reorder (no flicker when the server result lands).
+        importanceScore: c.importanceScore,
         importanceFactors: c.importanceFactors,
         labels: applyLabelFilters(toLaneCandidate({ c, mb }), userFilters),
         handledNote: c.handledNote,
@@ -362,7 +404,9 @@ export async function GET(req: Request) {
       primaryCount: visible.filter(({ c }) => c.split !== "promotions" && c.split !== "social" && !c.noise && c.lane !== "done" && c.lane !== "snoozed").length,
       // Unread primary mail (the Upstream Inbox badge = unread count, not total).
       unreadCount: visible.filter(({ c }) => c.split !== "promotions" && c.split !== "social" && !c.noise && c.lane !== "done" && c.lane !== "snoozed" && unreadOf(c)).length,
-      pagination: { page, pageSize: PAGE_SIZE, total: inLane.length },
+      // Local-first: `returned` is what the client now holds (it windows + sorts
+      // locally); `total` is the true lane size; `truncated` flags a >cap lane.
+      pagination: { total: inLane.length, returned: pageRows.length, cap: LIST_CAP, truncated },
       mailboxConnected: scope.hasMailbox,
       mailboxes,
       selectedMailbox,

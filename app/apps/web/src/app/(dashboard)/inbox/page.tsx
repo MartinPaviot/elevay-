@@ -10,10 +10,10 @@
  * Keyboard: j/k select, e done, r reply — ignored while typing.
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Inbox, Mail, AlertCircle, Search, X, PenSquare, ChevronLeft } from "lucide-react";
+import { Inbox, Mail, AlertCircle, Search, X, PenSquare, ChevronLeft, Rows2, AlignJustify, MoveHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,10 @@ import { useToast } from "@/components/ui/toast";
 import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
 import { useRegisterPageActions } from "@/lib/chat/page-actions/registry";
 import { ConversationList } from "./_conversation-list";
+import { SortMenu } from "./_sort-menu";
+import { isInboxSort, sortRows, type InboxSort } from "@/lib/inbox/inbox-sort";
+import { resolveInboxView } from "@/lib/inbox/inbox-view";
+import type { InboxDensity } from "./_inbox-row";
 import { ConversationPane, type ConversationPaneApi } from "./_conversation-pane";
 import { CaptureReviewDrawer } from "./_capture-review";
 import { OutboundTable, type OutboundTableApi } from "./_outbound-table";
@@ -78,6 +82,85 @@ const TAB_LABELS: Record<Tab, string> = {
   spam: "Spam",
 };
 
+// Rep-adjustable list width (px) for the 3-column master-detail, persisted so the
+// layout sticks across sessions. Mirrors Call Mode's resizable cockpit columns.
+const LIST_W_KEY = "elevay.inbox.listWidth";
+const LIST_W_MIN = 220;
+const LIST_W_MAX = 560;
+const LIST_W_DEFAULT = 300;
+const clampPx = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+// Local-first windowing: the client holds the WHOLE lane and reveals it in chunks
+// of this size, growing on "Load more" — no network per page (Superhuman/Upstream).
+const LOCAL_PAGE = 30;
+
+// Extract the fields the sort comparators read from a list item (shared by the
+// sorted-view memo). Pure + module-scoped so it isn't re-created each render.
+const sortFieldsOf = (c: ConversationListItem) => ({
+  importanceTier: c.importanceTier,
+  importanceScore: c.importanceScore,
+  followupOverdue: !!c.followup?.overdue,
+  lastInboundAt: c.lastInboundAt,
+  lastMessageAt: c.lastMessageAt,
+  unread: c.unread,
+  sortName: (c.displayName || c.fromAddress || "").toLowerCase(),
+});
+
+/**
+ * Draggable divider between the conversation list and the open mail (3-column
+ * mode only) — drag left/right to resize the delta between the inbox and the
+ * reading pane. Zero layout width: the visible line is the list column's
+ * border-r; the handle overlays an invisible grab zone + a hover highlight.
+ * Pointer listeners bind once and read the latest onDelta via a ref. Mirrors
+ * Call Mode's ResizeHandle, on Elevay tokens (no raw palette colors).
+ */
+function ResizeHandle({ onDelta }: { onDelta: (dx: number) => void }) {
+  const onDeltaRef = useRef(onDelta);
+  onDeltaRef.current = onDelta;
+  const startX = useRef<number | null>(null);
+  useEffect(() => {
+    function move(e: PointerEvent) {
+      if (startX.current === null) return;
+      const dx = e.clientX - startX.current;
+      startX.current = e.clientX;
+      onDeltaRef.current(dx);
+    }
+    function up() {
+      if (startX.current === null) return;
+      startX.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, []);
+  return (
+    <div
+      onPointerDown={(e) => {
+        startX.current = e.clientX;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+      }}
+      className="group relative z-10 hidden w-0 shrink-0 select-none @min-[960px]:block"
+      title="Glisser pour redimensionner"
+      role="separator"
+      aria-orientation="vertical"
+    >
+      <div className="absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
+      <div className="pointer-events-none absolute inset-y-0 -left-px w-px bg-transparent transition-colors group-hover:bg-[var(--color-accent)]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-7 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded border opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}>
+        <MoveHorizontal size={12} style={{ color: "var(--color-text-muted)" }} />
+      </div>
+    </div>
+  );
+}
+
 
 export default function InboxPage() {
   const { toast } = useToast();
@@ -120,9 +203,11 @@ export default function InboxPage() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sendableMailboxes, setSendableMailboxes] = useState<SendableMailbox[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(1);
+  // Local-first: the held list is the WHOLE lane; `visibleCount` is the local
+  // window (grows on Load more). No server pagination, so no page/loadingMore.
+  const [visibleCount, setVisibleCount] = useState(LOCAL_PAGE);
   const [total, setTotal] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [replySignal, setReplySignal] = useState(0);
   // B6: bump to open the focused thread's add-label input (mirrors replySignal).
@@ -138,6 +223,18 @@ export default function InboxPage() {
   // operator-hint placeholder where it actually fits (≥ lg), else "Search mail"
   // so it never clips. Starts false → matches SSR, set on mount (no hydration gap).
   const [wideSearch, setWideSearch] = useState(false);
+  // Outlook-style display density: "comfortable" = 2-line rows (default),
+  // "compact" = one dense single line. Starts comfortable → matches SSR, then a
+  // mount effect reads the persisted choice (no hydration gap).
+  const [density, setDensity] = useState<InboxDensity>("comfortable");
+  // Email-client sort (Upstream/Outlook): the list defaults to date (newest
+  // received first) like a real Inbox; "priority" keeps the AI importance
+  // ranking for those who want it. Persisted; sent to the route as ?sort=.
+  // Starts "date" → matches SSR, then a mount effect reads the persisted choice.
+  const [sort, setSort] = useState<InboxSort>("date");
+  // Resizable list width (3-column mode). Default on SSR → first paint matches;
+  // a mount effect reads the persisted px, and a persist effect saves it.
+  const [listW, setListW] = useState(LIST_W_DEFAULT);
   // F3: the last foreground load rejected — drives the list error state so a failed
   // load shows a Retry, not a misleading empty lane (only meaningful when count===0).
   const [listError, setListError] = useState(false);
@@ -145,6 +242,13 @@ export default function InboxPage() {
   const [catchUpCount, setCatchUpCount] = useState(0);
   const seenInitRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  // Last list scroll offset while no thread is open — so returning from a thread
+  // lands back where you were instead of at the top. In single-pane mode the
+  // list is display:none while reading, which zeroes its scrollTop; we restore it.
+  const listScrollRef = useRef(0);
+  // The inbox @container — its width decides single-pane (<960px) vs 3-column,
+  // so the scroll-restore effect can tell the two apart precisely (not by proxy).
+  const shellRef = useRef<HTMLDivElement>(null);
   // `m`-then-key mailbox quick-switch state machine (INBOX-K05).
   const mailboxAwaitRef = useRef(false);
   const mailboxAwaitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,44 +317,64 @@ export default function InboxPage() {
   // F2: generation guard + abort controller for foreground loads (stale discard).
   const loadGuardRef = useRef(createLoadGuard());
   const abortRef = useRef<AbortController | null>(null);
+  // Local-first lane cache (stale-while-revalidate): the last payload per view
+  // (lane + mailbox + split). Revisiting a loaded lane paints from cache INSTANTLY
+  // — no skeleton, no wait — then a silent fetch revalidates. Any mutation clears
+  // it (an item that moved lanes makes every cached lane potentially stale).
+  // Search views are never cached (transient; the keyspace stays bounded to
+  // lanes × mailboxes × splits).
+  const laneCacheRef = useRef(new Map<string, { rows: ConversationListItem[]; total: number; truncated: boolean }>());
 
   const loadLane = useCallback(
-    async (lane: string, pageNum: number, append: boolean, silent = false) => {
-      // F2: a foreground load mints a generation token and aborts the previous
-      // in-flight foreground fetch, so a slow earlier lane can't paint over a
-      // newer one. Appends are additive — they don't take a token or abort.
+    async (lane: string, silent = false) => {
+      // Local-first: ONE fetch per lane returns the whole lane; the client sorts +
+      // windows it. F2: each load mints a generation token and aborts the previous
+      // in-flight fetch, so a slow earlier lane can't paint over a newer one.
       // `silent` = a background freshness refresh: refetch + swap, but show no
-      // loading skeleton and surface no error toast (it fires every ~25s).
-      const token = append ? null : loadGuardRef.current.next();
-      if (!append) {
-        abortRef.current?.abort();
-        abortRef.current = new AbortController();
-      }
-      const live = () => token === null || loadGuardRef.current.isCurrent(token);
-      if (append) setLoadingMore(true);
-      else if (!silent) {
-        setLoading(true);
-        setListError(false); // clear the foreground error as a fresh load begins
+      // loading skeleton and surface no error toast (it fires every ~15s).
+      const token = loadGuardRef.current.next();
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+      const live = () => loadGuardRef.current.isCurrent(token);
+
+      // View identity + lane-cache key (pure, unit-tested). Inbox/Primary maps
+      // attention → primary; a real split sub-segments; search views aren't cached.
+      const { effLane, splitId, cacheKey, canCache } = resolveInboxView({
+        lane,
+        activeSplit,
+        selectedMailbox,
+        search: debouncedSearch,
+      });
+
+      if (!silent) {
+        const cached = canCache ? laneCacheRef.current.get(cacheKey) : undefined;
+        if (cached) {
+          // Revisiting a loaded lane: paint from cache INSTANTLY (no skeleton), then
+          // fall through to a silent revalidation below.
+          setConversations(cached.rows);
+          setTotal(cached.total);
+          setTruncated(cached.truncated);
+          setListError(false);
+        } else {
+          setLoading(true);
+          setListError(false); // clear the foreground error as a fresh load begins
+        }
       }
       try {
         if (pendingTriage.current) await pendingTriage.current.catch(() => {});
         const mailboxQuery = selectedMailbox ? `&mailbox=${encodeURIComponent(selectedMailbox)}` : "";
         const searchQuery = debouncedSearch ? `&q=${encodeURIComponent(debouncedSearch)}` : "";
-        // Inbox/Primary → the email-client primary view (lane=primary): the default
-        // Inbox (no split) and the "Primary" split both show all primary-category mail
-        // in the inbox, not just the triage attention subset (Upstream model).
-        const isPrimaryView = lane === "attention" && (!activeSplit || activeSplit === "other");
-        const effLane = isPrimaryView ? "primary" : lane;
-        // B3: only sub-segment the attention lane (not a custom lane / the primary view).
-        const splitQuery = activeSplit && lane === "attention" && !isPrimaryView ? `&split=${activeSplit}` : "";
-        const res = await fetch(`/api/inbox/conversations?lane=${effLane}&page=${pageNum}${mailboxQuery}${searchQuery}${splitQuery}`, {
-          signal: append ? undefined : abortRef.current?.signal,
+        const splitQuery = splitId ? `&split=${splitId}` : "";
+        // No &sort: the client sorts locally (instant, any size). The server returns
+        // its per-view default order; we re-sort on arrival, so first paint is correct.
+        const res = await fetch(`/api/inbox/conversations?lane=${effLane}${mailboxQuery}${searchQuery}${splitQuery}`, {
+          signal: abortRef.current?.signal,
         });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = (await res.json()) as {
           conversations: ConversationListItem[];
           counts: LaneCounts;
-          pagination: { total: number };
+          pagination: { total: number; truncated?: boolean };
           mailboxConnected?: boolean;
           mailboxes?: MailboxSummary[];
           selectedMailbox?: string | null;
@@ -293,23 +417,36 @@ export default function InboxPage() {
         setPrimaryCount(data.primaryCount ?? 0);
         setUnreadCount(data.unreadCount ?? 0);
         setTotal(data.pagination.total);
-        setConversations((prev) => (append ? [...prev, ...data.conversations] : data.conversations));
+        setTruncated(data.pagination.truncated === true);
+        setConversations(data.conversations);
+        // Warm the cache for instant revisits (search views excluded).
+        if (canCache) {
+          laneCacheRef.current.set(cacheKey, {
+            rows: data.conversations,
+            total: data.pagination.total,
+            truncated: data.pagination.truncated === true,
+          });
+        }
       } catch (err) {
         if ((err as Error)?.name === "AbortError") return; // superseded — silent, no error/toast
         if (silent) return; // a background freshness refresh fails quietly — keep the current list
-        if (!append) setListError(true); // a foreground load failed -> error state, not empty
+        setListError(true); // a foreground load failed -> error state, not empty
         toast("Couldn't load the inbox.", "error");
       } finally {
-        // Only the live load owns the loading flags; a stale finally must not clear
-        // them out from under the newer load.
-        if (live()) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
+        // Only the live load owns the loading flag; a stale finally must not clear
+        // it out from under the newer load.
+        if (live()) setLoading(false);
       }
     },
     [toast, selectedMailbox, debouncedSearch, activeSplit],
   );
+
+  // Local-first ordering + windowing. The client holds the WHOLE lane, so changing
+  // the sort is a pure in-memory re-sort (no fetch, instant at any size — the
+  // Superhuman/Upstream feel), and "Load more" just grows the window. `sorted` is
+  // the full lane in the chosen order; `displayed` is the visible slice.
+  const sorted = useMemo(() => sortRows(conversations, sort, sortFieldsOf), [conversations, sort]);
+  const displayed = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
 
   // Debounce the search box so each keystroke doesn't refetch (INBOX-Q04).
   useEffect(() => {
@@ -325,6 +462,89 @@ export default function InboxPage() {
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+
+  // Restore the persisted display density once on mount (client-only — keeps SSR
+  // = comfortable so first paint never mismatches).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("inbox-density");
+      if (saved === "compact" || saved === "comfortable") setDensity(saved);
+    } catch {
+      /* localStorage unavailable — keep the default */
+    }
+  }, []);
+
+  const toggleDensity = useCallback(() => {
+    setDensity((d) => {
+      const next: InboxDensity = d === "comfortable" ? "compact" : "comfortable";
+      try {
+        window.localStorage.setItem("inbox-density", next);
+      } catch {
+        /* ignore — persistence is best-effort */
+      }
+      return next;
+    });
+  }, []);
+
+  // Restore the persisted sort once on mount (client-only — keeps SSR = "date"
+  // so first paint never mismatches).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("inbox-sort");
+      if (isInboxSort(saved)) setSort(saved);
+    } catch {
+      /* localStorage unavailable — keep the default */
+    }
+  }, []);
+
+  const changeSort = useCallback((next: InboxSort) => {
+    setSort(next);
+    try {
+      window.localStorage.setItem("inbox-sort", next);
+    } catch {
+      /* ignore — persistence is best-effort */
+    }
+    // Pure local re-sort (the `sorted` memo re-derives) — NO fetch, instant at any
+    // size. Reset the window to the top so the new order starts from the first row.
+    setVisibleCount(LOCAL_PAGE);
+  }, []);
+
+  // Restore the persisted list width once on mount, then persist on change.
+  useEffect(() => {
+    try {
+      const v = Number(window.localStorage.getItem(LIST_W_KEY));
+      if (Number.isFinite(v) && v > 0) setListW(clampPx(v, LIST_W_MIN, LIST_W_MAX));
+    } catch {
+      /* localStorage unavailable — keep the default */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LIST_W_KEY, String(listW));
+    } catch {
+      /* ignore — persistence is best-effort */
+    }
+  }, [listW]);
+  // The divider feeds dx here: drag right widens the list, narrows the reader.
+  const handleResizeList = useCallback((dx: number) => {
+    setListW((w) => clampPx(w + dx, LIST_W_MIN, LIST_W_MAX));
+  }, []);
+
+  // Return-to-list scroll restoration (the way real mail clients keep your place):
+  // when a thread closes (selectedKey → null) and the list reappears reset to the
+  // top — single-pane hides it with display:none, which zeroes scrollTop — put it
+  // back where the user was. Gated to single-pane (container < 960px): in
+  // 3-column mode the list is never hidden, stays scrollable, and must not be
+  // yanked to a stale offset, so we bail there explicitly instead of inferring
+  // the mode from scrollTop.
+  useLayoutEffect(() => {
+    if (selectedKey) return;
+    if (shellRef.current && shellRef.current.clientWidth >= 960) return; // 3-column → no-op
+    const el = listRef.current;
+    if (el && listScrollRef.current > 0 && el.scrollTop === 0) {
+      el.scrollTop = listScrollRef.current;
+    }
+  }, [selectedKey]);
 
   // Minimal lane creator (INBOX-T01): name + a sender-domain clause. Selecting the
   // new lane triggers the load effect, which refreshes customLanes from the route.
@@ -373,6 +593,7 @@ export default function InboxPage() {
   // unsubscribe are residual). Optimistic — drop the source, then write.
   const handleClearBundle = useCallback(
     async (sender: string, keys: string[]) => {
+      laneCacheRef.current.clear(); // bundle items marked done → cached lanes are stale
       setClearingBundle(sender);
       setBundles((prev) => prev.filter((b) => b.sender !== sender));
       setCounts((c) => ({
@@ -395,7 +616,7 @@ export default function InboxPage() {
         toast(`Cleared ${keys.length} message${keys.length === 1 ? "" : "s"} from ${sender}.`, "success");
       } catch {
         toast("Couldn't clear the bundle — reloading.", "error");
-        void loadLane("bundles", 1, false);
+        void loadLane("bundles", false);
       } finally {
         setClearingBundle(null);
       }
@@ -406,20 +627,21 @@ export default function InboxPage() {
   useEffect(() => {
     const param = customLaneId ?? tab;
     if (param === "outbound") return;
-    setPage(1);
+    setVisibleCount(LOCAL_PAGE); // a new lane/filter starts at the top of the window
     setSelection(EMPTY_SELECTION);
-    void loadLane(param, 1, false);
+    void loadLane(param, false);
   }, [tab, customLaneId, loadLane]);
 
   // Real-time freshness: the inbox has no server push, so without this the open
   // list never shows newly-arrived mail until a manual navigation/reload. Silently
-  // refetch page 1 of the live lane every 25s and whenever the tab regains focus.
-  // Gated to page 1 + not-loading + not the outbound view so it never collapses a
-  // "load more" or fights an in-flight optimistic triage (loadLane awaits
-  // pendingTriage before refetching, and `silent` suppresses the skeleton/toast).
-  const freshRef = useRef({ lane: customLaneId ?? tab, page, loading });
+  // refetch the live lane every 15s and whenever the tab regains focus. Local-first:
+  // the refetch replaces the whole held lane but PRESERVES the local window
+  // (visibleCount) + sort, so new mail just slots into its sorted position. Gated to
+  // not-loading + not the outbound view so it never fights an in-flight optimistic
+  // triage (loadLane awaits pendingTriage; `silent` suppresses the skeleton/toast).
+  const freshRef = useRef({ lane: customLaneId ?? tab, loading });
   useEffect(() => {
-    freshRef.current = { lane: customLaneId ?? tab, page, loading };
+    freshRef.current = { lane: customLaneId ?? tab, loading };
   });
   useEffect(() => {
     // Pull new mail from the connected mailbox(es) while the inbox is open, so it
@@ -437,10 +659,10 @@ export default function InboxPage() {
       void fetch("/api/email/sync", { method: "POST" }).catch(() => {});
     };
     const refresh = () => {
-      const { lane, page: p, loading: l } = freshRef.current;
-      if (lane === "outbound" || p !== 1 || l) return;
+      const { lane, loading: l } = freshRef.current;
+      if (lane === "outbound" || l) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      void loadLane(lane, 1, false, true);
+      void loadLane(lane, true);
     };
     triggerMailSync(); // sync on open
     const syncId = window.setInterval(triggerMailSync, 15000);
@@ -535,11 +757,13 @@ export default function InboxPage() {
 
   const handleTriage = useCallback(
     async (key: string, action: "done" | "snooze" | "reopen", snoozeUntil?: string) => {
-      // Optimistic: remove from the current lane and advance the selection.
-      const idx = conversations.findIndex((c) => c.key === key);
-      const next = conversations.filter((c) => c.key !== key);
-      setConversations(next);
-      setSelectedKey(next[Math.min(Math.max(idx, 0), next.length - 1)]?.key ?? null);
+      // Optimistic: remove from the held lane and advance the selection over the
+      // VISIBLE order (what the user sees), not the raw held array.
+      laneCacheRef.current.clear(); // an item changed lanes → every cached lane is stale
+      const visIdx = displayed.findIndex((c) => c.key === key);
+      const nextVisible = displayed.filter((c) => c.key !== key);
+      setConversations((prev) => prev.filter((c) => c.key !== key));
+      setSelectedKey(nextVisible[Math.min(Math.max(visIdx, 0), nextVisible.length - 1)]?.key ?? null);
       setCounts((c) => {
         const updated = { ...c };
         if (tab === "attention" || tab === "snoozed" || tab === "done" || tab === "handled") updated[tab] = Math.max(0, updated[tab] - 1);
@@ -560,27 +784,28 @@ export default function InboxPage() {
         if (!res.ok) throw new Error(`${res.status}`);
       } catch {
         toast("Couldn't update the conversation — reloading.", "error");
-        if (tab !== "outbound") void loadLane(tab, 1, false);
+        if (tab !== "outbound") void loadLane(tab, false);
       } finally {
         pendingTriage.current = null;
       }
     },
-    [tab, toast, loadLane, conversations],
+    [tab, toast, loadLane, displayed],
   );
 
   // Multi-select (INBOX-T09): toggle a row, or shift-extend from the anchor over
   // the current visible ordering.
   const handleToggleSelect = useCallback(
     (key: string, shift: boolean) => {
-      const ordered = conversations.map((c) => c.key);
+      const ordered = displayed.map((c) => c.key);
       setSelection((sel) => (shift ? selRangeTo(sel, ordered, key) : selToggle(sel, key)));
     },
-    [conversations],
+    [displayed],
   );
 
   // Star toggle (Upstream is:starred) — optimistic, owner-scoped persist. Stable so
   // it doesn't break InboxRow's React.memo.
   const handleToggleStar = useCallback((key: string, starred: boolean) => {
+    laneCacheRef.current.clear(); // starred-lane membership changed
     setConversations((prev) => prev.map((c) => (c.key === key ? { ...c, starred } : c)));
     setStarredCount((n) => Math.max(0, n + (starred ? 1 : -1)));
     void fetch("/api/inbox/star", {
@@ -593,6 +818,7 @@ export default function InboxPage() {
   // Delete (→ Trash) or Restore a conversation. Soft-delete: optimistically pull it
   // from the current list + close the pane, then persist via /api/inbox/trash.
   const handleTrash = useCallback((key: string, trashed: boolean) => {
+    laneCacheRef.current.clear(); // moved to/from Trash
     setConversations((prev) => prev.filter((c) => c.key !== key));
     setSelectedKey((sel) => (sel === key ? null : sel));
     setTrashCount((n) => Math.max(0, n + (trashed ? 1 : -1)));
@@ -606,6 +832,7 @@ export default function InboxPage() {
 
   // Mark as spam (→ Spam) or "Not spam" (restore). Same soft-flag pattern as Trash.
   const handleSpam = useCallback((key: string, spam: boolean) => {
+    laneCacheRef.current.clear(); // moved to/from Spam
     setConversations((prev) => prev.filter((c) => c.key !== key));
     setSelectedKey((sel) => (sel === key ? null : sel));
     setSpamCount((n) => Math.max(0, n + (spam ? 1 : -1)));
@@ -623,6 +850,7 @@ export default function InboxPage() {
     async (action: "done" | "snooze", snoozeUntil?: string) => {
       const keys = selection.keys;
       if (keys.length === 0) return;
+      laneCacheRef.current.clear(); // items changed lanes → cached lanes are stale
       const keySet = new Set(keys);
       setConversations((prev) => prev.filter((c) => !keySet.has(c.key)));
       setSelection(EMPTY_SELECTION);
@@ -650,7 +878,7 @@ export default function InboxPage() {
       const { applied, failed } = summarizeBulk(results);
       if (failed.length > 0) {
         toast(`${applied} updated, ${failed.length} failed — reloading.`, "error");
-        if (tab !== "outbound") void loadLane(customLaneId ?? tab, 1, false);
+        if (tab !== "outbound") void loadLane(customLaneId ?? tab, false);
       } else {
         toast(`${applied} conversation${applied === 1 ? "" : "s"} marked ${action === "done" ? "done" : "snoozed"}.`, "success");
       }
@@ -885,12 +1113,12 @@ export default function InboxPage() {
       if ((tab === "outbound" || tab === "bundles") && !customLaneId) return;
 
       if (e.key === "j" || e.key === "k") {
-        if (conversations.length === 0) return;
+        if (displayed.length === 0) return;
         e.preventDefault();
-        const idx = conversations.findIndex((c) => c.key === selectedKey);
+        const idx = displayed.findIndex((c) => c.key === selectedKey);
         const nextIdx =
-          e.key === "j" ? Math.min(idx + 1, conversations.length - 1) : Math.max(idx - 1, 0);
-        const next = conversations[nextIdx]?.key ?? selectedKey;
+          e.key === "j" ? Math.min(idx + 1, displayed.length - 1) : Math.max(idx - 1, 0);
+        const next = displayed[nextIdx]?.key ?? selectedKey;
         setSelectedKey(next);
         listRef.current
           ?.querySelector(`[data-conversation-key="${CSS.escape(next ?? "")}"]`)
@@ -943,9 +1171,11 @@ export default function InboxPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, selectedKey, handleTriage, conversations, selection, handleToggleSelect, handleBulkTriage, mailboxes]);
+  }, [tab, selectedKey, handleTriage, displayed, selection, handleToggleSelect, handleBulkTriage, mailboxes]);
 
-  const hasMore = tab !== "outbound" && conversations.length < total;
+  // Local windowing: more rows to reveal while the window is smaller than the held
+  // lane. No network — "Load more" just grows visibleCount.
+  const hasMore = tab !== "outbound" && visibleCount < sorted.length;
   const bundleTotal = bundles.reduce((n, b) => n + b.count, 0);
 
   // Cmd/Ctrl+K toggles the palette — registered separately from the j/k
@@ -973,13 +1203,13 @@ export default function InboxPage() {
   // renders the next/previous pane from cache. Bounded to two requests; the
   // cache dedupes and expires them.
   useEffect(() => {
-    if (!selectedKey || conversations.length === 0) return;
-    const idx = conversations.findIndex((c) => c.key === selectedKey);
+    if (!selectedKey || displayed.length === 0) return;
+    const idx = displayed.findIndex((c) => c.key === selectedKey);
     if (idx < 0) return;
-    for (const c of [conversations[idx + 1], conversations[idx - 1]]) {
+    for (const c of [displayed[idx + 1], displayed[idx - 1]]) {
       if (c) prefetchDetail(c.key);
     }
-  }, [selectedKey, conversations]);
+  }, [selectedKey, displayed]);
 
   // Palette commands: jump to a lane, act on the current conversation, or open
   // any loaded conversation by fuzzy name/subject. Rebuilt as those inputs move.
@@ -1086,6 +1316,20 @@ export default function InboxPage() {
                 </button>
               )}
             </div>
+            {/* Display density (Outlook): toggle comfortable 2-line ↔ compact
+                single-line rows. Persisted to localStorage. */}
+            <button
+              onClick={toggleDensity}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-secondary)" }}
+              title={density === "comfortable" ? "Compact list — denser rows" : "Comfortable list — 2-line rows"}
+              aria-label={density === "comfortable" ? "Switch to compact list density" : "Switch to comfortable list density"}
+            >
+              {density === "comfortable" ? <AlignJustify size={15} /> : <Rows2 size={15} />}
+            </button>
+            {/* Sort control (Upstream/Outlook): date by default, switchable to
+                priority / unread-first / sender. Persisted. */}
+            <SortMenu value={sort} onChange={changeSort} />
           </>
         )}
       </PageHeader>
@@ -1094,13 +1338,13 @@ export default function InboxPage() {
           width (≈ viewport − global sidebar), not the viewport — so a thread
           stays 3-column only while the reading pane is actually comfortable
           (≥ ~600px) on any monitor, and collapses to single-pane otherwise. */}
-      <div className="inbox-shell @container flex min-h-0 flex-1">
+      <div ref={shellRef} className="inbox-shell @container flex min-h-0 flex-1">
       {/* Left: mailbox folders + Splits (the Upstream IA). Collapses to single-pane
           only when a full-width reader is actually shown — i.e. a thread is open AND
           we're in the list/pane branch (not the outbound/bundles table, where a stale
           selectedKey would otherwise hide the rail with no way back). */}
       {mailboxConnected && (
-        <div className={selectedKey && !((tab === "outbound" || tab === "bundles") && !customLaneId) ? "hidden shrink-0 @min-[1100px]:flex" : "flex shrink-0"}>
+        <div className={selectedKey && !((tab === "outbound" || tab === "bundles") && !customLaneId) ? "hidden shrink-0 @min-[960px]:flex" : "flex shrink-0"}>
         <InboxFolders
           tab={customLaneId ? "attention" : tab}
           customLaneId={customLaneId}
@@ -1144,7 +1388,7 @@ export default function InboxPage() {
       {/* Second nav axis: the split-tab strip (attention lane only). Hidden in
           the narrow single-pane reader so the open thread stands alone. */}
       {mailboxConnected && tab === "attention" && !customLaneId && (
-        <div className={selectedKey ? "hidden @min-[1100px]:block" : "block"}>
+        <div className={selectedKey ? "hidden @min-[960px]:block" : "block"}>
           <SplitStrip splits={splitCounts} noiseCount={noiseCount} active={activeSplit} onSelect={setActiveSplit} />
         </div>
       )}
@@ -1173,8 +1417,13 @@ export default function InboxPage() {
               sub-segment); the standalone rail is gone. */}
           <div
             ref={listRef}
-            className={`overflow-y-auto ${selectedKey ? "hidden border-r @min-[1100px]:block @min-[1100px]:w-[260px] @min-[1100px]:shrink-0" : "flex-1"}`}
-            style={{ borderColor: "var(--color-border-default)" }}
+            onScroll={(e) => {
+              // Record the offset only while no thread is open, so reopening the
+              // list (single-pane) restores it instead of jumping to the top.
+              if (!selectedKey) listScrollRef.current = e.currentTarget.scrollTop;
+            }}
+            className={`overflow-y-auto ${selectedKey ? "hidden border-r @min-[960px]:block @min-[960px]:w-[var(--inbox-list-w)] @min-[960px]:shrink-0" : "flex-1"}`}
+            style={{ borderColor: "var(--color-border-default)", "--inbox-list-w": `${listW}px` } as CSSProperties}
           >
             {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
             <CaptureReviewDrawer />
@@ -1230,7 +1479,7 @@ export default function InboxPage() {
                   </>
                 )}
                 <button
-                  onClick={() => setSelection(selSelectAll(conversations.map((c) => c.key)))}
+                  onClick={() => setSelection(selSelectAll(displayed.map((c) => c.key)))}
                   className="text-[11px] font-medium hover:underline"
                   style={{ color: "var(--color-text-tertiary)" }}
                 >
@@ -1252,10 +1501,10 @@ export default function InboxPage() {
               const listState = pickListState({
                 loading,
                 error: listError,
-                count: conversations.length,
+                count: displayed.length,
                 hasQuery: !!debouncedSearch,
               });
-              if (listState === "loading") return <InboxListSkeleton />;
+              if (listState === "loading") return <InboxListSkeleton density={density} />;
               if (listState === "error")
                 return (
                   <div className="flex h-full items-center justify-center p-6">
@@ -1264,34 +1513,40 @@ export default function InboxPage() {
                       title="Couldn't load this lane"
                       description="Something went wrong reaching the inbox. Your conversations are safe — try again."
                       actionLabel="Retry"
-                      onAction={() => void loadLane(customLaneId ?? tab, 1, false)}
+                      onAction={() => void loadLane(customLaneId ?? tab, false)}
                     />
                   </div>
                 );
               return (
                 <ConversationList
                   lane={customLaneId ? "attention" : tab === "snoozed" || tab === "done" || tab === "handled" ? tab : "attention"}
-                  conversations={conversations}
+                  conversations={displayed}
                   selectedKey={selectedKey}
                   onSelect={setSelectedKey}
                   selectedKeys={selection.keys}
                   onToggleSelect={handleToggleSelect}
                   hasMore={hasMore}
-                  loadingMore={loadingMore}
-                  onLoadMore={() => {
-                    const next = page + 1;
-                    setPage(next);
-                    void loadLane(customLaneId ?? tab, next, true);
-                  }}
+                  loadingMore={false}
+                  onLoadMore={() => setVisibleCount((v) => v + LOCAL_PAGE)}
                   showMailbox={mailboxes.length >= 2 && selectedMailbox === null}
                   hasQuery={!!debouncedSearch}
                   onClearSearch={() => setSearch("")}
                   onToggleStar={handleToggleStar}
                   activeSplit={activeSplit}
+                  density={density}
                 />
               );
             })()}
+            {/* No silent cap: a lane past the local-first ceiling tells the user the
+                tail isn't shown, and how to reach it (search), once they hit the end. */}
+            {truncated && !hasMore && conversations.length > 0 && (
+              <div className="px-4 py-3 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                Showing the {sorted.length} most recent of {total} — refine with search to see the rest.
+              </div>
+            )}
           </div>
+          {/* Draggable divider between the list and the open mail (3-column only). */}
+          {selectedKey && <ResizeHandle onDelta={handleResizeList} />}
           {selectedKey && (
             <div className="flex min-w-0 flex-1 flex-col">
               {/* Single-pane back control: shown only when the inbox area is too
@@ -1299,7 +1554,7 @@ export default function InboxPage() {
                   master-detail list is itself the way back. */}
               <button
                 onClick={() => setSelectedKey(null)}
-                className="flex shrink-0 items-center gap-1 border-b px-3 py-2 text-[13px] font-medium @min-[1100px]:hidden"
+                className="flex shrink-0 items-center gap-1 border-b px-3 py-2 text-[13px] font-medium @min-[960px]:hidden"
                 style={{ borderColor: "var(--color-border-default)", color: "var(--color-text-secondary)" }}
               >
                 <ChevronLeft size={15} /> Inbox
