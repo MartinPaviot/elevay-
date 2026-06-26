@@ -80,6 +80,7 @@ import { replyAgent } from "@/inngest/reply-agent";
 import { campaignDecisionEngine, bridgeTrackingEvents } from "@/inngest/campaign-decision-engine";
 import { signalMonitorCron, signalTriggeredOutreach } from "@/inngest/signal-monitor";
 import { deliverabilityHealthCron } from "@/inngest/deliverability-monitor";
+import { linkedinInboxSync } from "@/inngest/linkedin-inbox-sync";
 import { campaignWeeklyReport } from "@/inngest/campaign-weekly-report";
 // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
 import { postProcessCall } from "@/inngest/calls-post-process";
@@ -299,6 +300,9 @@ export const { GET, POST, PUT } = serve({
     signalMonitorCron,
     signalTriggeredOutreach,
     deliverabilityHealthCron,
+    // LinkedIn inbound message sync (LINKEDIN-INBOUND) — */15, behind
+    // LINKEDIN_INBOUND_ENABLED. Pulls inbound LinkedIn replies into activities.
+    linkedinInboxSync,
     campaignWeeklyReport,
     // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
     postProcessCall,

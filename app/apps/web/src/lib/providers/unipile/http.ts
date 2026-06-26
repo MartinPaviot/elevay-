@@ -121,6 +121,73 @@ export function getUnipileAccount(cfg: UnipileConfig, accountId: string): Promis
   return unipileFetch<UnipileAccountInfo>(cfg, "GET", `/accounts/${encodeURIComponent(accountId)}`);
 }
 
+// ── Messaging read primitives (T10 inbound) — VERIFIED LIVE 2026-06-26 against
+// the connected seat. GET /chats → {object,items,cursor}; chat carries
+// `attendee_provider_id` (the other party's member id = attribution key) +
+// `unread_count`. GET /chats/{id}/messages → {object,items,cursor}; message
+// carries `is_sender` (0=inbound from them, 1=our echo), `id` (providerMessageId),
+// `text`, `chat_id`, `timestamp`, `is_event`.
+
+export interface UnipileList<T> {
+  object?: string;
+  items: T[];
+  cursor?: string | null;
+}
+
+export interface UnipileChat {
+  id: string;
+  account_id?: string;
+  /** The other party's provider_id (member id, ACoAA… for people) — attribution key. */
+  attendee_provider_id?: string | null;
+  attendee_type?: string | null;
+  unread_count?: number;
+  timestamp?: string;
+  name?: string | null;
+  [k: string]: unknown;
+}
+
+export interface UnipileMessage {
+  id: string;
+  chat_id?: string;
+  text?: string | null;
+  /** 0 = inbound (from the other party); 1 = our own sent message (echo). */
+  is_sender?: number;
+  /** 1 = a system event (joined/left/…) rather than a real message. */
+  is_event?: number;
+  sender_id?: string;
+  sender_attendee_id?: string;
+  timestamp?: string;
+  account_id?: string;
+  message_type?: string;
+  [k: string]: unknown;
+}
+
+/** GET /chats — recent chats for a connected account. */
+export function listChats(
+  cfg: UnipileConfig,
+  accountId: string,
+  opts: { limit?: number; cursor?: string } = {},
+): Promise<UnipileList<UnipileChat>> {
+  const q = new URLSearchParams({ account_id: accountId, limit: String(opts.limit ?? 20) });
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  return unipileFetch<UnipileList<UnipileChat>>(cfg, "GET", `/chats?${q.toString()}`);
+}
+
+/** GET /chats/{id}/messages — messages in a chat (newest first). */
+export function listChatMessages(
+  cfg: UnipileConfig,
+  chatId: string,
+  opts: { limit?: number; cursor?: string } = {},
+): Promise<UnipileList<UnipileMessage>> {
+  const q = new URLSearchParams({ limit: String(opts.limit ?? 20) });
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  return unipileFetch<UnipileList<UnipileMessage>>(
+    cfg,
+    "GET",
+    `/chats/${encodeURIComponent(chatId)}/messages?${q.toString()}`,
+  );
+}
+
 export interface UnipileSeatInfo {
   /** 'classic' | 'sales_navigator' | 'recruiter' — the search/InMail api selector. */
   seatType: string;
