@@ -36,7 +36,6 @@ import {
   PenLine,
   AtSign,
   Gauge,
-  BadgeCheck,
   Brain,
 } from "lucide-react";
 import { BILLING_PAGE_ENABLED } from "@/lib/billing/page-visibility";
@@ -81,9 +80,6 @@ const settingsNav: NavSection[] = [
     label: "Your AI",
     items: [
       { label: "Autonomy", href: "/settings/autonomy", icon: Gauge },
-      // Phase 2: the approval-mode page folds into Autonomy. Until then it is
-      // a distinct control (review-each / batch-daily / auto-high-confidence).
-      { label: "Approval mode", href: "/settings/guardrails", icon: BadgeCheck },
       { label: "Voice & Writing", href: "/settings/writing-style", icon: PenLine },
       { label: "Knowledge", href: "/settings/knowledge", icon: BookOpen },
       { label: "Product", href: "/settings/product", icon: Package },
