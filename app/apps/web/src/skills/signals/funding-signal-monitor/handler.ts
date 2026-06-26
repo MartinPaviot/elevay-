@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { enrichOrganization } from "@/lib/integrations/apollo-client";
+import { recordCompanySignal } from "@/lib/signals/record-signal";
 import type { SkillRunOptions } from "@/skills/types";
 import type { FundingSignalMonitorInput, FundingSignalMonitorOutput } from "./schema";
 
@@ -86,6 +87,17 @@ export async function fundingSignalMonitorHandler(
           fundingLastCheckedAt: new Date().toISOString(),
         },
       }).where(eq(companies.id, company.id));
+
+      // Feed the priority scorer: merge a fresh funding signal into
+      // properties.signals[] (runs AFTER the update above; recordCompanySignal
+      // merges only the signals key, preserving lastKnownFunding). `funding_recent`
+      // / `funding` map to the 180-day TTL in lib/signals/freshness.ts.
+      await recordCompanySignal(options.tenantId, company.id, {
+        type: isNewFunding ? "funding_recent" : "funding",
+        detectedAt: new Date().toISOString(),
+        strength: signalStrength,
+        source: "apollo",
+      });
     }
   }
 

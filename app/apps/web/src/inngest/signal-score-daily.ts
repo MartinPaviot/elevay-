@@ -5,7 +5,9 @@
  * not soft-deleted) and recompute the priority score using the
  * pure helpers in `lib/scoring/priority-score.ts`:
  *
- *   priority_score = bestSignalMultiplier × fitScore × accessibility
+ *   priority_score = bestSignalMultiplier × fit_modulator × accessibility_modulator
+ *   (signal-dominant since 2026-06-26 — fit/accessibility are bounded modulators
+ *   that dampen, never zero; see lib/scoring/priority-score.ts for the rationale)
  *
  * Where:
  *   bestSignalMultiplier — max over the fired signals on the company,
@@ -204,14 +206,11 @@ export const signalScoreDaily = inngest.createFunction(
             fitScore: fitFromCompanyScore(company.score),
             accessibility,
           });
-          // Skip rows where the score is 0 AND there's nothing to
-          // refresh (no contacts, no signals). Avoids churning
-          // updated_at on inert TAM ballast.
-          if (
-            score === 0 &&
-            cs.length === 0 &&
-            signalMultiplier === 1
-          ) {
+          // Skip truly inert rows — no fresh signal AND no reachable contact —
+          // so we don't churn updated_at on thousands of cold TAM accounts.
+          // (Keyed on inertness, not score===0: the signal-dominant formula
+          // floors fit/accessibility, so an inert row no longer computes to 0.)
+          if (signalMultiplier === 1 && cs.length === 0) {
             skipped++;
             continue;
           }

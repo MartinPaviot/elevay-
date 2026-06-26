@@ -22,8 +22,13 @@ import { computeBlendedFit, type Criterion } from "@/lib/icp/criteria-engine";
 describe("fitFromCompanyScore — 0-100 column → 0-1 priority input", () => {
   it("passes NULL through so the neutral default still applies", () => {
     expect(fitFromCompanyScore(null)).toBeNull();
-    expect(computePriorityScore({ signalMultiplier: 1, fitScore: null, accessibility: 1 })).toBe(
-      NEUTRAL_FIT_SCORE,
+    // Invariant (formula-agnostic): a null fitScore scores identically to an
+    // explicit NEUTRAL_FIT_SCORE — the neutral fallback, not a special case.
+    expect(
+      computePriorityScore({ signalMultiplier: 1, fitScore: null, accessibility: 1 }),
+    ).toBeCloseTo(
+      computePriorityScore({ signalMultiplier: 1, fitScore: NEUTRAL_FIT_SCORE, accessibility: 1 }),
+      10,
     );
   });
 

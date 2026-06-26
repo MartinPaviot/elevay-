@@ -1,23 +1,35 @@
 /**
  * Priority score — composite ranking signal for the outbound queue.
  *
- * Formula (R4.2):
- *   priority_score = signal_multiplier × fit_score × accessibility
+ * Formula (R4.2, reweighted 2026-06-26 — SIGNAL-DOMINANT):
+ *   priority_score = signal_multiplier × fit_modulator × accessibility_modulator
+ *
+ * The score is PRIMARILY a resultant of buying SIGNALS (founder directive):
+ * the signal multiplier is the only term with a wide (>1) dynamic range, so a
+ * fresh high-lift signal outranks a perfect-fit-but-silent account. Fit and
+ * accessibility are bounded MODULATORS, not gates — they dampen, never zero.
+ * The old formula multiplied all three straight, so a strong signal on a
+ * company with no contact (accessibility 0) or average fit was wiped to ~0 —
+ * that buried exactly the accounts the signal layer exists to surface.
  *
  * Where:
  *   signal_multiplier — output of `computeMultiplier()` in
- *     `lib/scoring/signal-outcomes.ts`, clamped to [0.5, 2.5]. Reflects
- *     historical lift of the signal type on closed-won deals.
- *   fit_score — `companies.score` (existing real column, 0..1 if
- *     populated, neutral 0.5 if null). Pre-computed by the ICP scorer.
- *   accessibility — 0..1 representing how reachable the company is.
- *     We award 0.4 for email, 0.4 for phone, 0.2 for LinkedIn on the
- *     best contact — phone matters as much as email when the cold
- *     call channel is wired (Twilio + Deepgram, see voice-cold-call).
+ *     `lib/scoring/signal-outcomes.ts`, clamped to [0.5, 2.5] (1.0 = no fresh
+ *     signal). Reflects historical lift of the signal type on closed-won deals.
+ *     THE dominant lever.
+ *   fit_modulator — fit as a bounded modulator: FIT_FLOOR + (1-FIT_FLOOR)×fit,
+ *     ∈ [FIT_FLOOR, 1]. `companies.score` (0..1, neutral 0.5 if null) feeds `fit`.
+ *     A poor-fit company is dampened to FIT_FLOOR, not erased.
+ *   accessibility_modulator — same shape on reachability: ACCESS_FLOOR +
+ *     (1-ACCESS_FLOOR)×accessibility. An unreachable company with a strong
+ *     signal still surfaces (go FIND a contact), just dampened.
  *
- * All three inputs are pure values; this module never reads the DB.
- * The caller is responsible for fetching them. This isolation keeps
- * the formula testable and the Inngest cron thin.
+ * Range: [0.5 × FIT_FLOOR × ACCESS_FLOOR, 2.5] — stays inside the documented
+ * ~[0, 2.5] band (max = 2.5 × 1 × 1). Used only for SORTING the queue; no
+ * absolute threshold keys off the magnitude.
+ *
+ * All inputs are pure values; this module never reads the DB. The caller
+ * fetches them. This isolation keeps the formula testable and the cron thin.
  *
  * Kairos accelerator (R4.3): `decideAcceleration` evaluates whether a
  * fresh high-weight signal should bump an active enrollment's
@@ -34,6 +46,17 @@ export type PriorityInputs = {
 export const NEUTRAL_FIT_SCORE = 0.5;
 
 /**
+ * Modulator floors — how far fit / accessibility can DAMPEN a signal-driven
+ * score, never below this fraction. 0.6 → a zero-fit or unreachable company
+ * keeps 60% of its signal magnitude, so a fresh strong signal still ranks
+ * above a silent perfect-fit account. Raising these → weaker signal dominance.
+ */
+export const FIT_FLOOR = 0.6;
+export const ACCESS_FLOOR = 0.6;
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+/**
  * companies.score is 0-100 (Phase 0, _specs/icp-unification R1); the
  * priority formula wants the 0-1 fit. NULL passes through so the
  * neutral default still applies downstream. Clamped because legacy
@@ -45,8 +68,11 @@ export function fitFromCompanyScore(score: number | null): number | null {
 }
 
 export function computePriorityScore(i: PriorityInputs): number {
-  const fit = i.fitScore ?? NEUTRAL_FIT_SCORE;
-  return i.signalMultiplier * fit * i.accessibility;
+  const fit = clamp01(i.fitScore ?? NEUTRAL_FIT_SCORE);
+  const access = clamp01(i.accessibility);
+  const fitModulator = FIT_FLOOR + (1 - FIT_FLOOR) * fit;
+  const accessModulator = ACCESS_FLOOR + (1 - ACCESS_FLOOR) * access;
+  return i.signalMultiplier * fitModulator * accessModulator;
 }
 
 // ---------------------------------------------------------------
