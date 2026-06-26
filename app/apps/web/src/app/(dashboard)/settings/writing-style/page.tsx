@@ -15,6 +15,9 @@ import { PenLine, Loader2, Sparkles, RotateCcw, Plus, Trash2, Check, X } from "l
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { Audience, AudienceMatch, WritingStyle, StyleProposal } from "@/lib/inbox/writing-style";
+import type { InboxMemory } from "@/lib/inbox/ai-memory";
+
+const MAX_INSTRUCTIONS = 12;
 
 type VoiceTone = "neutral" | "warm" | "direct" | "formal" | "concise";
 interface VoiceOption { id: VoiceTone; label: string; hint: string }
@@ -51,6 +54,11 @@ export default function WritingStylePage() {
   // auto-draft toggle (resource inbox, key auto_draft). One canonical voice surface.
   const [customGuidance, setCustomGuidance] = useState("");
   const [autoDraft, setAutoDraft] = useState(false);
+  // Folded in from the retired /settings/inbox-memory page (Settings IA): standing
+  // instructions + company line. The full memory record is kept in state so save
+  // round-trips it intact — signOffName/keyColleagues are preserved (not edited
+  // here; the canonical sign-off is the writing-style "Sign off" field above).
+  const [memory, setMemory] = useState<InboxMemory>({ standingInstructions: [], aboutMe: {} });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -64,11 +72,12 @@ export default function WritingStylePage() {
     setLoading(true);
     setLoadError(false);
     try {
-      const [wsRes, voiceRes, derRes, autoRes] = await Promise.all([
+      const [wsRes, voiceRes, derRes, autoRes, memRes] = await Promise.all([
         fetch("/api/inbox/writing-style"),
         fetch("/api/inbox/voice"),
         fetch("/api/inbox/writing-style/derive"),
         fetch("/api/inbox/auto-draft"),
+        fetch("/api/inbox/memory"),
       ]);
       if (!wsRes.ok) {
         // Writing-style is load-bearing — the form can't render without it. The
@@ -96,6 +105,16 @@ export default function WritingStylePage() {
         const data = (await autoRes.json()) as { autoDraft?: { enabled?: boolean } };
         setAutoDraft(data.autoDraft?.enabled === true);
       }
+      // standing instructions / company line — best-effort; default empty.
+      if (memRes.ok) {
+        const data = (await memRes.json()) as { memory?: InboxMemory };
+        if (data.memory) {
+          setMemory({
+            standingInstructions: data.memory.standingInstructions ?? [],
+            aboutMe: data.memory.aboutMe ?? {},
+          });
+        }
+      }
     } catch {
       setLoadError(true);
     } finally {
@@ -113,6 +132,28 @@ export default function WritingStylePage() {
 
   function patch(over: Partial<WritingStyle>) {
     setStyle((s) => (s ? { ...s, ...over } : s));
+    setSaved(false);
+  }
+
+  // Standing-instructions helpers (folded in from the retired inbox-memory page).
+  // newId mirrors the audiences pattern (crypto.randomUUID with a fallback).
+  function newId() {
+    try { return crypto.randomUUID(); } catch { return `i-${Date.now()}-${Math.floor(Math.random() * 1e6)}`; }
+  }
+  function setInstruction(id: string, text: string) {
+    setMemory((m) => ({ ...m, standingInstructions: m.standingInstructions.map((s) => (s.id === id ? { ...s, text } : s)) }));
+    setSaved(false);
+  }
+  function addInstruction() {
+    setMemory((m) => (m.standingInstructions.length >= MAX_INSTRUCTIONS ? m : { ...m, standingInstructions: [...m.standingInstructions, { id: newId(), text: "" }] }));
+    setSaved(false);
+  }
+  function removeInstruction(id: string) {
+    setMemory((m) => ({ ...m, standingInstructions: m.standingInstructions.filter((s) => s.id !== id) }));
+    setSaved(false);
+  }
+  function setCompanyLine(companyLine: string) {
+    setMemory((m) => ({ ...m, aboutMe: { ...m.aboutMe, companyLine } }));
     setSaved(false);
   }
 
@@ -136,6 +177,13 @@ export default function WritingStylePage() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ enabled: autoDraft }),
+        }),
+        // Round-trips the FULL memory record so signOffName/keyColleagues (not
+        // edited here) are preserved — only standing instructions + company line change.
+        fetch("/api/inbox/memory", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(memory),
         }),
       ]);
       if (ws.ok) {
@@ -421,6 +469,52 @@ export default function WritingStylePage() {
           </span>
         </span>
       </label>
+
+      {/* Standing instructions + company line — folded in from the retired
+          /settings/inbox-memory page. The assistant follows these whenever it
+          drafts or answers; auto-send instructions are ignored server-side. */}
+      <div className="mt-6">
+        <Label>Standing instructions</Label>
+        <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-muted)" }}>
+          Persistent rules the assistant follows when it drafts or answers (e.g. “Keep replies under 120 words”). Drafts are always shown for approval, so instructions to send automatically are ignored.
+        </p>
+        <div className="mt-2 space-y-2">
+          {memory.standingInstructions.length === 0 && (
+            <p className="text-[12px]" style={{ color: "var(--color-text-muted)" }}>None yet.</p>
+          )}
+          {memory.standingInstructions.map((s) => (
+            <div key={s.id} className="flex items-center gap-1.5">
+              <input
+                value={s.text}
+                maxLength={500}
+                onChange={(e) => setInstruction(s.id, e.target.value)}
+                placeholder="e.g. Always propose a concrete next step"
+                className="min-w-0 flex-1 rounded-md border px-2 py-1 text-[12px] outline-none"
+                style={inputStyle}
+              />
+              <button onClick={() => removeInstruction(s.id)} aria-label="Remove instruction" className="shrink-0 rounded p-1" style={{ color: "var(--color-text-tertiary)" }}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {memory.standingInstructions.length < MAX_INSTRUCTIONS && (
+          <button onClick={addInstruction} className="mt-2 text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+            + Add instruction
+          </button>
+        )}
+        <div className="mt-3">
+          <Label>One line about your company</Label>
+          <input
+            value={memory.aboutMe.companyLine ?? ""}
+            maxLength={200}
+            onChange={(e) => setCompanyLine(e.target.value)}
+            placeholder="Elevay — autonomous GTM for founder-led sales"
+            className="mt-1 w-full rounded-md border px-2 py-1 text-[12px] outline-none"
+            style={inputStyle}
+          />
+        </div>
+      </div>
 
       {/* Audiences */}
       <div className="mt-6">
