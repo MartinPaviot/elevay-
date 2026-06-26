@@ -46,6 +46,9 @@ _inngest-sink.mjs
 _audit/
 # Secrets minted for local verification (JWTs) — must never reach git.
 _jwt*.txt
+# Owner-SMTP provisioning credentials (real mailbox SMTP passwords) — never commit.
+app/apps/web/scripts/.owner-smtp-creds.json
+*.owner-smtp-creds.json
 # Dev screenshot output + numbered root captures (NNN-name.png).
 app/apps/web/screenshots/
 /[0-9][0-9][0-9]-*.png
