@@ -38,6 +38,7 @@ function makeRows(n: number): ConversationListItem[] {
     starred: false,
     unread: false,
     importanceTier: 1,
+    importanceScore: 70,
     importanceFactors: [],
     labels: [],
     handledNote: null,
