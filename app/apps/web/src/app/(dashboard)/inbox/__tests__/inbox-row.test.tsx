@@ -21,6 +21,7 @@ function sample(over: Partial<ConversationListItem> = {}): ConversationListItem 
     starred: false,
     unread: true,
     importanceTier: 1,
+    importanceScore: 70,
     importanceFactors: ["recent reply"],
     labels: [],
     handledNote: null,

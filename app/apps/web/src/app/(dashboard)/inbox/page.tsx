@@ -21,6 +21,8 @@ import { useToast } from "@/components/ui/toast";
 import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
 import { useRegisterPageActions } from "@/lib/chat/page-actions/registry";
 import { ConversationList } from "./_conversation-list";
+import { SortMenu } from "./_sort-menu";
+import { isInboxSort, sortRows, type InboxSort } from "@/lib/inbox/inbox-sort";
 import type { InboxDensity } from "./_inbox-row";
 import { ConversationPane, type ConversationPaneApi } from "./_conversation-pane";
 import { CaptureReviewDrawer } from "./_capture-review";
@@ -86,6 +88,22 @@ const LIST_W_MIN = 220;
 const LIST_W_MAX = 560;
 const LIST_W_DEFAULT = 300;
 const clampPx = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+// Local-first windowing: the client holds the WHOLE lane and reveals it in chunks
+// of this size, growing on "Load more" — no network per page (Superhuman/Upstream).
+const LOCAL_PAGE = 30;
+
+// Extract the fields the sort comparators read from a list item (shared by the
+// sorted-view memo). Pure + module-scoped so it isn't re-created each render.
+const sortFieldsOf = (c: ConversationListItem) => ({
+  importanceTier: c.importanceTier,
+  importanceScore: c.importanceScore,
+  followupOverdue: !!c.followup?.overdue,
+  lastInboundAt: c.lastInboundAt,
+  lastMessageAt: c.lastMessageAt,
+  unread: c.unread,
+  sortName: (c.displayName || c.fromAddress || "").toLowerCase(),
+});
 
 /**
  * Draggable divider between the conversation list and the open mail (3-column
@@ -184,9 +202,11 @@ export default function InboxPage() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [sendableMailboxes, setSendableMailboxes] = useState<SendableMailbox[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(1);
+  // Local-first: the held list is the WHOLE lane; `visibleCount` is the local
+  // window (grows on Load more). No server pagination, so no page/loadingMore.
+  const [visibleCount, setVisibleCount] = useState(LOCAL_PAGE);
   const [total, setTotal] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [replySignal, setReplySignal] = useState(0);
   // B6: bump to open the focused thread's add-label input (mirrors replySignal).
@@ -206,6 +226,11 @@ export default function InboxPage() {
   // "compact" = one dense single line. Starts comfortable → matches SSR, then a
   // mount effect reads the persisted choice (no hydration gap).
   const [density, setDensity] = useState<InboxDensity>("comfortable");
+  // Email-client sort (Upstream/Outlook): the list defaults to date (newest
+  // received first) like a real Inbox; "priority" keeps the AI importance
+  // ranking for those who want it. Persisted; sent to the route as ?sort=.
+  // Starts "date" → matches SSR, then a mount effect reads the persisted choice.
+  const [sort, setSort] = useState<InboxSort>("date");
   // Resizable list width (3-column mode). Default on SSR → first paint matches;
   // a mount effect reads the persisted px, and a persist effect saves it.
   const [listW, setListW] = useState(LIST_W_DEFAULT);
@@ -293,20 +318,17 @@ export default function InboxPage() {
   const abortRef = useRef<AbortController | null>(null);
 
   const loadLane = useCallback(
-    async (lane: string, pageNum: number, append: boolean, silent = false) => {
-      // F2: a foreground load mints a generation token and aborts the previous
-      // in-flight foreground fetch, so a slow earlier lane can't paint over a
-      // newer one. Appends are additive — they don't take a token or abort.
+    async (lane: string, silent = false) => {
+      // Local-first: ONE fetch per lane returns the whole lane; the client sorts +
+      // windows it. F2: each load mints a generation token and aborts the previous
+      // in-flight fetch, so a slow earlier lane can't paint over a newer one.
       // `silent` = a background freshness refresh: refetch + swap, but show no
-      // loading skeleton and surface no error toast (it fires every ~25s).
-      const token = append ? null : loadGuardRef.current.next();
-      if (!append) {
-        abortRef.current?.abort();
-        abortRef.current = new AbortController();
-      }
-      const live = () => token === null || loadGuardRef.current.isCurrent(token);
-      if (append) setLoadingMore(true);
-      else if (!silent) {
+      // loading skeleton and surface no error toast (it fires every ~15s).
+      const token = loadGuardRef.current.next();
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+      const live = () => loadGuardRef.current.isCurrent(token);
+      if (!silent) {
         setLoading(true);
         setListError(false); // clear the foreground error as a fresh load begins
       }
@@ -321,14 +343,16 @@ export default function InboxPage() {
         const effLane = isPrimaryView ? "primary" : lane;
         // B3: only sub-segment the attention lane (not a custom lane / the primary view).
         const splitQuery = activeSplit && lane === "attention" && !isPrimaryView ? `&split=${activeSplit}` : "";
-        const res = await fetch(`/api/inbox/conversations?lane=${effLane}&page=${pageNum}${mailboxQuery}${searchQuery}${splitQuery}`, {
-          signal: append ? undefined : abortRef.current?.signal,
+        // No &sort: the client sorts locally (instant, any size). The server returns
+        // its per-view default order; we re-sort on arrival, so first paint is correct.
+        const res = await fetch(`/api/inbox/conversations?lane=${effLane}${mailboxQuery}${searchQuery}${splitQuery}`, {
+          signal: abortRef.current?.signal,
         });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = (await res.json()) as {
           conversations: ConversationListItem[];
           counts: LaneCounts;
-          pagination: { total: number };
+          pagination: { total: number; truncated?: boolean };
           mailboxConnected?: boolean;
           mailboxes?: MailboxSummary[];
           selectedMailbox?: string | null;
@@ -371,23 +395,28 @@ export default function InboxPage() {
         setPrimaryCount(data.primaryCount ?? 0);
         setUnreadCount(data.unreadCount ?? 0);
         setTotal(data.pagination.total);
-        setConversations((prev) => (append ? [...prev, ...data.conversations] : data.conversations));
+        setTruncated(data.pagination.truncated === true);
+        setConversations(data.conversations);
       } catch (err) {
         if ((err as Error)?.name === "AbortError") return; // superseded — silent, no error/toast
         if (silent) return; // a background freshness refresh fails quietly — keep the current list
-        if (!append) setListError(true); // a foreground load failed -> error state, not empty
+        setListError(true); // a foreground load failed -> error state, not empty
         toast("Couldn't load the inbox.", "error");
       } finally {
-        // Only the live load owns the loading flags; a stale finally must not clear
-        // them out from under the newer load.
-        if (live()) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
+        // Only the live load owns the loading flag; a stale finally must not clear
+        // it out from under the newer load.
+        if (live()) setLoading(false);
       }
     },
     [toast, selectedMailbox, debouncedSearch, activeSplit],
   );
+
+  // Local-first ordering + windowing. The client holds the WHOLE lane, so changing
+  // the sort is a pure in-memory re-sort (no fetch, instant at any size — the
+  // Superhuman/Upstream feel), and "Load more" just grows the window. `sorted` is
+  // the full lane in the chosen order; `displayed` is the visible slice.
+  const sorted = useMemo(() => sortRows(conversations, sort, sortFieldsOf), [conversations, sort]);
+  const displayed = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
 
   // Debounce the search box so each keystroke doesn't refetch (INBOX-Q04).
   useEffect(() => {
@@ -425,6 +454,29 @@ export default function InboxPage() {
       }
       return next;
     });
+  }, []);
+
+  // Restore the persisted sort once on mount (client-only — keeps SSR = "date"
+  // so first paint never mismatches).
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("inbox-sort");
+      if (isInboxSort(saved)) setSort(saved);
+    } catch {
+      /* localStorage unavailable — keep the default */
+    }
+  }, []);
+
+  const changeSort = useCallback((next: InboxSort) => {
+    setSort(next);
+    try {
+      window.localStorage.setItem("inbox-sort", next);
+    } catch {
+      /* ignore — persistence is best-effort */
+    }
+    // Pure local re-sort (the `sorted` memo re-derives) — NO fetch, instant at any
+    // size. Reset the window to the top so the new order starts from the first row.
+    setVisibleCount(LOCAL_PAGE);
   }, []);
 
   // Restore the persisted list width once on mount, then persist on change.
@@ -533,7 +585,7 @@ export default function InboxPage() {
         toast(`Cleared ${keys.length} message${keys.length === 1 ? "" : "s"} from ${sender}.`, "success");
       } catch {
         toast("Couldn't clear the bundle — reloading.", "error");
-        void loadLane("bundles", 1, false);
+        void loadLane("bundles", false);
       } finally {
         setClearingBundle(null);
       }
@@ -544,20 +596,21 @@ export default function InboxPage() {
   useEffect(() => {
     const param = customLaneId ?? tab;
     if (param === "outbound") return;
-    setPage(1);
+    setVisibleCount(LOCAL_PAGE); // a new lane/filter starts at the top of the window
     setSelection(EMPTY_SELECTION);
-    void loadLane(param, 1, false);
+    void loadLane(param, false);
   }, [tab, customLaneId, loadLane]);
 
   // Real-time freshness: the inbox has no server push, so without this the open
   // list never shows newly-arrived mail until a manual navigation/reload. Silently
-  // refetch page 1 of the live lane every 25s and whenever the tab regains focus.
-  // Gated to page 1 + not-loading + not the outbound view so it never collapses a
-  // "load more" or fights an in-flight optimistic triage (loadLane awaits
-  // pendingTriage before refetching, and `silent` suppresses the skeleton/toast).
-  const freshRef = useRef({ lane: customLaneId ?? tab, page, loading });
+  // refetch the live lane every 15s and whenever the tab regains focus. Local-first:
+  // the refetch replaces the whole held lane but PRESERVES the local window
+  // (visibleCount) + sort, so new mail just slots into its sorted position. Gated to
+  // not-loading + not the outbound view so it never fights an in-flight optimistic
+  // triage (loadLane awaits pendingTriage; `silent` suppresses the skeleton/toast).
+  const freshRef = useRef({ lane: customLaneId ?? tab, loading });
   useEffect(() => {
-    freshRef.current = { lane: customLaneId ?? tab, page, loading };
+    freshRef.current = { lane: customLaneId ?? tab, loading };
   });
   useEffect(() => {
     // Pull new mail from the connected mailbox(es) while the inbox is open, so it
@@ -575,10 +628,10 @@ export default function InboxPage() {
       void fetch("/api/email/sync", { method: "POST" }).catch(() => {});
     };
     const refresh = () => {
-      const { lane, page: p, loading: l } = freshRef.current;
-      if (lane === "outbound" || p !== 1 || l) return;
+      const { lane, loading: l } = freshRef.current;
+      if (lane === "outbound" || l) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      void loadLane(lane, 1, false, true);
+      void loadLane(lane, true);
     };
     triggerMailSync(); // sync on open
     const syncId = window.setInterval(triggerMailSync, 15000);
@@ -673,11 +726,12 @@ export default function InboxPage() {
 
   const handleTriage = useCallback(
     async (key: string, action: "done" | "snooze" | "reopen", snoozeUntil?: string) => {
-      // Optimistic: remove from the current lane and advance the selection.
-      const idx = conversations.findIndex((c) => c.key === key);
-      const next = conversations.filter((c) => c.key !== key);
-      setConversations(next);
-      setSelectedKey(next[Math.min(Math.max(idx, 0), next.length - 1)]?.key ?? null);
+      // Optimistic: remove from the held lane and advance the selection over the
+      // VISIBLE order (what the user sees), not the raw held array.
+      const visIdx = displayed.findIndex((c) => c.key === key);
+      const nextVisible = displayed.filter((c) => c.key !== key);
+      setConversations((prev) => prev.filter((c) => c.key !== key));
+      setSelectedKey(nextVisible[Math.min(Math.max(visIdx, 0), nextVisible.length - 1)]?.key ?? null);
       setCounts((c) => {
         const updated = { ...c };
         if (tab === "attention" || tab === "snoozed" || tab === "done" || tab === "handled") updated[tab] = Math.max(0, updated[tab] - 1);
@@ -698,22 +752,22 @@ export default function InboxPage() {
         if (!res.ok) throw new Error(`${res.status}`);
       } catch {
         toast("Couldn't update the conversation — reloading.", "error");
-        if (tab !== "outbound") void loadLane(tab, 1, false);
+        if (tab !== "outbound") void loadLane(tab, false);
       } finally {
         pendingTriage.current = null;
       }
     },
-    [tab, toast, loadLane, conversations],
+    [tab, toast, loadLane, displayed],
   );
 
   // Multi-select (INBOX-T09): toggle a row, or shift-extend from the anchor over
   // the current visible ordering.
   const handleToggleSelect = useCallback(
     (key: string, shift: boolean) => {
-      const ordered = conversations.map((c) => c.key);
+      const ordered = displayed.map((c) => c.key);
       setSelection((sel) => (shift ? selRangeTo(sel, ordered, key) : selToggle(sel, key)));
     },
-    [conversations],
+    [displayed],
   );
 
   // Star toggle (Upstream is:starred) — optimistic, owner-scoped persist. Stable so
@@ -788,7 +842,7 @@ export default function InboxPage() {
       const { applied, failed } = summarizeBulk(results);
       if (failed.length > 0) {
         toast(`${applied} updated, ${failed.length} failed — reloading.`, "error");
-        if (tab !== "outbound") void loadLane(customLaneId ?? tab, 1, false);
+        if (tab !== "outbound") void loadLane(customLaneId ?? tab, false);
       } else {
         toast(`${applied} conversation${applied === 1 ? "" : "s"} marked ${action === "done" ? "done" : "snoozed"}.`, "success");
       }
@@ -1023,12 +1077,12 @@ export default function InboxPage() {
       if ((tab === "outbound" || tab === "bundles") && !customLaneId) return;
 
       if (e.key === "j" || e.key === "k") {
-        if (conversations.length === 0) return;
+        if (displayed.length === 0) return;
         e.preventDefault();
-        const idx = conversations.findIndex((c) => c.key === selectedKey);
+        const idx = displayed.findIndex((c) => c.key === selectedKey);
         const nextIdx =
-          e.key === "j" ? Math.min(idx + 1, conversations.length - 1) : Math.max(idx - 1, 0);
-        const next = conversations[nextIdx]?.key ?? selectedKey;
+          e.key === "j" ? Math.min(idx + 1, displayed.length - 1) : Math.max(idx - 1, 0);
+        const next = displayed[nextIdx]?.key ?? selectedKey;
         setSelectedKey(next);
         listRef.current
           ?.querySelector(`[data-conversation-key="${CSS.escape(next ?? "")}"]`)
@@ -1081,9 +1135,11 @@ export default function InboxPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, selectedKey, handleTriage, conversations, selection, handleToggleSelect, handleBulkTriage, mailboxes]);
+  }, [tab, selectedKey, handleTriage, displayed, selection, handleToggleSelect, handleBulkTriage, mailboxes]);
 
-  const hasMore = tab !== "outbound" && conversations.length < total;
+  // Local windowing: more rows to reveal while the window is smaller than the held
+  // lane. No network — "Load more" just grows visibleCount.
+  const hasMore = tab !== "outbound" && visibleCount < sorted.length;
   const bundleTotal = bundles.reduce((n, b) => n + b.count, 0);
 
   // Cmd/Ctrl+K toggles the palette — registered separately from the j/k
@@ -1111,13 +1167,13 @@ export default function InboxPage() {
   // renders the next/previous pane from cache. Bounded to two requests; the
   // cache dedupes and expires them.
   useEffect(() => {
-    if (!selectedKey || conversations.length === 0) return;
-    const idx = conversations.findIndex((c) => c.key === selectedKey);
+    if (!selectedKey || displayed.length === 0) return;
+    const idx = displayed.findIndex((c) => c.key === selectedKey);
     if (idx < 0) return;
-    for (const c of [conversations[idx + 1], conversations[idx - 1]]) {
+    for (const c of [displayed[idx + 1], displayed[idx - 1]]) {
       if (c) prefetchDetail(c.key);
     }
-  }, [selectedKey, conversations]);
+  }, [selectedKey, displayed]);
 
   // Palette commands: jump to a lane, act on the current conversation, or open
   // any loaded conversation by fuzzy name/subject. Rebuilt as those inputs move.
@@ -1235,6 +1291,9 @@ export default function InboxPage() {
             >
               {density === "comfortable" ? <AlignJustify size={15} /> : <Rows2 size={15} />}
             </button>
+            {/* Sort control (Upstream/Outlook): date by default, switchable to
+                priority / unread-first / sender. Persisted. */}
+            <SortMenu value={sort} onChange={changeSort} />
           </>
         )}
       </PageHeader>
@@ -1384,7 +1443,7 @@ export default function InboxPage() {
                   </>
                 )}
                 <button
-                  onClick={() => setSelection(selSelectAll(conversations.map((c) => c.key)))}
+                  onClick={() => setSelection(selSelectAll(displayed.map((c) => c.key)))}
                   className="text-[11px] font-medium hover:underline"
                   style={{ color: "var(--color-text-tertiary)" }}
                 >
@@ -1406,7 +1465,7 @@ export default function InboxPage() {
               const listState = pickListState({
                 loading,
                 error: listError,
-                count: conversations.length,
+                count: displayed.length,
                 hasQuery: !!debouncedSearch,
               });
               if (listState === "loading") return <InboxListSkeleton density={density} />;
@@ -1418,25 +1477,21 @@ export default function InboxPage() {
                       title="Couldn't load this lane"
                       description="Something went wrong reaching the inbox. Your conversations are safe — try again."
                       actionLabel="Retry"
-                      onAction={() => void loadLane(customLaneId ?? tab, 1, false)}
+                      onAction={() => void loadLane(customLaneId ?? tab, false)}
                     />
                   </div>
                 );
               return (
                 <ConversationList
                   lane={customLaneId ? "attention" : tab === "snoozed" || tab === "done" || tab === "handled" ? tab : "attention"}
-                  conversations={conversations}
+                  conversations={displayed}
                   selectedKey={selectedKey}
                   onSelect={setSelectedKey}
                   selectedKeys={selection.keys}
                   onToggleSelect={handleToggleSelect}
                   hasMore={hasMore}
-                  loadingMore={loadingMore}
-                  onLoadMore={() => {
-                    const next = page + 1;
-                    setPage(next);
-                    void loadLane(customLaneId ?? tab, next, true);
-                  }}
+                  loadingMore={false}
+                  onLoadMore={() => setVisibleCount((v) => v + LOCAL_PAGE)}
                   showMailbox={mailboxes.length >= 2 && selectedMailbox === null}
                   hasQuery={!!debouncedSearch}
                   onClearSearch={() => setSearch("")}
@@ -1446,6 +1501,13 @@ export default function InboxPage() {
                 />
               );
             })()}
+            {/* No silent cap: a lane past the local-first ceiling tells the user the
+                tail isn't shown, and how to reach it (search), once they hit the end. */}
+            {truncated && !hasMore && conversations.length > 0 && (
+              <div className="px-4 py-3 text-center text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                Showing the {sorted.length} most recent of {total} — refine with search to see the rest.
+              </div>
+            )}
           </div>
           {/* Draggable divider between the list and the open mail (3-column only). */}
           {selectedKey && <ResizeHandle onDelta={handleResizeList} />}

@@ -37,6 +37,9 @@ export interface ConversationListItem {
   unread: boolean;
   /** Importance tier 1–4 (1 hottest) that sorts the attention lane + cited factors (INBOX-T04). */
   importanceTier: 1 | 2 | 3 | 4;
+  /** 0–100 importance score — lets the client mirror the `priority` sort exactly
+   *  for the instant optimistic reorder (no flicker when the server result lands). */
+  importanceScore: number;
   importanceFactors: string[];
   /** Labels applied by the user's deterministic filters (INBOX-T02). */
   labels: string[];
