@@ -22,26 +22,26 @@ describe("resolveSequenceForProspect", () => {
 
   it("falls to the trigger-signal match when no ICP-bound sequence", async () => {
     const r = await resolveSequenceForProspect("t1", "co1", deps(
-      [seq("cold", { campaignConfig: { triggerSignalTypes: ["hiring"] } }),
-       seq("postFunding", { campaignConfig: { triggerSignalTypes: ["funding"] } })],
-      { topSignalType: "funding" },
+      [seq("cold", { campaignConfig: { triggerSignalTypes: ["hiring_signal"] } }),
+       seq("postFunding", { campaignConfig: { triggerSignalTypes: ["post_funding"] } })],
+      { topSignalType: "post_funding" },
     ));
     expect(r).toBe("postFunding");
   });
 
   it("ICP match beats a competing signal match", async () => {
     const r = await resolveSequenceForProspect("t1", "co1", deps(
-      [seq("bySignal", { campaignConfig: { triggerSignalTypes: ["funding"] } }),
+      [seq("bySignal", { campaignConfig: { triggerSignalTypes: ["post_funding"] } }),
        seq("byIcp", { icpId: "icp-A" })],
-      { primaryIcpId: "icp-A", topSignalType: "funding" },
+      { primaryIcpId: "icp-A", topSignalType: "post_funding" },
     ));
     expect(r).toBe("byIcp");
   });
 
   it("falls back to the most-recent active sequence (today's behaviour) when nothing matches", async () => {
     const r = await resolveSequenceForProspect("t1", "co1", deps(
-      [seq("newest", { campaignConfig: { triggerSignalTypes: ["hiring"] } }),
-       seq("older", { campaignConfig: { triggerSignalTypes: ["expansion"] } })],
+      [seq("newest", { campaignConfig: { triggerSignalTypes: ["hiring_signal"] } }),
+       seq("older", { campaignConfig: { triggerSignalTypes: ["product_launch"] } })],
       { topSignalType: null }, // no signal → skip signal step → fallback
     ));
     expect(r).toBe("newest"); // sequences[0]
