@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { companies } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { searchPeople, enrichOrganization } from "@/lib/integrations/apollo-client";
+import { recordCompanySignal } from "@/lib/signals/record-signal";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
@@ -69,6 +70,7 @@ export async function jobPostingIntentHandler(
     }).catch(() => null);
 
     const hiringManager = people?.people[0] ?? null;
+    let detectedStrength: "high" | "medium" | "low" | null = null;
 
     if (isGrowing || (org.estimated_num_employees && org.estimated_num_employees > 50)) {
       let reasoning: string;
@@ -117,6 +119,7 @@ Is this company likely to be hiring for roles that indicate they need new tools/
         reasoning,
         suggestedOutreachAngle: angle,
       });
+      detectedStrength = strength;
     }
 
     // Update stored employee count for future diff
@@ -124,6 +127,18 @@ Is this company likely to be hiring for roles that indicate they need new tools/
       await db.update(companies).set({
         properties: { ...props, lastKnownEmployeeCount: currentEmployeeCount },
       }).where(eq(companies.id, company.id));
+    }
+
+    // Feed the priority scorer with a hiring / headcount-growth signal (runs
+    // AFTER the property update above; recordCompanySignal merges only the
+    // signals key). 'hiring' maps to the 30-day TTL in lib/signals/freshness.ts.
+    if (detectedStrength) {
+      await recordCompanySignal(options.tenantId, company.id, {
+        type: "hiring",
+        detectedAt: new Date().toISOString(),
+        strength: detectedStrength,
+        source: "apollo",
+      });
     }
   }
 

@@ -9,48 +9,64 @@ import {
   scoreContactReachability,
 } from "@/lib/scoring/priority-score";
 
-describe("computePriorityScore", () => {
-  it("multiplies the three inputs straight when all are set", () => {
-    // 2.0 × 0.8 × 0.6 = 0.96
+describe("computePriorityScore — signal-dominant (reweighted 2026-06-26)", () => {
+  it("signal × fit_modulator × access_modulator when all are set", () => {
+    // 2.0 × (0.6+0.4×0.8=0.92) × (0.6+0.4×0.6=0.84) = 1.5456
     expect(
       computePriorityScore({
         signalMultiplier: 2.0,
         fitScore: 0.8,
         accessibility: 0.6,
       }),
-    ).toBeCloseTo(0.96, 5);
+    ).toBeCloseTo(1.5456, 5);
   });
 
   it("falls back to NEUTRAL_FIT_SCORE when fitScore is null (no ICP scorer run yet)", () => {
-    // 2.0 × 0.5 × 1.0 = 1.0
+    // 2.0 × (0.6+0.4×0.5=0.8) × (0.6+0.4×1.0=1.0) = 1.6
     expect(
       computePriorityScore({
         signalMultiplier: 2.0,
         fitScore: null,
         accessibility: 1.0,
       }),
-    ).toBeCloseTo(1.0, 5);
+    ).toBeCloseTo(1.6, 5);
     expect(NEUTRAL_FIT_SCORE).toBe(0.5);
   });
 
-  it("returns 0 when accessibility is 0 (unreachable contact list wipes the score)", () => {
+  it("does NOT zero a strong signal when accessibility is 0 — it surfaces (go find a contact), only dampened to ACCESS_FLOOR", () => {
+    // 2.5 × (fit 1 → 1.0) × (access 0 → ACCESS_FLOOR 0.6) = 1.5
     expect(
       computePriorityScore({
         signalMultiplier: 2.5,
         fitScore: 1.0,
         accessibility: 0,
       }),
-    ).toBe(0);
+    ).toBeCloseTo(1.5, 5);
   });
 
-  it("returns 0 when fit is 0 (anti-ICP-shaped company even with strong signal)", () => {
+  it("does NOT zero a strong signal when fit is 0 — fit only dampens to FIT_FLOOR", () => {
+    // 2.5 × (fit 0 → FIT_FLOOR 0.6) × (access 1 → 1.0) = 1.5
     expect(
       computePriorityScore({
         signalMultiplier: 2.5,
         fitScore: 0,
         accessibility: 1.0,
       }),
-    ).toBe(0);
+    ).toBeCloseTo(1.5, 5);
+  });
+
+  it("lets a strong signal on an average account OUTRANK a silent perfect-fit account (the whole point)", () => {
+    const strongSignal = computePriorityScore({
+      signalMultiplier: 2.5,
+      fitScore: 0.5,
+      accessibility: 0.5,
+    }); // 2.5 × 0.8 × 0.8 = 1.6
+    const silentPerfect = computePriorityScore({
+      signalMultiplier: 1.0, // no fresh signal
+      fitScore: 1.0,
+      accessibility: 1.0,
+    }); // 1.0 × 1.0 × 1.0 = 1.0
+    expect(strongSignal).toBeGreaterThan(silentPerfect);
   });
 });
 
