@@ -16,8 +16,26 @@ import type { DnsAuthRecords } from "./auth";
 
 export type TxtResolver = (host: string) => Promise<string[][]>;
 
-/** DKIM selectors to probe when none is stored (mirrors api/deliverability/verify). */
-export const COMMON_DKIM_SELECTORS = ["default", "google", "selector1", "selector2", "k1", "resend", "s1", "mail"];
+/**
+ * DKIM selectors to probe when none is stored (mirrors api/deliverability/verify).
+ * Includes Zoho's selectors (`dkim`, `zoho`, `zmail`) — Elevay's cold domains are
+ * Zoho-hosted and publish under `dkim`, which the generic list would miss, making
+ * a legitimately-signed domain read as "no DKIM". A missing selector here means
+ * the gate can't FIND the key at all (distinct from finding a weak one).
+ */
+export const COMMON_DKIM_SELECTORS = [
+  "default",
+  "google",
+  "selector1",
+  "selector2",
+  "k1",
+  "resend",
+  "s1",
+  "mail",
+  "dkim",
+  "zoho",
+  "zmail",
+];
 
 /** Flatten node's `string[][]` TXT chunks into whole records. */
 const flatten = (records: string[][]): string[] => records.map((r) => r.join(""));

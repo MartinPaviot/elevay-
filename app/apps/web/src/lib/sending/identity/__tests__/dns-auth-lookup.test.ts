@@ -51,6 +51,10 @@ describe("lookupDkim", () => {
     const r = await lookupDkim("ex.com", stub({ "default._domainkey.ex.com": ["v=DKIM1; p="] }));
     expect(r).toEqual({ dkimPass: false, dkimBits: 0 });
   });
+  it("finds the Zoho `dkim` selector (regression: Elevay's cold domains publish under it)", async () => {
+    const r = await lookupDkim("getelevay.com", stub({ "dkim._domainkey.getelevay.com": [`v=DKIM1; k=rsa; p=${P2048}`] }));
+    expect(r).toEqual({ dkimPass: true, dkimBits: 2048 });
+  });
   it("no DKIM anywhere → not pass", async () => {
     expect(await lookupDkim("ex.com", stub({}))).toEqual({ dkimPass: false, dkimBits: 0 });
   });
