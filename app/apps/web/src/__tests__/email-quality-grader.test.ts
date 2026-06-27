@@ -120,4 +120,23 @@ The Sales Team`,
     expect(result.score).toBeLessThan(0.55);
     expect(result.issues.length).toBeGreaterThanOrEqual(3);
   });
+
+  // Empty-body floor: a blank/near-empty message is NOT copy. word_count alone
+  // scored "" at 1.0 → composite ~0.57, so the gate could pass a no-copy message
+  // (the copy-quality eval found the engine emits empty bodies when no assets exist).
+  it("floors empty / near-empty bodies to 0 (the gate must not pass blank copy)", () => {
+    expect(gradeEmail({ email: "" }).score).toBe(0);
+    expect(gradeEmail({ email: "   \n  " }).score).toBe(0);
+    expect(gradeEmail({ email: "Hi John." }).score).toBe(0); // 2 words < floor
+    expect(gradeEmail({ email: "" }).issues[0]).toMatch(/empty/i);
+  });
+
+  it("a real-length body is graded normally (not floored)", () => {
+    const r = gradeEmail({
+      email:
+        "Saw you raised your seed round in May. We help seed startups cut SDR cost in half. Worth a quick 15-minute call this week?",
+      prospectContext: { name: "Marc", company: "CloudNova" },
+    });
+    expect(r.score).toBeGreaterThan(0);
+  });
 });
