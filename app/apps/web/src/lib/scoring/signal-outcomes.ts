@@ -71,6 +71,15 @@ export const SIGNAL_PRIORS: Record<string, number> = {
   funding_recent: 1.6,
   funding: 1.5,
   funding_crunchbase: 1.5,
+  // Continuous Signal Monitor (inngest/signal-monitor.ts) writes these from
+  // news/job feeds straight into properties.signals[]. Without a prior here
+  // they were `undefined` in the multiplier table → floored to a dead 1.0× on
+  // the daily priority score AND never cleared KAIROS_WEIGHT_THRESHOLD, so the
+  // cadence accelerator ignored them too. Ordered: a raise/M&A outranks a
+  // hiring surge outranks a single exec hire.
+  acquisition: 1.6,
+  hiring_surge: 1.5,
+  executive_hire: 1.4,
   investor_overlap: 1.4,
   hiring: 1.4,
   hiring_intent: 1.4,
@@ -98,12 +107,19 @@ export function priorMultiplier(signalType: string): number {
  * the multiplier table has no `funding_recent` outcome key, so it sits on the
  * static prior forever, defeating the whole point of the outcome loop.
  *
- * `warm_connection` is intentionally ABSENT: it has no detector counterpart by
- * design (a standing relationship fact never accrues won/lost outcomes), so it
- * always — and correctly — rides its prior.
+ * `funding_recent`→`funding`, `hiring_surge`→`hiring`, `executive_hire`→
+ * `leadership_change`: each producer variant is the same underlying event as a
+ * detector type that DOES accrue outcomes, so it should ride the learned lift
+ * once one exists.
+ *
+ * `acquisition` and `warm_connection` are intentionally ABSENT: neither has a
+ * detector counterpart (no won/lost is ever attributed to them), so they always
+ * — and correctly — ride their prior.
  */
 export const SIGNAL_CANONICAL_ALIAS: Record<string, string> = {
   funding_recent: "funding",
+  hiring_surge: "hiring",
+  executive_hire: "leadership_change",
 };
 
 /**

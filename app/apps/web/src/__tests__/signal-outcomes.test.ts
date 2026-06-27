@@ -65,6 +65,17 @@ describe("signal-outcomes math", () => {
       expect(priorMultiplier("warm_connection")).toBe(SIGNAL_PRIORS.warm_connection);
     });
 
+    it("lifts the signal-monitor news/jobs types so they aren't dead at 1.0× before any deal", () => {
+      // inngest/signal-monitor.ts writes these straight into properties.signals[];
+      // a missing prior left them undefined → floored 1.0× on the daily score.
+      for (const type of ["acquisition", "hiring_surge", "executive_hire"]) {
+        expect(priorMultiplier(type)).toBeGreaterThan(1);
+      }
+      // A raise/M&A and a hiring surge outrank a single exec hire.
+      expect(priorMultiplier("acquisition")).toBeGreaterThanOrEqual(priorMultiplier("hiring_surge"));
+      expect(priorMultiplier("hiring_surge")).toBeGreaterThanOrEqual(priorMultiplier("executive_hire"));
+    });
+
     it("orders a reply above a mere open (stronger engagement = stronger prior)", () => {
       expect(priorMultiplier("positive_reply")).toBeGreaterThan(priorMultiplier("email_opened"));
     });
@@ -95,11 +106,16 @@ describe("signal-outcomes math", () => {
   });
 
   describe("inheritAliasMultipliers — producer aliases inherit the LEARNED family lift", () => {
-    it("maps funding_recent onto the funding family (the variant the monitor writes)", () => {
-      // funding-signal-monitor writes a FRESH raise as `funding_recent` into
-      // properties.signals[]; outcomes are keyed `funding`. Without inheritance
-      // the learned funding lift never reaches a funding_recent signal.
+    it("maps each producer variant onto the detector family that accrues its outcomes", () => {
+      // The monitors write producer-taxonomy types into properties.signals[];
+      // outcomes are keyed by the detector taxonomy. Without these the learned
+      // lift never reaches the variant the monitors actually write.
       expect(SIGNAL_CANONICAL_ALIAS.funding_recent).toBe("funding");
+      expect(SIGNAL_CANONICAL_ALIAS.hiring_surge).toBe("hiring");
+      expect(SIGNAL_CANONICAL_ALIAS.executive_hire).toBe("leadership_change");
+      // acquisition + warm_connection have no detector counterpart → never aliased.
+      expect(SIGNAL_CANONICAL_ALIAS.acquisition).toBeUndefined();
+      expect(SIGNAL_CANONICAL_ALIAS.warm_connection).toBeUndefined();
     });
 
     it("copies the learned funding multiplier onto funding_recent when funding cleared the sample threshold", () => {
@@ -107,6 +123,18 @@ describe("signal-outcomes math", () => {
       inheritAliasMultipliers(multipliers, new Set(["funding"]));
       // The learned 2.2× now reaches the recent-raise variant (was stuck at 1.6 prior).
       expect(multipliers.funding_recent).toBe(2.2);
+    });
+
+    it("transfers the learned lift across every alias family at once", () => {
+      const multipliers = {
+        funding: 2.2, funding_recent: 1.6,
+        hiring: 0.7, hiring_surge: 1.5,
+        leadership_change: 1.9, executive_hire: 1.4,
+      };
+      inheritAliasMultipliers(multipliers, new Set(["funding", "hiring", "leadership_change"]));
+      expect(multipliers.funding_recent).toBe(2.2);
+      expect(multipliers.hiring_surge).toBe(0.7); // even a learned DOWN-weight transfers
+      expect(multipliers.executive_hire).toBe(1.9);
     });
 
     it("keeps the alias's own prior when the canonical family is NOT learned (no real data yet)", () => {
