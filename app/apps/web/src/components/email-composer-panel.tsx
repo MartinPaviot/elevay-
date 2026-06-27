@@ -729,7 +729,7 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
                       className="block w-full rounded px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
                       style={{ color: "var(--color-text-primary)" }}
                     >
-                      {p.label}
+                      {t(p.labelKey)}
                     </button>
                   ))}
                   <div className="my-1 border-t" style={{ borderColor: "var(--color-border-default)" }} />
@@ -783,7 +783,7 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
                       className="block w-full rounded px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[var(--color-bg-hover)]"
                       style={{ color: "var(--color-text-primary)" }}
                     >
-                      {l.label}
+                      {t(`inbox.compose.lang.${l.code}`)}
                     </button>
                   ))}
                 </div>

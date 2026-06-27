@@ -1187,6 +1187,7 @@ export default function InboxPage() {
           goToSplit: (id) => setActiveSplit(id),
           connectMailbox: () => router.push("/settings/mail-calendar"),
         },
+        t,
       ),
     [conversations, customLanes, customLaneId, bundleTotal, selectedKey, tab, handleTriage, mailboxes, splitCounts, mailboxConnected, toast, router, t, tabLabels],
   );

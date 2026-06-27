@@ -70,34 +70,51 @@ export interface PaletteActions {
   connectMailbox: () => void;
 }
 
+/** i18n key for each built-in split name; custom splits keep their own name. */
+const BUILTIN_SPLIT_LABEL_KEY: Record<string, string> = {
+  other: "inbox.split.primary",
+  needs_reply: "inbox.split.needsReply",
+  follow_ups: "inbox.split.followUps",
+  promotions: "inbox.split.promotions",
+  social: "inbox.split.social",
+};
+
 /**
  * Assemble the palette command list. Order: lanes -> bundles -> custom lanes ->
  * mailbox switch -> attention splits -> per-conversation actions -> connect ->
  * open-by-name. Pure: no React, no refs, no router — every effect is a callback.
+ * `t` is the locale translator (passed in from the page, which holds the hook).
  */
-export function buildInboxPaletteCommands(data: PaletteData, actions: PaletteActions): PaletteCommand[] {
+export function buildInboxPaletteCommands(
+  data: PaletteData,
+  actions: PaletteActions,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): PaletteCommand[] {
   const cmds: PaletteCommand[] = [];
   const { tab, selectedKey, tabLabels } = data;
+  const laneHint = t("inbox.palette.hint.lane");
+  const actionHint = t("inbox.palette.hint.action");
 
   // Built-in lanes.
-  for (const t of PALETTE_LANES) {
-    cmds.push({ id: `lane:${t}`, label: `Go to ${tabLabels[t] ?? t}`, hint: "Lane", run: () => actions.goToLane(t) });
+  for (const lane of PALETTE_LANES) {
+    cmds.push({ id: `lane:${lane}`, label: t("inbox.palette.goTo", { name: tabLabels[lane] ?? lane }), hint: laneHint, run: () => actions.goToLane(lane) });
   }
   if (data.bundleTotal > 0) {
-    cmds.push({ id: "lane:bundles", label: "Go to Bundles", hint: "Lane", run: actions.goToBundles });
+    cmds.push({ id: "lane:bundles", label: t("inbox.palette.goTo", { name: t("inbox.folder.bundles") }), hint: laneHint, run: actions.goToBundles });
   }
   for (const l of data.customLanes) {
-    cmds.push({ id: `lane:${l.id}`, label: `Go to ${l.name}`, hint: "Lane", run: () => actions.goToCustomLane(l.id) });
+    cmds.push({ id: `lane:${l.id}`, label: t("inbox.palette.goTo", { name: l.name }), hint: laneHint, run: () => actions.goToCustomLane(l.id) });
   }
 
   // Mailbox quick-switch — only with a chooser (2+ connected boxes).
   if (data.mailboxes.length >= 2) {
-    cmds.push({ id: "mailbox:all", label: "Switch to All inboxes", hint: "Mailbox", run: () => actions.switchMailbox(null) });
+    const mailboxHint = t("inbox.palette.hint.mailbox");
+    cmds.push({ id: "mailbox:all", label: t("inbox.palette.switchTo", { name: t("inbox.folder.allInboxes") }), hint: mailboxHint, run: () => actions.switchMailbox(null) });
     for (const m of data.mailboxes) {
       cmds.push({
         id: `mailbox:${m.id}`,
-        label: `Switch to ${m.label || m.address}`,
-        hint: "Mailbox",
+        label: t("inbox.palette.switchTo", { name: m.label || m.address }),
+        hint: mailboxHint,
         run: () => actions.switchMailbox(m.id),
       });
     }
@@ -105,8 +122,10 @@ export function buildInboxPaletteCommands(data: PaletteData, actions: PaletteAct
 
   // Intention splits — only on the attention lane, when splits exist (B6.6).
   if (tab === "attention" && data.splits.length > 0) {
+    const splitHint = t("inbox.palette.hint.split");
     for (const s of data.splits) {
-      cmds.push({ id: `split:${s.id}`, label: `Go to ${s.name}`, hint: "Split", run: () => actions.goToSplit(s.id) });
+      const name = BUILTIN_SPLIT_LABEL_KEY[s.id] ? t(BUILTIN_SPLIT_LABEL_KEY[s.id]) : s.name;
+      cmds.push({ id: `split:${s.id}`, label: t("inbox.palette.goTo", { name }), hint: splitHint, run: () => actions.goToSplit(s.id) });
     }
   }
 
@@ -114,24 +133,25 @@ export function buildInboxPaletteCommands(data: PaletteData, actions: PaletteAct
   if (selectedKey) {
     // Triage verbs only make sense on the attention/snoozed lanes.
     if (tab === "attention" || tab === "snoozed") {
-      cmds.push({ id: "act:done", label: "Mark current conversation done", hint: "Action", shortcut: "e", run: () => actions.markDone(selectedKey) });
-      cmds.push({ id: "act:snooze", label: "Snooze current conversation for 1 day", hint: "Action", shortcut: "s", run: () => actions.snooze1Day(selectedKey) });
+      cmds.push({ id: "act:done", label: t("inbox.palette.cmd.markDone"), hint: actionHint, shortcut: "e", run: () => actions.markDone(selectedKey) });
+      cmds.push({ id: "act:snooze", label: t("inbox.palette.cmd.snooze"), hint: actionHint, shortcut: "s", run: () => actions.snooze1Day(selectedKey) });
     }
     // Reply / book / label / stop work on the open thread from any lane (B6.5).
-    cmds.push({ id: "act:reply", label: "Reply to current conversation", hint: "Action", shortcut: "r", run: actions.reply });
-    cmds.push({ id: "act:book", label: "Book a meeting", hint: "Action", shortcut: "b", run: actions.book });
-    cmds.push({ id: "act:label", label: "Label current conversation", hint: "Action", shortcut: "l", run: actions.label });
-    cmds.push({ id: "act:stop", label: "Stop the sequence", hint: "Action", run: actions.stop });
+    cmds.push({ id: "act:reply", label: t("inbox.palette.cmd.reply"), hint: actionHint, shortcut: "r", run: actions.reply });
+    cmds.push({ id: "act:book", label: t("inbox.palette.cmd.book"), hint: actionHint, shortcut: "b", run: actions.book });
+    cmds.push({ id: "act:label", label: t("inbox.palette.cmd.label"), hint: actionHint, shortcut: "l", run: actions.label });
+    cmds.push({ id: "act:stop", label: t("inbox.palette.cmd.stop"), hint: actionHint, run: actions.stop });
   }
 
   // Connect a mailbox — only when the user has none of their own (B6.6).
   if (!data.mailboxConnected) {
-    cmds.push({ id: "connect:mailbox", label: "Connect a mailbox", hint: "Setup", run: actions.connectMailbox });
+    cmds.push({ id: "connect:mailbox", label: t("inbox.palette.cmd.connectMailbox"), hint: t("inbox.palette.hint.setup"), run: actions.connectMailbox });
   }
 
   // Open any loaded conversation by fuzzy name/subject.
+  const openHint = t("inbox.palette.hint.open");
   for (const c of data.conversations) {
-    cmds.push({ id: `conv:${c.key}`, label: `${c.displayName} — ${c.subject}`, hint: "Open", run: () => actions.openConversation(c.key) });
+    cmds.push({ id: `conv:${c.key}`, label: `${c.displayName} — ${c.subject}`, hint: openHint, run: () => actions.openConversation(c.key) });
   }
 
   return cmds;

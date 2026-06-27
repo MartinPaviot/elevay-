@@ -1,11 +1,43 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildInboxPaletteCommands, type PaletteData, type PaletteActions } from "../palette-commands";
+import { buildInboxPaletteCommands as buildRaw, type PaletteData, type PaletteActions } from "../palette-commands";
 
 /**
  * B6.5/B6.6 — the pure palette command builder. Asserts the command set gated by
  * selection / lane / mailbox-connected, the backfilled single-key shortcuts, and
  * that every `run()` delegates to exactly ONE action callback (no second path).
  */
+
+// The builder now takes a locale translator. Wrap it with a faithful English
+// stub so these locale-agnostic LOGIC assertions (command set / gating / order)
+// stay unchanged — the FR wiring is covered by the live messages.ts keys.
+const tStub = (key: string, vars?: Record<string, string | number>): string => {
+  if (key === "inbox.palette.goTo") return `Go to ${vars!.name}`;
+  if (key === "inbox.palette.switchTo") return `Switch to ${vars!.name}`;
+  const M: Record<string, string> = {
+    "inbox.palette.hint.lane": "Lane",
+    "inbox.palette.hint.mailbox": "Mailbox",
+    "inbox.palette.hint.split": "Split",
+    "inbox.palette.hint.action": "Action",
+    "inbox.palette.hint.setup": "Setup",
+    "inbox.palette.hint.open": "Open",
+    "inbox.palette.cmd.markDone": "Mark current conversation done",
+    "inbox.palette.cmd.snooze": "Snooze current conversation for 1 day",
+    "inbox.palette.cmd.reply": "Reply to current conversation",
+    "inbox.palette.cmd.book": "Book a meeting",
+    "inbox.palette.cmd.label": "Label current conversation",
+    "inbox.palette.cmd.stop": "Stop the sequence",
+    "inbox.palette.cmd.connectMailbox": "Connect a mailbox",
+    "inbox.folder.bundles": "Bundles",
+    "inbox.folder.allInboxes": "All inboxes",
+    "inbox.split.primary": "Primary",
+    "inbox.split.needsReply": "Needs Reply",
+    "inbox.split.followUps": "Follow Ups",
+    "inbox.split.promotions": "Promotions",
+    "inbox.split.social": "Social",
+  };
+  return M[key] ?? key;
+};
+const buildInboxPaletteCommands = (d: PaletteData, a: PaletteActions) => buildRaw(d, a, tStub);
 
 const TAB_LABELS: Record<string, string> = {
   attention: "Needs attention",
