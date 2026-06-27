@@ -13,6 +13,15 @@ import { Inbox, Reply, Clock, Megaphone, Users, VolumeX, Hash } from "lucide-rea
 import type { SplitCount } from "@/lib/inbox/splits";
 import { useT } from "@/lib/i18n/locale";
 
+/** i18n key for each built-in split name; custom splits keep their own name. */
+const BUILTIN_SPLIT_KEY: Record<string, string> = {
+  other: "inbox.split.primary",
+  needs_reply: "inbox.split.needsReply",
+  follow_ups: "inbox.split.followUps",
+  promotions: "inbox.split.promotions",
+  social: "inbox.split.social",
+};
+
 /** Per-split icon + a badge color token (Upstream uses colored category icons). */
 const SPLIT_STYLE: Record<string, { icon: React.ReactNode; color: string }> = {
   other: { icon: <Inbox size={14} />, color: "var(--color-badge-0)" }, // Primary
@@ -84,7 +93,7 @@ export function SplitStrip({
         <Tab
           key={s.id}
           id={s.id}
-          name={s.name}
+          name={BUILTIN_SPLIT_KEY[s.id] ? t(BUILTIN_SPLIT_KEY[s.id]) : s.name}
           count={s.count}
           active={active === s.id}
           onClick={() => onSelect(active === s.id ? null : s.id)}

@@ -14,7 +14,7 @@ const splits = [
 describe("SplitStrip", () => {
   it("renders one tab per split with its count, plus a Noise tab when noiseCount > 0", () => {
     render(<SplitStrip splits={splits} noiseCount={7} active={null} onSelect={vi.fn()} />);
-    expect(screen.getByText("Primary")).toBeTruthy();
+    expect(screen.getByText("Principal")).toBeTruthy();
     expect(screen.getByText("Promotions")).toBeTruthy();
     expect(screen.getByText("41")).toBeTruthy();
     expect(screen.getByText("Bruit")).toBeTruthy();
@@ -38,7 +38,7 @@ describe("SplitStrip", () => {
 
   it("the active tab carries the accent underline", () => {
     render(<SplitStrip splits={splits} noiseCount={0} active="needs_reply" onSelect={vi.fn()} />);
-    const tab = screen.getByText("Needs Reply").closest("button")!;
+    const tab = screen.getByText("À répondre").closest("button")!;
     expect(tab.getAttribute("style")).toContain("var(--color-accent)");
   });
 });
