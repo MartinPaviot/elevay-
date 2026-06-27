@@ -52,6 +52,29 @@ function deps(over: Partial<LinkedInDeps> = {}): LinkedInDeps {
   };
 }
 
+describe("empty-body backstop", () => {
+  it("refuses a MESSAGE action with an empty/whitespace body", async () => {
+    const d = deps();
+    const out = await runLinkedInAction(req({ action: "message", message: "   " }), d);
+    expect(out.acted).toBe(false);
+    expect(out.refusedReason).toBe("empty-body");
+    expect(d.port.message).not.toHaveBeenCalled();
+  });
+  it("sends a MESSAGE with real text", async () => {
+    const d = deps();
+    const out = await runLinkedInAction(req({ action: "message", message: "Saw your seed round, worth a quick chat?" }), d);
+    expect(out.acted).toBe(true);
+    expect(d.port.message).toHaveBeenCalledOnce();
+  });
+  it("a CONNECT with an empty note is still valid (not an empty-body refusal)", async () => {
+    const d = deps();
+    const out = await runLinkedInAction(req({ action: "connect", note: "" }), d);
+    expect(out.acted).toBe(true);
+    expect(out.refusedReason).toBeUndefined();
+    expect(d.port.connect).toHaveBeenCalledOnce();
+  });
+});
+
 describe("daily limits — AC2", () => {
   it("default limits: 20 connects, 100 messages", () => {
     expect(DEFAULT_LINKEDIN_DAILY_LIMITS).toEqual({ connect: 20, message: 100 });

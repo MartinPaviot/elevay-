@@ -10,8 +10,9 @@
 import type { LinkedInPort, LinkedInRequest, LinkedInResult, LinkedInContact } from "./port";
 import { LinkedInError } from "./port";
 import { withinDailyLimit, type LinkedInDailyLimits } from "./limits";
+import { isSendableBody } from "@/lib/guardrails/empty-body";
 
-export type LinkedInRefuseReason = "suppressed" | "collision-locked" | "no-profile" | "daily-limit" | "not-allowlisted";
+export type LinkedInRefuseReason = "suppressed" | "collision-locked" | "no-profile" | "daily-limit" | "not-allowlisted" | "empty-body";
 
 export interface LinkedInActionEvent {
   stepId: string;
@@ -76,6 +77,14 @@ export async function runLinkedInAction(req: LinkedInRequest, deps: LinkedInDeps
   if (deps.isCollisionLocked(req.contact)) return { acted: false, refusedReason: "collision-locked" };
   if (!req.contact.profileUrl || !req.contact.profileUrl.trim()) return { acted: false, refusedReason: "no-profile" };
   if (deps.isAllowedTarget && !deps.isAllowedTarget(req.contact)) return { acted: false, refusedReason: "not-allowlisted" };
+
+  // Empty-body backstop: never send a blank LinkedIn MESSAGE (an empty connect
+  // note is valid; an empty message is not). Same root cause as email — the copy
+  // engine can assemble an empty body when no copy assets exist
+  // (_research/copy-quality-eval-2026-06-26.md).
+  if (req.action === "message" && !isSendableBody(req.message, null)) {
+    return { acted: false, refusedReason: "empty-body" };
+  }
 
   // AC2 — per-sender-account daily limit.
   const done = await deps.actionsToday(req.senderAccountId, req.action);
