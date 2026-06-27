@@ -13,7 +13,8 @@ vi.mock("drizzle-orm", () => ({
   isNull: (c: any) => ({ op: "isNull", c }), inArray: (c: any, v: any) => ({ op: "inArray", c, v }), sql: (...a: any[]) => ({ op: "sql", a }),
 }));
 
-import { loadCandidates, pickBestContacts, buildCandidates, isReachable, type ContactRow, type CompanyScore } from "../candidates";
+import { loadCandidates, pickBestContacts, pickContactsForCompanies, buildCandidates, isReachable, type ContactRow, type CompanyScore } from "../candidates";
+import type { SignalPerson } from "@/lib/signals/record-signal";
 
 // db stub: routes each query by the from() table's _name; companies query also
 // supports .orderBy().limit().
@@ -68,6 +69,41 @@ describe("pickBestContacts", () => {
       con({ id: "y", companyId: "co1", email: null }),
     ]);
     expect(best.size).toBe(0);
+  });
+});
+
+describe("pickContactsForCompanies — Monaco signal→person", () => {
+  const rows: ContactRow[] = [
+    con({ id: "ceo", companyId: "co1", score: 90, firstName: "Ada", lastName: "King", title: "CEO" }), // score-best
+    con({ id: "mgr", companyId: "co1", score: 10, firstName: "Bo", lastName: "Lee", title: "Eng Manager" }), // the hinted person
+    con({ id: "x", companyId: "co2", score: 5 }),
+  ];
+
+  it("no hints → identical to pickBestContacts (score-best)", () => {
+    const out = pickContactsForCompanies(rows, new Map());
+    expect(out.get("co1")?.id).toBe("ceo");
+    expect(out.get("co2")?.id).toBe("x");
+  });
+
+  it("a resolving hint re-targets to the named contact over the score-best", () => {
+    const hints = new Map<string, SignalPerson>([["co1", { contactId: "mgr" }]]);
+    const out = pickContactsForCompanies(rows, hints);
+    expect(out.get("co1")?.id).toBe("mgr"); // hinted, not the CEO
+    expect(out.get("co2")?.id).toBe("x"); // untouched
+  });
+
+  it("a hint that doesn't resolve falls back to score-best", () => {
+    const hints = new Map<string, SignalPerson>([["co1", { email: "stranger@nope.com" }]]);
+    expect(pickContactsForCompanies(rows, hints).get("co1")?.id).toBe("ceo");
+  });
+
+  it("a hint to an UNREACHABLE contact falls back to score-best (email channel needs an email)", () => {
+    const withUnreachable: ContactRow[] = [
+      con({ id: "ceo", companyId: "co1", score: 90 }),
+      con({ id: "mgr", companyId: "co1", score: 10, email: null }), // hinted but unreachable
+    ];
+    const hints = new Map<string, SignalPerson>([["co1", { contactId: "mgr" }]]);
+    expect(pickContactsForCompanies(withUnreachable, hints).get("co1")?.id).toBe("ceo");
   });
 });
 

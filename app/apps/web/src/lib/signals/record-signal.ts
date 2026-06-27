@@ -18,6 +18,23 @@ import { and, eq, sql } from "drizzle-orm";
 
 export type SignalStrength = "high" | "medium" | "low";
 
+/**
+ * Who the signal is ABOUT / who to contact (Monaco: the signal names the person —
+ * the post author, the hiring manager, the warm connection — because they are
+ * top-of-mind and it serves THEM). All fields best-effort; the autopilot resolves
+ * this to an existing CRM contact (`lib/autopilot/signal-person.ts`) and routes the
+ * outreach to them instead of the top-seniority default. No field present → the
+ * signal is company-level (e.g. funding) and the score-best contact is used.
+ */
+export type SignalPerson = {
+  /** Exact CRM contact id — the strongest hint (the producer already resolved one). */
+  contactId?: string;
+  name?: string;
+  title?: string;
+  email?: string;
+  linkedinUrl?: string;
+};
+
 export type SignalEntry = {
   /** Signal type — must match a key in SIGNAL_TTL_DAYS / the multiplier table. */
   type: string;
@@ -26,7 +43,27 @@ export type SignalEntry = {
   strength?: SignalStrength;
   /** Where it came from (e.g. "apollo", "engagement") — provenance only. */
   source?: string;
+  /** Who to contact for this signal (Monaco signal→person). Optional. */
+  person?: SignalPerson;
 };
+
+/** A person hint is usable only if it carries at least one identifying field. */
+export function hasAnyHint(p: SignalPerson | null | undefined): boolean {
+  return !!p && !!(p.contactId || p.email || p.linkedinUrl || p.name);
+}
+
+/**
+ * The person to contact for a company, taken from the FRESHEST signal that names
+ * one (a signal with no usable `person` is skipped). Pure. Returns null when no
+ * signal carries a person → caller falls back to the score-best contact.
+ */
+export function personFromSignals(signals: SignalEntry[] | null | undefined): SignalPerson | null {
+  if (!Array.isArray(signals)) return null;
+  const withPerson = signals.filter((s) => s && hasAnyHint(s.person));
+  if (withPerson.length === 0) return null;
+  withPerson.sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt));
+  return withPerson[0].person ?? null;
+}
 
 /**
  * Pure: upsert a signal by type — the newest entry of a type replaces the
