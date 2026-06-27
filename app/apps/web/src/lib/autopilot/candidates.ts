@@ -16,6 +16,8 @@ import { db as defaultDb } from "@/db";
 import { companies, contacts, sequenceEnrollments, emailOptouts } from "@/db/schema";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
 import type { ProspectCandidate } from "./select";
+import { personFromSignals, type SignalEntry, type SignalPerson } from "@/lib/signals/record-signal";
+import { resolveHintedContact } from "./signal-person";
 
 const KNOWN_INVALID = "invalid";
 
@@ -25,6 +27,11 @@ export interface ContactRow {
   email: string | null;
   emailStatus: string | null;
   score: number | null;
+  // For Monaco signal→person resolution (best-effort; absent on legacy rows).
+  linkedinUrl?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  title?: string | null;
 }
 
 /** Email-channel reachability: a present email that isn't verified-invalid. */
@@ -50,6 +57,39 @@ export function pickBestContacts(rows: ContactRow[]): Map<string, ContactRow> {
     if (sc > scur || (sc === scur && c.id < cur.id)) best.set(c.companyId, c);
   }
   return best;
+}
+
+/**
+ * Best contact per company, but PREFER the contact the freshest signal names
+ * (Monaco signal→person) when it resolves to a reachable contact of that company;
+ * otherwise the score-best (`pickBestContacts`). The hint only ever re-targets
+ * WITHIN a company's own reachable contacts — it never reaches outside the CRM.
+ * Pure.
+ */
+export function pickContactsForCompanies(
+  rows: ContactRow[],
+  hintByCompany: Map<string, SignalPerson>,
+): Map<string, ContactRow> {
+  const scoreBest = pickBestContacts(rows);
+  if (hintByCompany.size === 0) return scoreBest;
+
+  // Reachable contacts grouped by company (the only pool the hint may pick from).
+  const reachableByCompany = new Map<string, ContactRow[]>();
+  for (const c of rows) {
+    if (!c.companyId || !isReachable(c)) continue;
+    const arr = reachableByCompany.get(c.companyId);
+    if (arr) arr.push(c);
+    else reachableByCompany.set(c.companyId, [c]);
+  }
+
+  const out = new Map<string, ContactRow>(scoreBest);
+  for (const [companyId, contactsForCo] of reachableByCompany) {
+    const hint = hintByCompany.get(companyId);
+    if (!hint) continue;
+    const hinted = resolveHintedContact(contactsForCo, hint);
+    if (hinted) out.set(companyId, hinted);
+  }
+  return out;
 }
 
 export interface CompanyScore {
@@ -96,8 +136,9 @@ export async function loadCandidates(tenantId: string, limit: number, database: 
   if (!Number.isFinite(limit) || limit <= 0) return EMPTY;
 
   // 1. Top targeted, non-excluded, live companies by priority_score (desc, nulls last).
+  //    `properties` carries signals[] → the signal→person hint for routing.
   const cos = await database
-    .select({ id: companies.id, priorityScore: companies.priorityScore, computedAt: companies.priorityScoreComputedAt })
+    .select({ id: companies.id, priorityScore: companies.priorityScore, computedAt: companies.priorityScoreComputedAt, properties: companies.properties })
     .from(companies)
     .where(and(eq(companies.tenantId, tenantId), eq(companies.targetingStatus, "targeted"), isNull(companies.excludedReason), isNull(companies.deletedAt)))
     .orderBy(sql`${companies.priorityScore} desc nulls last`)
@@ -109,13 +150,21 @@ export async function loadCandidates(tenantId: string, limit: number, database: 
     cos.map((c) => [c.id, { priorityScore: c.priorityScore, priorityScoreComputedAt: c.computedAt ? c.computedAt.getTime() : null }]),
   );
 
-  // 2. Their live contacts → best reachable per company.
+  // Monaco signal→person: the contact the freshest signal names (if any) per company.
+  const hintByCompany = new Map<string, SignalPerson>();
+  for (const c of cos) {
+    const props = c.properties as { signals?: SignalEntry[] } | null;
+    const person = personFromSignals(props?.signals);
+    if (person) hintByCompany.set(c.id, person);
+  }
+
+  // 2. Their live contacts → best reachable per company (signal-hinted, else score-best).
   const conRows = (await database
-    .select({ id: contacts.id, companyId: contacts.companyId, email: contacts.email, emailStatus: contacts.emailStatus, score: contacts.score })
+    .select({ id: contacts.id, companyId: contacts.companyId, email: contacts.email, emailStatus: contacts.emailStatus, score: contacts.score, linkedinUrl: contacts.linkedinUrl, firstName: contacts.firstName, lastName: contacts.lastName, title: contacts.title })
     .from(contacts)
     .where(and(eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt), inArray(contacts.companyId, companyIds)))) as ContactRow[];
 
-  const bestByCompany = pickBestContacts(conRows);
+  const bestByCompany = pickContactsForCompanies(conRows, hintByCompany);
   const candidates = buildCandidates(bestByCompany, scoreByCompany);
   if (candidates.length === 0) return EMPTY;
 

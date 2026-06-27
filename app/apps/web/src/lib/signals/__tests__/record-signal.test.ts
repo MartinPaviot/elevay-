@@ -1,10 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { upsertSignalEntry, type SignalEntry } from "../record-signal";
+import { upsertSignalEntry, personFromSignals, hasAnyHint, type SignalEntry } from "../record-signal";
 
 const sig = (type: string, detectedAt: string, strength?: SignalEntry["strength"]): SignalEntry => ({
   type,
   detectedAt,
   ...(strength ? { strength } : {}),
+});
+
+describe("hasAnyHint", () => {
+  it("true only with at least one identifying field", () => {
+    expect(hasAnyHint(null)).toBe(false);
+    expect(hasAnyHint({})).toBe(false);
+    expect(hasAnyHint({ title: "VP" })).toBe(false); // title alone can't identify
+    expect(hasAnyHint({ contactId: "c1" })).toBe(true);
+    expect(hasAnyHint({ name: "Jane" })).toBe(true);
+    expect(hasAnyHint({ email: "j@x.com" })).toBe(true);
+  });
+});
+
+describe("personFromSignals", () => {
+  it("null when no signal carries a person", () => {
+    expect(personFromSignals(null)).toBeNull();
+    expect(personFromSignals([sig("funding", "2026-06-26T00:00:00Z")])).toBeNull();
+  });
+  it("returns the person of the FRESHEST signal that has one", () => {
+    const signals: SignalEntry[] = [
+      { type: "hiring", detectedAt: "2026-06-20T00:00:00Z", person: { name: "Old Manager" } },
+      { type: "warm_connection", detectedAt: "2026-06-26T00:00:00Z", person: { contactId: "c9" } },
+      { type: "funding", detectedAt: "2026-06-27T00:00:00Z" }, // fresher but no person → skipped
+    ];
+    expect(personFromSignals(signals)).toEqual({ contactId: "c9" });
+  });
+  it("skips signals whose person has no usable field", () => {
+    const signals: SignalEntry[] = [
+      { type: "a", detectedAt: "2026-06-27T00:00:00Z", person: { title: "VP" } }, // unusable
+      { type: "b", detectedAt: "2026-06-25T00:00:00Z", person: { email: "j@x.com" } },
+    ];
+    expect(personFromSignals(signals)).toEqual({ email: "j@x.com" });
+  });
 });
 
 describe("upsertSignalEntry", () => {
