@@ -56,6 +56,21 @@ export function gradeEmail(input: EmailGradeInput): EmailGradeResult {
   const issues: string[] = [];
   const strengths: string[] = [];
 
+  // 0. Body presence — an empty / near-empty body is NOT copy. Floor it to 0 up
+  // front: word_count alone scores a blank email 1.0 (0 <= maxWords) → composite
+  // ~0.57, so the gate would otherwise pass a message with no body (e.g. when no
+  // copy assets exist). See _research/copy-quality-eval-2026-06-26.md.
+  const MIN_BODY_WORDS = 5;
+  const bodyWords = email.trim().split(/\s+/).filter(Boolean).length;
+  if (bodyWords < MIN_BODY_WORDS) {
+    return {
+      score: 0,
+      dimensions: [{ name: "body_present", score: 0, weight: 1, detail: `${bodyWords} words — empty/near-empty body` }],
+      issues: [`Empty or near-empty body (${bodyWords} words) — not a usable message`],
+      strengths: [],
+    };
+  }
+
   // 1. Word count (weight: 0.15)
   const wordCount = email.split(/\s+/).filter(Boolean).length;
   const maxWords = spec?.maxWords || WHAT_WORKS.wordCount.optimal;
