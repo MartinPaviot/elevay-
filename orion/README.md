@@ -1,32 +1,43 @@
-# Orion — corpus de conception
+# Orion — corpus de conception & de build
 
-Dossier consolidé pour réutilisation. Tout ce qui concerne **Orion** (le produit signal → brief → outbound sorti d'Elevay) est ici.
+Dossier consolidé. Tout ce qui concerne **Orion** (le produit signal → brief → outbound sorti
+d'Elevay) est ici. Orion est un **repo séparé** (`@orion/web`) qui **copie** les modules clés
+d'Elevay et partage la **DB `leads`** scopée au tenant `elevay`.
 
-- `spec/` — la spec produit/backend (Kiro) + le design UI + le CLAUDE.md.
-- `research/` — les 8 rapports d'analyse. Ce sont des copies ; les originaux restent dans `_reports/` (référencés par la mémoire et par des liens internes aux docs).
+- `spec/` — spec produit/backend (Kiro), setup opérateur, prompts de build, design UI, charte agent.
+- `research/` — les 11 rapports d'analyse (les preuves derrière les décisions). Copies ; originaux
+  dans `_reports/`.
+- `brand/` — logo Orion (O-constellation, accent `#2C6BED`), icônes + lockups clair/sombre.
 
-> Note : certains liens internes aux docs pointent encore vers `_reports/…` ou `_specs/orion/…` (chemins d'origine). Le contenu est identique ; la source canonique de réutilisation est désormais ce dossier `orion/`.
+## Ordre des documents → `spec/00-INDEX.md`
+**L'index `spec/00-INDEX.md` est la carte de lecture et d'exécution.** Les fichiers ne sont pas
+numérotés (≈120 références croisées par nom exact ; renommer casserait le build) — l'index impose
+l'ordre logique sans toucher aux noms.
 
-## spec/
+## Pour démarrer le build
+Ouvre **`spec/PROMPTS.md`** : tous les prompts dans l'ordre (SETUP → Vague 0 → Vague 1 ×5 → Vague 2)
++ les commandes worktree. Premier geste = coller l'ÉTAPE 1 (SETUP) dans une session Claude Code à la
+racine du repo Orion vide.
 
-| Fichier | Contenu | État |
-|---|---|---|
-| `CLAUDE.md` | Règles de comportement de l'agent, voix Garry Tan (transposées du CLAUDE.md Elevay, sans perte opérationnelle) | OK (8.8k) |
-| `requirements.md` | Exigences EARS backend (auth, data Supabase/Drizzle, Inngest, adaptateurs entrée/sortie, gates) — ancré sur le backend Elevay réel | Approfondi (70k) |
-| `design.md` | Architecture : décisions DB, schéma Drizzle, install/versions exactes, adaptateurs `InputSource`/`OutboundDestination`, carte d'intégration Elevay | Approfondi (65k) |
-| `tasks.md` | 42 tâches ordonnées (T-1..42, 11 lots, verify + test par tâche, chemin critique hackathon) | Approfondi (62k) ✓ |
-| `ui-spec.md` | Design language Elevay : tokens vérifiés (light+dark, accent `#2C6BED`), inventaire composants, mockups ASCII, contraintes no-emoji + demi-écran | OK (30k) |
+Séquence : **1 SETUP → 1 Vague 0 (pack0→pack1) → 5 Vague 1 (pack2-6 en parallèle, worktrees) →
+1 Vague 2 (pack7)**. Pic de parallélisme = 5.
 
 ## research/ (ordre de lecture conseillé)
+1. `signals-world-class-2026-06-27.md` — audit du système actuel + taxonomie legacy/hard-to-get + framework "expert conseil signaux" + architecture cible.
+2. `signal-intelligence-design-2026-06-27.md` — sous-système produit-intégré : 3 piliers Découverte / Acquisition / Activation.
+3. `signal-deep-tech-2026-06-27.md` — la couche technologique profonde (6 moteurs) + le moat.
+4. `signaux-couche-technologique-profonde-2026-06-27.md` — approfondissement FR de la couche profonde.
+5. `signal-agent-mcp-2026-06-27.md` — surface MCP agent-native (outils + resources + gates).
+6. `signal-outreach-brief-2026-06-27.md` — **le pivot** : le produit n'écrit pas le mail, il émet un brief (`citableFacts[]`/`doNotClaim[]`).
+7. `signal-agent-prd-2026-06-27.md` — PRD d'expert + parcours démo 2 min.
+8. `orion-differentiation-2026-06-27.md` — pourquoi Orion > Fiber AI / Orange Slice / Lopus + data d'entrée (Tier 0/1/2).
+9. `partner-apis-2026-06-27.md` — APIs partenaires vérifiées (Fiber = entrée ; Instantly/OrangeSlice/Lopus = sortie webhook).
+10. `orion-backend-verification-2026-06-27.md` — backend Elevay réel : versions, câblage, env, pièges à porter.
+11. `elevay-convex-migration-roi-2026-06-27.md` — ROI Convex vs Supabase (décision : on garde Supabase).
 
-1. `signals-world-class-2026-06-27.md` — audit du système de signaux actuel + taxonomie legacy/hard-to-get + framework "expert conseil signaux" + architecture cible. (défaut #1 multipliers — depuis corrigé)
-2. `signal-intelligence-design-2026-06-27.md` — sous-système produit-intégré : 3 piliers Découverte / Acquisition / Activation, branché aux coutures Elevay.
-3. `signal-deep-tech-2026-06-27.md` — la couche technologique profonde (6 moteurs : identité probabiliste, extraction sémantique, temporel/velocity, fusion ML, warm-path, research agent) + le moat.
-4. `signal-agent-mcp-2026-06-27.md` — surface MCP agent-native (outils + resources + gates non-contournables).
-5. `signal-outreach-brief-2026-06-27.md` — **le pivot** : le produit n'écrit pas le mail, il émet un brief (`citableFacts[]`/`doNotClaim[]`) consommé par un agent outbound + intégration Instantly.
-6. `signal-agent-prd-2026-06-27.md` — PRD d'expert + parcours démo 2 min.
-7. `orion-differentiation-2026-06-27.md` — pourquoi Orion > Fiber AI / Orange Slice / Lopus + la data d'entrée (Tier 0/1/2) + table de valeur signal.
-8. `orion-backend-verification-2026-06-27.md` — le backend Elevay réel : versions exactes, câblage drizzle/inngest/next-auth/AI, env, pièges à porter dans Orion.
-
-## Décisions fondatrices (2026-06-27)
-Repo Orion séparé, **même stack** qu'Elevay (Next 15 / Drizzle / Postgres-Supabase / Inngest / AI SDK v6 / next-auth v5), on **copie** les ~6 modules clés (evaluateSend, IntelligenceBrief, serveur MCP, waterfall, record-signal, identity). DB = **Supabase/Postgres + Drizzle** (zéro migration le jour de la fusion ; la réactivité native de Convex ne justifie pas la dette de migration pour ce workload async). Démo standalone (hackathon YC) puis intégration Elevay. Sortie vers **Instantly + Fiber AI + Orange Slice + Lopus** + webhook générique. UI **identique à Elevay**.
+## Décisions fondatrices
+Repo Orion **séparé**, **même stack** qu'Elevay (Next 15 / Drizzle / Postgres-Supabase / Inngest /
+AI SDK v6 / next-auth v5) ; on **copie** (vendore) les ~6 modules clés (evaluateSend, IntelligenceBrief,
+serveur MCP, waterfall, record-signal, identity). DB = **Supabase/Postgres + Drizzle partagée**,
+scope tenant `elevay` (RLS `elevay_app`). Sortie vers **Instantly + Orange Slice + Lopus** (webhook) ;
+**Fiber = entrée**. UI **identique à Elevay**. Détail dans `spec/00-INDEX.md`.

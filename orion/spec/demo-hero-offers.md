@@ -135,7 +135,7 @@ précis. On parle en **sensibilité**, pas en barres d'erreur inventées.)
 À 10/7 la variance est ingérable. On rétrécit avec `anonymized_signal_benchmarks`,
 **tourné à froid sur l'historique uploadé** (le wedge day-one).
 
-- **Segment apparié** : `leadership_change.vp_eng` × « B2B dev-tools / eng-intelligence,
+- **Segment apparié** : `leadership_change` (subtype `vp_eng`) × « B2B dev-tools / eng-intelligence,
   Series A–C » — **k = 14 tenants** (≥ seuil k-anonymat 10).
 - **Benchmark population** : P(signal | won) ≈ 0,55 ; P(signal | lost) ≈ 0,18.
 - **Shrinkage Beta-Binomial** (pseudo-comptes m = 10/classe) :
@@ -164,8 +164,8 @@ GET /fiber/job-changes
   &event=role_started
   &started_after=<today-90d>
   &company_filter=icp:"saas,series_a_c,eng_40_250"
-→ pour chaque hit : recordCompanySignal(type="leadership_change.vp_eng",
-                     fired_at=role_start_date, source="fiber")
+→ pour chaque hit : recordCompanySignal(type="leadership_change",
+                     detectedAt=role_start_date, source="fiber")   // vp_eng en subtype/strength
 ```
 
 - **FR fallback** : `BODACC /annonces?type=modification&objet=dirigeant&date_after=<today-90d>`
@@ -440,9 +440,14 @@ A. Garder l'autre en démo de secours.
 > Lignes exactes prêtes à insérer dans le tenant **elevay**. Format aligné sur le
 > modèle Orion : chaque compte = une row deal (`outcome` + `close_date` + `deal_source`)
 > et chaque événement daté = un appel `recordCompanySignal` (matérialisé en
-> `signal_snapshots` / `properties.signals[]`). Les `type` sont **canoniques** (passent
-> `lib/signals/taxonomy.ts`, sinon multiplier plancher 1.0× — bug `signal-score-daily`
-> connu) ; chaque event est **daté** pour passer `isSignalFresh`.
+> `signal_snapshots` / `properties.signals[]`). Les `type` sont **canoniques au vocab de
+> scoring** (`SignalType` / `SIGNAL_DETECTORS`, `lib/scoring/signal-detectors.ts`, sur
+> lequel `SIGNAL_PRIORS` de `lib/scoring/signal-outcomes.ts` est indexé) ; un type inconnu
+> retombe au **plancher 1.0×** (`SIGNAL_PRIORS[type] ?? 1` — le bug `signal-score-daily`
+> connu). L'alias-map **net-new** d'Orion `taxonomy.ts` (à créer, n'existe PAS chez Elevay)
+> normalise les types bruts producteurs vers ce vocab pour faire FIRER les multiplicateurs.
+> Chaque event est daté via **`detectedAt`** (camelCase, le seul champ de date que porte
+> `SignalEntry`, `record-signal.ts:39`) pour passer `isSignalFresh`.
 
 ### 4.1 Reco principale — Candidate B (infra)
 
@@ -471,20 +476,22 @@ A. Garder l'autre en démo de secours.
 **Signaux datés à matérialiser (les 7 lignes qui fire `infra_footprint`) :**
 
 ```jsonc
-// recordCompanySignal(company, { type, fired_at, source }) — canonique tech_stack_change
-{ "company":"Lumen Analytics",    "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2025-12-20", "source":"crt.sh" }
-{ "company":"Lumen Analytics",    "type":"tech_stack_change", "subtype":"sdk_published",  "fired_at":"2025-12-28", "source":"npm" }
-{ "company":"Northwind Robotics", "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2025-11-28", "source":"crt.sh" }
-{ "company":"Northwind Robotics", "type":"tech_stack_change", "subtype":"release_spike", "fired_at":"2025-12-10", "source":"github" }
-{ "company":"Cobalt Health",      "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2026-01-15", "source":"crt.sh" }
-{ "company":"Cobalt Health",      "type":"tech_stack_change", "subtype":"api_gateway",   "fired_at":"2026-02-01", "source":"builtwith" }
-{ "company":"Drift Labs",         "type":"tech_stack_change", "subtype":"sdk_published",  "fired_at":"2025-10-22", "source":"npm" }
-{ "company":"Drift Labs",         "type":"tech_stack_change", "subtype":"docs_portal",   "fired_at":"2025-11-05", "source":"builtwith" }
-{ "company":"Vega Mobility",      "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2025-12-05", "source":"crt.sh" }
-{ "company":"Vega Mobility",      "type":"tech_stack_change", "subtype":"openapi",       "fired_at":"2025-12-20", "source":"probe" }
-{ "company":"Helix Systems",      "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2026-02-10", "source":"crt.sh" }
-{ "company":"Helix Systems",      "type":"tech_stack_change", "subtype":"commit_spike",  "fired_at":"2026-03-01", "source":"github" }
-{ "company":"Orchid Bio",         "type":"tech_stack_change", "subtype":"api_subdomain", "fired_at":"2026-01-05", "source":"crt.sh" } // lost-fired (bruit honnête)
+// recordCompanySignal(company, { type, detectedAt, source }) — canonique tech_stack_change
+// SignalEntry (record-signal.ts:39) ne porte PAS de champ `subtype` : le détail est en
+// commentaire de fin de ligne ; la date est `detectedAt` (camelCase), pas `fired_at`.
+{ "company":"Lumen Analytics",    "type":"tech_stack_change", "detectedAt":"2025-12-20", "source":"crt.sh" }    // subtype: api_subdomain
+{ "company":"Lumen Analytics",    "type":"tech_stack_change", "detectedAt":"2025-12-28", "source":"npm" }       // subtype: sdk_published
+{ "company":"Northwind Robotics", "type":"tech_stack_change", "detectedAt":"2025-11-28", "source":"crt.sh" }    // subtype: api_subdomain
+{ "company":"Northwind Robotics", "type":"tech_stack_change", "detectedAt":"2025-12-10", "source":"github" }    // subtype: release_spike
+{ "company":"Cobalt Health",      "type":"tech_stack_change", "detectedAt":"2026-01-15", "source":"crt.sh" }    // subtype: api_subdomain
+{ "company":"Cobalt Health",      "type":"tech_stack_change", "detectedAt":"2026-02-01", "source":"builtwith" } // subtype: api_gateway
+{ "company":"Drift Labs",         "type":"tech_stack_change", "detectedAt":"2025-10-22", "source":"npm" }       // subtype: sdk_published
+{ "company":"Drift Labs",         "type":"tech_stack_change", "detectedAt":"2025-11-05", "source":"builtwith" } // subtype: docs_portal
+{ "company":"Vega Mobility",      "type":"tech_stack_change", "detectedAt":"2025-12-05", "source":"crt.sh" }    // subtype: api_subdomain
+{ "company":"Vega Mobility",      "type":"tech_stack_change", "detectedAt":"2025-12-20", "source":"probe" }     // subtype: openapi
+{ "company":"Helix Systems",      "type":"tech_stack_change", "detectedAt":"2026-02-10", "source":"crt.sh" }    // subtype: api_subdomain
+{ "company":"Helix Systems",      "type":"tech_stack_change", "detectedAt":"2026-03-01", "source":"github" }    // subtype: commit_spike
+{ "company":"Orchid Bio",         "type":"tech_stack_change", "detectedAt":"2026-01-05", "source":"crt.sh" }    // subtype: api_subdomain — lost-fired (bruit honnête)
 ```
 
 *(Les autres comptes ne reçoivent aucun event `tech_stack_change` en fenêtre — c'est
@@ -507,17 +514,24 @@ pour le tie-break confounder exécutable (§2.7). C'est le seul ajout de schéma
 ### 4.2 Démo de secours — Candidate A (leadership)
 
 **Deals (17) + signaux datés** : reprendre les tables §1.2 telles quelles. Mapping
-canonique : `vp_eng → leadership_change.vp_eng`, `inv → investor_overlap`,
-`fund → funding`, `hire → hiring_surge`, `tech → tech_stack_change`,
-`gh → commit_velocity`. Champ `deal_source` déjà présent dans la table (valeurs
-`intro fonds Atlas/Borealis` vs `outbound`) → tie-break §1.8 exécutable sans ajout.
+canonique (chaque cible est une clé `SIGNAL_PRIORS`, sinon plancher 1.0×) :
+`vp_eng → leadership_change` (vp_eng en subtype/strength — **jamais** la forme pointée
+`leadership_change.vp_eng`, qui n'est pas une clé `SIGNAL_PRIORS` et plancherait, ce qui
+ferait passer le hero froid SOUS la pile), `inv → investor_overlap` (clé de scoring
+existante 1,4× ; détecteur côté ingest = net-new à ajouter), `fund → funding`,
+`hire → hiring_surge`, `tech → tech_stack_change`, `gh → tech_stack_change` (subtype
+`commit_velocity` ; github-velocity = détecteur net-new — `commit_velocity` seul n'est
+pas une clé `SIGNAL_PRIORS` et plancherait). Champ `deal_source` déjà présent dans la
+table (valeurs `intro fonds Atlas/Borealis` vs `outbound`) → tie-break §1.8 exécutable
+sans ajout.
 
 ```jsonc
 // exemple de matérialisation (Northwind Labs, won) — voir §1.2 pour les 17 lignes
-{ "company":"Northwind Labs", "type":"leadership_change.vp_eng", "fired_at":"2024-07-18", "source":"fiber" }
-{ "company":"Northwind Labs", "type":"investor_overlap",         "fired_at":"2024-06-30", "source":"crunchbase" }
-{ "company":"Northwind Labs", "type":"hiring_surge",             "fired_at":"2024-08-05", "source":"ats" }
-{ "company":"Northwind Labs", "type":"commit_velocity",          "fired_at":"2024-08-20", "source":"github" }
+// `type` = clé de scoring canonique ; le subtype (non porté par SignalEntry) est en commentaire ; date = `detectedAt`
+{ "company":"Northwind Labs", "type":"leadership_change", "detectedAt":"2024-07-18", "source":"fiber" }      // subtype: vp_eng (hero)
+{ "company":"Northwind Labs", "type":"investor_overlap",  "detectedAt":"2024-06-30", "source":"crunchbase" } // détecteur ingest net-new
+{ "company":"Northwind Labs", "type":"hiring_surge",      "detectedAt":"2024-08-05", "source":"ats" }
+{ "company":"Northwind Labs", "type":"tech_stack_change", "detectedAt":"2024-08-20", "source":"github" }     // subtype: commit_velocity (github-velocity = détecteur net-new)
 ```
 
 **Sources sponsor (A) :** Fiber Tracker (job-change) · LinkedIn/Sales-Nav via Unipile ·

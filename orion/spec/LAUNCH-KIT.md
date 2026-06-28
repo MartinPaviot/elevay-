@@ -31,7 +31,8 @@ Prérequis opérateur (cf `spec/00-PREREQUISITES.md`) avant la Vague 0 : tenant 
   la base de la vague, body = **Résumé / Fichiers possédés / Plan de test / Verify / Risques**.
   **Squash-merge** (un commit propre par lot sur `main`).
 - **Trailer de commit** (footer) :
-  `Co-Authored-By: Claude <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+  `Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4`
 
 ## Ordre des vagues (et base de chaque branche)
 - **Vague 0** (séquentiel, 1 session) : `pack0` depuis `main` → squash-merge → `pack1` depuis `main`
@@ -63,10 +64,12 @@ spec/00-PREREQUISITES.md, spec/MCP-AND-PERMISSIONS.md, spec/CONFIG-TOOLING.md, s
    en n'important QUE pack0+pack1. Squash-merge sur main.
 
 Règles : DB partagée leads, tenant elevay UNIQUEMENT (rôle elevay_app, withTenantTx + set_config(...,true)
-LOCAL, jamais d'écriture owner au runtime, ne JAMAIS créer lib/guardrails/sending-gate.ts) ; tables
+LOCAL, jamais d'écriture owner au runtime, ne JAMAIS MODIFIER/réécrire lib/guardrails/sending-gate.ts —
+copie Elevay INCHANGÉE d'evaluateSend (tripwire reuse-untouched) qui DOIT exister sous src/ ; le seul
+net-new est le wrapper orion-send-gate.ts qui réexporte evaluateSend) ; tables
 additives (migrations 0107+) ; runner __elevay_migrations ; createFunction Inngest 2-arg ; Anthropic /v1.
 Commits : Conventional Commits, 1 changement logique chacun, git add explicite, re-vérifie branche+HEAD
-avant chaque commit, trailer Co-Authored-By: Claude <noreply@anthropic.com>. Ne touche QUE les fichiers
+avant chaque commit, trailer Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4. Ne touche QUE les fichiers
 possédés par pack0 puis pack1. Termine sur "voilà la vérification" avec tsc+tests verts.
 ```
 
@@ -85,7 +88,7 @@ hero FIGÉ, leadership_change.vp_eng sort à ~4,2× et le confounder investor_ov
 stratum froid (deal_source=outbound).
 Règles : tenant elevay/RLS, brief zéro prose, no-emoji. Boucle code→test→verify→commit atomique
 (Conventional Commits, scope ingest/signals, git add explicite, re-vérifie branche+HEAD, trailer
-Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack2 — ingestion + offline-discovery,
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack2 — ingestion + offline-discovery,
 base main, squash-merge.
 ```
 
@@ -101,7 +104,7 @@ outputSchema + structuredContent, resources dossier prospect, bump protocolVersi
 find_prospects, get_signals, explain_priority. Patche l'envelope tools/call Elevay pour structuredContent
 (autorisé, séquentiel après pack0). Règles : tenant elevay/RLS, no-emoji.
 Boucle code→test→verify→commit (Conventional, scope brief/mcp, git add explicite, re-vérifie HEAD,
-trailer Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack3 — outreach brief + MCP,
+trailer Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack3 — outreach brief + MCP,
 base main, squash-merge.
 ```
 
@@ -117,7 +120,7 @@ d'éligibilité) AVANT push ; adaptateurs RÉELS = Instantly (custom_variables s
 REST (Fiber = entrée, pas sortie). Clés partenaires per-tenant via integration_credentials.
 Règles : gate non-contournable, tenant elevay/RLS, jamais d'envoi cold via infra cliente, no-emoji.
 Boucle code→test→verify→commit (Conventional, scope outbound, git add explicite, re-vérifie HEAD,
-trailer Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack4 — outbound export + gates,
+trailer Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack4 — outbound export + gates,
 base main, squash-merge.
 ```
 
@@ -133,7 +136,7 @@ Form D, ATS publics Greenhouse/Lever/Ashby, GitHub/npm, velocity (signal_snapsho
 Mappe chaque rawType via taxonomy.ts (toCanonicalSignal). Plus la source INPUT Fiber reveal
 (/v1/contact-details/single, x-api-key per-tenant). Règles : tenant elevay/RLS, never-throw, no-emoji.
 Boucle code→test→verify→commit (Conventional, scope signals, git add explicite, re-vérifie HEAD,
-trailer Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack5 — tier-2 signals + fiber,
+trailer Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack5 — tier-2 signals + fiber,
 base main, squash-merge.
 ```
 
@@ -148,7 +151,7 @@ demi-écran 680-960px) : écrans Sources/Ingestion, Prospects (rankés priority_
 why-now + citations), Export (destinations + verdict gate). Seule édition autorisée hors tes fichiers :
 globals.css (extraction tokens, documentée).
 Boucle code→test→verify→commit (Conventional, scope ui, git add explicite, re-vérifie HEAD, trailer
-Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack6 — UI (design Elevay),
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack6 — UI (design Elevay),
 base main, squash-merge.
 ```
 
@@ -165,6 +168,6 @@ confiance honnête + reveal confounder investor_overlap qui s'effondre sur le fr
 confirmation) ; l'acquisition à froid d'un prospect via leadership_change.vp_eng (Fiber/LinkedIn/BODACC) ;
 hardening (transport MCP HTTPS, generateOpener non-vide). Migrations 0108+.
 Boucle code→test→verify→commit (Conventional, scope demo, git add explicite, re-vérifie HEAD, trailer
-Co-Authored-By: Claude <noreply@anthropic.com>). PR feat(orion): pack7 — demo + hero seed,
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com> + Claude-Session: https://claude.ai/code/session_017cpMyY7RNVYTQmqzYp8Qz4). PR feat(orion): pack7 — demo + hero seed,
 base main, squash-merge.
 ```

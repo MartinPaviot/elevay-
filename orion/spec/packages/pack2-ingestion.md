@@ -108,10 +108,12 @@ workspace) ; pack2 n'écrit que la
   sinon `ingest_from_provider provider:apollo_*` ne peut pas pull (le test mocke le client).
   `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` pour exécuter les jobs.
 - **Flag** : `ORION_INGEST_ENABLED` est net-new (à créer si la démo le gate). N'empêche pas le build.
-- **DÉP-1 (dur)** : `taxonomy.ts` (pack1) doit exister — alias `{funding_recent,…}` → canonique
-  `{funding,…}` (9 types `triggers.ts:27`). Tu y appelles l'alias dans `record-signal` ? **Non** :
-  `recordCompanySignal` consomme déjà la taxonomie ; tu passes le `type` brut du provider, l'alias-map
-  le canonicalise en aval. Vérifie juste que `taxonomy.ts` est importable.
+- **DÉP-1 (dur)** : `taxonomy.ts` (pack1) doit exister — alias `{funding_recent,…}` → clé canonique
+  de **scoring** `{funding,…}` (l'union `SignalType` / `SIGNAL_DETECTORS`, `signal-detectors.ts:16-22` —
+  **PAS** `triggers.ts:27`, qui porte le vocab trigger-config distinct `post_funding`/`hiring_signal`).
+  Tu y appelles l'alias dans `record-signal` ? **Non** : tu passes le `type` brut du provider, et c'est le
+  chemin de lecture des multipliers (cron daily) qui le canonicalise vers ces clés `SignalType` via
+  l'alias-map en aval (cf. §7 piège 2). Vérifie juste que `taxonomy.ts` est importable.
 - **DÉP-2 (dur, T-18)** : les 2 hookpoints provenance + signal post-import sont **dans le MVP** ;
   sans eux un tenant 100%-CSV produit un brief **sans why-now** (gap #455).
 - **Pièges vérifiés applicables** (`00-PREREQUISITES §3`) : #1 (`createFunction` 2-arg),
@@ -134,7 +136,7 @@ workspace) ; pack2 n'écrit que la
 | `lib/ingest/score-touched.ts` | **NET-NEW** sur REUSE | `scoreCompanyBatch` (`lib/icp/fit-recompute-core.ts:140`) + `bestMultiplierForCompany` → `computePriorityScore` (`lib/scoring/priority-score.ts:70`, floors `:54-55`) — **touchedIds uniquement** |
 | `lib/ingest/sources/csv-source.ts` | **NET-NEW** | `csvSource(text, hint)` : `InputSource` ; `pull()` → `IngestItem[]` paginés 200 |
 | `lib/ingest/sources/apollo-source.ts` | **NET-NEW** | `apolloPeopleSource(query)` / `apolloOrgsSource(query)` ; `num_current_job_openings` → `rawSignals:[{type:'hiring'}]`, **jamais** un champ firmo |
-| `lib/ingest/enrich/fiber-reveal.ts` | **NET-NEW** | `fiberReveal(linkedinUrl, opts)` : `POST api.fiber.ai/v1/contact-details/single` (waterfall email/phone) ; clé `x-api-key` per-tenant déchiffrée (`decryptSecret`, `lib/crypto/settings-encryption.ts:65`) ; never-throw → `null` si pas de clé/erreur. Dossier `enrich/` = namespace exclusif pack2 (**pas** `sources/`, qui chevauche pack5) |
+| `lib/ingest/enrich/fiber-reveal.ts` | **NET-NEW** | `fiberReveal(linkedinUrl, opts)` : `POST api.fiber.ai/v1/contact-details/single` (waterfall email/phone) ; clé `x-api-key` : `FIBER_API_KEY` en env (accepté pour la démo, clé de SOURCE comme `APOLLO_API_KEY`) ou per-tenant chiffrée (`decryptSecret`, `lib/crypto/settings-encryption.ts:65`, chemin prod) ; never-throw → `null` si pas de clé/erreur. Dossier `enrich/` = namespace exclusif pack2 (**pas** `sources/`, qui chevauche pack5) |
 | `lib/ingest/mcp-handlers.ts` | **NET-NEW (module registre)** | exporte `ingestTools: McpToolModule` (`{tools, handlers}`) pour `ingest_csv`/`ingest_from_provider`/`get_ingest_job` |
 | `app/api/import/smart/route.ts` | **MODIF (un seul pack y touche : pack2)** | insert brut (`:40-101`) → `openIngestJob` + `inngest.send("ingest/run")` ; rétro-compat `sync=true` <50 lignes |
 | `db/canonical/field-source.ts` | **MODIF additif (hookpoint T-18)** | provenance : `writeFieldSource` existe déjà (`:42`) — **brancher** son appel dans le compose du job (additif, ne pas réécrire la fn) |
@@ -223,7 +225,7 @@ où le hiring count est dans `rawSignals`, pas `fields` (assert explicite).
    `provider`/`field`/`observedAt` dans `account_field_source`. Sans ça, firmo composée mais
    provenance partielle → `citableFacts` plus faibles.
 2. **Signal post-import** : autour de `executeImport` (`lib/import/agentic-executor.ts:49`), ajouter
-   l'appel `recordCompanySignal` (`lib/signals/record-signal.ts:94`, jsdoc `:86`) pour les
+   l'appel `recordCompanySignal` (`lib/signals/record-signal.ts:94`) pour les
    `rawSignals` issus de l'import. Sans ce hookpoint, un tenant 100%-CSV → **why-now vide**.
 
 **VERIFY.** Après un job CSV avec une ligne portant un `rawSignal`, requêter (via `withTenantTx`)
@@ -236,10 +238,12 @@ où le hiring count est dans `rawSignals`, pas `fields` (assert explicite).
 `fiberReveal(linkedinUrl, opts)` appelle **`POST https://api.fiber.ai/v1/contact-details/single`**
 (reveal sync standard, waterfall multi-providers, 2–5 crédits, timeout reco 2 min ;
 `research/partner-apis-2026-06-27.md §2(4)`). Auth = header **`x-api-key: <clé>`** (Fiber accepte
-aussi `Authorization: Bearer` et `apiKey` body ; on standardise sur `x-api-key`). La clé est
-**per-tenant chiffrée** lue depuis `integration_credentials` (pack1) puis déchiffrée via
-`decryptSecret` (`lib/crypto/settings-encryption.ts:65`, pattern Instantly
-`lib/providers/instantly-client.ts:16-17`) — **jamais** `process.env` (directive D7). Body :
+aussi `Authorization: Bearer` et `apiKey` body ; on standardise sur `x-api-key`). La clé vient de
+**`FIBER_API_KEY` en env** (accepté pour la démo — clé de SOURCE, comme `APOLLO_API_KEY`, PAS soumise à
+la règle des sinks per-tenant) ou, en prod, **per-tenant chiffrée** lue depuis `integration_credentials`
+(pack1) puis déchiffrée via `decryptSecret` (`lib/crypto/settings-encryption.ts:65`, pattern Instantly
+`lib/providers/instantly-client.ts:16-17`). La directive D7 (« jamais en env ») ne vise QUE les clés de
+SORTIE (sinks) ; Fiber est une ENTRÉE. Body :
 `{ linkedinUrl, enrichmentType:{getWorkEmails,getPersonalEmails,getPhoneNumbers}, validateEmails:true }`.
 Retour Fiber : `profile.emails[]{email,type,status}` + `phoneNumbers[]{number,type}` →
 on retient l'email **work + status valide** prioritaire (puis perso), le 1er téléphone.
@@ -271,8 +275,8 @@ export async function fiberReveal(
 le contact a un `email` + une ligne `account_field_source`/contact provenance `provider:'fiber'`.
 **TEST.** `fiber-reveal.test.ts` (client `fetch` mocké, fixture JSON ; **aucun** appel réseau réel) :
 fixture `emails:[{email,type:'work',status:'valid'}]` → `email` = celui-là ; `enabled:false` ou pas de
-clé → `null` sans `fetch` ; `429`/`402` mockés → `null` (never-throw) ; le header `x-api-key` est posé,
-**aucune** clé lue de `process.env`.
+clé → `null` sans `fetch` ; `429`/`402` mockés → `null` (never-throw) ; le header `x-api-key` est posé
+à partir de `FIBER_API_KEY` (env) **ou** de la cred per-tenant déchiffrée.
 
 ### Étape 5 — `lib/ingest/score-touched.ts` (scoring ciblé) · ~0,5 j-h · T-19/REQ-17
 **Action.** `scoreTouched(tenantId, touchedIds)` : `scoreCompanyBatch(tenantId, touchedIds, icps,
@@ -411,9 +415,9 @@ immédiate). Diff **additif/wrapper uniquement** (invariant T-38 `reuse-untouche
    un job en échec → `ingest_jobs.status='error'` + retries.
 8. **REUSE intact** : `git diff` ne modifie aucun module métier Elevay hors des 2 hookpoints additifs
    listés ; le `diff` de `import/smart/route.ts` est un wrapper.
-9. **Fiber reveal = ENTRÉE, never-throw, clé per-tenant** : `fiberReveal` appelle
-   `POST /v1/contact-details/single` avec `x-api-key` déchiffré de `integration_credentials` (jamais
-   `process.env`) ; pas de clé / OFF / `402`/`429` → `null` sans casser le job ; un person avec
+9. **Fiber reveal = ENTRÉE, never-throw** : `fiberReveal` appelle
+   `POST /v1/contact-details/single` avec `x-api-key` (de `FIBER_API_KEY` en env — OK démo — ou de
+   `integration_credentials` chiffré en prod) ; pas de clé / OFF / `402`/`429` → `null` sans casser le job ; un person avec
    `linkedinUrl` sans email → email matérialisé + provenance `provider:'fiber'`. Aucun chemin d'envoi
    Fiber n'existe (entrée seule).
 
@@ -425,7 +429,7 @@ immédiate). Diff **additif/wrapper uniquement** (invariant T-38 `reuse-untouche
   **par toi** (preuve : log/sortie collée dans la PR, pas « teste chez toi »).
 - `cd app && pnpm --filter @orion/web tsc` **vert** + `pnpm --filter @orion/web test` **vert**
   (sur un `pnpm install --frozen-lockfile` **propre**, pas un `node_modules` junctionné — piège #13).
-- Les 8 critères d'acceptation §5 passent.
+- Les 9 critères d'acceptation §5 passent.
 - Aucun fichier hors ownership modifié (`git diff --stat` scopé pack2 + les 2 lignes append-only).
 - Tripwires verts : `no-tenant-arg`, `rls` (pas de `set_config(...,false)`), `reuse-untouched`.
 - Commits atomiques (un changement logique chacun : extraction, sources, orchestrateur, cron, outils,
@@ -476,12 +480,13 @@ immédiate). Diff **additif/wrapper uniquement** (invariant T-38 `reuse-untouche
     `node_modules` junctionné passe tsc local mais peut échouer en CI).
 13. **`writeFieldSource` existe déjà** (`db/canonical/field-source.ts:42`) — tu **branches son appel**
     dans le compose, tu ne le réécris pas. Le doc parlait de `functions.ts:~220` (obsolète) ; le fichier
-    réel est `field-source.ts`. De même `recordCompanySignal` est à `:94` (jsdoc `:86`).
+    réel est `field-source.ts`. De même `recordCompanySignal` est à `:94`.
 14. **Fiber = INPUT, jamais OUTPUT** (`research/partner-apis-2026-06-27.md §2`, OpenAPI v1.40.0 lue :
     **zéro** endpoint d'envoi). Ne construis **aucun** `FiberAdapter` de sortie. Le reveal vit dans
     `enrich/` (pas `sources/` — `sources/fiber-source.ts` est à pack5 pour le **Tracker** signaux) :
-    deux rôles Fiber distincts, deux fichiers, deux packs. La clé `x-api-key` est **per-tenant**
-    (1 clé = 1 org Fiber) — lue chiffrée de `integration_credentials`, jamais en clair, jamais en env.
+    deux rôles Fiber distincts, deux fichiers, deux packs. La clé `x-api-key` (1 clé = 1 org Fiber) :
+    `FIBER_API_KEY` en env est **accepté pour la démo** (clé de SOURCE, pas un sink) ; en prod, per-tenant
+    chiffrée lue de `integration_credentials`. Jamais en clair / jamais loggée.
 15. **Fiber reveal OFF par défaut** : pas d'enrichment auto (mémoire `no-fullenrich`). N'enrichit que
     sur opt-in job/tenant ; `tier:"exhaustive"` (waterfall async cher) réservé `priority_score` haut,
     non-MVP. Le MVP n'implémente que `single`.
@@ -688,7 +693,7 @@ export async function runOfflineDiscovery(input: {
   **VERIFY.** Un type firmo (`company_size_bigger`) → `isEvidence=false` (jeté) ; `leadership_change`,
   `funding`, `hiring`, `tech_stack_change`, `investor_overlap` → `isColdAcquirable=true` (∈
   `SIGNAL_DETECTORS`). **TEST.** `filters.test.ts` : reformulation firmo jetée ; un type hors catalogue
-  → jeté même à lift élevé ; les 6 types du seed passent l'acquérabilité.
+  → jeté même à lift élevé ; **5 des 6** types du seed passent l'acquérabilité — `github`/github-velocity est jeté (détecteur net-new **pack5**, hors catalogue à froid au moment de pack2 ; cf. §8.1 maillon 4).
 - **Étape D4 — `prior.ts`.** `getColdSignalMultipliers` (computeMultiplier À FROID + shrinkage benchmark).
   **VERIFY.** Seed (k=14) : `leadership_change` 4,2× brut → `liftPosterior ≈ 3,5×` (clamp [0,5 ; 2,5]
   appliqué sur le multiplier de scoring ; le `liftPosterior` rapporté reste la croyance honnête ≈3,5).

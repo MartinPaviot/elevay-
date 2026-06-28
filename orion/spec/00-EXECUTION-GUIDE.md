@@ -64,7 +64,9 @@ route MCP avec registre d'outils**.
 ### pack2 — Ingestion (`feat/orion-pack2`) — ~7,25 j-h
 **Objectif.** Orchestrateur durable d'ingestion (résolution identité → composition par précédence →
 acquisition signaux → score ciblé), sources MVP (CSV, Apollo), recompute quotidien, + 3 outils MCP
-d'ingestion. **Fiber = source d'ENTRÉE** ici : reveal waterfall (`POST /v1/contact-details/single`)
+d'ingestion, + l'**offline-discovery point-in-time** — le wedge day-one (`src/lib/discovery/*` +
+`src/inngest/discovery-run.ts` : reconstruction des signaux datés gagné/perdu sur l'historique uploadé).
+**Fiber = source d'ENTRÉE** ici : reveal waterfall (`POST /v1/contact-details/single`)
 pour matérialiser `warm_path` (les signaux Tracker Fiber = pack5).
 **T-* :** T-17, T-18, T-19, T-22, T-23, T-27 (implémentation de T-21 ; contrat importé de pack1).
 **Dépendances :** pack1 (schéma + contrats), pack0 (Inngest, AI, MCP registry).
@@ -105,8 +107,8 @@ QA light/dark + founder demi-écran. **Zéro nouveau système visuel.**
 (`§4b`) (1,5) ; U4 Brief view `.inbox-shell` (why-now/citableFacts/doNotClaim/angle/citations)
 (`§4c`) (1,5) ; U5 Outbound + verdict gate (`§4d`) (1,0) ; U6 responsive single-pane <lg + dark + QA
 `/design-review` (`§5`) (1,0).
-**Dépendances :** pack0 (chrome/globals.css). Lit les API de pack2/3/4 **au runtime** → coder contre
-fixtures/contrats, intégrer en pack7.
+**Dépendances :** pack0 (chrome/globals.css) + **pack1** (contrat `OutreachBrief` — U4 Brief view code
+contre lui). Lit les API de pack2/3/4 **au runtime** → coder contre fixtures/contrats, intégrer en pack7.
 
 ### pack7 — Demo + Integration (`feat/orion-pack7`) — ~4,0 j-h
 **Objectif.** Recoller les packs : preuve "REUSE intact" (additif/wrappers only), suite Vitest cœur,
@@ -171,7 +173,7 @@ barrel schéma, `globals.css`) utilisent le **pattern registre append-only** (§
 |---|---|
 | **pack0** | `package.json` (déclare `@orion/web`), `pnpm-workspace.yaml`, `turbo.json`, `.nvmrc`, `.github/workflows/ci.yml`, `.gitleaks.toml`, `.mcp.json`, `.claude/settings.local.json`, `tsconfig.json`, `postcss.config.mjs`, `next.config.ts`, `vitest.config.ts`, `vitest.setup.ts`, `playwright.config.ts`, `e2e/global-setup.ts`, `vercel.json`, `drizzle.config.ts` ; `src/app/globals.css` (base) ; `src/db/index.ts`, `src/db/rls.ts` ; `scripts/apply-migrations.ts` ; `src/auth.ts`, `src/middleware.ts`, `src/db/schema/auth.ts` ; `src/inngest/client.ts`, `src/inngest/registry.ts`, `src/app/api/inngest/route.ts` ; `src/lib/ai/*`, `src/lib/region-config.ts` ; **squelette** `src/app/api/mcp/route.ts` + `src/lib/mcp/registry.ts` + `src/lib/mcp/types.ts` |
 | **pack1** | `src/db/schema/{tenants,integrations,ingest,outbound,snapshots}.ts` ; `src/db/schema.ts` (barrel — zone append) ; `src/lib/signals/taxonomy.ts` (**9 types canoniques** `triggers.ts:27` + **ALIAS map** + `toCanonicalSignal()` ; **DOIT couvrir les alias dérivés pack5** `hiring_velocity`/`adoption_accel`/`tech_churn`/`product_launch`/`job_change` → canonique — **DEP-1**) ; `src/lib/ingest/types.ts` (contrat `IngestItem`/`IngestSource`) ; `src/lib/outbound/types.ts` (contrat `OutboundDestination`/`ExportResult`) ; `src/lib/mcp/contracts/outreach-brief.schema.ts` (zod `OutreachBrief` — sections A–G, `citableFacts[]`/`doNotClaim[]`) ; `src/lib/ingest/jobs.ts` (`openIngestJob`/`getJob` — **ownership pack1**, PAS pack2/4/5) ; **wrapper** `src/lib/campaign-engine/brief.ts` (réexport `buildIntelligenceBrief` **copié** + cache `intelligence_briefs`) + `src/lib/guardrails/sending-gate.ts` (`evaluateSend` **copié depuis Elevay `sending-gate.ts:212`** ; ce fichier copié DOIT exister sous `src/` ; réexport optionnel `orion-send-gate.ts`) |
-| **pack2** | `src/inngest/ingest-run.ts`, `src/inngest/signal-score-daily.ts` ; `src/lib/ingest/csv-parse.ts`, `src/lib/ingest/score-touched.ts`, `src/lib/ingest/mcp-handlers.ts` ; `src/lib/ingest/sources/{csv,apollo}-source.ts` ; **MODIF coordonnée** `src/app/api/import/smart/route.ts` (producteur d'event — fichier Elevay, voir §3.3) |
+| **pack2** | `src/inngest/ingest-run.ts`, `src/inngest/signal-score-daily.ts`, `src/inngest/discovery-run.ts` ; `src/lib/ingest/csv-parse.ts`, `src/lib/ingest/score-touched.ts`, `src/lib/ingest/mcp-handlers.ts` ; `src/lib/ingest/sources/{csv,apollo}-source.ts` ; `src/lib/discovery/*` (offline-discovery — le wedge, namespace exclusif pack2) ; **MODIF coordonnée** `src/app/api/import/smart/route.ts` (producteur d'event — fichier Elevay, voir §3.3) |
 | **pack3** | `src/lib/mcp/outreach-brief.ts`, `src/lib/mcp/evaluate-send.ts`, `src/lib/mcp/brief-tools.ts` (module registre) ; `src/lib/mcp/resources.ts` `[P1]` |
 | **pack4** | `src/lib/outbound/instantly-map.ts` ; `src/lib/outbound/destinations/{instantly,orange-slice,webhook-generic}.ts` (**destinations RÉELLES seulement** — PAS de `fiber.ts`/`lopus.ts` REST ; Lopus = via `webhook-generic`) ; `src/lib/mcp/export-to-outbound.ts`, `src/lib/mcp/outbound-tools.ts` (module registre) ; `src/inngest/export-to-outbound.ts` |
 | **pack5** | `src/lib/ingest/sources/{sirene,waterfall,sec,bodacc,ats,oss,techchurn,crtsh,fiber}-source.ts` ; `src/inngest/velocity-snapshot.ts` |
@@ -391,7 +393,7 @@ Plusieurs sessions partagent le **même working tree** et peuvent déplacer bran
 | **pack3** Brief+MCP | T-28, T-29, T-31, T-30`[P1]` | 3,5 | pack1 | pack2,4,5,6 |
 | **pack4** Output+Gates | T-32, T-33, T-35, T-37, T-34`[P1]` | 5,75 | pack1 (+pack3 soft) | pack2,3,5,6 |
 | **pack5** Tier2-signals `[P1]` | T-24, T-25, T-26, T-20 | 5,5 | pack1 (+pack2 soft) | pack2,3,4,6 |
-| **pack6** UI | U1–U6 (ui-spec) | 7,0 | pack0 (+pack2/3/4 soft) | pack2,3,4,5 |
+| **pack6** UI | U1–U6 (ui-spec) | 7,0 | pack0, pack1 (+pack2/3/4 soft) | pack2,3,4,5 |
 | **pack7** Demo+Integration | T-38, T-39, T-40, T-41, T-42 | 4,0 | **tous** | — |
 | **Total** | T-1..42 + UI | **≈ 45,5** | | |
 
@@ -410,4 +412,4 @@ Plusieurs sessions partagent le **même working tree** et peuvent déplacer bran
   PAS une destination. Voir `research/partner-apis-2026-06-27.md`.
 - **Migrations** : ledger partagé `__elevay_migrations` déjà à 0001→0106 → prochaine **0107**
   (pack1), pack7 **0108+**. Le plan de plages « numérotation from scratch » est SUPPRIMÉ (la DB
-  partagée impose de continuer à partir de 0106).
+  partagée impose de continuer à partir de 0107 — 0106 est la dernière existante).

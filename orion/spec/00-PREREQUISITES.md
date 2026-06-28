@@ -88,6 +88,7 @@ secret-scan).
 | `CRUNCHBASE_API_KEY` | source funding (complément SEC) | clé Crunchbase | optionnel |
 | `PAPPERS_API_KEY` | registre FR (complément Sirene keyless) | clé Pappers | optionnel |
 | `ZEFIX_API_USER` / `ZEFIX_API_PASSWORD` | registre CH | creds Zefix | optionnel |
+| `FIBER_API_KEY` | source d'ENTRÉE Fiber AI (`x-api-key` reveal + Tracker) — clé de **SOURCE**, **pas** un sink, donc env OK pour la démo (comme `APOLLO_API_KEY`) | clé Fiber | optionnel (source) |
 | `TARGETING_GATE_ENABLED` | gate 7 (SAFE_MODE targeting, unreviewed→deny) | **`on`** pour la démo (sinon le skip `not_targeted` ne se déclenche pas) | **flag clé démo** |
 | `LAWFUL_BASIS_GATE` / `GDPR_REGION` | gate 5 + EU-host guard | `eu` | flag |
 | `RESEARCH_AGENT_ENABLED` | recherche per-prospect | `1` | flag |
@@ -289,7 +290,9 @@ provenance à copier), **pas** importés via un workspace. Conséquences fermes 
   les tables net-new Orion (`ingest_jobs/items`, `export_jobs`, `outbound_destinations`,
   `integration_credentials`, `signal_snapshots`) sont **additives** sur la DB partagée.
 - **Pas** de renommage de la table de migrations : la DB partagée impose le **même** ledger
-  `__elevay_migrations` (numérotation continue à partir de 0106) et le **même** runner copié.
+  `__elevay_migrations` (numérotation continue **à partir de 0107** — `0106` est la dernière
+  existante, `0106_linkedin_inbound_enums.sql` ; **vérifier le ledger live `__elevay_migrations`
+  avant d'appliquer**) et le **même** runner copié.
 - CI filtre **`@orion/web`** ; `id:"orion"` Inngest distinct.
 **Reste opérationnel :** scaffolder le repo Orion (T-1/T-2), copier les modules + leur schéma,
 copier le runner de migration (T-13/T-16). `orion/app` n'existe **pas encore** sur disque.
@@ -303,10 +306,13 @@ de §1.2 sur l'instance de démo. Si absent → procédure de création §1.2. *
 - **Fournies à l'opérateur, à poser en env :** `ANTHROPIC_API_KEY` (+ `/v1`), `OPENAI_API_KEY`,
   `INNGEST_*`, `APOLLO_API_KEY`, `AUTH_SECRET`, `DATABASE_URL`, `DATABASE_URL_OWNER`.
   **État : NON fournies dans cette session** — à obtenir.
-- **Per-tenant en DB (`integration_credentials`), pas en env :** Instantly (clé V2),
-  Orange Slice, (Lopus) pour l export. Fiber AI (`x-api-key`) = cle d ENTREE (reveal + Tracker), PAS un sink. **État : non fournies.** Sans elles, l'export réel
-  est impossible — mais la démo peut tourner en **`dryRun:true`** (plan sans POST tiers), ce qui
-  suffit au climax « gaté ». **Instantly réel** requiert au minimum la clé V2.
+- **Per-tenant en DB (`integration_credentials`), pas en env — SINKS de SORTIE uniquement :**
+  Instantly (clé V2), Orange Slice, (Lopus) pour l'export. **État : non fournies.** Sans elles,
+  l'export réel est impossible — mais la démo peut tourner en **`dryRun:true`** (plan sans POST
+  tiers), ce qui suffit au climax « gaté ». **Instantly réel** requiert au minimum la clé V2.
+- **Source d'ENTRÉE, clé en env OK pour la démo :** Fiber AI (`x-api-key` → `FIBER_API_KEY`,
+  reveal + Tracker) **n'est pas un sink** : c'est une clé de **SOURCE** (comme `APOLLO_API_KEY`),
+  **pas** soumise à la règle `integration_credentials`. **État : non fournie.**
 - **Endpoints non vérifiés :** Orange Slice (endpoints « À CONFIRMER avec clé »), **Lopus exclu en
   dur** (API non vérifiée). `fiberSignalIngestor` normalise tout payload entrant en filet.
 

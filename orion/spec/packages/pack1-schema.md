@@ -36,11 +36,11 @@ COPIÉS** dans le repo Orion (les `file:line` Elevay = provenance). Conséquence
 | C2 | `id: text(...).$defaultFn(() => createId())` (cuid2) | **Utilise `crypto.randomUUID()`** — convention Elevay partout. N'ajoute **pas** `@paralleldrive/cuid2`. | `db/schema/agent.ts:32` `…$defaultFn(() => crypto.randomUUID())` |
 | C3 | `tenants` à (re)définir avec `$type<TenantSettings>` + `mcpApiKeys` (T-9) | **`tenants` est COPIÉ depuis Elevay** (`core.ts:20`, `settings jsonb default({})` non typé) par pack0. **NE LE REDÉFINIS PAS.** Le home des clés partenaires de CE lot = la table net-new `integration_credentials`, **pas** `tenants.settings.partnerKeys`. | source `core.ts:20-24` |
 | C4 | Table de migration `__orion_migrations` (00-ARCHITECTURE §D5) | **Superseded par la DB partagée** : le runner `scripts/apply-migrations.ts` est **copié depuis Elevay** et le ledger reste **`__elevay_migrations`** (c'est la table de tracking de la DB partagée). **Ne crée PAS** de 2e runner ni de 2e table de tracking. | source `scripts/apply-migrations.ts:52` `__elevay_migrations` ; `package.json` `db:migrate:apply` |
-| C5 | Numérotation migration `pack1 0010–0029` (EXECUTION-GUIDE §3.2) | **Collision DB partagée** : le ledger `__elevay_migrations` de la DB partagée va déjà jusqu'à **`0106_linkedin_inbound_enums.sql`**. pack1 = **`0107_orion_schema.sql`** ; pack7 = **`0108+`**. La plage `0010–0029` (modèle naïf de la spec) est **FAUSSE** : la numérotation continue à partir de 0106. | DB partagée : dernière migration `0106_…` |
+| C5 | Numérotation migration `pack1 0010–0029` (EXECUTION-GUIDE §3.2) | **Collision DB partagée** : le ledger `__elevay_migrations` de la DB partagée va déjà jusqu'à **`0106_linkedin_inbound_enums.sql`**. pack1 = **`0107_orion_schema.sql`** ; pack7 = **`0108+`**. La plage `0010–0029` (modèle naïf de la spec) est **FAUSSE** : la numérotation continue à partir de 0107 (0106 = dernière existante). | DB partagée : dernière migration `0106_…` |
 | C6 | Secret chiffré = objet `{iv, ciphertext, tag}` (design §2.3) | **Utilise `encryptSecret(plaintext): string` / `decryptSecret(encoded): string`** — l'helper réel renvoie **une seule chaîne encodée** → tient dans une colonne `text`. | `lib/crypto/settings-encryption.ts:49` / `:65` / `:90` |
 | C7 | dev = `drizzle-kit push` (CLAUDE.md) | Sur la **DB partagée**, `db:push` diff **tout** le schéma Elevay et peut proposer des changements destructifs. **Applique plutôt le `.sql` additif via `db:migrate:apply` sur `leadsens-localdev`** (idempotent, net-new seulement). `db:push` toléré seulement si le diff ne concerne **que** les 6 tables Orion. | `package.json` `db:push`/`db:migrate:apply` |
 | **C8** | EXECUTION-GUIDE §3.1 : pack1 possède `lib/guardrails/sending-gate.ts (réexport evaluateSend)` | **COLLISION** — `lib/guardrails/sending-gate.ts` est la **copie Elevay** vivante dans Orion (`evaluateSend` à `:212`, copié avec les modules). On **ne le re-modifie pas**. Le wrapper Orion = un **fichier neuf** `lib/guardrails/orion-send-gate.ts` qui **réexporte** `evaluateSend` + ses types depuis la copie. Idem `campaign-engine/brief.ts` = fichier neuf qui réexporte `buildIntelligenceBrief`/`readCachedBrief` du fichier copié. | source `lib/guardrails/sending-gate.ts:212` (`export evaluateSend`) |
-| **C9** | 00-ARCHITECTURE règle 10 : accent UI `#3D99F5` ; EXECUTION-GUIDE §3.2 plages migration | **Hors-périmètre code de ce lot, mais à corriger dans les docs** : (a) accent **app = `#2C6BED`** ; `#3D99F5` est la valeur **scopée `.inbox-shell`** (upstream), **erronée** comme accent app → corriger 00-ARCHITECTURE règle 10. (b) plages migration de la spec (`0001-0009`/`0010-0029`/`0090+`) FAUSSES (DB partagée → continue à 0106) → corriger 00-EXECUTION-GUIDE (cf. C5). (c) toute mention `__drizzle_migrations`/`__orion_migrations` → `__elevay_migrations` (cf. C4). | mémoire `upstream-design-dna` ; `apply-migrations.ts:52` |
+| **C9** | 00-ARCHITECTURE règle 10 : accent UI `#3D99F5` ; EXECUTION-GUIDE §3.2 plages migration | **Hors-périmètre code de ce lot, mais à corriger dans les docs** : (a) accent **app = `#2C6BED`** ; `#3D99F5` est la valeur **scopée `.inbox-shell`** (upstream), **erronée** comme accent app → corriger 00-ARCHITECTURE règle 10. (b) plages migration de la spec (`0001-0009`/`0010-0029`/`0090+`) FAUSSES (DB partagée → continue à 0107, 0106 = dernière existante) → corriger 00-EXECUTION-GUIDE (cf. C5). (c) toute mention `__drizzle_migrations`/`__orion_migrations` → `__elevay_migrations` (cf. C4). | mémoire `upstream-design-dna` ; `apply-migrations.ts:52` |
 
 Si une instruction de `tasks.md`/`design.md`/`00-EXECUTION-GUIDE.md` contredit ce tableau, **ce tableau
 gagne** (il est vérifié contre le code réel).
@@ -82,7 +82,7 @@ Ces fichiers étaient listés «siblings/hors-scope» dans la v1 de ce brief : *
 6. La **migration** `drizzle/0107_orion_schema.sql` + application dev via `db:migrate:apply`.
 
 *Contrats partagés (les 7 fichiers — §4 partie B) :*
-7. `lib/signals/taxonomy.ts` — **9 types canoniques** + ALIAS map + `toCanonicalSignal()`. *(T-14 ; corrige le bug multipliers-au-plancher, design §4.2)*
+7. `lib/signals/taxonomy.ts` — **NET-NEW** (n'existe PAS chez Elevay) : vocab **SCORING** (`SignalType`, `signal-detectors.ts:16-22`) + ALIAS map + `toCanonicalSignal()`. *(T-14 ; corrige le bug multipliers-au-plancher, design §4.2)*
 8. `lib/ingest/types.ts` — `IngestItem` / `InputSource` (+ `IngestSource` alias). *(contrat de T-21)*
 9. `lib/ingest/jobs.ts` — `openIngestJob` / `getJob` / `bumpJobCounters`. *(helper d'ownership pack1, PAS pack2/4/5)*
 10. `lib/outbound/types.ts` — `OutboundDestination` / `ExportResult`. *(contrat de T-32)*
@@ -132,7 +132,7 @@ typés/validés contre lesquels les 5 packs aval compilent.
 | `src/db/schema.ts` | **MODIFY** (append-only, 4 lignes) | barrel — n'ajoute QUE tes 4 `export *`, ne réordonne rien (§3.2c) |
 | `drizzle/0107_orion_schema.sql` | **NET-NEW** | migration additive idempotente + RLS |
 | **— Contrats partagés —** | | |
-| `src/lib/signals/taxonomy.ts` | **NET-NEW** | 9 canoniques + alias (Elevay + pack5) + `toCanonicalSignal()` |
+| `src/lib/signals/taxonomy.ts` | **NET-NEW** | vocab SCORING (`SignalType`) + alias (Elevay + pack5) + `toCanonicalSignal()` |
 | `src/lib/ingest/types.ts` | **NET-NEW** | `IngestItem`, `InputSource`, `IngestSource`, `PullCtx`, `PullResult` |
 | `src/lib/ingest/jobs.ts` | **NET-NEW** | `openIngestJob`, `getJob`, `bumpJobCounters` |
 | `src/lib/outbound/types.ts` | **NET-NEW** | `OutboundDestination`, `ExportResult` (dir `lib/outbound/` existe — n'écrase PAS `queue.ts`) |
@@ -180,7 +180,7 @@ import { tenants } from "./core";                       // COPIÉ depuis Elevay 
 export const integrationCredentials = pgTable("integration_credentials", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id),
-  provider: text("provider").notNull(),                 // 'instantly'|'fiber'|'orange_slice'|'lopus'|'webhook' | 'apollo'|'hunter'|'pappers'
+  provider: text("provider").notNull(),                 // sinks de SORTIE: 'instantly'|'orange_slice'|'lopus'|'webhook' · sources d'ENTRÉE: 'fiber'|'apollo'|'hunter'|'pappers'
   encryptedApiKey: text("encrypted_api_key"),           // encryptSecret(...) — JAMAIS en clair (C6)
   config: jsonb("config").$type<Record<string, unknown>>().default({}), // baseUrl|webhookUrl|webhookSecret|defaultCampaignId
   status: text("status").notNull().default("active"),   // 'active'|'revoked'|'error'
@@ -250,7 +250,7 @@ import { integrationCredentials } from "./orion-integrations";
 export const outboundDestinations = pgTable("outbound_destinations", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   tenantId: text("tenant_id").notNull().references(() => tenants.id),
-  kind: text("kind").notNull(),                         // 'instantly'|'fiber'|'orange_slice'|'lopus'|'webhook'|'generic'
+  kind: text("kind").notNull(),                         // SINK de SORTIE seulement : 'instantly'|'orange_slice'|'lopus'|'webhook'|'generic' (Fiber = ENTRÉE, jamais ici)
   label: text("label"),
   config: jsonb("config").$type<Record<string, unknown>>().default({}), // campaignId|listId|webhookUrl
   credentialId: text("credential_id").references(() => integrationCredentials.id),
@@ -486,65 +486,57 @@ pnpm db:migrate:apply          # 2e run = 0 changement (IF NOT EXISTS + tracking
 > testé. C'est la correction du blocker d'audit #1.
 
 #### Étape 8 — `lib/signals/taxonomy.ts` (T-14 — PRÉREQUIS DUR : corrige le bug multipliers-au-plancher)
-**Action.** Crée `src/lib/signals/taxonomy.ts`. **9 types canoniques** + une ALIAS map qui **étend** (n'écrase pas) l'`SIGNAL_CANONICAL_ALIAS` Elevay (`lib/scoring/signal-outcomes.ts:119`) avec **les alias dérivés de pack5** (`hiring_velocity`, `adoption_accel`, `tech_churn`, `product_launch`, `job_change`). `toCanonicalSignal()` normalise n'importe quel `type` producteur vers son canonique ; inconnu → renvoyé en l'état (jamais droppé). **Sans ce fichier, le daily score keye `{funding_recent,…}` contre des multipliers keyés `{funding,…}` → `undefined` → plancher 1.0×** (design §4.2, mémoire `signals-world-class-report`).
+**Action.** Crée `src/lib/signals/taxonomy.ts` (**NET-NEW — n'existe PAS chez Elevay : à CRÉER, pas à copier**). Le vocab **CANONIQUE** = l'union `SignalType` / `SIGNAL_DETECTORS` de `lib/scoring/signal-detectors.ts:16-22` (source-of-truth du scoring, sur laquelle `SIGNAL_PRIORS` `signal-outcomes.ts:59` keye). ⚠ **À NE PAS CONFONDRE avec `KNOWN_SIGNAL_TYPES` (`lib/sequences/triggers.ts:27` : `website_visit`/`post_funding`/`hiring_signal`…)** qui est le vocab **TRIGGER-CONFIG** — un axe DIFFÉRENT, **jamais** la cible des alias. La ALIAS map **étend** (n'écrase pas) l'`SIGNAL_CANONICAL_ALIAS` Elevay (`lib/scoring/signal-outcomes.ts:119`) avec les variantes producteur + **les alias dérivés de pack5** (`hiring_velocity`, `adoption_accel`, `tech_churn`, `job_change`). **RÈGLE D'OR** : une cible d'alias doit **exister dans `SIGNAL_PRIORS`** — normaliser vers une famille SANS prior (p.ex. `engagement`/`expansion`) FLOORERAIT le signal, soit exactement le bug qu'on corrige ; les types engagement/warm (`positive_reply:2.5`, `meeting_booked:2.5`, `warm_connection:1.8`…) sont DÉJÀ des clés `SIGNAL_PRIORS` → on les laisse **passer tels quels**. `toCanonicalSignal()` normalise n'importe quel `type` producteur vers sa clé de scoring ; inconnu / hors-vocab → renvoyé en l'état (jamais droppé). **Sans ce fichier, le daily score keye `{funding_recent,…}` contre des multipliers keyés `{funding,…}` → `undefined` → plancher 1.0×** (design §4.2, mémoire `signals-world-class-report`).
 
 ```ts
-// src/lib/signals/taxonomy.ts — NET-NEW (contrat partagé pack1)
+// src/lib/signals/taxonomy.ts — NET-NEW (contrat partagé pack1 ; n'existe PAS chez Elevay — à CRÉER, pas à copier)
 import { SIGNAL_CANONICAL_ALIAS } from "@/lib/scoring/signal-outcomes"; // COPIÉ depuis Elevay (source signal-outcomes.ts:119)
+import type { SignalType } from "@/lib/scoring/signal-detectors";       // COPIÉ depuis Elevay (source signal-detectors.ts:16-22)
 
-/** Les 9 familles canoniques de signaux Orion (clé de multiplier + polarité). */
+/**
+ * Vocab CANONIQUE de scoring = l'union `SignalType` de signal-detectors.ts:16-22
+ * (source-of-truth ; `SIGNAL_PRIORS` signal-outcomes.ts:59 keye dessus, et c'est CE
+ * vocab que `priorMultiplier()` consomme). ⚠ DIFFÉRENT de `KNOWN_SIGNAL_TYPES`
+ * (triggers.ts:27 — vocab TRIGGER-CONFIG : website_visit/post_funding/…), JAMAIS la
+ * cible des alias de scoring.
+ */
 export const CANONICAL_SIGNALS = [
-  "funding",           // levée / Form D / financement
-  "hiring",            // surge d'embauche, vélocité d'embauche
-  "leadership_change", // exec hire, job-change dirigeant
-  "tech_adoption",     // tech-stack change, churn, accélération d'adoption OSS
-  "product_launch",    // sous-domaine neuf, release, lancement
-  "acquisition",       // M&A
-  "expansion",         // headcount growth, nouveaux bureaux/marchés
-  "engagement",        // reply/click/open/visit/connection (warm)
-  "partnership",       // partenariat / intégration annoncée
-] as const;
+  "funding",            // levée / Form D / financement
+  "funding_crunchbase", // levée détectée via Crunchbase
+  "hiring",             // surge / vélocité d'embauche
+  "tech_stack_change",  // adoption / churn / accélération d'outils
+  "leadership_change",  // exec hire, job-change dirigeant
+  "investor_overlap",   // warm-path : investisseur commun
+] as const satisfies readonly SignalType[];
 export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
 
 const isCanonical = (s: string): s is CanonicalSignal =>
   (CANONICAL_SIGNALS as readonly string[]).includes(s);
 
 /**
- * Alias producteur → canonique. On part de la map Elevay (funding_recent→funding,
- * hiring_surge→hiring, executive_hire→leadership_change) et on AJOUTE :
- *  - variantes Elevay supplémentaires (priors signal-outcomes.ts:59) ;
- *  - les signaux DÉRIVÉS de pack5 (vélocité = l'EDGE, design §4.3).
+ * Alias producteur → clé de scoring. On part de la map Elevay (funding_recent→funding,
+ * hiring_surge→hiring, executive_hire→leadership_change ; signal-outcomes.ts:119) et on
+ * AJOUTE les variantes producteur + les signaux DÉRIVÉS de pack5 (vélocité = l'EDGE).
+ * RÈGLE D'OR : toute cible doit EXISTER dans SIGNAL_PRIORS (signal-outcomes.ts:59) —
+ * normaliser vers une famille sans prior (engagement/expansion/…) FLOORERAIT le signal
+ * (le bug même qu'on corrige). Les types engagement/warm (positive_reply:2.5,
+ * meeting_booked:2.5, warm_connection:1.8…) sont DÉJÀ des clés SIGNAL_PRIORS → on les
+ * laisse PASSER tels quels (jamais ré-écrits vers une « engagement » sans prior).
  */
 export const SIGNAL_ALIASES: Record<string, CanonicalSignal> = {
-  ...(SIGNAL_CANONICAL_ALIAS as Record<string, CanonicalSignal>),
-  // — Elevay producer variants (signal-outcomes.ts:59) —
-  funding_crunchbase: "funding",
+  ...(SIGNAL_CANONICAL_ALIAS as Record<string, CanonicalSignal>), // funding_recent→funding, hiring_surge→hiring, executive_hire→leadership_change
+  // — variantes producteur Elevay (toutes cibles ∈ SIGNAL_PRIORS) —
   hiring_intent: "hiring",
-  hiring_surge: "hiring",
-  executive_hire: "leadership_change",
-  headcount_growth: "expansion",
-  tech_stack_change: "tech_adoption",
-  acquisition: "acquisition",
-  positive_reply: "engagement",
-  meeting_booked: "engagement",
-  linkedin_reply: "engagement",
-  linkedin_accept: "engagement",
-  email_clicked: "engagement",
-  email_opened: "engagement",
-  website_visit: "engagement",
-  page_visit: "engagement",
-  warm_connection: "engagement",
-  demo_request: "engagement",
-  // — DÉRIVÉS pack5 (velocity-snapshot → recordCompanySignal, design §4.3) [BLOCKER #1 DEP-1] —
+  tech_adoption: "tech_stack_change",   // prior-only → ride le détecteur canonique tech_stack_change
+  // — DÉRIVÉS pack5 (velocity-snapshot → recordCompanySignal) [BLOCKER #1 DEP-1] —
   hiring_velocity: "hiring",
-  adoption_accel: "tech_adoption",
-  tech_churn: "tech_adoption",
-  product_launch: "product_launch",
+  adoption_accel: "tech_stack_change",
+  tech_churn: "tech_stack_change",
   job_change: "leadership_change",
 };
 
-/** Normalise un type de signal producteur vers sa famille canonique.
- *  Inconnu → renvoyé tel quel (jamais droppé : un type neuf reste scoré sur son prior). */
+/** Normalise un type de signal producteur vers sa clé de scoring canonique.
+ *  Inconnu / hors-vocab → renvoyé tel quel (jamais droppé : un type neuf reste scoré sur son prior). */
 export function toCanonicalSignal(type: string): CanonicalSignal | string {
   const t = type.trim().toLowerCase();
   if (isCanonical(t)) return t;
@@ -552,7 +544,7 @@ export function toCanonicalSignal(type: string): CanonicalSignal | string {
 }
 ```
 **VERIFY.** `tsc` vert ; `node -e "..."` ou test.
-**TEST** (`orion-taxonomy.test.ts`) : `toCanonicalSignal('funding_recent')==='funding'` ; les 5 dérivés pack5 → `toCanonicalSignal('hiring_velocity')==='hiring'`, `'adoption_accel'==='tech_adoption'`, `'tech_churn'==='tech_adoption'`, `'product_launch'==='product_launch'`, `'job_change'==='leadership_change'` ; un type inconnu (`'foo_bar'`) → `'foo_bar'` (passe-plat) ; `CANONICAL_SIGNALS.length===9`.
+**TEST** (`orion-taxonomy.test.ts`) : `toCanonicalSignal('funding_recent')==='funding'` ; les dérivés pack5 → `toCanonicalSignal('hiring_velocity')==='hiring'`, `'adoption_accel'==='tech_stack_change'`, `'tech_churn'==='tech_stack_change'`, `'job_change'==='leadership_change'` ; `tech_adoption` (prior-only) → `'tech_stack_change'` ; un type inconnu (`'foo_bar'`) **et** hors-vocab (`'product_launch'`, sans prior) → passe-plat (`'foo_bar'`/`'product_launch'`) ; `CANONICAL_SIGNALS.length===6` (= l'union `SignalType`).
 
 #### Étape 9 — `lib/ingest/types.ts` (contrat de T-21 — design §5.1)
 **Action.** Crée `src/lib/ingest/types.ts` (dir `lib/ingest/` ABSENT → création propre). `IngestItem` = exactement la forme consommée par `upsertAccount`/`upsertContact`. `InputSource` (alias exporté `IngestSource`) = ce que pack2/pack5 implémentent. **`pull()` NE THROW JAMAIS** (contrat : erreur source → items partiels + log).
@@ -664,7 +656,7 @@ export async function bumpJobCounters(
 import type { OutreachBrief } from "@/lib/mcp/contracts/outreach-brief.schema"; // pack1 étape 12
 
 export interface OutboundDestination {
-  name: "instantly" | "fiber" | "orange_slice" | "webhook" | "generic";
+  name: "instantly" | "orange_slice" | "lopus" | "webhook" | "generic"; // SINKS de sortie — Fiber EXCLU (= source d'ENTRÉE) ; Lopus INCLUS (sortie webhook)
   /** flatten/push DOIT être appelé APRÈS le gate — il ne voit que des prospects autorisés. */
   push(args: {
     tenantId: string;                                  // du Bearer, jamais argument
@@ -806,7 +798,7 @@ Preuve : `grep -rn "@/lib/ingest\|@/lib/outbound/types\|@/lib/mcp/contracts\|@/l
 6. **Dédup** : même `(tenant_id, fingerprint)` → 1 `ingest_jobs` (et `openIngestJob` renvoie le même `id`, `reused:true`) ; même `(job_id, source_ref)` → 1 `ingest_items`.
 7. **Audit gate** : un `export_items` skippé porte `gate_code` ; `export_jobs{requested,exported,skipped}` cohérents.
 8. **RLS/global** : sous `withTenantTx(elevay…)`, une ligne `signal_snapshots.tenant_id=NULL` est lisible ; une ligne d'un autre tenant **ne l'est pas**.
-9. **Taxonomie** : `toCanonicalSignal` mappe les 3 alias Elevay (`funding_recent`/`hiring_surge`/`executive_hire`) **ET** les 5 dérivés pack5 (`hiring_velocity`/`adoption_accel`/`tech_churn`/`product_launch`/`job_change`) ; inconnu → passe-plat ; `CANONICAL_SIGNALS.length===9`.
+9. **Taxonomie** : `toCanonicalSignal` mappe les 3 alias Elevay (`funding_recent`/`hiring_surge`/`executive_hire`) **ET** les dérivés pack5 vers le vocab SCORING (`SignalType`, signal-detectors.ts) — `hiring_velocity`→`hiring`, `adoption_accel`/`tech_churn`→`tech_stack_change`, `job_change`→`leadership_change` ; inconnu / hors-vocab (`product_launch`) → passe-plat ; `CANONICAL_SIGNALS.length===6`.
 10. **Contrats** : `OutreachBriefSchema` valide un brief complet et rejette `citableFacts`/`doNotClaim` manquants ; `evaluateSend`/`buildIntelligenceBrief`/`openIngestJob` importables depuis leurs wrappers Orion.
 11. **0 violation tripwire** : aucun `set_config(..., false)` ; aucun `DATABASE_URL_OWNER` dans `src` ; aucun `createId(`/`@paralleldrive/cuid2` ajouté ; `sending-gate.ts` Elevay **non modifié** (wrapper = fichier neuf, C8).
 
@@ -817,7 +809,7 @@ Preuve : `grep -rn "@/lib/ingest\|@/lib/outbound/types\|@/lib/mcp/contracts\|@/l
 - [ ] 4 fichiers schéma `orion-*.ts` (C1/C2/C3), 7 tables, tous les index.
 - [ ] `drizzle/0107_orion_schema.sql` additif + idempotent + RLS (idiom `0089`), appliqué 2× sur `leadsens-localdev` sans erreur (1 ligne tracking dans **`__elevay_migrations`**).
 - [ ] Barrel `db/schema.ts` : 4 réexports append-only, rien d'autre modifié.
-- [ ] **7 contrats partagés** créés et exportés : `signals/taxonomy.ts` (9 canoniques + alias Elevay+pack5), `ingest/types.ts`, `ingest/jobs.ts` (`openIngestJob`), `outbound/types.ts`, `mcp/contracts/outreach-brief.schema.ts` (zod), `campaign-engine/brief.ts` (wrapper), `guardrails/orion-send-gate.ts` (wrapper, C8).
+- [ ] **7 contrats partagés** créés et exportés : `signals/taxonomy.ts` (vocab SCORING `SignalType` + alias Elevay+pack5), `ingest/types.ts`, `ingest/jobs.ts` (`openIngestJob`), `outbound/types.ts`, `mcp/contracts/outreach-brief.schema.ts` (zod), `campaign-engine/brief.ts` (wrapper), `guardrails/orion-send-gate.ts` (wrapper, C8).
 - [ ] **Critère porteur §5.0 prouvé** : pack2/3/4/5/6 `tsc` en n'important QUE pack0+pack1.
 - [ ] 6 fichiers de test (chiffrement, dédup ingest+openIngestJob, export+gate_code, snapshots+global, taxonomy, contracts) verts ; blocs DB `describe.skip` si `DATABASE_URL` absent.
 - [ ] `tsc` + `test` verts ; `git diff --stat` scopé aux fichiers du §3 (aucun fichier hors ownership ; `src/__tests__/` touché par les **6 fichiers nommés** uniquement).
@@ -838,14 +830,14 @@ Preuve : `grep -rn "@/lib/ingest\|@/lib/outbound/types\|@/lib/mcp/contracts\|@/l
 2. **`tenants` est COPIÉ depuis Elevay** non typé (`core.ts:20`, par pack0). Ne le redéfinis pas, ne le migre pas, n'ajoute pas `TenantSettings`/`mcpApiKeys` ici (hors-scope auth/pack0). FK = `references(() => tenants.id)`. *(C3)*
 3. **`crypto.randomUUID()`, pas `createId()`** — pas de cuid2. *(C2, `agent.ts:32`)*
 4. **`__elevay_migrations`, pas `__orion_migrations`/`__drizzle_migrations`** — runner copié depuis Elevay, ledger de la **DB partagée** conservé. *(C4, `apply-migrations.ts:52`)*
-5. **Migration `0107`** ; pack7 = `0108+`. Les plages `0010–0029`/`0090+` de l'EXECUTION-GUIDE (modèle naïf) sont **FAUSSES** : DB partagée → numérotation continue à partir de 0106. *(C5/C9)*
+5. **Migration `0107`** ; pack7 = `0108+`. Les plages `0010–0029`/`0090+` de l'EXECUTION-GUIDE (modèle naïf) sont **FAUSSES** : DB partagée → numérotation continue à partir de 0107 (0106 = dernière existante). *(C5/C9)*
 6. **N'utilise PAS `drizzle-kit push` sur la DB partagée** — applique le `.sql` additif via `db:migrate:apply`. *(C7)*
 7. **`encryptSecret`/`decryptSecret` renvoient une chaîne** (pas `{iv,ciphertext,tag}`) → colonne `text` ; `OutboundDestination.apiKey: string` (déchiffrée). *(C6, `settings-encryption.ts:49/:65`)*
 8. **`signal_snapshots.tenant_id` NULLABLE + `text`** (pas `uuid`, pas `notNull`) — lignes globales ; la policy RLS tolère `tenant_id IS NULL` (idiom `0089:31`).
 9. **RLS obligatoire sur chaque table net-new** (GAP-4) ; copie l'idiom `0089` (`set_config(...,true)` côté `withTenantTx`, **jamais** `false`). *(pièges #2/#6/#10)*
 10. **Migration idempotente** : `IF NOT EXISTS` partout, `DROP POLICY IF EXISTS` avant `CREATE POLICY`.
 11. **Les wrappers ne RÉÉCRIVENT rien.** `orion-send-gate.ts` et `campaign-engine/brief.ts` sont des **réexports** de fichiers Elevay vivants — ne pas copier/modifier `sending-gate.ts` ni `build-intelligence-brief.ts` (invariant T-38 reuse-untouched). *(C8)*
-12. **`taxonomy.ts` étend l'alias Elevay, ne le redéfinit pas** — il `...spread` `SIGNAL_CANONICAL_ALIAS` puis ajoute. Sans les 5 alias pack5, le daily score reste au plancher 1.0× (le bug que ce lot corrige). *(blocker #1 DEP-1, design §4.2)*
+12. **`taxonomy.ts` étend l'alias Elevay, ne le redéfinit pas** — il `...spread` `SIGNAL_CANONICAL_ALIAS` puis ajoute. Cibles d'alias ∈ vocab SCORING (`SignalType`, signal-detectors.ts:16-22) — **jamais** `KNOWN_SIGNAL_TYPES` (triggers.ts:27, vocab trigger-config). Sans les alias dérivés pack5, le daily score reste au plancher 1.0× (le bug que ce lot corrige). *(blocker #1 DEP-1, design §4.2)*
 13. **`lib/outbound/` et `lib/mcp/` existent partiellement** : `lib/outbound/queue.ts` (Elevay) ne doit PAS être touché ; `lib/mcp/{registry,types}.ts` sont pack0 — pack1 n'ajoute QUE `lib/mcp/contracts/outreach-brief.schema.ts`.
 14. **Frontière MCP (blocker #5, NON une violation reuse) :** pack0 pose le squelette `app/api/mcp/route.ts` + les balises `<<<ORION:*>>>` + le fallback `tools/call`. pack3 **patche LÉGITIMEMENT** l'envelope Elevay (`route.ts ~953-957`, ajout `structuredContent`) **et** `initialize` (bump proto `2024-11-05`→`2025-06-18`, `route.ts:921`). C'est **autorisé et séquentiel (pack3 après pack0)**, dans les balises — pack1 ne touche pas la route MCP.
 15. **Tree partagé** : re-vérifie branche+HEAD avant chaque commit ; `git add` scopé (jamais `-A`).

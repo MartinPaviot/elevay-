@@ -1,8 +1,8 @@
 # Orion — BRIEF DE LOT · pack4 « output-gates » (`feat/orion-pack4`)
 
 > **Brief auto-suffisant.** Cette session n'a QUE ce fichier + les docs pointés. Tout ce qu'il faut
-> pour EXÉCUTER pack4 sans rien redériver est ici. Orion est un **repo SÉPARÉ** (app Next/pnpm autonome,
-> package `@orion/web`) ; ses fichiers vivent sous **`src/`**. Les `file:line` REUSE sont **réels et
+> pour EXÉCUTER pack4 sans rien redériver est ici. Orion est un **repo SÉPARÉ** qui reproduit en interne le **monorepo** Elevay (racine `app/` : turbo +
+> pnpm-workspace + `pnpm.overrides`) ; le package `@orion/web` vit sous `app/apps/web/`, ses fichiers sous **`app/apps/web/src/`**. Les `file:line` REUSE sont **réels et
 > vérifiés** : ils désignent la **SOURCE Elevay À COPIER** (provenance, relative à
 > `C:/Users/ombel/leads/app/apps/web/src/`, le repo Elevay d'où l'on **copie**). Les modules Elevay sont
 > **vendorés (copiés)** dans Orion, **PAS** importés via workspace.
@@ -159,7 +159,7 @@ cd app && pnpm install --frozen-lockfile && pnpm --filter @orion/web tsc
 
 ## 3. FICHIERS POSSÉDÉS PAR pack4 (création + édition exclusives)
 
-> Tous sous `src/` (repo Orion séparé). **NET-NEW** sauf mention. Zéro chevauchement avec
+> Tous sous `app/apps/web/src/` (package `@orion/web`, miroir du monorepo Elevay ; chemins relatifs à ce `src/`). **NET-NEW** sauf mention. Zéro chevauchement avec
 > un autre lot (vérifié contre 00-EXECUTION-GUIDE §3.1). **Aucun fichier `fiber.ts` ni `lopus.ts`.**
 
 | Fichier | Type | Rôle |

@@ -3,8 +3,9 @@
 > **Brief auto-suffisant.** Cette session n'a QUE ce fichier + les docs pointés. Tout ce qu'il
 > faut pour EXÉCUTER pack6 sans rien redériver est ici. Les `file:line` sont **réels et vérifiés** :
 > ils désignent la **SOURCE Elevay à COPIER** sous `C:/Users/ombel/leads/app/apps/web/src/` (la
-> provenance à vendorer, PAS un import). Orion est un **repo SÉPARÉ** (`@orion/web`) ; ses fichiers,
-> une fois copiés, vivent sous `src/`.
+> provenance à vendorer, PAS un import). Orion est un **repo SÉPARÉ** (`@orion/web`) qui reproduit en
+> interne le monorepo Elevay (`app/` = racine monorepo, `app/apps/web/` = package `@orion/web`) ; ses
+> fichiers, une fois copiés, vivent sous `app/apps/web/src/` (commandes lancées depuis `app/`).
 >
 > **Lire (dans l'ordre, seulement ces passages) :**
 > 1. `orion/spec/00-ARCHITECTURE.md` — D1 (DB partagée), D2 (tenant `elevay`/RLS), règles d'or §3
@@ -24,7 +25,7 @@
 > Orion = **repo SÉPARÉ** (app Next/pnpm propre, package `@orion/web`) ; DB = base Elevay PARTAGÉE
 > (`DATABASE_URL` inchangé), scope tenant `elevay` uniquement (RLS, `withTenantTx`) ; composants/tokens
 > Elevay **COPIÉS (vendorés)** dans le repo Orion, **PAS** importés via workspace. **Pour pack6 ces
-> décisions sont surtout structurelles** : l'UI vit dans `src/app/(orion)/` (repo Orion), importe les
+> décisions sont surtout structurelles** : l'UI vit dans `app/apps/web/src/app/(orion)/` (repo Orion), importe les
 > composants/tokens Elevay copiés, et lit les données via la couche server-side
 > `withTenantTx(elevayTenantId)`. **Aucun accès DB direct depuis un composant client.**
 
@@ -99,8 +100,9 @@ cd app && pnpm install --frozen-lockfile && pnpm --filter @orion/web tsc
 - **No-emoji** (règle d'or n°9). Les glyphes `✓ ✗ ? ◐ ◉ ○` des mockups sont des **icônes Lucide**
   (`Check`, `Slash`, `Circle`, `AlertCircle`), jamais des emoji. Aucun emoji dans titres/labels/
   badges/boutons.
-- **Accent = `#2C6BED`** (light) / `#60A5FA` (dark). `#3D99F5` est une valeur scopée inbox upstream,
-  **erronée comme accent applicatif** (`ui-spec §2.1` note de correction).
+- **Accent = `#2C6BED`** (light) / `#60A5FA` (dark). `#3D99F5` est **absent de la source actuelle**
+  (l'accent inbox a déjà migré vers `#2C6BED` — vérifié : zéro occurrence dans `globals.css`/le
+  codebase) ; **ne jamais le réintroduire comme accent** (`ui-spec §2.1` note de correction).
 - **Founder demi-écran** : tester `680px` ET `960px` + zoom 200%. Sous `lg`, single-pane (rail liste +
   panneau détail masqués, zone active pleine largeur, bouton `‹ Retour`), sidebar 240→52 (collapse).
 - **Tenant `elevay` / RLS** : toute lecture de données réelles passe par `withTenantTx(elevayTenantId)`
@@ -153,7 +155,7 @@ cd app && pnpm install --frozen-lockfile && pnpm --filter @orion/web tsc
 | `app/(orion)/layout.tsx` | NET-NEW | shell Orion : `Sidebar` (REUSE `:285`) + sections nav Orion + `ToastProvider`. Exporte **default uniquement**. |
 | `components/orion/orion-sidebar-nav.ts` | NET-NEW | données nav Orion (Sources/Prospects/Briefs/Outbound + Paramètres), pas de visuel net-new. |
 | `components/orion/status-badge.tsx` | NET-NEW | badge **verdict gate** `Prêt`/`À revoir`/`Bloqué` (compose `Badge` + tokens `--color-success/-warning/-error` + `-soft`). |
-| `components/orion/source-badge.tsx` | NET-NEW | badge **source** (CSV/Apollo/Registre/LinkedIn) — compose `Badge`. |
+| `components/orion/source-badge.tsx` | NET-NEW | badge **source** (CSV/Apollo/Registre/LinkedIn/Fiber) — compose `Badge`. Fiber = source d'ENTRÉE (Tracker), jamais une cible d'export. |
 | `app/(orion)/sources/page.tsx` | NET-NEW | écran Sources (default only). |
 | `app/(orion)/sources/{layout,loading,error}.tsx` | NET-NEW | chrome route Sources. |
 | `app/(orion)/sources/_sources-table.tsx` | NET-NEW | table sources (`.ls-table`) + panneau détail 400. |
@@ -208,7 +210,8 @@ catégorie/industrie/séniorité (`ui-spec §2.6`). Dans `globals.css`, remplace
 ```
 **VERIFY.** `pnpm --filter @orion/web tsc` vert ; `pnpm --filter @orion/web dev`, ouvrir une page
 existante → **rendu identique pixel** avant/après extraction (screenshot diff). `grep -c "#3D99F5"
-packages/ui/src/tokens.css` == nombre attendu (scopé inbox uniquement, jamais comme accent).
+packages/ui/src/tokens.css` == **0** (`#3D99F5` est absent de la source : l'accent a déjà migré vers
+`#2C6BED`, jamais `#3D99F5`).
 **TEST.** Snapshot du build CSS (ou un test asserttant qu'`globals.css` importe `@orion/ui/tokens.css`
 et ne redéclare pas `--color-accent`).
 
@@ -216,7 +219,7 @@ et ne redéclare pas `--color-accent`).
 **Action.** Route `app/(orion)/sources/` : `page.tsx` (default, async RSC lisant `getSources()` du seam)
 + `loading.tsx` (`TableSkeleton`) + `error.tsx` (`EmptyState` variant `error`). `_sources-table.tsx` :
 `PageHeader` titre **`Sources`** + action **`Ajouter une source`** ; `FilterBar` `Tous · CSV · Apollo ·
-Registre · LinkedIn` + `Rafraîchir` ; `.ls-table` colonnes `NOM · TYPE · ENREGISTRÉS · DOUBLONS · ÉTAT
+Registre · LinkedIn · Fiber` + `Rafraîchir` ; `.ls-table` colonnes `NOM · TYPE · ENREGISTRÉS · DOUBLONS · ÉTAT
 · MAJ` (compteurs `font-mono`, `td.numeric` tabular-nums) ; au clic, panneau détail 400
 (`--detail-panel-width`) avec colonnes reconnues + `[Réimporter] [Suppr.]`. `source-badge` pour TYPE,
 `status-badge` pour ÉTAT (`OK`/`Erreur`/`En cours`). Copy/espacements **verbatim `ui-spec §4a`**.
@@ -252,7 +255,8 @@ score + MAJ ; dossier à droite avec sections **majuscules 12px `--color-text-te
 (← `citableFacts[]`, chaque item + `CitationChip [n]`), `NE PAS AFFIRMER` (← `doNotClaim[]`, liste en
 `--color-warning`/`-soft`), `ANGLE PROPOSÉ` (← `messaging.bestAngle`), `Sources` (liste `[n] url/fait`).
 `CitationChip` (`:23`) `[1][2]` inline → ancre la source ; source non cliquable → style muet, pas de
-lien. Actions `[Rédiger l'outbound]` / `[Rejeter]`. Vide → `EmptyState first-use` (`Aucun brief` /
+lien. Actions `[Préparer l'export]` / `[Rejeter]` (handoff vers l'écran Outbound — l'UI ne rédige
+aucune prose). Vide → `EmptyState first-use` (`Aucun brief` /
 `Générez des briefs depuis Prospects pour les voir ici.` / `Aller aux prospects`). Chargement →
 `DetailPageSkeleton` (`:149`) à droite + `skeleton-row` dans le rail. Erreur génération → `EmptyState
 error` (`Brief indisponible` / … / `Régénérer`). Copy verbatim `ui-spec §4c`.
@@ -264,7 +268,7 @@ absente ; rail item sélectionné en `--color-bg-selected`.
 ### U5 — Outbound / Export (destinations + verdict gate) — 1,0 j-h
 **Action.** Route `app/(orion)/outbound/`. `_outbound-table.tsx` : `PageHeader` **`Outbound`** + action
 `Exporter la sélection` ; `FilterBar` verdict `Tous · Prêt · À revoir · Bloqué` + sélecteur `Cible`
-(`Instantly`/`Fiber`/`OrangeSlice`) ; `.ls-table` colonnes `☐ · PROSPECT · OBJET · VERDICT · CANAL` ;
+(`Instantly`/`OrangeSlice`/`Lopus`) ; `.ls-table` colonnes `☐ · PROSPECT · OBJET · VERDICT · CANAL` ;
 panneau détail 400 = aperçu corps (`.email-body`) + bloc **VERDICT** miroir exact d'`evaluateSend`
 (checks `Corps non vide`/`Faits sourcés`/`Pas d'opt-out`/`Base légale` avec `✓`) + `[Approuver]
 [Modifier]`. `status-badge` verdict : `Prêt`→success, `À revoir`→warning, `Bloqué`→error (+`-soft`).
@@ -355,8 +359,9 @@ skill **`/design-review`** (audit senior-designer + AI-slop) sur l'UI rendue liv
 1. **Export nommé sur `page.tsx`/`layout.tsx` casse `next build`** (passe tsc+CI, échoue Vercel). Ces
    fichiers n'exportent QUE `default` (+ route-config). Composants/fixtures/helpers → siblings `_`
    (modèle `accounts/_persona-search.tsx`). **Un `pnpm build` local est le seul filet qui l'attrape.**
-2. **Accent = `#2C6BED`, PAS `#3D99F5`.** `#3D99F5` est scopé inbox-shell upstream ; l'utiliser comme
-   accent applicatif est l'erreur classique (`ui-spec §2.1`). Toujours `var(--color-accent)`.
+2. **Accent = `#2C6BED`, PAS `#3D99F5`.** `#3D99F5` est **absent de la source actuelle** (l'accent
+   inbox a déjà migré vers `#2C6BED` ; zéro occurrence dans le codebase) — ne pas le réintroduire
+   comme accent (`ui-spec §2.1`). Toujours `var(--color-accent)`.
 3. **No-emoji load-bearing.** Les glyphes des mockups (`✓ ✗ ? ◐ ◉ ○`) sont des **icônes Lucide**
    (`Check`/`Slash`/`Circle`/`AlertCircle`), jamais des emoji unicode.
 4. **Tailwind 4 config-less.** Ne pas scaffolder un `tailwind.config.*` v3-style ; le theme reste dans

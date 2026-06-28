@@ -27,7 +27,17 @@
 
 **Conséquence directe — chaque "fichier pack0" est soit COPIÉ depuis l'infra Elevay
 (`app/apps/web/src/…` = la source à copier ; dans Orion il vit sous `src/…`), soit NET-NEW propre à
-Orion.** Donc pack0 = **COPY d'infra Elevay** (DB client, RLS, runner migration, auth, AI tracé,
+Orion.**
+
+> **Layout du repo Orion (miroir monorepo) :** Orion est un repo SÉPARÉ qui **reproduit en interne le
+> monorepo Elevay** — `app/` = racine du monorepo (turbo + `pnpm-workspace` + `pnpm.overrides`),
+> `app/apps/web/` = le package `@orion/web`, code sous `app/apps/web/src/`. Les commandes se lancent
+> **depuis `app/`** (ex. `cd app && pnpm --filter @orion/web tsc`). Le raccourci **`src/…`** employé dans
+> les tableaux de ce brief désigne donc **`app/apps/web/src/…`** ; un module copié garde son **chemin
+> miroir exact** (`app/apps/web/src/lib/…`). (Orion n'est PAS un sous-projet du monorepo Elevay — il a
+> son **propre** monorepo interne.)
+
+Donc pack0 = **COPY d'infra Elevay** (DB client, RLS, runner migration, auth, AI tracé,
 region-guard, route MCP, client Inngest) + **NET-NEW transverse** (registres append-only + helper
 tenant elevay + scaffolding env) + un **wiring additif** dans les 3 fichiers copiés (route MCP, route
 Inngest, barrel schéma). Toute copie est **VERIFY** : le `tsc`/`test` Orion prouve qu'elle compile et
@@ -49,7 +59,7 @@ tourne. Tableau de vérité (colonne « Source Elevay » = le `file:line` à COP
 | `src/app/api/inngest/route.ts` (+`maxDuration=300`) | Elevay `:101`,`:103-105` | **COPY** + **MODIF additive** (registre) |
 | `src/app/api/mcp/route.ts` (`MCP_TOOLS:19`, `handleTool:293`, `tools/list:934`, `tools/call:938`) | Elevay `app/api/mcp/route.ts` | **COPY** + **MODIF additive** (registre, zones balisées) |
 | `src/db/schema.ts` (barrel) | Elevay `src/db/schema.ts` | **COPY** + **MODIF additive** (zone append `<<< ORION:SCHEMA >>>`) |
-| `src/lib/ai/ai-provider.ts` (baseURL `/v1`, MODEL_MAP) | Elevay `:43-46`,`:66-86` | **COPY** + VERIFY |
+| `src/lib/ai/ai-provider.ts` (baseURL `/v1`, MODEL_MAP) | Elevay `:43-46` (baseURL `/v1`), `:186` (`MODEL_MAP`) | **COPY** + VERIFY |
 | `src/lib/ai/traced-ai.ts` (`enforceLlmBudget`) | Elevay `src/lib/ai/traced-ai.ts` | **COPY** |
 | `src/lib/region-config.ts` (`assertEuHost`) | Elevay `src/lib/region-config.ts` | **COPY** |
 | `src/__tests__/rls.test.ts` (tripwire `set_config(...,false)`) | Elevay `src/__tests__/rls.test.ts` | **COPY** + VERIFY |
@@ -119,9 +129,10 @@ logique source.
 
 ## 3. FICHIERS POSSÉDÉS PAR CE LOT
 
-**Création + édition exclusives. Aucun chevauchement avec un autre lot.** Chemins relatifs à la racine
-du **repo Orion séparé** (les fichiers vivent sous `src/…` ; les `file:line` Elevay sont la source à
-copier depuis `app/apps/web/src/…`).
+**Création + édition exclusives. Aucun chevauchement avec un autre lot.** Chemins relatifs au package
+**`@orion/web`** (`app/apps/web/`) du repo Orion séparé (les fichiers vivent sous `app/apps/web/src/…`,
+raccourci `src/…` ci-dessous ; les `file:line` Elevay sont la source à copier depuis le **même chemin
+miroir** `app/apps/web/src/…`).
 
 ### 3.1 NET-NEW (création — propres à pack0)
 
@@ -190,7 +201,8 @@ ces fichiers (T-38 `reuse-untouched`).
 
 ## 4. ÉTAPES ORDONNÉES
 
-> Convention : exécute depuis la **racine du repo Orion séparé**. Branche `feat/orion-pack0`. Un commit
+> Convention : exécute **depuis `app/`** (racine du monorepo interne du repo Orion séparé ; là où vivent
+> `turbo.json` / `pnpm-workspace`). Branche `feat/orion-pack0`. Un commit
 > logique par étape (trailer obligatoire, voir §6).
 
 ### Étape 0 — Démarrer la session (repo Orion séparé)
@@ -204,15 +216,15 @@ des modules copiés) depuis la source `app/apps/web/src/…` vers `src/…`.
 
 ### Étape 1 — Garde de versions + config-less (VERIFY le manifeste copié)
 **Action.** Aucune édition de config. Écrire la 1re partie de `src/__tests__/orion-foundation.test.ts`
-qui lit `../../../package.json` (racine Orion) + `apps/web/package.json` et **assert** les pins exacts
+qui lit `../../../../package.json` (racine monorepo Orion, `app/package.json`) + `../../package.json` (`app/apps/web/package.json`) et **assert** les pins exacts
 (§0), que `apps/web` `name === "@orion/web"`, que `pnpm.overrides["drizzle-orm"] === "^0.45.2"`, que
 `@neondatabase/serverless` est **absent** (P4 : `postgres-js` seul), et qu'**aucun** `tailwind.config.*`
 n'existe (P7), et que `globals.css` contient
 `@import "tailwindcss"` + `@theme` (`:1`, `:18`).
 **Signature clé.**
 ```ts
-import root from "../../../package.json";          // racine du repo Orion (app/package.json)
-import web from "../../package.json";              // apps/web/package.json (name @orion/web)
+import root from "../../../../package.json";       // racine du monorepo Orion (app/package.json)
+import web from "../../package.json";              // app/apps/web/package.json (name @orion/web)
 expect(web.name).toBe("@orion/web");
 expect(root.packageManager).toBe("pnpm@10.15.1");
 expect(root.pnpm.overrides["drizzle-orm"]).toBe("^0.45.2");
@@ -418,7 +430,7 @@ contient les outils Elevay ; POST `tools/call` d'un nom inconnu → erreur propr
   (Supavisor 6543 empoisonne le pool ; incident 2026-06-10). Le tripwire grep doit rester vert ;
   `withElevayTx` délègue à `withTenantTx` qui fait déjà `true`.
 - **P3 — Table de migration : `__elevay_migrations`, PAS `__orion_migrations`.** La **DB est partagée**
-  → le ledger reste `__elevay_migrations` (numérotation continue à partir de 0106). Copier le **runner**
+  → le ledger reste `__elevay_migrations` (numérotation continue à partir de 0107 ; 0106 = dernière existante). Copier le **runner**
   `scripts/apply-migrations.ts` tel quel ; les migrations additives Orion (pack1/pack7) passent par lui.
   `db:migrate` reste à `exit 1` (déjà le cas dans la copie). pack0 ne crée **aucune** migration.
 - **P4 — DROP `@neondatabase/serverless`** : repo Orion séparé = driver **`postgres-js` seul** (design.md,

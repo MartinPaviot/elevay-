@@ -83,8 +83,8 @@ hardening **exécutée** (logs/captures à disque).
 
 **Modules Elevay REUSE — COPIÉS tels quels (vendorés) depuis Elevay, JAMAIS modifiés vs la source** (tripwire T-38 le garde) :
 `db/canonical/*`, `lib/guardrails/*`, `lib/scoring/*`, `lib/ai/*`, `lib/signals/record-signal.ts`,
-`lib/campaign-engine/build-intelligence-brief.ts`, `providers/company-enrichment/*`,
-`providers/instantly/send-adapter.ts`, `app/api/mcp/route.ts` (copie de la route Elevay), `auth.ts`. Les seules
+`lib/campaign-engine/build-intelligence-brief.ts`, `lib/providers/company-enrichment/*`,
+`lib/providers/instantly/send-adapter.ts`, `app/api/mcp/route.ts` (copie de la route Elevay), `auth.ts`. Les seules
 modifs des modules copiés autorisées sont les **hookpoints additifs de pack2** (déjà
 possédés par pack2) — pack7 **ne les retouche pas**, il **vérifie** qu'ils sont additifs.
 
@@ -148,9 +148,11 @@ exige une preuve : reproduire sur `main`.
   **sans SSE** (`route.ts:938`). Tunnel HTTPS (ngrok / Vercel preview) à valider AVANT la démo
   (`initialize` + `tools/list` round-trip). pack7 documente la commande, mais le tunnel réel +
   l'OAuth/Bearer sont **opérateur-only** (cf. §7 hardening).
-- **Clés sink JAMAIS en env** (D7) : Instantly/Fiber/OrangeSlice = per-tenant chiffrées dans
-  `integration_credentials`. La démo tourne en **`dryRun:true`** (plan sans POST tiers) si aucune clé
-  réelle (GAP-3) — suffisant pour le climax gaté.
+- **Clés sink JAMAIS en env** (D7) : Instantly/Orange Slice/Lopus + le secret HMAC webhook = per-tenant
+  chiffrées dans `integration_credentials`. **Fiber n'est PAS un sink** : c'est une source d'ENTRÉE
+  (catalogue d'acquisition), donc `FIBER_API_KEY` en env est autorisée pour la démo (comme `APOLLO_API_KEY`).
+  La démo tourne en **`dryRun:true`** (plan sans POST tiers) si aucune clé réelle (GAP-3) — suffisant pour
+  le climax gaté.
 
 ---
 
@@ -171,7 +173,7 @@ exige une preuve : reproduire sur `main`.
 | `src/__tests__/reuse-untouched.test.ts` | NET-NEW | T-38. Tripwire : les modules REUSE (carte §4 Étape 1) sont touchés en **additif/wrapper uniquement** (diff vs `main`/baseline = aucune suppression/réécriture de la logique métier). |
 | `src/__tests__/core-invariants.test.ts` | NET-NEW | T-39. Méta-suite cœur : agrège dédup 3 niveaux, idempotence runner, précédence multi-source, gates fail-closed, flatten Instantly, citableFacts/doNotClaim — assert que chaque invariant a ≥1 test vert (importe/relance les suites co-localisées). |
 | `src/__tests__/gate-uncircumventable.test.ts` | NET-NEW | T-36/T-37 transverse. Tripwire : **aucun** chemin d'export ne POST avant `evaluateSend` ; `evaluate_send`/`export_to_outbound` exposés en JSON-RPC ne court-circuitent pas le gate ; `interactive:false` garde la targeting active. |
-| `src/__tests__/env-shape.test.ts` | NET-NEW | T-41. `grep DATABASE_URL_OWNER` dans `src/` → **0** ; aucune clé sink (`INSTANTLY/FIBER/ORANGE/WEBHOOK_SECRET`) lue depuis `process.env` ; boot minimal = `DATABASE_URL`+`AUTH_SECRET`+`ANTHROPIC_API_KEY`. |
+| `src/__tests__/env-shape.test.ts` | NET-NEW | T-41. `grep DATABASE_URL_OWNER` dans `src/` → **0** ; aucune clé sink (`INSTANTLY/ORANGE/LOPUS/WEBHOOK_SECRET`) lue depuis `process.env` ; boot minimal = `DATABASE_URL`+`AUTH_SECRET`+`ANTHROPIC_API_KEY`. |
 | `src/__tests__/no-tenant-arg.test.ts` | NET-NEW | Invariant #1 transverse. Aucun `inputSchema` d'outil MCP Orion ne déclare `tenantId` (le tenant vient TOUJOURS du Bearer). Itère `MCP_MODULES`. |
 | `src/__tests__/seed-demo.test.ts` | NET-NEW | T-42. Le hero satisfait les 3 conditions : ≥1 `publicContent.type:"metric"`, firmo+provenance non vides (`firmographicsHaveSignal` `lib/campaign-engine/build-intelligence-brief.ts:199`), ≥1 signal **frais** (`isSignalFresh` `lib/signals/freshness.ts:98`) ; brief hero `citableFacts` non vide + `exportable:true` ; compte-piège `unreviewed` → skip `not_targeted`. |
 | `e2e/mvp-flow.spec.ts` | NET-NEW | T-40. Parcours MVP bout-en-bout : `ingest_csv` → `get_outreach_brief` (0 prose) → `export_to_outbound` Instantly **dryRun** (le `unreviewed` est skip `not_targeted`). |
@@ -222,14 +224,14 @@ fichiers REUSE à surveiller (file:line réels, **ne doivent pas voir leur logiq
 | Couture (REUSE) | file:line Elevay |
 |---|---|
 | Gate d'envoi | `lib/guardrails/sending-gate.ts:212-346` (catch `:339`, targeting `:301`/`:305`) |
-| Anti-fabrication | `lib/guardrails/fabrication-gate.ts:173` |
+| Anti-fabrication | `lib/evals/fabrication-gate.ts:173` |
 | Brief | `lib/campaign-engine/build-intelligence-brief.ts:26,199,238`, `types.ts:50` |
 | Signaux | `lib/signals/record-signal.ts:94` |
 | Freshness | `lib/signals/freshness.ts:98` |
 | Identité/précédence | `db/canonical/upsert.ts:108`, `identity.ts:67`, `precedence.ts:53` |
-| Waterfall | `providers/company-enrichment/waterfall.ts:148`, `registry.ts` |
+| Waterfall | `lib/providers/company-enrichment/waterfall.ts:148`, `registry.ts` |
 | Scoring | `lib/scoring/priority-score.ts:70`, `signal-opener.ts:162` (`fillTemplate:146`) |
-| Instantly adapter | `providers/instantly/send-adapter.ts:19` |
+| Instantly adapter | `lib/providers/instantly/send-adapter.ts:19` |
 | MCP route (Elevay) | `app/api/mcp/route.ts` |
 | Auth | `auth.ts:198` (`db as any`), `:80-196` |
 
@@ -239,8 +241,8 @@ qui restent des **ajouts**, pas des réécritures). Implémentation pragmatique 
 et vérifier qu'aucun module Orion net-new ne **réexporte en les masquant** / qu'un grep des marqueurs
 de logique clé (`evaluateSend`, signatures de gate) est présent intact ; documenter la baseline.
 **VERIFY (soi-même).** `git diff main -- lib/guardrails lib/scoring db/canonical lib/ai
-lib/signals/record-signal.ts lib/campaign-engine/build-intelligence-brief.ts providers/company-enrichment
-providers/instantly/send-adapter.ts app/api/mcp/route.ts` → **uniquement additif** (les 2 hookpoints
+lib/signals/record-signal.ts lib/campaign-engine/build-intelligence-brief.ts lib/providers/company-enrichment
+lib/providers/instantly/send-adapter.ts app/api/mcp/route.ts` → **uniquement additif** (les 2 hookpoints
 pack2). Logguer la sortie.
 **TEST.** `reuse-untouched.test.ts` vert.
 
@@ -323,14 +325,14 @@ code »**), **Auth** (`AUTH_SECRET`, `AUTH_URL`, `GOOGLE_*`, `MICROSOFT_*`, `BET
 `SELF_SERVE_SIGNUP_ENABLED`), **LLM** (`ANTHROPIC_API_KEY`, `ANTHROPIC_API_BASE` **avec `/v1`**,
 `ANTHROPIC_REGION`, `OPENAI_API_KEY`, `MISTRAL_API_KEY`, `LLM_PROVIDER`, `AI_DISABLED`), **Inngest**
 (`INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`), **Sources Tier 0/1** (`APOLLO_API_KEY`, `PAPPERS_API_KEY`,
-`ZEFIX_API_USER/PASSWORD` ; Sirene/Tier 2 keyless), **GDPR** (`GDPR_REGION`, `LAWFUL_BASIS_GATE`,
+`ZEFIX_API_USER/PASSWORD`, `FIBER_API_KEY` — source d'ENTRÉE, clé en env OK pour la démo comme `APOLLO_API_KEY` ; Sirene/reste Tier 2 keyless), **GDPR** (`GDPR_REGION`, `LAWFUL_BASIS_GATE`,
 `DSAR_ERASE_ENABLED`), **Flags** (`TARGETING_GATE_ENABLED=on`, `RESEARCH_AGENT_ENABLED=1`,
 `ORION_INGEST_ENABLED`, `ORION_EXPORT_ENABLED`), **Observability** (`SENTRY_DSN`, `POSTHOG_*`).
-**Clés sink (Instantly/Fiber/Orange Slice) ABSENTES** (per-tenant en DB `integration_credentials`).
+**Clés sink (Instantly/Orange Slice/Lopus + secret HMAC webhook) ABSENTES** (per-tenant en DB `integration_credentials`). `FIBER_API_KEY` est une clé de **source d'entrée** (présente, OK).
 DROP voice/Twilio/Stripe/Recall/BullMQ/`@neondatabase/serverless`.
 **VERIFY.** Boot avec `DATABASE_URL`+`AUTH_SECRET`+`ANTHROPIC_API_KEY` seuls ; `grep -rn
 DATABASE_URL_OWNER src` → **0** ; aucun `*_API_KEY` sink lu depuis `process.env` (`grep -rn
-"process.env.*INSTANTLY\|process.env.*FIBER\|process.env.*ORANGE\|WEBHOOK_SECRET" src` → 0).
+"process.env.*INSTANTLY\|process.env.*ORANGE\|process.env.*LOPUS\|WEBHOOK_SECRET" src` → 0).
 **TEST.** `env-shape.test.ts` : `DATABASE_URL_OWNER` dans `src` → 0 ; pas de lecture env de clé sink.
 
 ### Étape 6 — §7 Hardening : 3 dépendances bloquantes vérifiées LIVE
@@ -565,8 +567,10 @@ aussi asserté unitairement dans `offline-discovery.test.ts` (filtre 4b).
    (`signal-opener.ts:162`, `fillTemplate:146`) — déterministe, jamais vide. Pré-seeder `product`/contexte.
 6. **`next build` ≠ `tsc`.** Un export nommé sur `page.tsx`/`layout.tsx` passe tsc + CI mais casse
    `next build` Vercel (piège #11). L'e2e/Étape 0 doit lancer un **vrai build** (ou `next dev`).
-7. **Clés sink JAMAIS en env** (D7). `.env.example` ne contient AUCUNE clé Instantly/Fiber/Orange ;
-   `env-shape.test.ts` le garde. Démo en `dryRun:true` si pas de clé réelle (GAP-3) — suffit au climax.
+7. **Clés sink JAMAIS en env** (D7). `.env.example` ne contient AUCUNE clé Instantly/Orange Slice/Lopus
+   (ni secret HMAC webhook) ; `env-shape.test.ts` le garde. **Fiber est une source d'entrée**, donc
+   `FIBER_API_KEY` en env est OK pour la démo (comme `APOLLO_API_KEY`). Démo en `dryRun:true` si pas de
+   clé réelle (GAP-3) — suffit au climax.
 8. **`DATABASE_URL_OWNER` opérateur-only.** `ensure-elevay-tenant.ts` le lit mais **n'est jamais
    importé par le runtime** ; `grep DATABASE_URL_OWNER src` → 0. Le seed **data** passe par le rôle
    app (`withTenantTx`), seul le **DDL/création tenant** utilise owner, hors-bande.

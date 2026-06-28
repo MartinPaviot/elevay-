@@ -2,8 +2,9 @@
 
 > « context7 + tout ce qu'on utilise ici dans ce repo ». Relevé sur la config RÉELLE de
 > `C:/Users/ombel/leads` (`.mcp.json` + `.claude/settings.local.json`) le 2026-06-28.
-> **Posé par pack0** à la racine du repo Orion. Deux niveaux : (A) serveurs MCP déclarés au
-> repo (`.mcp.json`, stdio) ; (B) connecteurs au niveau compte claude.ai à garder connectés.
+> **Posé par pack0** à la racine du repo Orion. Trois niveaux : (A) serveurs MCP déclarés au
+> repo (`.mcp.json`, stdio) ; (B) `.claude/settings.local.json` (permissions + MCP activés) ;
+> (C) connecteurs au niveau compte claude.ai à garder connectés.
 
 ## A. `.mcp.json` (racine repo Orion) — serveurs stdio
 

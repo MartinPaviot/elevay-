@@ -15,7 +15,9 @@
 > 1. `tenantId` ← Bearer `mcp_*` / JWT / `event.data` — **jamais** un argument client.
 > 2. Aucun chemin d'export ne contourne `evaluateSend` (gate DANS le wrapper).
 > 3. Orion **n'envoie jamais** de cold via une infra cliente (Instantly = outil DU client).
-> 4. Clés partenaires **per-tenant en DB chiffrées**, jamais en env.
+> 4. Clés de **sinks** (Instantly / Orange Slice / Lopus, secret HMAC webhook) **per-tenant en DB
+> chiffrées**, jamais en env. Les clés de **sources d'entrée** (Apollo / Pappers / Zefix / Fiber) en
+> env sont OK (clé de SOURCE, comme `APOLLO_API_KEY` ; non soumises à la règle `integration_credentials`).
 > 5. baseURL Anthropic **inclut `/v1`**. 6. `createFunction` **2-arg** (triggers dans config,
 > `concurrency` = array). 7. **Jamais** `set_config(..., false)` (Supavisor). 8. Tailwind 4
 > **config-less**. 9. `db:migrate` → `exit 1` (runner custom seul). 10. `db as any` à l'adapter +
@@ -160,8 +162,10 @@ grep du tree interdit `tenantId` comme champ d'`inputSchema`.
 ## T-8 — Client DB postgres-js + guard EU/GDPR
 **Impératif.** Copier `db/index.ts` : `drizzle-orm/postgres-js` + `postgres(DATABASE_URL)` (TCP,
 **pas** neon-http malgré sa présence) ; `assertEuHost(DATABASE_URL)` **log** CRITICAL(prod)/WARNING(dev)
-si `GDPR_REGION=eu` et host non-EU, **sans throw**. Role applicatif = `orion_app` (restreint) ;
-`DATABASE_URL_OWNER` (role `postgres`) **jamais** dans `src` (REQ-9).
+si `GDPR_REGION=eu` et host non-EU, **sans throw**. Role applicatif = **`elevay_app`** (role restreint
+RLS EXISTANT de la DB partagée — **jamais** `orion_app`, qui n'existe pas → RLS non appliquée /
+connexion en échec) ; `DATABASE_URL_OWNER` (role `postgres`, owner) = migrations only, **jamais** dans
+`src` (REQ-9).
 **Fichiers (REUSE).** `src/db/index.ts` (`:1-2`, `:31-32`), `lib/region-config.ts`.
 **VERIFY.** `tsx -e "import {db} from './src/db'"` boote ; host non-EU sous `GDPR_REGION=eu` → log
 CRITICAL en prod simulée, **pas** d'exception.
@@ -178,7 +182,7 @@ CRITICAL en prod simulée, **pas** d'exception.
 export const integrationCredentials = pgTable("integration_credentials", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   tenantId: text("tenant_id").notNull(),
-  provider: text("provider").notNull(),            // 'instantly'|'fiber'|'orange_slice'|'lopus'|'webhook'
+  provider: text("provider").notNull(),            // sinks: 'instantly'|'orange_slice'|'lopus'|'webhook' (Fiber EXCLU = source, clé en env)
   encryptedApiKey: text("encrypted_api_key"),       // chiffré (lib/crypto/*) — JAMAIS clair
   config: jsonb("config").$type<Record<string, unknown>>().default({}), // baseUrl|webhookUrl|webhookSecret|defaultCampaignId
   status: text("status").notNull().default("active"),
@@ -245,7 +249,7 @@ GDPR). `dryRun` planifie sans POST tiers.
 export const outboundDestinations = pgTable("outbound_destinations", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   tenantId: text("tenant_id").notNull(),
-  kind: text("kind").notNull(),                  // 'instantly'|'fiber'|'orange_slice'|'lopus'|'webhook'|'generic'
+  kind: text("kind").notNull(),                  // 'instantly'|'orange_slice'|'lopus'|'webhook'|'generic' (Fiber EXCLU = entrée)
   label: text("label"),
   config: jsonb("config").$type<Record<string, unknown>>().default({}), // campaignId|listId|webhookUrl
   credentialId: text("credential_id"),            // → integration_credentials.id
@@ -290,30 +294,39 @@ et exécute `SELECT set_config('app.tenant_id', <id>, true)` (le **`true`** = tr
 concurrente.
 **j-h : 0,5.** **Dép : T-8.**
 
-## T-13 — Runner de migrations custom `__orion_migrations` + `db:migrate` désactivé
-**Impératif.** Copier `scripts/apply-migrations.ts` (REQ-8), renommer la table de tracking en
-**`__orion_migrations`**. `postgres(DATABASE_URL_OWNER, {max:1})` (role owner, hors-bande) →
-`CREATE TABLE IF NOT EXISTS __orion_migrations (filename PK, hash, applied_at default now())` → lit
+## T-13 — Runner de migrations custom (ledger partagé `__elevay_migrations`) + `db:migrate` désactivé
+**Impératif.** Copier `scripts/apply-migrations.ts` (REQ-8) **sans renommer** la table de tracking : la
+DB est PARTAGÉE avec Elevay, donc le ledger **reste `__elevay_migrations`** (ne PAS démarrer de journal
+neuf, ne PAS numéroter à zéro). N'ajouter que des migrations **net-new additives** (`IF NOT EXISTS`),
+numérotées **à partir de 0107** (`0106_linkedin_inbound_enums.sql` est la dernière existante).
+`postgres(DATABASE_URL_OWNER, {max:1})` (role owner, hors-bande) →
+`CREATE TABLE IF NOT EXISTS __elevay_migrations (filename PK, hash, applied_at default now())` → lit
 `drizzle/*.sql` triés lexicalement → pour chaque non-appliqué : `sql.begin(tx => { tx.unsafe(content);
 INSERT … (filename, sha256(content)) })` (**1 tx/fichier**) ; hash-mismatch déjà-appliqué → warn+skip.
 Toute migration **additive + `IF NOT EXISTS`** (re-run sûr). `db:migrate` → `exit 1`.
 **Fichiers (REUSE).** `apps/web/scripts/apply-migrations.ts`.
-**VERIFY.** `pnpm db:migrate` → exit 1 ; `pnpm db:migrate:apply` deux fois → 1 seule ligne
-`__orion_migrations`, 0 erreur.
+**VERIFY.** `pnpm db:migrate` → exit 1 ; `pnpm db:migrate:apply` deux fois → 1 seule ligne (nouvelle)
+dans `__elevay_migrations`, 0 erreur.
 **TEST.** `apply-migrations.test.ts` (DB test) : idempotence (double-apply = 1 ligne) ;
 hash-mismatch → warn+skip.
 **j-h : 0,5.** **Dép : T-8.**
 
 ## T-14 — `signals` taxonomie canonique + alias-map (`taxonomy.ts`) + sink `recordCompanySignal`
 **Impératif. PRÉREQUIS DUR.** `recordCompanySignal` écrit `companies.properties.signals[]` (JSONB
-merge `||`, REUSE `record-signal.ts:86,94`), `SignalEntry {type,detectedAt,strength?,detail?,source?,
-evidence?}` (`:38-45`). **NET-NEW `lib/signals/taxonomy.ts`** = alias-map canonique
-(`funding_recent`→`funding`, etc.) au-dessus des **9 types canoniques** (`triggers.ts:27`). **Sans
-lui**, `bestMultiplierForCompany` retourne `undefined` → plancher 1.0× (bug vérifié
+merge `||`, REUSE `record-signal.ts:81,94` — `:81` `upsertSignalEntry`, `:94` `recordCompanySignal`),
+`SignalEntry {type,detectedAt,strength?,detail?,source?,evidence?}` (`:38-45`). **NET-NEW
+`lib/signals/taxonomy.ts`** (n'existe PAS chez Elevay — à CRÉER, ne pas dire qu'on le copie) = alias-map
+qui normalise les types bruts (`funding_recent`→`funding`, `hiring_velocity`→`hiring`, etc.) vers le
+**vocabulaire de SCORING** (`SignalType`/`SIGNAL_DETECTORS`, `signal-detectors.ts:16-22,76`) sur lequel
+`SIGNAL_PRIORS` (`signal-outcomes.ts:59`) est keyé. **À NE PAS confondre** avec `KNOWN_SIGNAL_TYPES`
+(`triggers.ts:27`), le vocab trigger-config (`post_funding`/`hiring_signal`/…) qui est DIFFÉRENT et
+n'est **pas** la cible des alias. **Sans lui**, `bestMultiplierForCompany` retourne `undefined` →
+plancher 1.0× (bug vérifié
 `signals-world-class`, `signal-score-daily.ts:87`). ≥6 taxonomies disjointes existent en amont → la
 canonicalisation est un prérequis **avant** d'annoncer `get_signals.polarity`/les multipliers.
-**Fichiers (REUSE+NET-NEW).** REUSE `record-signal.ts:86,94,38-45`, `triggers.ts:27`,
-`freshness.ts:98,88,31` (TTL) ; NET-NEW `lib/signals/taxonomy.ts`.
+**Fichiers (REUSE+NET-NEW).** REUSE `record-signal.ts:81,94,38-45`, `signal-detectors.ts:16-22,76`
+(`SignalType`/`SIGNAL_DETECTORS`), `signal-outcomes.ts:59` (`SIGNAL_PRIORS`), `freshness.ts:98,88,31`
+(TTL) ; NET-NEW `lib/signals/taxonomy.ts` (alias-map + `toCanonicalSignal()`).
 **VERIFY.** `node -e` : un `{type:'funding_recent'}` ressort canonique `'funding'` ; un multiplier
 appris s'applique (≠ 1.0) pour un type connu.
 **TEST.** `taxonomy.test.ts` : alias→canonique pour tous les types observés ;
@@ -509,12 +522,14 @@ canonique attendu ; `pull()` ne throw jamais sur erreur réseau.
 **Impératif.** NET-NEW. **Fiber = INPUT** (data-API). `fiberSource(query)` = tap d'enrichissement
 (100+ providers, contact reveal) ; `fiberSignalIngestor(payload)` **normalise n'importe quel payload**
 Tracker/webhook → `IngestItem.rawSignals` + `recordCompanySignal` via alias-map (T-14) — aucune casse
-si la taxonomie Fiber diffère. Header `x-api-key` **per-tenant** (`integration_credentials`).
+si la taxonomie Fiber diffère. Header `x-api-key` ← `FIBER_API_KEY` en **env** (clé de SOURCE, OK pour
+la démo — Fiber n'est pas un sink, donc hors `integration_credentials`).
 **Fiber-Sales EXCLU** (pas d'API d'injection). **Lopus EXCLU en dur** (API non vérifiée).
 **Fichiers (NET-NEW).** `lib/ingest/sources/fiber-source.ts`.
 **VERIFY.** Payload Fiber arbitraire → signal canonique via alias-map.
 **TEST.** `fiber-source.test.ts` : payload Tracker arbitraire → `rawSignals` normalisés.
-**j-h : 0,5 (+ porté par export Fiber T-34).** **Dép : T-9, T-14, T-21. DIFFÉRABLE P1.**
+**j-h : 0,5.** **Dép : T-9, T-14, T-21. DIFFÉRABLE P1.** (Fiber = source d'ENTRÉE uniquement ; **aucun**
+export Fiber — pas de destination de sortie Fiber.)
 
 ## T-27 — Outils MCP d'ingestion (`ingest_csv` / `ingest_from_provider` / `get_ingest_job`)
 **Impératif.** NET-NEW. JSON-RPC synchrone sans SSE → async = **job-id + poll**. `ingest_csv`
@@ -609,7 +624,7 @@ tenantId) ; sortie `{send,reason}` ou `{send:false,code,reason}`. Omettre `compa
 au targeting (force unreviewed=deny). Un Bearer `viewer` ne peut **aucune** action outbound
 (`decide-action.ts:80`).
 **Fichiers (NET-NEW sur REUSE).** `lib/mcp/evaluate-send.ts` ; REUSE `sending-gate.ts:212`.
-**VERIFY.** `evaluate_send` sur un opt-out → `{send:false, code:"opt_out"}`.
+**VERIFY.** `evaluate_send` sur un opt-out → `{send:false, code:"opted_out"}`.
 **TEST.** `evaluate-send.test.ts` : opt-out→code ; unreviewed+SAFE_MODE→`not_targeted` ; pas de
 tenantId en input.
 **j-h : 0,5.** **Dép : T-29, T-36.**
@@ -621,7 +636,7 @@ tenantId en input.
 ## T-32 — Interface `OutboundDestination` + orchestrateur `export_to_outbound` (MCP)
 **Impératif.** NET-NEW. Interface `OutboundDestination` ; `push()` n'est appelé **qu'après** le gate.
 Outil MCP `export_to_outbound` input zod `{prospectIds: string[].min(1).max(1000), destination:
-enum[instantly,fiber,orange_slice,lopus,webhook,generic], campaignId?, listId?,
+enum[instantly,orange_slice,lopus,webhook,generic], campaignId?, listId?,
 skipIfInWorkspace:bool.default(true), webhookUrl?, dryRun:bool.default(false)}` avec
 `.refine(destination!=="instantly" || (!!campaignId !== !!listId))` (XOR), annotation
 `{readOnlyHint:false, destructiveHint:true, openWorldHint:true}`. Sortie `{destination, exported[],
@@ -629,7 +644,7 @@ skipped[]{code,reason}, counts{requested,exported,skipped,duplicates}}`. Délèg
 l'event Inngest `export/run` (T-35).
 ```ts
 export interface OutboundDestination {
-  name: "instantly"|"fiber"|"orange_slice"|"webhook"|"generic";
+  name: "instantly"|"orange_slice"|"lopus"|"webhook"|"generic";  // Fiber EXCLU (= source d'entrée)
   push(args: { tenantId: string; briefs: OutreachBrief[];   // déjà gatés exportable:true
     config: { campaignId?: string; listId?: string; webhookUrl?: string; dryRun?: boolean };
     apiKey?: EncryptedSecret; }): Promise<ExportResult>;
@@ -662,19 +677,19 @@ uniquement** — objets/arrays droppés). Mapping plat (`lib/outbound/instantly-
 backoff 429 ; clé absente → erreur explicite (pas de POST).
 **j-h : 1,5.** **Dép : T-32.**
 
-## T-34 — Destinations Fiber / Orange Slice / webhook (HMAC) / generic — différable P1
-**Impératif.** NET-NEW. **Fiber** : `createAudience`/`addTrackerCompanies` (push d'une audience
-résolue+scorée à surveiller — **le brief ne va PAS à Fiber**, seulement l'audience). **Orange Slice** :
-webhook entrant → custom fields (endpoints exacts À CONFIRMER avec clé ; flatten partagé webhook).
-**webhook générique** : POST **HMAC-signé** d'une enveloppe portant **à la fois** le map plat (moteurs
-de template) ET le `brief` complet (agents IA) — vendor-neutre. **generic** : renvoie le **brief
-imbriqué complet** + `citableFacts[]`/`doNotClaim[]` en `structuredContent` (pas de flatten).
-**Lopus EXCLU en dur** (API non vérifiée ; best-effort `fiberSignalIngestor`-like si jamais).
-**Fichiers (NET-NEW).** `lib/outbound/destinations/{fiber,orange-slice,webhook,generic}.ts`.
+## T-34 — Destinations Orange Slice / Lopus / webhook (HMAC) / generic — différable P1
+**Impératif.** NET-NEW. **Orange Slice** : webhook entrant → custom fields (endpoints exacts À CONFIRMER
+avec clé ; flatten partagé webhook). **Lopus** : sortie webhook générique (aucune API de lecture — sink
+**de SORTIE** uniquement, jamais une source ; flatten partagé webhook). **webhook générique** : POST
+**HMAC-signé** d'une enveloppe portant **à la fois** le map plat (moteurs de template) ET le `brief`
+complet (agents IA) — vendor-neutre. **generic** : renvoie le **brief imbriqué complet** +
+`citableFacts[]`/`doNotClaim[]` en `structuredContent` (pas de flatten). **Fiber EXCLU des sorties**
+(source d'ENTRÉE uniquement — cf. T-26 ; **aucun** adaptateur d'export/audience Fiber).
+**Fichiers (NET-NEW).** `lib/outbound/destinations/{orange-slice,lopus,webhook,generic}.ts`.
 **VERIFY.** webhook → enveloppe signée HMAC vérifiable ; generic → brief imbriqué complet en
 structuredContent.
-**TEST.** `outbound-destinations.test.ts` : HMAC vérifiable ; generic = brief imbriqué ; Fiber = audience
-seule.
+**TEST.** `outbound-destinations.test.ts` : HMAC vérifiable ; generic = brief imbriqué ; Lopus = sortie
+webhook (flatten partagé) ; aucun chemin d'export Fiber.
 **j-h : 1,5.** **Dép : T-32. DIFFÉRABLE P1.**
 
 ## T-35 — `inngest/export-to-outbound` — handoff durable gaté (bulk + 429)
@@ -703,8 +718,8 @@ Ordre fixe fail-closed : opt-out `:216` → account ctx `:227` (null→unreviewe
 targeting `:301` (unreviewed→deny) → identity/cold/cap `:324` ; `catch` final → `{send:false}`
 (`:339-345`, zéro fail-open) ; `settings:null` → `DEFAULTS` protecteurs. `interactive:false` garde
 SAFE_MODE actif (compte fraîchement importé non exporté). `interactive:true` n'esquive **que** le gate 7.
-**Fichiers (REUSE).** `lib/guardrails/sending-gate.ts:212-346` ; REUSE annexe `fabrication-gate.ts:173`.
-**VERIFY.** opt-out → `{send:false, code:"opt_out"}` ; unreviewed+SAFE_MODE → `{send:false,
+**Fichiers (REUSE).** `lib/guardrails/sending-gate.ts:212-346` ; REUSE annexe `lib/evals/fabrication-gate.ts:173`.
+**VERIFY.** opt-out → `{send:false, code:"opted_out"}` ; unreviewed+SAFE_MODE → `{send:false,
 code:"not_targeted"}` ; `catch` simulé → `{send:false}`.
 **TEST.** `sending-gate.test.ts` (porté d'Elevay) : chaque gate fail-closed ; `catch`→fail-closed.
 **Tripwire** `export-passes-gate.test.ts` : aucun chemin d'export n'appelle un POST sink avant
@@ -739,10 +754,11 @@ additif/wrappers seulement). Carte de branchement (file:line réels) :
 | MCP initialize/resources | `route.ts:921,926,917`, `handleGetCompany:475` | T-29/30 |
 | Clé MCP per-tenant | `lib/config/tenant-settings.ts:431` | T-7/9 |
 | Gate d'envoi | `lib/guardrails/sending-gate.ts:212-346` (catch `:339`) | T-31/36 |
-| Anti-fabrication | `lib/guardrails/fabrication-gate.ts:173` | T-28 (dérive `doNotClaim`) |
+| Anti-fabrication | `lib/evals/fabrication-gate.ts:173` (`judgeFabrication`) | T-28 (dérive `doNotClaim`) |
 | Brief | `build-intelligence-brief.ts:24,26,30,190,227-245`, `types.ts:50-75` | T-15/28 |
-| Signaux | `lib/signals/record-signal.ts:38-45,61,86,94` | T-14/18 |
-| Taxonomie/triggers | `lib/sequences/triggers.ts:27,143` | T-14 |
+| Signaux | `lib/signals/record-signal.ts:38-45,61,81,94` | T-14/18 |
+| Taxonomie scoring (cible alias) | `lib/scoring/signal-detectors.ts:16-22,76`, `signal-outcomes.ts:59,96` | T-14/18/19 |
+| Vocab trigger-config (≠ cible alias) | `lib/sequences/triggers.ts:27,143` | T-14 (référence) |
 | Freshness | `lib/signals/freshness.ts:31,88,98` | T-15/28 |
 | Identité/précédence | `db/canonical/upsert.ts:60,108,223`, `identity.ts:67,125`, `precedence.ts:9,53` | T-17 |
 | Waterfall enrichissement | `providers/company-enrichment/waterfall.ts:77,148,181`, `registry.ts` | T-24 |
@@ -796,12 +812,14 @@ structurée, 0 prose) → `export_to_outbound` Instantly **dryRun** (gate skip u
 **opérateur-only, hors code**), Auth (`AUTH_SECRET`,`AUTH_URL`,`GOOGLE_*`,`MICROSOFT_*`,
 `BETA_SIGNUP_CODE`,`SELF_SERVE_SIGNUP_ENABLED`), LLM (`ANTHROPIC_API_KEY/_API_BASE/_REGION`,
 `OPENAI_API_KEY`,`MISTRAL_API_KEY`,`LLM_PROVIDER`,`AI_DISABLED`), Inngest
-(`INNGEST_EVENT_KEY/_SIGNING_KEY`), Sources Tier 0/1 (`APOLLO_API_KEY`,`PAPPERS_API_KEY`,
-`ZEFIX_API_USER/PASSWORD` ; Sirene/Tier 2 keyless), GDPR (`GDPR_REGION`,`LAWFUL_BASIS_GATE`,
+(`INNGEST_EVENT_KEY/_SIGNING_KEY`), Sources d'entrée (`APOLLO_API_KEY`,`PAPPERS_API_KEY`,
+`ZEFIX_API_USER/PASSWORD`,`FIBER_API_KEY` — clés de SOURCE en env OK ; Sirene/Tier 2 keyless), GDPR
+(`GDPR_REGION`,`LAWFUL_BASIS_GATE`,
 `DSAR_ERASE_ENABLED`), Flags (`TARGETING_GATE_ENABLED`,`RESEARCH_AGENT_ENABLED`,
-`ORION_INGEST_ENABLED`,`ORION_EXPORT_ENABLED`), Observability (`SENTRY_DSN`,`POSTHOG_*`). **Clés
-sinks (Instantly/Fiber/Orange Slice) per-tenant en DB** (`integration_credentials`), **PAS** en env.
-DROP voice/Twilio/Stripe/Recall/BullMQ.
+`ORION_INGEST_ENABLED`,`ORION_EXPORT_ENABLED`), Observability (`SENTRY_DSN`,`POSTHOG_*`). **Clés de
+sinks de SORTIE (Instantly/Orange Slice/Lopus + secret HMAC webhook) per-tenant en DB**
+(`integration_credentials`), **PAS** en env. Fiber = source d'ENTRÉE, sa clé (`FIBER_API_KEY`) en env
+est OK (n'est pas un sink). DROP voice/Twilio/Stripe/Recall/BullMQ.
 **Fichiers (NET-NEW).** `.env.example`.
 **VERIFY.** Boot avec `DATABASE_URL`+`AUTH_SECRET`+`ANTHROPIC_API_KEY` ; `grep DATABASE_URL_OWNER src`
 → 0 ; aucun `*_API_KEY` partenaire sink lu depuis `process.env`.
@@ -850,7 +868,7 @@ why-now) ; (c) T-29 `structuredContent`/`outputSchema` (P0).
 **Différable (post-démo) :**
 - **P1 (l'EDGE & l'interop large)** : T-20 velocity-snapshot, T-25 Tier 2 (SEC/BODACC/ATS/OSS/churn/crt.sh),
   T-26 Fiber-as-input, T-30 resources + `find_prospects`/`explain_priority`/`enroll`, T-34
-  Fiber/OrangeSlice/webhook/generic, T-6 auth humaine complète. **≈ +11,5 j-h.**
+  OrangeSlice/Lopus/webhook/generic, T-6 auth humaine complète. **≈ +11,5 j-h.**
 - **P2** : SSE/élicitation MCP (`get_signals` deep, `notifications/progress`), backfill JSONB→table
   signaux normalisée. **≈ +4,0 j-h.**
 - **P3** : warm-path (champion/investor k-hop). **≈ +4-6 j-h.**

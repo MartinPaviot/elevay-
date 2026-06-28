@@ -154,14 +154,20 @@ EXISTS` rend les ré-applications sûres et le split owner/app garde le runtime 
   vérificateur fait `bcryptjs.compare(token, keyHash)` (`app/api/mcp/route.ts:230`
   `authenticateMcpRequest`) → une clé sha256 ne matche jamais (401). Recette : `SETUP-RUNBOOK §4.2`.
 
-### D7 — Clés partenaires per-tenant, chiffrées en DB, jamais en env.
+### D7 — Clés de SORTIE (sinks) per-tenant chiffrées en DB, jamais en env ; clés de SOURCE tolérées en env pour la démo.
 
-Toutes les clés (entrée : Apollo/Hunter/Pappers/**Fiber** — Fiber est une source d'ENTRÉE,
-cf. D8 ; sortie : Instantly/OrangeSlice/Lopus/webhook générique) sont stockées
-**chiffrées per-tenant** (`{iv, ciphertext,
-tag}`) dans `integration_credentials` (ou `tenants.settings`), **jamais en variable
-d'environnement** — exactement le pattern Instantly d'Elevay. Les sources souveraines/gratuites
-(SEC EDGAR, BODACC, Sirene, crt.sh, npm/PyPI, ATS publics) n'ont **pas** de clé.
+Les **clés de SORTIE (sinks)** — Instantly/OrangeSlice/Lopus/secret HMAC du webhook générique —
+sont stockées **chiffrées per-tenant** (`{iv, ciphertext, tag}`) dans `integration_credentials`
+(ou `tenants.settings`), **jamais en variable d'environnement** — exactement le pattern Instantly
+d'Elevay.
+
+Les **clés de SOURCE (entrée)** — Apollo/Hunter/Pappers/**Fiber** (Fiber est une source
+d'ENTRÉE, cf. D8) — suivent ce même chiffrement per-tenant **en production**, mais **PEUVENT
+vivre en variable d'environnement pour la démo** (ex. `FIBER_API_KEY`, exactement comme
+`APOLLO_API_KEY`) : ce sont des clés de **source**, **non soumises à la règle
+`integration_credentials`**. Ne **pas** écrire « jamais en env » de façon absolue pour ces clés
+d'entrée. Les sources souveraines/gratuites (SEC EDGAR, BODACC, Sirene, crt.sh, npm/PyPI, ATS
+publics) n'ont **pas** de clé.
 
 ### D8 — Brief ZÉRO prose ; toute sortie passe par `evaluateSend` avant export.
 

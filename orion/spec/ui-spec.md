@@ -188,7 +188,7 @@ sources (rows 44) + panneau détail 400 à droite quand une source est sélectio
 ┌──────────────┬──────────────────────────────────────────────────────────────┐
 │ ORION    [≡] │ Sources                              [+ Ajouter une source]    │ 44
 │              ├──────────────────────────────────────────────────────────────┤
-│ Sources    ◀ │ Tous · CSV · Apollo · Registre · LinkedIn   [Rafraîchir]      │ 40
+│ Sources    ◀ │ Tous · CSV · Apollo · Registre · LinkedIn · Fiber [Rafraîchir]│ 40
 │ Prospects    ├──────────────────────────────────────────────────────────────┤
 │ Briefs       │ NOM            TYPE      ENREGISTRÉS  DOUBLONS  ÉTAT   MAJ      │
 │ Outbound     ├──────────────────────────────────────────────────────────────┤
@@ -212,7 +212,7 @@ sources (rows 44) + panneau détail 400 à droite quand une source est sélectio
                                                           └─────────────────────┘
 ```
 
-- **Copy** : titre `Sources` ; action `Ajouter une source` ; filtres `Tous`, `CSV`, `Apollo`, `Registre`, `LinkedIn` ; colonnes `NOM`, `TYPE`, `ENREGISTRÉS`, `DOUBLONS`, `ÉTAT`, `MAJ` ; états `OK` / `Erreur` / `En cours`.
+- **Copy** : titre `Sources` ; action `Ajouter une source` ; filtres `Tous`, `CSV`, `Apollo`, `Registre`, `LinkedIn`, `Fiber` ; colonnes `NOM`, `TYPE`, `ENREGISTRÉS`, `DOUBLONS`, `ÉTAT`, `MAJ` ; états `OK` / `Erreur` / `En cours`. `Fiber` est une **source d'entrée** (Tracker webhook + reveal contact), jamais une cible d'export.
 - **Espacements** : `.ls-table th` padding `6px 10px`, uppercase 12px ; `.ls-table td` padding `7px 10px`, 13px ; colonnes numériques `td.numeric` (tabular-nums, right). Compteurs en `font-mono`.
 - **Vide** (`EmptyState` variant `first-use`) : titre `Aucune source`, description `Importez un CSV ou connectez un provider pour commencer.`, action `Ajouter une source`.
 - **Chargement** : `TableSkeleton` (12 `skeleton-row` staggered 0–385ms).
@@ -277,11 +277,11 @@ angle, citations.
 │              │                           │ Sources  [1] partech.com/…       │
 │              │                           │          [2] hexa.io/careers     │
 │              │                           │ ──────────────────────────────  │
-│              │                           │ [Rédiger l'outbound]  [Rejeter]  │
+│              │                           │ [Préparer l'export]   [Rejeter]  │
 └──────────────┴───────────────────────────┴──────────────────────────────────┘
 ```
 
-- **Copy** (sections, majuscules 12px `--color-text-tertiary`) : `POURQUOI MAINTENANT`, `FAITS CITABLES`, `NE PAS AFFIRMER`, `ANGLE PROPOSÉ`, `Sources`. Actions : `Rédiger l'outbound`, `Rejeter`.
+- **Copy** (sections, majuscules 12px `--color-text-tertiary`) : `POURQUOI MAINTENANT`, `FAITS CITABLES`, `NE PAS AFFIRMER`, `ANGLE PROPOSÉ`, `Sources`. Actions : `Préparer l'export`, `Rejeter`. `Préparer l'export` pousse le brief vers l'écran Outbound (handoff vers l'agent tiers) — Orion **émet/exporte** le brief, il n'écrit pas l'email (cf `CLAUDE.md` : « Orion does NOT write the email »).
 - **Citations** : `citation-chip` `[1]` `[2]` inline → ancre vers la source listée (URL/fait). Quand la source n'est pas cliquable : style muet, pas de lien.
 - **NE PAS AFFIRMER** : liste en `--color-warning` `-soft`, signale les faits non sourcés / interdits de fabrication (gate anti-fabrication).
 - **Rail liste** : item sélectionné `◉` en `--color-bg-selected` ; score à droite, dernière MAJ. Fond frosted `.inbox-rail`.
@@ -289,10 +289,12 @@ angle, citations.
 - **Chargement** : `DetailPageSkeleton` à droite, `skeleton-row` dans le rail.
 - **Erreur génération** : dans le dossier, `EmptyState` `error`, titre `Brief indisponible`, description `La génération a échoué (raison ci-dessous).`, action `Régénérer`.
 
-### (d) Export / Outbound (Instantly / Fiber / OrangeSlice, verdict gate)
+### (d) Export / Outbound (Instantly / OrangeSlice / Lopus, verdict gate)
 
-Layout : header 44 + filter bar 40 + table des envois préparés (rows 44) + panneau
-détail 400 = aperçu du message + verdict du gate.
+Layout : header 44 + filter bar 40 + table des briefs prêts pour l'export (rows 44) +
+panneau détail 400 = aperçu du handoff + verdict du gate. Orion **exporte** le brief
+vers l'agent tiers (Instantly / OrangeSlice / Lopus), qui rédige et envoie ; Orion ne
+compose aucune prose et n'envoie pas (cf `CLAUDE.md`).
 
 ```
 ┌──────────────┬──────────────────────────────────────────────────────────────┐
@@ -313,7 +315,7 @@ détail 400 = aperçu du message + verdict du gate.
                                                    │ ──────────────────────────│
                                                    │ Bonjour Sarah,             │
                                                    │ Bravo pour la Série A […]  │
-                                                   │ (corps de l'email)         │
+                                                   │ (message du tiers)         │
                                                    │ ──────────────────────────│
                                                    │ VERDICT  Prêt              │
                                                    │ • Corps non vide      ✓    │
@@ -325,10 +327,10 @@ détail 400 = aperçu du message + verdict du gate.
                                                    └────────────────────────────┘
 ```
 
-- **Copy** : titre `Outbound` ; action `Exporter la sélection` ; filtres verdict `Tous`, `Prêt`, `À revoir`, `Bloqué` ; sélecteur `Cible` = `Instantly` / `Fiber` / `OrangeSlice` ; colonnes `PROSPECT`, `OBJET`, `VERDICT`, `CANAL`.
-- **Verdict gate** (badges Orion via `Badge`) : `Prêt` → `--color-success`/`-soft` ; `À revoir` → `--color-warning`/`-soft` ; `Bloqué` → `--color-error`/`-soft`. Le panneau détaille les checks (corps non vide, faits sourcés, opt-out, base légale) — miroir exact de `evaluateSend`.
+- **Copy** : titre `Outbound` ; action `Exporter la sélection` ; filtres verdict `Tous`, `Prêt`, `À revoir`, `Bloqué` ; sélecteur `Cible` = `Instantly` / `OrangeSlice` / `Lopus` ; colonnes `PROSPECT`, `OBJET`, `VERDICT`, `CANAL`.
+- **Verdict gate** (badges Orion via `Badge`) : `Prêt` → `--color-success`/`-soft` ; `À revoir` → `--color-warning`/`-soft` ; `Bloqué` → `--color-error`/`-soft`. Le panneau détaille les checks (corps non vide, faits sourcés, opt-out, base légale) — miroir exact de `evaluateSend`, exécuté comme **gate d'éligibilité à l'export** avant handoff (jamais un chemin d'envoi côté Orion).
 - **Export bloqué** : un envoi `Bloqué` ne peut pas être sélectionné (checkbox désactivée + tooltip `Bloqué par le gate : <raison>`). `Exporter` n'agit que sur les `Prêt`/`À revoir` cochés.
-- **Aperçu corps** : rendu via `.email-body` (en dark, fond blanc `#ffffff`, texte `#1a1a2e`, radius 6px, padding `10px 12px`).
+- **Aperçu du message** : le corps affiché est le message que l'agent tiers enverra — Orion ne le rédige pas (il émet le brief) ; il sert à l'aperçu et au check d'éligibilité du gate avant export. Rendu via `.email-body` (en dark, fond blanc `#ffffff`, texte `#1a1a2e`, radius 6px, padding `10px 12px`).
 - **Vide** : `EmptyState` `first-use`, titre `Rien à exporter`, description `Approuvez des briefs pour préparer des envois.`, action `Aller aux briefs`.
 - **Confirmation export** : `Modal` taille `md`, titre `Exporter vers <Cible>`, footer `Annuler` / `Exporter`. Toast succès `N envois exportés` (`.toast-enter`).
 
@@ -352,16 +354,17 @@ Comment vérifier :
 **Backend Orion (specs `_specs/orion/` + `_specs/00`…`15`).** Chaque écran lit la
 même couche canonique qu'Elevay :
 
-- **Sources** ← spec 01 (provider-adapter) + 05/06 (sourcing Apollo/registre) + 07 (identity-resolution/dedup) → compteurs `enregistrés`/`doublons`.
+- **Sources** ← spec 01 (provider-adapter) + 05/06 (sourcing Apollo/registre) + 07 (identity-resolution/dedup) → compteurs `enregistrés`/`doublons`. Fiber y figure comme **source d'ENTRÉE** (Tracker webhook + reveal contact), pas comme destination.
 - **Prospects** ← 09 (icp-scoring) + signal-monitor → `priority_score` ; `signal-chip` lit `properties.signals[]` (clés canoniques `funding`, `hiring`, …) ; `confidence-badge` lit `urlOutcome`/`llmConfidence`.
 - **Briefs** ← agent-service (04) + research/grounding → why-now, citableFacts, doNotClaim, angle, citations ; gate anti-fabrication alimente `NE PAS AFFIRMER`.
-- **Outbound** ← `evaluateSend` (gates 22 suppression → 17 email-status → 33 base légale → 35 targeting) → `VERDICT` ; export adapters Instantly/Fiber/OrangeSlice.
+- **Outbound** ← `evaluateSend` (gates 22 suppression → 17 email-status → 33 base légale → 35 targeting) → `VERDICT` ; export adapters Instantly/OrangeSlice/Lopus (Fiber est une source d'ENTRÉE, jamais une cible d'export).
 
-**Fusion dans Elevay (jour J).** Comme Orion consomme `@orion/ui` (= les tokens +
-primitives extraits d'Elevay, Option B §1), la fusion est un déplacement de
-routes : les écrans Orion deviennent un groupe de routes sous le même App Router,
-la même sidebar (240, sections ajoutées), le même header (44), le même `.dark`,
-les mêmes `.ls-table`/`.inbox-shell`. Zéro reskin, zéro divergence de tokens, zéro
-nouveau composant de base à fusionner. Si l'Option A (copie verbatim) avait été
-retenue, ce jour-là imposerait une réconciliation manuelle de `globals.css` — c'est
-précisément ce que l'Option B élimine.
+**Fusion dans Elevay (jour J).** Orion ayant **copié `globals.css` verbatim**
+(Option A §1 — pas de `@orion/ui`, pas de `workspace:*`), la fusion reste un simple
+déplacement de routes : les écrans Orion deviennent un groupe de routes sous le même
+App Router, la même sidebar (240, sections ajoutées), le même header (44), le même
+`.dark`, les mêmes `.ls-table`/`.inbox-shell` — aucun composant de base net-new à
+fusionner. Le coût assumé de l'Option A se paie ce jour-là : comme les tokens des
+deux copies ont pu diverger entre-temps, on **réconcilie manuellement `globals.css`**
+(re-port des deltas Elevay), puis on extrait à ce moment-là (pas avant, cf §1 l.27) un
+paquet de tokens partagé qui élimine toute divergence ultérieure.

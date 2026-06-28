@@ -313,7 +313,7 @@ Fichier : `orion/.mcp.json` (racine du repo Orion)
         "/c", "npx", "-y", "@playwright/mcp@latest",
         "--browser", "chromium",
         "--viewport-size", "1280x720",
-        "--storage-state", ".auth/elevay-tenant.json",
+        "--storage-state", "app/apps/web/.auth/elevay-tenant.json",
         "--allowed-origins", "http://localhost:3000;http://localhost:*",
         "--output-dir", ".playwright-mcp"
       ],
@@ -331,10 +331,16 @@ Fichier : `orion/.mcp.json` (racine du repo Orion)
 
 Flags (doc CLI `@playwright/mcp` à jour) :
 
-- `--storage-state .auth/elevay-tenant.json` — **réutilise l'auth-fixture forgée
-  en §2**. C'est le pont JWE → MCP : le navigateur MCP démarre authentifié sur le
-  tenant `elevay` sans OAuth. (N'a d'effet qu'en profil isolé/au démarrage ;
-  régénérer si la session a expiré ~30 min.)
+- `--storage-state app/apps/web/.auth/elevay-tenant.json` — **réutilise
+  l'auth-fixture forgée en §2**. C'est le pont JWE → MCP : le navigateur MCP
+  démarre authentifié sur le tenant `elevay` sans OAuth. Le chemin est **relatif
+  à la racine du repo** (où vit `.mcp.json`), alors que le global-setup écrit la
+  fixture sous le paquet `@orion/web` (`app/apps/web/.auth/…`, cf. §2 :
+  `path.resolve(__dirname, "../.auth/…")` depuis `app/apps/web/e2e/`) — d'où le
+  préfixe `app/apps/web/`. Sans lui, le navigateur MCP chercherait
+  `<racine>/.auth/…`, ne trouverait pas la fixture et démarrerait NON
+  authentifié. (N'a d'effet qu'en profil isolé/au démarrage ; régénérer si la
+  session a expiré ~30 min.)
 - `--allowed-origins "http://localhost:3000;http://localhost:*"` — borne la QA à
   localhost (app testée = Next sur localhost ; couvre 3000 par défaut et 3100 e2e).
 - `--viewport-size "1280x720"` — repro standard ; pour le bug founder demi-écran,

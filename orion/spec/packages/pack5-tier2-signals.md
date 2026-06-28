@@ -93,7 +93,7 @@ snapshotté propriétaire. Concrètement, comme **`IngestSource`** alimentant l'
 | `integrationCredentials` (table) | `db/schema/integrations.ts` (pack1) | secret **webhook Svix Fiber `whsec_…`** per-tenant chiffré (le reveal `x-api-key` est consommé par pack2) |
 | `decryptSecret` | `lib/crypto/settings-encryption.ts:65` | déchiffrer le secret Svix `whsec_` (pattern Instantly `lib/providers/instantly-client.ts:16-17`) |
 | `enrichCompany` | `lib/providers/company-enrichment/waterfall.ts:148` (merge first-non-null `:77`, `isSaturated:59`) | `waterfallSource` |
-| registry/precedence enrichissement | `lib/providers/company-enrichment/registry.ts`, `precedence.ts:9/53` | provider par champ |
+| registre + précédence enrichissement | `lib/providers/company-enrichment/registry.ts` (ordre des providers, **pas** le gagnant par champ) + `db/canonical/precedence.ts:9/53` (`PROVIDER_RANK`/`pickWinner` — gagnant par champ) | provider par champ |
 | `inngest` (client) | `inngest/client.ts` (pack0) | `createFunction` |
 | `sourceFromSalesNav`, `buildSalesNavBody` | `lib/linkedin/sales-nav-sourcing.ts:54`, `lib/linkedin/icp-to-salesnav.ts:68` | **[HERO]** Unipile Sales-Nav *changed-jobs* (`linkedinJobChangeSource`) — filtre « recently changed jobs (90 j) » résolu via le parameter-service |
 | `resolveIcpToSalesNavQuery` | `lib/linkedin/icp-to-salesnav.ts:123` | **[HERO]** restreindre la veille froide VP-Eng à l'ICP (titre × seniority × secteur) |
@@ -226,7 +226,7 @@ export function waterfallSource(seeds: Array<{ domain?: string; name?: string; c
 **TEST.** `waterfall-source.test.ts` : mock `enrichCompany` (2 providers, champs disjoints) → first-non-null respecté + provenance présente ; `enrichCompany` throw → `pull()` ne propage pas.
 
 ### Étape 3 — `sirene-source.ts` (T-24, registre FR souverain, keyless, **rank 80**)
-**Action.** `sireneSource(query)` : `https://recherche-entreprises.api.gouv.fr/search?q={query}` (keyless, **~7 req/s → throttle**) → firmo officielle FR + état entreprise. SIREN/SIRET → identité ; domaine si dispo. `provider:'sirene'` (précédence rank 80, `precedence.ts:9` : > apollo 50 > csv 40).
+**Action.** `sireneSource(query)` : `https://recherche-entreprises.api.gouv.fr/search?q={query}` (keyless, **~7 req/s → throttle**) → firmo officielle FR + état entreprise. SIREN/SIRET → identité ; domaine si dispo. `provider:'sirene'` (précédence rank 80, `db/canonical/precedence.ts:9` : > apollo 50 > csv 40).
 ```ts
 export function sireneSource(query: string): IngestSource {
   return { name: "sirene", kind: "provider", subjectKind: "company",
@@ -338,7 +338,9 @@ prend place **à côté** des sources souveraines (SEC/BODACC/ATS/GitHub/velocit
 2. **`verifySvix(rawBody, headers, secret)`** — vérif **signature Svix** (Fiber = Svix, §2(7) du doc) :
    headers `svix-id` / `svix-timestamp` / `svix-signature`, HMAC-SHA256 de `{id}.{timestamp}.{rawBody}`,
    secret **`whsec_…`** per-tenant chiffré dans `integration_credentials` (déchiffré `decryptSecret`,
-   `lib/crypto/settings-encryption.ts:65` ; **jamais** `process.env`, D7). Réutiliser la lib `svix`
+   `lib/crypto/settings-encryption.ts:65`) en prod ; **fallback env (`FIBER_API_KEY`/`whsec_`) toléré pour
+   la demo** (Fiber = source d'ENTRÉE, sa clé/secret en env est OK comme `APOLLO_API_KEY`, **pas** soumise à
+   la règle `integration_credentials`). Réutiliser la lib `svix`
    (`new Webhook(secret).verify(rawBody, headers)`) si dispo, sinon HMAC manuel. Échec → rejet (pas d'ingest).
 3. **`fiberTrackerSource(opts?)`** — thin `IngestSource` (`subjectKind:"mixed"`, `provider:"fiber"`) pour
    l'orchestrateur : `pull()` renvoie `{items:[]}` par défaut (Tracker est **push**, pas pull — Fiber ne
@@ -371,15 +373,17 @@ un champ du payload.
 > Tant que ce relevé n'est pas fait, `normalizeAny` reste **best-effort + tolérant** (type inconnu → log,
 > jamais throw) ; aucune décision de mapping n'est durcie sur une supposition.
 
-**Fiber-Sales EXCLU** (pas d'API d'injection / d'envoi). **Lopus EXCLU en dur** (API non vérifiée —
-best-effort `fiberSignalIngestor`-like si jamais, jamais en dépendance).
+**Fiber-Sales EXCLU** (pas d'API d'injection / d'envoi). **Lopus = SORTIE webhook uniquement** (comme
+Orange Slice) : destination de sortie qui consomme le brief (côté pack4), **sans API de lecture** → **aucun**
+chemin d'ingest signal, pas même best-effort ; ne jamais le modéliser comme source d'entrée.
 **VERIFY.** (a) Payload Tracker arbitraire (taxonomie inconnue) → `rawSignals` canonicalisés sans throw.
 (b) `verifySvix` : signature valide → accepte ; corps altéré → rejette. (c) Event `funding` mocké avec
 domaine résolvable → `recordCompanySignal` appelé une fois (canonique `funding`).
 **TEST.** `fiber-source.test.ts` : (1) payload Tracker arbitraire → `rawSignals` normalisés via alias-map
 (`job-change`→`leadership_change`/`job_change`, `hiring`→`hiring`, `funding`→`funding`) ; (2) signature
-Svix invalide → rejet, `recordCompanySignal` **non** appelé ; (3) secret `whsec_` lu de
-`integration_credentials`, **jamais** `process.env` ; (4) sujet non résolu → skip sans throw.
+Svix invalide → rejet, `recordCompanySignal` **non** appelé ; (3) secret `whsec_` résolu via
+`integration_credentials` (prod) **ou** fallback env pour la demo — **les deux acceptés** (Fiber = source
+d'entrée) ; (4) sujet non résolu → skip sans throw.
 
 ### Étape 11 — `inngest/velocity-snapshot.ts` (T-20, le cron — l'EDGE)
 **Action.** Cron Inngest **2-arg** (gabarit `signal-score-daily.ts:95-108`). Agrège les `SnapshotProvider` des Étapes 4/6/7/8/9. Pour chaque sujet actif (companies du tenant elevay résolvant un `subject_key` : domaine, slug ATS, package, CIK — via `properties`/`vendorIds`/domaine), pour chaque provider :
@@ -469,7 +473,7 @@ la route webhook répond `200` sur un dummy `fireTrackerDummy` signé.
 - `leadership_change` → `role_start_date` (date de prise de poste) ;
 - `funding` → `filingDate` du Form D (SEC) / date de l'annonce BODACC ;
 - `hiring` → `first_seen` du poste (ATS `updated_at`/`created_at`) ou la **borne basse** de la fenêtre de diff snapshot ;
-- `tech_adoption` (churn/adoption) → date du **1er certificat** (crt.sh) / `published_at` (npm/PyPI) / date du diff BuiltWith ;
+- `tech_stack_change` (churn outillage) → date du diff BuiltWith (1er constat de retrait) ; `tech_adoption` (adoption OSS) → `published_at` (npm/PyPI) ;
 - `product_launch` → date du 1er certificat du sous-domaine neuf.
 
 > **Correctif aux Étapes 4/6/7/8/9.** Les snippets `derive(...)` y posent `detectedAt: new Date().toISOString()`.
@@ -571,14 +575,13 @@ export function linkedinJobChangeSource(
 
 **L'appel re-jouable (cf `demo-hero-offers.md §1.7` — la veille FROIDE qui prolonge la discovery offline) :**
 ```http
-# PRIMAIRE — Fiber Tracker job-change (US + monde) : déjà ingéré via webhook Svix (Étape 10),
-# OU rattrapage on-demand listAvailableTrackerRules ; on garde role_start_date ∈ [today-90d → today]
-GET /fiber/job-changes
-  ?title_in=["VP Engineering","VP Eng","Head of Engineering","SVP Engineering","CTO"]
-  &event=role_started
-  &started_after=<today-90d>
-  &company_filter=icp:"saas,series_a_c,eng_40_250"
-→ pour chaque hit : recordCompanySignal(type=toCanonicalSignal("job_change") /* = leadership_change */,
+# PRIMAIRE — Fiber Tracker job-change (US + monde) : PUSH-only via webhook Svix (Étape 10).
+# AUCUN endpoint de PULL d'events (pas de GET /fiber/job-changes — OpenAPI v1.40.0 : zéro lecture d'events) :
+# les events job-change arrivent par webhook et sont normalisés par fiberSignalIngestor à réception.
+# Rattrapage / inventaire on-demand = GET /v1/listAvailableTrackerRules + POST /v1/previewTrackerSignal
+# (matérialiser un payload) / fireTrackerDummy ; on ne retient que role_start_date ∈ [today-90d → today].
+→ à réception du webhook, pour chaque hit eng-leadership :
+  recordCompanySignal(type=toCanonicalSignal("job_change") /* = leadership_change */,
                       detectedAt=role_start_date, detail="vp_eng", source="fiber",
                       evidence={url: profile})
 
@@ -623,7 +626,7 @@ Discovery reconstruit par ligne) :
 | `vp_eng` (hero) | `job_change` | `leadership_change` | Fiber (10) · LinkedIn (14) · BODACC (5) | `role_start_date` / `dateparution` | **oui** |
 | `fund` (levée) | `funding` / `funding_recent` | `funding` | SEC EDGAR Form D (4, US) · BODACC (5, FR) | `filingDate` / annonce | **oui** |
 | `hire` (surge eng) | `hiring_surge` / `hiring_velocity` | `hiring` | ATS Greenhouse/Lever/Ashby (6) + diff snapshot (11) | poste `updated_at` / borne-basse fenêtre diff | **oui** |
-| `tech` (churn outillage) | `tech_churn` | `tech_adoption` | techchurn BuiltWith-diff (8) + snapshot (11) | date du diff (1er constat) | **oui** |
+| `tech` (churn outillage) | `tech_churn` | `tech_stack_change` | techchurn BuiltWith-diff (8) + snapshot (11) | date du diff (1er constat) | **oui** |
 | `gh` (commit-velocity) | `adoption_accel` | `tech_adoption` | OSS/GitHub velocity (7) + snapshot (11) | `published_at` / date du commit-spike | **oui** |
 | `inv` (investor_overlap) | `investor_overlap` | `investor_overlap` *(passe-plat ; structurel, TTL `null` `freshness.ts:74`)* | Crunchbase / Form D co-lead (corroboration) | date du tour | **NON — confounder** |
 
@@ -643,7 +646,7 @@ Discovery reconstruit par ligne) :
    et documente le flag. (Idem `hiring_surge`→`hiring` et `executive_hire`→`leadership_change` : déjà couverts pack1.)
 
 **VERIFY.**
-- `toCanonicalSignal('funding_recent')==='funding'`, `'hiring_surge'==='hiring'`, `'tech_churn'==='tech_adoption'`,
+- `toCanonicalSignal('funding_recent')==='funding'`, `'hiring_surge'==='hiring'`, `'tech_churn'==='tech_stack_change'`,
   `'adoption_accel'==='tech_adoption'`, `'job_change'==='leadership_change'` ; `'investor_overlap'==='investor_overlap'` (passe-plat).
 - Sur le seed Northwind Labs (won, `J=2024-09-12`) : reconstruction `[J−90→J]=[2024-06-14→2024-09-12]` →
   `vp_eng` 2024-07-18 (in), `hire` 2024-08-05 (in), `gh` 2024-08-20 (in), `inv` 2024-06-30 (in, mais
@@ -666,23 +669,24 @@ attendus côté pack1, sinon le test **xfail-documente** le flag). Le calcul de 
 5. **Sirene** : `provider:'sirene'`, identité `siren`+`country:'FR'`, précédence rank 80.
 6. **`velocity-snapshot`** : 2 snapshots J/J+21 → **un** signal dérivé daté ; snapshots identiques (diff=0) → **zéro** signal ; aucun double-snapshot le même jour (anti-jitter).
 7. **`signal_snapshots`** est **lue/écrite** par pack5 mais **jamais créée/altérée** (aucune migration de table dans le diff pack5).
-8. **Fiber Tracker (INPUT signaux)** : secret webhook Svix `whsec_` lu depuis `integration_credentials`
-   (per-tenant chiffré), **jamais** `process.env` ; signature Svix vérifiée (corps brut) avant tout ingest ;
-   payload Tracker arbitraire → `rawSignals` **canonicalisés** (`job-change`/`hiring`/`funding`) via
-   `toCanonicalSignal` ; aucun chemin d'envoi Fiber (entrée seule). Reveal contact = hors scope (pack2).
+8. **Fiber Tracker (INPUT signaux)** : secret webhook Svix `whsec_` per-tenant chiffré dans
+   `integration_credentials` en prod, **fallback env (`FIBER_API_KEY`/`whsec_`) toléré pour la demo**
+   (Fiber = source d'ENTRÉE, comme `APOLLO_API_KEY` — **pas** un sink) ; signature Svix vérifiée (corps brut)
+   avant tout ingest ; payload Tracker arbitraire → `rawSignals` **canonicalisés** (`job-change`/`hiring`/`funding`)
+   via `toCanonicalSignal` ; aucun chemin d'envoi Fiber (entrée seule). Reveal contact = hors scope (pack2).
 9. **Cron** : `createFunction` 2-arg, `concurrency:[{limit:2}]`, `triggers:[{cron:"0 4 * * *"}]`, **aucune entrée dans `vercel.json`**.
 10. **Tout accès DB** sous `withTenantTx(elevayTenantId, ...)` ; aucun `db` global, aucun `DATABASE_URL_OWNER` (grep `src` = 0).
 11. **Scope** : le cron n'itère **que** le tenant `elevay`.
 12. **[HERO] Point-in-time** : tout signal événementiel porte `detectedAt = la VRAIE date de l'événement` (`role_start_date` / `filingDate` / cert-date / `published_at`), **jamais `new Date()`** en mode reconstruction (`derive(...,observedAt)` / `reconstruct(...)`). Testé : un event hors `[J−90→J]` n'est PAS compté (filtre consommateur), un event dans la fenêtre l'est, à sa date réelle.
 13. **[HERO] Détecteur `leadership_change.vp_eng`** : ré-acquérable à froid via **Fiber Tracker** (primaire) + **Unipile/LinkedIn changed-jobs** (`linkedinJobChangeSource`) + **BODACC** (FR) ; titre filtré par `isEngLeadershipTitle` (VP/Head/SVP Eng, CTO, VPE) ; sous-type `vp_eng` dans `detail` ; canonique `leadership_change` (jamais `job_change` brut vers `recordCompanySignal`). Seam LinkedIn absent → `[]`, pas de throw.
-14. **[HERO] Couverture des autres signaux datables** confirmée (Étape 15) : `fund→funding` (Form D/BODACC), `hire→hiring` (ATS), `tech→tech_adoption` (BuiltWith-diff), `gh→tech_adoption` (GitHub-velocity), chacun avec source HORODATÉE. `investor_overlap` reste **input de discovery uniquement** (confounder) — **aucune** voie de veille froide ne l'émet ; `commit_velocity` → flag additif pack1 (`taxonomy.ts`), non édité par pack5.
+14. **[HERO] Couverture des autres signaux datables** confirmée (Étape 15) : `fund→funding` (Form D/BODACC), `hire→hiring` (ATS), `tech→tech_stack_change` (BuiltWith-diff), `gh→tech_adoption` (GitHub-velocity), chacun avec source HORODATÉE. `investor_overlap` reste **input de discovery uniquement** (confounder) — **aucune** voie de veille froide ne l'émet ; `commit_velocity` → flag additif pack1 (`taxonomy.ts`), non édité par pack5.
 
 ---
 
 ## 7. DEFINITION OF DONE
 - [ ] Les **21 fichiers** §3 créés/édités (9 sources Tier2 + **2 fichiers hero** `linkedin-jobchange-source.ts`/`eng-title.ts` + util + cron + wiring registre + **route webhook Fiber** + 6 tests + fixtures), **rien hors ownership** (`git diff --stat` scopé pack5).
 - [ ] `pnpm --filter @orion/web tsc` **vert** + `pnpm --filter @orion/web test` **vert** (tous les tests pack5 passent).
-- [ ] Les 11 critères d'acceptation §6 prouvés (logs/sorties de test attachés — « voilà la vérification »).
+- [ ] Les 14 critères d'acceptation §6 prouvés (logs/sorties de test attachés — « voilà la vérification »).
 - [ ] VERIFY runtime exécuté soi-même : `velocity-snapshot` sur fixtures J/J+21 → signal dérivé observé (log).
 - [ ] Aucune table créée par pack5 ; `taxonomy.ts`/`types.ts`/`snapshots.ts` non modifiés (REUSE par import).
 - [ ] Aliases dérivés (`hiring_velocity`,`adoption_accel`,`tech_churn`,`product_launch`,`job_change`) **vérifiés présents** dans l'alias-map pack1 ; sinon flag ouvert pour pack1/pack7 (additif). **[HERO]** `commit_velocity → tech_adoption` flaggé pour pack1 (le seed §4.2 peut charger ce libellé brut).
@@ -705,9 +709,11 @@ attendus côté pack1, sinon le test **xfail-documente** le flag). Le calcul de 
 8. **Repo/package→entreprise = bruit.** Lier un repo npm/GitHub à une entreprise est ambigu ; filtrer le bruit CI (downloads de CI), et en l'absence de mapping fiable → snapshot **global** (`tenant_id NULL`) sans `recordCompanySignal` ciblé.
 9. **Convergence avant priorité.** Ne pas inonder : plafonner 3-5 signaux actionnables/sujet, exiger 2+ sources convergentes avant « haute priorité » (laisser le scoring downstream arbitrer via `strength`). « Plus de sources = mieux » est faux (design §5.4).
 10. **Anti-jitter snapshot.** Ne pas insérer 2 snapshots le même jour pour `(subject_key,source,metric)` (sinon dérivée = 0 ou bruit). Vérifier la grille-jour avant INSERT.
-11. **Fiber secret en DB, pas en env.** Secret webhook Svix `whsec_` (et, côté pack2, `x-api-key` reveal)
-    per-tenant chiffré dans `integration_credentials` (D7). Un test env-shape (pack7) asserte qu'aucune
-    clé/secret Fiber n'est lue de `process.env`.
+11. **Fiber secret : DB per-tenant en prod, env toléré pour la demo.** Secret webhook Svix `whsec_` (et,
+    côté pack2, `x-api-key` reveal) per-tenant chiffré dans `integration_credentials` en prod ; **fallback
+    env (`FIBER_API_KEY`/`whsec_`) accepté pour la demo** car Fiber est une **source d'ENTRÉE** (comme
+    `APOLLO_API_KEY`), pas un sink. Le test env-shape (pack7) n'interdit que les clés de **sinks**
+    (Instantly / Orange Slice / Lopus / `WEBHOOK_SECRET`) en `process.env`, **pas** la clé/secret Fiber.
 12. **Fiber = INPUT, Tracker = PUSH.** Fiber n'a **aucun** endpoint d'envoi (v1.40.0) → pas de `FiberAdapter`
     de sortie. Le Tracker se reçoit par **webhook Svix** (push), il ne se *pull* pas → `fiberTrackerSource.pull()`
     = `{items:[]}` par défaut, le vrai chemin est la route webhook. Vérifier la **signature Svix** (corps brut,
@@ -715,7 +721,7 @@ attendus côté pack1, sinon le test **xfail-documente** le flag). Le calcul de 
 13. **Payloads Tracker = à relever, pas à supposer.** La forme exacte par event-type vit **côté Svix**, pas
     dans l'OpenAPI → la sortir via `POST /v1/previewTrackerSignal` (+ `fireTrackerDummy`, `listAvailableTrackerRules`)
     avant de durcir `normalizeAny` (réserve §7 du doc partenaires). En attendant : best-effort tolérant, jamais throw.
-14. **Lopus exclu en dur.** Ne crée **aucune** dépendance sur Lopus (API non vérifiée) ; au mieux via `fiberSignalIngestor`-like best-effort.
+14. **Lopus = sink de sortie, jamais une source.** Lopus (comme Orange Slice) est une **destination webhook de sortie** (pack4) sans API de lecture → **aucun** chemin d'ingest signal côté pack5, pas même best-effort. Ne crée aucune source/ingesteur Lopus.
 15. **[HERO] `detectedAt` ≠ `now` en reconstruction.** Le piège qui casse le hero : un détecteur qui date à `new Date()` fait passer un event hors-fenêtre comme « récent » → fuite temporelle → lift faux. Toujours la VRAIE date d'événement (`role_start_date`/`filingDate`/cert-date/`published_at`). Le `observedAt` optionnel de `derive` et `reconstruct()` existent **pour ça**.
 16. **[HERO] `investor_overlap` = confounder, pas une source froide.** Ne JAMAIS ajouter de détecteur de veille froide `investor_overlap` : sur un compte jamais touché c'est le canal d'intro, pas un signal de marché (reveal du hero §1.8). Reconstructible pour la discovery (tie-break), jamais émis en prospection.
 17. **Ownership `sources/`.** pack2 possède `csv-source.ts`/`apollo-source.ts` dans le **même** dossier — n'édite **que** tes sources Tier2 + `tier2-http.ts` + les fichiers hero (`linkedin-jobchange-source.ts`, `eng-title.ts`) ; `git add` par pathspec scopé.

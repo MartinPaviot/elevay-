@@ -12,7 +12,7 @@
 4. **Honnêteté du N.** 10 gagnés / 7 perdus → sortie = **hypothèse**, pas loi. Survit au prior cross-tenant (4,2× brut → **3,5× postérieur**, k=14).
 
 ## Le signal hero
-- **Type** : `leadership_change.vp_eng` (alias → canonique `leadership_change` dans `taxonomy.ts`).
+- **Type** : `leadership_change` (clé canonique de **scoring** : `SignalType`/`SIGNAL_DETECTORS` dans `lib/scoring/signal-detectors.ts:16-22`, prior 1,3× via `SIGNAL_PRIORS` `lib/scoring/signal-outcomes.ts:89`), avec `vp_eng` porté en **subtype/strength** — **JAMAIS** la forme pointée `leadership_change.vp_eng` (clé inconnue → plancher 1,0×). L'alias `vp_eng → leadership_change` est **net-new à construire dans Orion** (`taxonomy.ts` n'existe pas chez Elevay — rien à copier).
 - **Définition point-in-time** : un nouveau VP/Head/SVP Engineering chez la cible, `role_start_date ∈ [J−90 → J]` (J = date de close pour l'apprentissage ; J = aujourd'hui pour la prospection).
 - **Lift** : P(signal|won)=6/10=0,60 ; P(signal|lost)=1/7=0,14 → **≈4,2×** (postérieur ≈3,5× après prior).
 
@@ -47,7 +47,7 @@
 > Les autres colonnes de signaux (fund/hire/tech/inv/gh, datées) sont dans `demo-hero-offers.md §1.2` — à matérialiser comme `properties.signals[]` / `signal_snapshots` datés pour que le calcul point-in-time `[J−90→J]` FIRE réellement.
 
 ## Conséquences pour les lots
-- **pack5 (Tier2 + sources)** : le catalogue DOIT savoir détecter `leadership_change.vp_eng` à froid via **Fiber Tracker job-change** (primaire) + **Unipile/LinkedIn** (changed-jobs) + **BODACC** (modification dirigeant, FR). L'appel re-jouable est en `demo-hero-offers.md §1.7`. Doivent aussi exister les détecteurs des signaux du seed (funding, hiring, tech_stack_change, investor_overlap, GitHub-velocity) pour que l'enrichissement point-in-time reconstruise les vecteurs.
+- **pack5 (Tier2 + sources)** : le catalogue DOIT savoir détecter le changement de VP Eng (`leadership_change`, `vp_eng` en subtype/strength — jamais la forme pointée) à froid via **Fiber Tracker job-change** (primaire, source d'**entrée**) + **Unipile/LinkedIn** (changed-jobs) + **BODACC** (modification dirigeant, FR). L'appel re-jouable est en `demo-hero-offers.md §1.7`. Doivent aussi exister les détecteurs des signaux du seed : `funding`, `hiring`, `tech_stack_change` sont déjà au **vocab de scoring** (`SignalType`/`SIGNAL_DETECTORS`, `lib/scoring/signal-detectors.ts:16-22`) ; `investor_overlap` et **github-velocity** sont des détecteurs **net-new à ajouter** côté détecteurs (un type absent du vocab plancherait à 1,0×) pour que l'enrichissement point-in-time reconstruise les vecteurs.
 - **pack7 (Demo + seed)** : charge ce seed dans le tenant `elevay` (insert PUIS score), pose `TARGETING_GATE_ENABLED=on`, garde 1 compte-piège `unreviewed`, et joue la restitution ci-dessous. Le hero exige que la discovery offline tourne sur l'historique uploadé (`getSignalMultipliers` à froid).
 - **pilier Discovery (pack2)** : l'upload du CSV closed-won/lost déclenche l'**offline discovery point-in-time** (enrichir won+lost → reconstruire les événements datés depuis les sources horodatées → lift → filtre non-évidence × acquérabilité → prior cross-tenant). C'est le wedge day-one.
 

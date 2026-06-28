@@ -176,7 +176,7 @@ provenance, jamais édité après copie). **NET-NEW** = fichier créé par ce lo
 | `GeneratedOpener.angle`/`.guardrails` | `lib/scoring/signal-opener.ts:135` / `:139` | `angleKey` + base de `doNotClaim`. |
 | `getMethodology` / `SIGNAL_ANGLES` / `pickBestSignal` | `lib/scoring/outbound-methodologies.ts:144` / `:159-208` / `:217` (`Methodology.whatNotToDo :18`) | `methodology`/`angleGuidance` + priorité warm-path. |
 | `ProspectContext` (contact, firmo, signaux frais) | `context/prospect-context.ts:138-167,267-279` (commentaire grounding `:358`) | persona + firmo + signaux. |
-| `judgeFabrication` (réf. conceptuelle) | `lib/guardrails/fabrication-gate.ts:173` | l'analogue transposé en **donnée** (`doNotClaim`). |
+| `judgeFabrication` (réf. conceptuelle) | `lib/evals/fabrication-gate.ts:173` | l'analogue transposé en **donnée** (`doNotClaim`). |
 | grounding (réf.) | `lib/campaign-engine/db-evidence.ts:6,29`, `generate-message.ts:158,167,185,204,236` | la frontière de vérité = liste d'evidence, **pas** le LLM. |
 | `evaluateSend` + `SendingGateOutcome` | `lib/guardrails/sending-gate.ts:212-346` (catch `:339`) | `meta.gate` + `evaluate_send`. |
 | `authenticateMcpRequest` (via pack0) | `app/api/mcp/route.ts:230,249,264` | `tenantId` serveur. |
@@ -372,11 +372,11 @@ Handler = appel direct `evaluateSend({ tenantId, ...input })` (REUSE `sending-ga
 **miroir exact** de `SendingGateOutcome` : `{ send:true, reason }` OU `{ send:false, code, reason }`.
 Aucune transformation. Un Bearer `viewer` ne peut **aucune** action outbound (`decide-action.ts:80`).
 
-**VERIFY (soi-même).** `evaluate_send` sur un opt-out → `{ send:false, code:"opt_out" }`. Sur un
+**VERIFY (soi-même).** `evaluate_send` sur un opt-out → `{ send:false, code:"opted_out" }`. Sur un
 compte `unreviewed` avec `TARGETING_GATE_ENABLED=on` et `companyId` omis → `{ send:false,
 code:"not_targeted" }`.
 
-**TEST — `__tests__/evaluate-send.test.ts`.** (a) opt-out → `code:"opt_out"` ;
+**TEST — `__tests__/evaluate-send.test.ts`.** (a) opt-out → `code:"opted_out"` ;
 (b) unreviewed + SAFE_MODE → `code:"not_targeted"` ; (c) `tenantId` **absent** de l'`inputSchema`
 (tripwire) ; (d) `companyId` omis ne contourne pas le targeting.
 
@@ -487,7 +487,7 @@ signalFreshUntilIso}` (`GuardrailsConfig.sendWindow types.ts:210-215` + TTL).
 pivot.** Dérivation : §4 étape 3. `citableFacts[]{fact,value,source,url?,quote?,verified:true}`
 (**NET-NEW** depuis `publicContent type:"metric"` ∪ firmo+provenance). `doNotClaim[]` (**NET-NEW**
 depuis `signal-opener.ts:139` + dérivés des firmo `null`). Analogue agent-natif de `judgeFabrication`
-(`fabrication-gate.ts:173`) transposé en **donnée**.
+(`lib/evals/fabrication-gate.ts:173`) transposé en **donnée**.
 
 **F. `persona`** — `contactId/fullName/title/seniority/departments[]/linkedinUrl`
 (`prospect-context.ts:267-279`) + `reachable{hasEmail,hasPhone,hasLinkedin}`
@@ -511,7 +511,7 @@ statusCode?}` (`SourceError types.ts:127-131`) ; `researchedAt/expiresAt` (`type
    `subject`/`body` ; sujet à metric → `citableFacts` non-vide `verified:true` ; firmo `null` →
    entrée `doNotClaim` ; signal périmé → `topSignal.fresh:false` ; `channel` défaut `linkedin`.
    *(outreach-brief.test)*
-4. **`evaluate_send`** : opt-out → `{send:false, code:"opt_out"}` ; unreviewed+SAFE_MODE →
+4. **`evaluate_send`** : opt-out → `{send:false, code:"opted_out"}` ; unreviewed+SAFE_MODE →
    `code:"not_targeted"` ; **pas** de `tenantId` en input. *(evaluate-send.test)*
 5. **`find_prospects`** : tri `priorityScore` décroissant, `minScore` filtre, pagination cursor,
    `suggestedNextTool:"get_outreach_brief"`, pas de `tenantId` en input. *(find-prospects.test)*

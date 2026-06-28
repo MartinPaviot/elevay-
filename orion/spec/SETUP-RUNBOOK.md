@@ -135,10 +135,15 @@ Vague 0 fera `git checkout -b feat/orion-pack0` puis scaffold + `pnpm install --
 
 **Emplacement** : `app/apps/web/.env.local` (a cote du `package.json` de `@orion/web`).
 **Jamais commite** : couvert par `.gitignore` (§1.4) **et** par le hook `secret-scan` au commit.
-**Les cles partenaires sink (Instantly / Orange Slice / Lopus / webhook) ne vont PAS ici** : elles
-sont per-tenant **chiffrees dans `integration_credentials`** (D7). Un test `env-shape` (pack7)
-asserte qu aucune cle sink n est lue depuis `process.env`. **Fiber** est une cle d **entree**
-(`x-api-key` per-tenant) — egalement en DB, pas en env.
+**Les cles partenaires SINK (Instantly / Orange Slice / Lopus / webhook) ne vont PAS ici** : ce sont
+des SORTIES, per-tenant **chiffrees dans `integration_credentials`** (D7). Un test `env-shape` (pack7)
+asserte qu aucune cle sink n est lue depuis `process.env`.
+**Fiber, lui, est une SOURCE DE DATA (entree), pas un sink** — c est le seul sponsor exploitable en
+entree (reveal `contact-details` + Tracker job-change → le signal `leadership_change.vp_eng`). Pour la
+demo single-tenant `elevay`, mets `FIBER_API_KEY` dans le bloc Sources d ENTREE ci-dessous (comme
+Apollo) ; le test `env-shape` ne bloque QUE les sinks, pas les entrees. (Multi-tenant plus tard :
+per-tenant chiffree dans `integration_credentials`.) **Orange Slice / Lopus n exposent aucune API de
+lecture** → sorties uniquement, jamais des sources.
 
 ```bash
 # Generer un secret Auth.js fort :
@@ -150,7 +155,7 @@ Fichier `app/apps/web/.env.local` (remplir les `...`) :
 ```dotenv
 # ============================================================
 # Orion — .env.local  (tenant elevay, DB partagee leads)
-# JAMAIS commite. Cles sink (Instantly/OrangeSlice/Lopus/Fiber) = en DB, pas ici.
+# JAMAIS commite. Cles SINK (Instantly/OrangeSlice/Lopus) = en DB, pas ici. Fiber = ENTREE (ci-dessous).
 # ============================================================
 
 # --- DB partagee : DEUX roles distincts (cf §3) -------------------------------
@@ -192,12 +197,15 @@ OPENAI_API_KEY=sk-proj-...        # recommande : embeddings + fallback circuit-b
 INNGEST_EVENT_KEY=...             # requis pour les jobs
 INNGEST_SIGNING_KEY=...
 
-# --- Sources d ENTREE (Tier 0/1) ----------------------------------------------
-APOLLO_API_KEY=...                # requis pour la source apollo_*
+# --- Sources d ENTREE (data) : Tier 0/1 + sponsor Fiber -----------------------
+APOLLO_API_KEY=...                # requis pour la source apollo_* (firmo/contacts/job-postings)
+FIBER_API_KEY=...                 # SPONSOR data source : reveal contact-details + Tracker job-change
 # CRUNCHBASE_API_KEY=             # opt : funding (complement SEC)
 # PAPPERS_API_KEY=                # opt : registre FR (Sirene reste keyless)
 # ZEFIX_API_USER=                 # opt : registre CH
 # ZEFIX_API_PASSWORD=
+# Tier-2 souverain/hard-to-get = SANS CLE / endpoints publics : SEC/EDGAR (Form D), BODACC +
+# recherche-entreprises (FR), ATS Greenhouse/Lever/Ashby, GitHub/npm, crt.sh. Rien a mettre ici.
 
 # --- GDPR / region ------------------------------------------------------------
 GDPR_REGION=eu                    # active la garde EU-host sur DATABASE_URL au boot
@@ -221,8 +229,8 @@ ORION_EXPORT_ENABLED=on           # net-new (idem)
 grep -E '^(DATABASE_URL|AUTH_SECRET|ANTHROPIC_API_KEY)=' app/apps/web/.env.local | wc -l   # -> 3
 # baseURL Anthropic finit bien par /v1 :
 grep -E '^ANTHROPIC_API_BASE=' app/apps/web/.env.local   # doit se terminer par /v1 (ou ligne absente = defaut /v1)
-# Aucune cle sink en env (doit etre vide) :
-grep -Ei 'INSTANTLY|ORANGE|LOPUS|FIBER|WEBHOOK_SECRET' app/apps/web/.env.local || echo "OK: aucune cle sink"
+# Aucune cle sink en env (doit etre vide ; Fiber = source d ENTREE, donc EXCLU du motif — sa cle FIBER_API_KEY est attendue, comme APOLLO_API_KEY) :
+grep -Ei 'INSTANTLY|ORANGE|LOPUS|WEBHOOK_SECRET' app/apps/web/.env.local || echo "OK: aucune cle sink"
 ```
 
 > **Piege du `\n` (AUTH_SECRET)** : dotenv/@next/env etend les `\n` dans une valeur entre
@@ -495,11 +503,14 @@ s arrete a l idx 12/14 alors que `drizzle/` contient bien plus de `.sql`). Le se
 le runner custom `scripts/apply-migrations.ts` (`db:migrate:apply`), qui cree/maintient le ledger
 `__elevay_migrations` (filename PK + hash sha256), applique chaque `.sql` non enregistre dans sa
 propre transaction. Migrations **additives + `IF NOT EXISTS`** -> re-run sur. Ledger partage ->
-numerotation Orion **continue a partir de 0106** (pack1 : 0107+ ; pack7 : 0108+).
+numerotation Orion **continue a partir de 0107** (0106 = derniere existante ; pack7 : 0108+).
 
 ```bash
 # --- DEV (dans @orion/web), schema en place rapidement (pack1) ---
-pnpm --filter @orion/web db:push      # drizzle-kit push, lit DATABASE_URL (role app suffit en dev local)
+# ATTENTION DB PROD PARTAGEE : ne JAMAIS lancer db:push si DATABASE_URL pointe la prod partagee
+#   (drizzle-kit diffe et peut ALTER/DROP des colonnes Elevay existantes). db:push = DB dev JETABLE
+#   uniquement. Sur la prod/demo partagee, n appliquer QUE des migrations additives via le runner ci-dessous.
+pnpm --filter @orion/web db:push      # drizzle-kit push — DB DEV JETABLE SEULEMENT (jamais la prod partagee)
 
 # --- APPLIQUER les migrations versionnees (prod/demo) ---
 # PIEGE : apply-migrations.ts lit DATABASE_URL UNIQUEMENT (pas DATABASE_URL_OWNER) et
@@ -548,7 +559,7 @@ Cocher dans l ordre. Chaque case a sa preuve (commande/sortie).
       `.env.example`, mais reel ici pour les migrations).
 - [ ] `TARGETING_GATE_ENABLED=on` (sinon climax `not_targeted` muet) ; `ORION_INGEST_ENABLED=on`,
       `ORION_EXPORT_ENABLED=on`, `RESEARCH_AGENT_ENABLED=1`.
-- [ ] Aucune cle sink (Instantly/OrangeSlice/Lopus/Fiber/WEBHOOK_SECRET) en env.
+- [ ] Aucune cle sink (Instantly/OrangeSlice/Lopus/WEBHOOK_SECRET) en env ; `FIBER_API_KEY` present (source d ENTREE, OK — pas un sink).
 - [ ] Fichier non traque (`git status` ne le liste pas ; hook secret-scan en place).
 
 **Config MCP/permissions**
