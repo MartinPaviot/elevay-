@@ -109,11 +109,15 @@ export async function POST(req: Request) {
         .limit(1);
       if (!contact) {
         // No contact yet for this sender → create one (mirrors email-capture's
-        // minimal insert shape). Strip any "<addr>" and ignore a name that's
-        // just the email so we never store an email as a first name.
-        const cleaned = (inputName ?? "").replace(/<[^>]*>/g, "").trim();
+        // minimal insert shape). Strip any "<addr>" + surrounding quotes, ignore a
+        // name that's just the email, and reorder an Outlook "Lastname, Firstname"
+        // header so we never store quotes/commas or an email as a first name.
+        const cleaned = (inputName ?? "").replace(/<[^>]*>/g, "").replace(/"/g, "").trim();
         const usable = cleaned && !cleaned.includes("@") ? cleaned : "";
-        const parts = usable ? usable.split(/\s+/) : [];
+        const ordered = usable.includes(",")
+          ? usable.split(",").map((s) => s.trim()).filter(Boolean).reverse().join(" ")
+          : usable;
+        const parts = ordered ? ordered.split(/\s+/) : [];
         [contact] = await db
           .insert(contacts)
           .values({

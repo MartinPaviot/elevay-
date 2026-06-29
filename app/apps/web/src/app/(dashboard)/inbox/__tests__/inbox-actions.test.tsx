@@ -382,6 +382,19 @@ describe("Fix A /inbox — book a meeting without a linked contact", () => {
     expect(callsTo("/api/meetings/book").length).toBe(0);
   });
 
+  it("hides the button for an automated sender (no-reply) with no linked contact", async () => {
+    detailResponse = () =>
+      jsonRes({
+        ...FIXTURE_DETAIL,
+        contact: null,
+        enrollment: null,
+        conversation: { ...FIXTURE_DETAIL.conversation, fromAddress: "no-reply@notifications.stripe.com" },
+      });
+    await mountLoaded();
+    // Booking a no-reply@ would create a junk contact + email an unmonitored box.
+    expect(screen.queryByLabelText("Planifier un RDV")).toBeNull();
+  });
+
   it("still shows the button when the sender is a full 'Name <addr>' header", async () => {
     // Defends the #363 failure mode: a header rather than a bare address must
     // still parse to an email (extractSenderEmail), so canBook stays true.

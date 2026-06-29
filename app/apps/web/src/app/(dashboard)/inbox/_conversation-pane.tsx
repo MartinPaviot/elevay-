@@ -555,7 +555,13 @@ export function ConversationPane({
   const bookEmail = extractSenderEmail(detail.contact?.email || conv.fromAddress || "");
   const bookName = detail.contact?.name || conv.displayName || "";
   const bookFirstName = bookName && !bookName.includes("@") ? bookName.split(" ")[0] : "";
-  const canBook = Boolean(bookContactId || bookEmail);
+  // Don't offer booking against an automated sender (no-reply / mailer-daemon / …):
+  // it would create a junk contact and email an unmonitored address. A thread with
+  // an already-linked contact is always bookable.
+  const isAutomatedSender = /(^|[._-])(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounce)/i.test(
+    bookEmail.split("@")[0] ?? "",
+  );
+  const canBook = Boolean(bookContactId || (bookEmail && !isAutomatedSender));
   const intel = conv.intelligence;
   // LT-2: badge count for the collapsed Intelligence panel — how many high-signal
   // sections it holds (brief is contact-driven; the rest are pipeline data). The
@@ -730,8 +736,8 @@ export function ConversationPane({
               variant="outline"
               onClick={() => setSchedOpen(true)}
               className="px-2"
-              title="Planifier un RDV"
-              aria-label="Planifier un RDV"
+              title={t("inbox.scheduleMeeting")}
+              aria-label={t("inbox.scheduleMeeting")}
             >
               <CalendarPlus className="h-3.5 w-3.5" />
             </Button>
@@ -1105,9 +1111,12 @@ export function ConversationPane({
       </div>
 
       {composer && (
-        <div>
+        // Shares the pane height with the message list (both flex-1 min-h-0) and
+        // caps at 60vh on tall screens. min-h-0 lets the inline composer shrink so
+        // its Send button stays inside the pane on the founder's narrow+zoomed view.
+        <div className="flex min-h-0 flex-1 flex-col" style={{ maxHeight: "min(60vh, 560px)" }}>
           {replyTones.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
               <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
                 Tone
               </span>
