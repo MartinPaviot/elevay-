@@ -549,10 +549,12 @@ export function ConversationPane({
   // Booking target: the linked contact when present, else the thread sender. The
   // book route resolves-or-creates the contact at book time, so scheduling a
   // meeting from the mail no longer requires the sender to be a contact already.
+  // extractSenderEmail normalizes a "Name <addr>" header (or a bare address) to a
+  // bare lowercased email — "" if unparseable, which correctly hides the button.
   const bookContactId = detail.contact?.id;
-  const bookEmail = detail.contact?.email || conv.fromAddress || "";
+  const bookEmail = extractSenderEmail(detail.contact?.email || conv.fromAddress || "");
   const bookName = detail.contact?.name || conv.displayName || "";
-  const bookFirstName = bookName.split(" ")[0] || "";
+  const bookFirstName = bookName && !bookName.includes("@") ? bookName.split(" ")[0] : "";
   const canBook = Boolean(bookContactId || bookEmail);
   const intel = conv.intelligence;
   // LT-2: badge count for the collapsed Intelligence panel — how many high-signal

@@ -381,6 +381,20 @@ describe("Fix A /inbox — book a meeting without a linked contact", () => {
     await flush();
     expect(callsTo("/api/meetings/book").length).toBe(0);
   });
+
+  it("still shows the button when the sender is a full 'Name <addr>' header", async () => {
+    // Defends the #363 failure mode: a header rather than a bare address must
+    // still parse to an email (extractSenderEmail), so canBook stays true.
+    detailResponse = () =>
+      jsonRes({
+        ...FIXTURE_DETAIL,
+        contact: null,
+        enrollment: null,
+        conversation: { ...FIXTURE_DETAIL.conversation, fromAddress: "Marie Dubois <marie@ems.ch>" },
+      });
+    await mountLoaded();
+    expect(screen.getByLabelText("Planifier un RDV")).toBeTruthy();
+  });
 });
 
 describe("F3 /inbox — pane error vs missing (B5)", () => {
