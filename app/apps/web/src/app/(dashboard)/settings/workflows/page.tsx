@@ -658,20 +658,16 @@ export default function WorkflowsPage() {
                           {wf.actions.length} step{wf.actions.length !== 1 ? "s" : ""}
                         </span>
                       </div>
+                      {/* Run-count + last-run intentionally hidden: workflows are
+                          never triggered (fireWorkflowTrigger is unwired), so runCount
+                          stayed at 0 and lastRunAt was always null — a dead KPI. Restore
+                          once the trigger path is wired. See settings dead-KPI audit. */}
                       <div className="text-right">
-                        <p
-                          className="text-[11px] tabular-nums"
-                          style={{ color: "var(--color-text-tertiary)" }}
-                        >
-                          {wf.runCount} run{wf.runCount !== 1 ? "s" : ""}
-                        </p>
                         <p
                           className="text-[10px]"
                           style={{ color: "var(--color-text-muted)" }}
                         >
-                          {wf.lastRunAt
-                            ? `Last: ${new Date(wf.lastRunAt).toLocaleDateString()}`
-                            : `Created ${new Date(wf.createdAt).toLocaleDateString()}`}
+                          Created {new Date(wf.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
