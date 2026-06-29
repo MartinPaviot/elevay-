@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Zap,
   Mail,
-  Users,
   BarChart3,
   Inbox,
   AlertTriangle,
@@ -417,13 +416,11 @@ export default function BillingClient() {
                   ` through ${new Date(usage.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
               </p>
             )}
-            <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <UsageMeter
-                icon={<Users size={15} />}
-                label="Contacts"
-                current={usage?.usage.contact_enriched ?? 0}
-                limit={limits.contacts}
-              />
+            {/* "Contacts" usage meter intentionally hidden: contact_enriched is
+                never written to usageEvents (no enrichment by default), so it sat
+                permanently at 0 — a dead KPI. Restore it once enrichment usage is
+                actually tracked. See settings dead-KPI audit (2026-06-29). */}
+            <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3">
               <UsageMeter
                 icon={<Mail size={15} />}
                 label="Emails sent"
