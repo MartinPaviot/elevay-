@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { useToast } from "@/components/ui/toast";
 import { Shield, Zap, Brain, Rocket, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -202,9 +203,76 @@ export default function AutonomySettingsPage() {
   useRegisterPageActions(autonomyActions);
 
   if (loading) {
+    // Footprint skeleton matching the loaded page: Trust Score card, the 2-col
+    // Autonomy Level grid, the guardrail form rows, and the Save button — so the
+    // real config swaps in with no reflow (the header is kept where the page
+    // already renders it, inside the body).
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded" style={{ background: "var(--color-bg-hover)" }} />
+        <SettingsHeader title="Autonomy & Guardrails" subtitle="Control how much the campaign engine acts on its own" />
+
+        {/* Trust Score */}
+        <Card>
+          <CardBody>
+            <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-20 rounded" />
+                <Skeleton className="h-7 w-24 rounded" />
+                <Skeleton className="h-2.5 w-48 rounded" />
+              </div>
+              <Skeleton className="h-4 w-16 rounded" />
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* Autonomy Level */}
+        <Card>
+          <CardBody>
+            <Skeleton className="mb-3 h-3.5 w-28 rounded" />
+            <div className="grid grid-cols-2 gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="rounded-lg p-3"
+                  style={{ background: "var(--color-bg-page)", border: "1px solid var(--color-border-default)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-3.5 w-3.5 rounded" />
+                    <Skeleton className="h-3 w-20 rounded" />
+                  </div>
+                  <Skeleton className="mt-2 h-2.5 w-3/4 rounded" />
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* Guardrails */}
+        <Card>
+          <CardBody>
+            <Skeleton className="mb-3 h-3.5 w-48 rounded" />
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <Skeleton className="h-3 w-40 rounded" />
+                  <Skeleton className="h-7 w-20 rounded-md" />
+                </div>
+              ))}
+              <div>
+                <Skeleton className="h-3 w-40 rounded" />
+                <div className="mt-1 flex gap-1">
+                  <Skeleton className="h-7 flex-1 rounded-md" />
+                  <Skeleton className="h-7 w-12 rounded-md" />
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* Save */}
+        <div className="flex justify-end">
+          <Skeleton className="h-8 w-28 rounded-md" />
+        </div>
       </div>
     );
   }

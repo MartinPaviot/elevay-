@@ -6,6 +6,7 @@ import { SettingsHeader } from "@/components/ui/settings-header";
 import { Input } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Copy, Trash2, Plus, Key, ExternalLink } from "lucide-react";
 
@@ -278,9 +279,25 @@ export default function McpSettingsPage() {
         {/* Key list */}
         <div className="mt-3 space-y-2">
           {loading ? (
-            <p className="text-[13px] py-4" style={{ color: "var(--color-text-tertiary)" }}>
-              Loading...
-            </p>
+            [0, 1, 2].map((i) => (
+              <Card key={i}>
+                <CardBody>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="h-[15px] w-[15px] rounded" />
+                      <div>
+                        <Skeleton className="h-3.5 w-32 rounded" />
+                        <div className="flex items-center gap-2 mt-1">
+                          <Skeleton className="h-2.5 w-16 rounded" />
+                          <Skeleton className="h-2.5 w-24 rounded" />
+                        </div>
+                      </div>
+                    </div>
+                    <Skeleton className="h-7 w-16 rounded-md" />
+                  </div>
+                </CardBody>
+              </Card>
+            ))
           ) : keys.length === 0 ? (
             <Card>
               <CardBody>

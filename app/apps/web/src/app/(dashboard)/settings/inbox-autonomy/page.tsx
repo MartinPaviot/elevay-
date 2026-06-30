@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sliders, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 type FeatureAutonomy = "off" | "suggest" | "auto";
@@ -99,9 +100,33 @@ export default function InboxAutonomyPage() {
   }
 
   if (loading) {
+    // Footprint skeleton reserving the loaded layout (heading + divided feature
+    // rows, each a text block + a segmented-control placeholder, + Save button)
+    // so swapping to real data causes no reflow.
     return (
-      <div className="flex h-40 items-center justify-center">
-        <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
+      <div className="mx-auto max-w-2xl p-6">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded" />
+          <Skeleton className="h-4 w-28 rounded" />
+        </div>
+        <Skeleton className="mt-2 h-3 w-full rounded" />
+        <Skeleton className="mt-1.5 h-3 w-2/3 rounded" />
+
+        <div className="mt-5 divide-y" style={{ borderColor: "var(--color-border-default)" }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center justify-between gap-4 py-3">
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-3.5 w-40 rounded" />
+                <Skeleton className="mt-2 h-3 w-3/4 rounded" />
+              </div>
+              <Skeleton className="h-7 w-[150px] shrink-0 rounded-md" />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <Skeleton className="h-7 w-16 rounded-md" />
+        </div>
       </div>
     );
   }

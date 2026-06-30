@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, Loader2, Sparkles, RotateCcw, Plus, Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import type { Audience, AudienceMatch, WritingStyle, StyleProposal } from "@/lib/inbox/writing-style";
 import type { InboxMemory } from "@/lib/inbox/ai-memory";
@@ -333,9 +334,70 @@ export default function WritingStylePage() {
   }
 
   if (loading || !style) {
+    // Footprint skeleton (not a bare spinner) so swapping to the real form
+    // doesn't reflow: the static title/subtitle stay, the body mirrors the
+    // about-me/role/sign-off/scheduling rows, prompt textarea, tone chips,
+    // standing-instructions and audience sections.
     return (
-      <div className="flex h-40 items-center justify-center">
-        <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
+      <div className="mx-auto max-w-2xl p-6">
+        <h1 className="flex items-center gap-2 text-[16px] font-semibold" style={{ color: "var(--color-text-primary)" }}>
+          <PenLine size={16} /> Writing Style &amp; Tone
+        </h1>
+        <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+          These settings define the personalized prompt that makes the AI sound like you. Drafts stay grounded in the thread and are never sent on their own.
+        </p>
+
+        {/* About me + role / sign-off / scheduling */}
+        <div className="mt-5 space-y-3">
+          <div>
+            <Skeleton className="h-3 w-20 rounded" />
+            <Skeleton className="mt-1 h-[52px] w-full rounded-md" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Skeleton className="h-3 w-12 rounded" />
+              <Skeleton className="mt-1 h-8 w-full rounded-md" />
+            </div>
+            <div>
+              <Skeleton className="h-3 w-14 rounded" />
+              <Skeleton className="mt-1 h-8 w-full rounded-md" />
+            </div>
+          </div>
+          <div>
+            <Skeleton className="h-3 w-24 rounded" />
+            <Skeleton className="mt-1 h-8 w-full rounded-md" />
+          </div>
+        </div>
+
+        {/* Writing style prompt */}
+        <div className="mt-5">
+          <Skeleton className="h-3 w-32 rounded" />
+          <Skeleton className="mt-1 h-40 w-full rounded-md" />
+          <Skeleton className="mt-2 h-8 w-36 rounded-md" />
+        </div>
+
+        {/* Tone chips */}
+        <div className="mt-5">
+          <Skeleton className="h-3 w-12 rounded" />
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {[56, 64, 52, 60, 58].map((w, i) => (
+              <Skeleton key={i} className="h-7 rounded-full" style={{ width: w }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Standing instructions */}
+        <div className="mt-6 space-y-2">
+          <Skeleton className="h-3 w-36 rounded" />
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+        </div>
+
+        {/* Audiences */}
+        <div className="mt-6 space-y-2">
+          <Skeleton className="h-3 w-20 rounded" />
+          <Skeleton className="h-28 w-full rounded-lg" />
+        </div>
       </div>
     );
   }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Video } from "lucide-react";
 import { useSafeFetch } from "@/lib/infra/use-safe-fetch";
 import { useT } from "@/lib/i18n/locale";
@@ -48,6 +49,10 @@ export default function RecordingSettingsPage() {
   const [domainAliasesInput, setDomainAliasesInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Gate the form on the workspace fetch: state is seeded with hardcoded
+  // defaults, so rendering before the fetch resolves flashes those defaults
+  // (and the toggle can visibly flip) once the real settings arrive.
+  const [loaded, setLoaded] = useState(false);
   // Whether a notetaker (Recall) is actually configured. Without it the bot
   // never joins, so the "records automatically" copy must not promise it.
   const [notetakerOn, setNotetakerOn] = useState(true);
@@ -78,6 +83,8 @@ export default function RecordingSettingsPage() {
         setPrimaryDomain(data.settings.primaryDomain || "");
         setDomainAliasesInput((data.settings.domainAliases || []).join(", "));
       }
+      // Reveal the form even on error — the seeded defaults are the fallback.
+      setLoaded(true);
     });
   }, [sfetch]);
 
@@ -108,6 +115,60 @@ export default function RecordingSettingsPage() {
       setTimeout(() => setSaved(false), 3000);
     }
     setSaving(false);
+  }
+
+  if (!loaded) {
+    // Footprint skeleton (not seeded defaults) while /api/settings/workspace
+    // loads: toggle card + bot-name + policy options + domain inputs + save.
+    return (
+      <>
+        <SettingsHeader
+          title={t("settings.recording.title")}
+          subtitle={t("settings.recording.subtitle")}
+        />
+
+        <div className="mt-8 space-y-6">
+          {/* Toggle card */}
+          <div
+            className="flex items-center justify-between rounded-lg p-4"
+            style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+          >
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-lg" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-3 w-40 rounded" />
+                <Skeleton className="h-3 w-56 rounded" />
+              </div>
+            </div>
+            <Skeleton className="h-6 w-11 rounded-full" />
+          </div>
+          {/* Bot name */}
+          <div>
+            <Skeleton className="h-3 w-24 rounded" />
+            <Skeleton className="mt-1.5 h-9 w-full rounded-lg" />
+          </div>
+          {/* Branding policy options */}
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-32 rounded" />
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+          {/* Primary domain */}
+          <div>
+            <Skeleton className="h-3 w-28 rounded" />
+            <Skeleton className="mt-1.5 h-9 w-full rounded-lg" />
+          </div>
+          {/* Domain aliases */}
+          <div>
+            <Skeleton className="h-3 w-28 rounded" />
+            <Skeleton className="mt-1.5 h-9 w-full rounded-lg" />
+          </div>
+          {/* Save */}
+          <Skeleton className="h-8 w-24 rounded-md" />
+        </div>
+      </>
+    );
   }
 
   return (

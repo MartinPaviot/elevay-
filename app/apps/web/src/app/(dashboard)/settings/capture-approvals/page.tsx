@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { Card, CardBody } from "@/components/ui/card";
+import { CardSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { Check, X, Mail, Calendar, Phone, Inbox } from "lucide-react";
 import { QUALIFICATION_EXTRAS_ENABLED } from "@/lib/settings/qualification-extras-visibility";
@@ -263,7 +264,11 @@ export default function CaptureApprovalsPage() {
 
       <div>
         {loading && list.length === 0 && (
-          <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Loading…</p>
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <CardSkeleton key={i} />
+            ))}
+          </div>
         )}
         {!loading && list.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded border p-8 text-center" style={{ borderColor: "var(--color-border-default)" }}>

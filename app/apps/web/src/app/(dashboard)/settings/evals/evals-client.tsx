@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { FlaskConical, Plus, Play, ChevronRight, ChevronDown, Check, X, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SettingsHeader } from "@/components/ui/settings-header";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Dataset { id: string; name: string; description: string | null; caseCount: number; createdAt: string }
 interface EvalCase { id: string; input: string; expectedOutput: string | null; tags: string[]; createdAt: string }
@@ -171,6 +172,17 @@ export default function EvalsPage() {
               </div>
             </div>
           )}
+
+          {loading && datasets.length === 0 && [0, 1, 2].map(i => (
+            <div key={i} className="flex items-center gap-2 px-4 py-3"
+              style={{ borderBottom: "0.5px solid var(--color-border-default)" }}>
+              <div className="flex-1 min-w-0">
+                <Skeleton className="h-3.5 w-32 rounded" />
+                <Skeleton className="mt-1.5 h-3 w-16 rounded" />
+              </div>
+              <Skeleton className="h-3.5 w-3.5 rounded" />
+            </div>
+          ))}
 
           {datasets.map(ds => (
             <button key={ds.id} onClick={() => loadCases(ds.id)}

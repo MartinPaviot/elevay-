@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { CardSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 interface BudgetStatus {
@@ -98,9 +99,21 @@ export default function LlmBudgetPage() {
 
       <div>
         {loading || !status ? (
-          <Card><CardBody><div className="flex items-center gap-2 text-[13px]" style={{ color: "var(--color-text-tertiary)" }}>
-            <Loader2 size={14} className="animate-spin" /> Loading budget…
-          </div></CardBody></Card>
+          // Footprint skeleton: 3-up KPI row + cap card + feature card,
+          // matching the loaded layout so swapping to data causes no reflow.
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <CardSkeleton />
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+            <div className="mt-6">
+              <CardSkeleton />
+            </div>
+            <div className="mt-6">
+              <CardSkeleton />
+            </div>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

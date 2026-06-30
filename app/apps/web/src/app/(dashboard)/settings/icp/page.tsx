@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { Card, CardBody } from "@/components/ui/card";
+import { CardSkeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -520,7 +521,11 @@ function ProfileList({
       </div>
 
       {loading && list.length === 0 && (
-        <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>Loading…</p>
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
       )}
       {!loading && list.length === 0 && (
         <div className="rounded border p-6 text-center text-[12px]" style={{ borderColor: "var(--color-border-default)", color: "var(--color-text-tertiary)" }}>

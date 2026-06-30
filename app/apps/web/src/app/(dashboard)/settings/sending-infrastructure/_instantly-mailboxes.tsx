@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { OwnerSelect } from "@/components/owner-select";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 interface Box {
@@ -107,10 +108,25 @@ export function InstantlyMailboxes() {
   }
 
   if (loading) {
+    // Footprint skeleton mirroring the header + per-box rows (checkbox · email · owner).
     return (
-      <p className="mt-4 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-        Loading mailboxes…
-      </p>
+      <div className="mt-5" style={{ borderTop: "1px solid var(--color-border-default)", paddingTop: 16 }}>
+        <Skeleton className="h-3.5 w-56 rounded" />
+        <Skeleton className="mt-1.5 h-3 w-72 rounded" />
+        <div className="mt-3" style={{ borderTop: "1px solid var(--color-border-default)" }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 py-1.5"
+              style={{ borderBottom: "1px solid var(--color-border-default)" }}
+            >
+              <Skeleton className="h-3.5 w-3.5 rounded" />
+              <Skeleton className="h-3 flex-1 rounded" />
+              <Skeleton className="h-7 w-32 rounded-md" />
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
   if (boxes.length === 0) {

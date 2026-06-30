@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Mail, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { Skeleton } from "@/components/ui/skeleton";
 import { colorForMailbox } from "@/lib/inbox/mailbox-color";
 
 interface Box {
@@ -94,9 +95,50 @@ export function MailboxIdentitySection() {
     }
   }
 
+  // While loading, reserve the section's footprint with one skeleton card sized
+  // to a mailbox-identity card, so real data swaps in without reflow.
+  if (loading) {
+    return (
+      <section className="mt-10">
+        <h2 className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+          Mailbox identity
+        </h2>
+        <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+          A display name, signature, and optional writing voice per connected mailbox. The signature is added only when you send from that box.
+        </p>
+        <div className="mt-4">
+          <div className="rounded-lg border p-4" style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-3.5 w-3.5 rounded" />
+              <Skeleton className="h-3.5 w-40 rounded" />
+              <Skeleton className="h-3 w-48 rounded" />
+            </div>
+            <div className="mt-3 space-y-2">
+              <div>
+                <Skeleton className="h-2.5 w-20 rounded" />
+                <Skeleton className="mt-1 h-8 w-full rounded-md" />
+              </div>
+              <div>
+                <Skeleton className="h-2.5 w-16 rounded" />
+                <Skeleton className="mt-1 h-16 w-full rounded-md" />
+              </div>
+              <div>
+                <Skeleton className="h-2.5 w-32 rounded" />
+                <Skeleton className="mt-1 h-12 w-full rounded-md" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <Skeleton className="h-7 w-16 rounded-md" />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   // Nothing to show until at least one mailbox is connected — the accounts list
   // above is the place to add one, so stay quiet rather than show an empty box.
-  if (loading || (!loadError && boxes.length === 0)) return null;
+  if (!loadError && boxes.length === 0) return null;
 
   return (
     <section className="mt-10">

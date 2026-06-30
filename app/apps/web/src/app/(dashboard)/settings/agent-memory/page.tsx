@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Download, Loader2, Sparkles } from "lucide-react";
+import { Download, Sparkles } from "lucide-react";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Settings → Agent memory — renders the unified snapshot from
@@ -141,13 +142,40 @@ export default function AgentMemoryPage() {
         </div>
 
         {loading && !snapshot && (
-          <Card>
-            <CardBody>
-              <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-                <Loader2 size={12} className="animate-spin" /> Building snapshot…
-              </div>
-            </CardBody>
-          </Card>
+          <>
+            {/* Footprint skeleton: two category cards (label + dl rows) plus the
+                trust-score change-log card, so the real snapshot swaps in with
+                no reflow. */}
+            {[0, 1].map((c) => (
+              <Card key={c}>
+                <CardBody>
+                  <Skeleton className="h-3.5 w-40 rounded" />
+                  <dl className="mt-2 space-y-2">
+                    {[0, 1, 2].map((r) => (
+                      <div key={r} className="flex items-start gap-3">
+                        <Skeleton className="h-3 w-[140px] shrink-0 rounded" />
+                        <div className="flex-1">
+                          <Skeleton className="h-3 w-2/3 rounded" />
+                          <Skeleton className="mt-1 h-2.5 w-1/3 rounded" />
+                        </div>
+                      </div>
+                    ))}
+                  </dl>
+                </CardBody>
+              </Card>
+            ))}
+            <Card>
+              <CardBody>
+                <Skeleton className="h-3.5 w-44 rounded" />
+                <Skeleton className="mt-1.5 h-2.5 w-2/3 rounded" />
+                <div className="mt-2 space-y-1">
+                  {[0, 1, 2, 3].map((r) => (
+                    <Skeleton key={r} className="h-2.5 w-full rounded" />
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          </>
         )}
 
         {loadError && !loading && (

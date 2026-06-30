@@ -7,6 +7,7 @@ import { Input, Toggle } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ProviderLogo } from "@/components/ui/provider-logo";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSafeFetch } from "@/lib/infra/use-safe-fetch";
 import { z } from "zod";
 import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
@@ -59,6 +60,7 @@ export default function NotificationsSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [inboxEvents, setInboxEvents] = useState<InboxNotifEvent[]>([]);
   const [inboxPrefs, setInboxPrefs] = useState<InboxNotifPrefs>({ events: {}, digest: "morning", dndStart: null, dndEnd: null });
+  const [inboxLoading, setInboxLoading] = useState(true);
 
   const sfetch = useSafeFetch();
 
@@ -93,7 +95,8 @@ export default function NotificationsSettingsPage() {
       .then(({ data }) => {
         if (data?.events) setInboxEvents(data.events);
         if (data?.prefs) setInboxPrefs(data.prefs);
-      });
+      })
+      .finally(() => setInboxLoading(false));
   }, [sfetch]);
 
   // Inbox prefs auto-save (matches the general matrix's click-to-save pattern),
@@ -299,8 +302,27 @@ export default function NotificationsSettingsPage() {
 
       {/* Inbox — folded in from the retired /settings/inbox-notifications page:
           per-event opt-in + digest cadence + quiet hours. Saved live to its own
-          store; the section stays hidden until its catalog loads. */}
-      {inboxEvents.length > 0 && (
+          store. While its catalog fetch is in flight we reserve the section with
+          a couple of toggle-row skeletons so it swaps in instead of popping in;
+          if the catalog can't load the section stays hidden. */}
+      {inboxLoading ? (
+        <div className="mt-8">
+          <div className="flex items-center gap-4 pb-2" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
+            <Skeleton className="h-3 w-14 rounded" />
+          </div>
+          <div className="mt-3 divide-y" style={{ borderColor: "var(--color-border-default)" }}>
+            {[0, 1].map((i) => (
+              <div key={i} className="flex items-center justify-between gap-4 py-2.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Skeleton className="h-3 w-40 rounded" />
+                  <Skeleton className="h-2.5 w-64 rounded" />
+                </div>
+                <Skeleton className="h-4 w-4 shrink-0 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : inboxEvents.length > 0 ? (
         <div className="mt-8">
           <div className="flex items-center gap-4 pb-2" style={{ borderBottom: "1px solid var(--color-border-default)" }}>
             <span className="flex-1 text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
@@ -374,7 +396,7 @@ export default function NotificationsSettingsPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </>
   );
 }

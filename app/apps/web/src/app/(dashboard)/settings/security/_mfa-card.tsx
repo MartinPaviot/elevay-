@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/ui/toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface MfaStatus {
   enabled: boolean;
@@ -128,7 +129,7 @@ export function MfaCard() {
             Require a 6-digit code from an authenticator app at sign-in.
           </p>
         </div>
-        {status && (
+        {status ? (
           <span
             className="rounded-full px-2.5 py-1 text-[11px] font-medium"
             style={
@@ -147,8 +148,15 @@ export function MfaCard() {
           >
             {status.enabled ? "Enabled" : "Off"}
           </span>
+        ) : (
+          // Reserve the status-badge footprint while /api/account/mfa resolves.
+          <Skeleton className="h-[22px] w-12 rounded-full" />
         )}
       </div>
+
+      {/* Reserve the primary action footprint until status resolves, so the
+          CTA / enabled section don't pop in below the header. */}
+      {!status && <Skeleton className="h-9 w-60 rounded-md" />}
 
       {/* Recovery codes — rendered exactly once, right after activation. */}
       {recoveryCodes && (
