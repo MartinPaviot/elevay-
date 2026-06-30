@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { z } from "zod";
-import { Building2, Search, Filter, Plus, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, SlidersHorizontal, Layers, ListPlus, ListMinus, Pencil, type LucideIcon } from "lucide-react";
+import { Building2, Search, Filter, Plus, Target, Radio, X, Globe, Factory, Ruler, DollarSign, GitBranch, Gauge, ExternalLink, Clock, Users, ChevronRight, ChevronDown, Loader2, Sparkles, Phone, MapPin, Trash2, UserPlus, Ban, RotateCcw, Archive, SlidersHorizontal, Layers, ListPlus, ListMinus, type LucideIcon } from "lucide-react";
 import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
 import { useRegisterPageActions, useRegisterEntityLocator, cssEscape } from "@/lib/chat/page-actions/registry";
 import type { EntityLocator } from "@/lib/chat/page-actions/registry";
@@ -43,7 +43,8 @@ import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
 import { SmartSearchBar, ActiveFiltersChips } from "@/components/ui/smart-search-bar";
 import { applyFilters } from "@/lib/search/filters";
 import type { FilterCondition } from "@/lib/search/filters";
-import { ColumnFilter, isColumnFilterActive, type ColumnFilterKind, type ColumnFilterState } from "@/components/ui/column-filter";
+import { ColumnFilter, isColumnFilterActive, formatColumnFilterValue, type ColumnFilterKind, type ColumnFilterState } from "@/components/ui/column-filter";
+import { ListChipMenu } from "./_list-chip-menu";
 import { CascadeDeleteModal, type CascadeOption } from "@/components/ui/cascade-delete-modal";
 import { EnrichMenu } from "@/components/ui/enrich-menu";
 import { useEnrichStream, type EnrichCellState } from "@/hooks/use-enrich-stream";
@@ -1912,6 +1913,15 @@ export default function AccountsPage() {
     score: { label: "Score", kind: "enum", get: (a) => displayScore(a.score, isEnriched(a))?.grade ?? null },
   };
 
+  // Active per-column (header) filters, as named summary chips rendered below
+  // the filter bar. Panel filters (enrichment / region / reach / recency) keep
+  // their home on the Filtres button + its badge + the panel, so they're
+  // deliberately excluded here — this is the surface for the otherwise-"blind"
+  // header column filters only (no double-count with the Filtres badge).
+  const headerFilterChips = Object.entries(FILTER_COLUMNS)
+    .filter(([key]) => isColumnFilterActive(columnFilters[key]))
+    .map(([key, cfg]) => ({ key, label: cfg.label, value: formatColumnFilterValue(columnFilters[key]) }));
+
   // Distinct values per enum column for the column-filter checkboxes. Prefer
   // the server facets (tenant-wide, so the menus stay complete even though
   // only filtered rows are loaded); fall back to the loaded rows until the
@@ -2678,34 +2688,22 @@ export default function AccountsPage() {
                     <span className="tabular-nums" style={{ opacity: 0.7 }}>{l.count}</span>
                   </button>
                   {isActive && (
-                    <>
-                      <button
-                        type="button"
-                        aria-label={t("accountLists.chip.renameAria", { name: l.name })}
-                        title={t("accountLists.chip.renameTitle")}
-                        onClick={() => { setRenamingListId(l.id); setRenameValue(l.name); }}
-                        className="flex h-4 w-4 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
-                        style={{ color: "var(--color-accent)" }}
-                      >
-                        <Pencil size={10} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={t("accountLists.chip.deleteAria", { name: l.name })}
-                        title={t("accountLists.chip.deleteTitle")}
-                        onClick={() => deleteList(l.id, l.name)}
-                        className="mr-1 ml-0.5 flex h-4 w-4 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
-                        style={{ color: "var(--color-accent)" }}
-                      >
-                        <X size={11} />
-                      </button>
-                    </>
+                    <ListChipMenu
+                      triggerAriaLabel={t("accountLists.chip.menuAria", { name: l.name })}
+                      renameLabel={t("accountLists.chip.renameTitle")}
+                      deleteLabel={t("accountLists.chip.deleteTitle")}
+                      onRename={() => { setRenamingListId(l.id); setRenameValue(l.name); }}
+                      onDelete={() => deleteList(l.id, l.name)}
+                    />
                   )}
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* Divider — Zone A (view: source tabs + lists) | Zone B (refine). */}
+        <div aria-hidden className="h-5 w-px shrink-0" style={{ background: "var(--color-border-default)" }} />
 
         <button
           type="button"
@@ -2725,28 +2723,6 @@ export default function AccountsPage() {
             </span>
           )}
         </button>
-
-        {/* Per-column filters now live in the table headers (click the
-            filter icon on Industry / Geography / Size / etc.). When any
-            are active, surface a count + one-click reset here so the user
-            isn't hunting through headers to clear them. */}
-        {(() => {
-          const activeKeys = Object.keys(columnFilters).filter((k) =>
-            isColumnFilterActive(columnFilters[k]),
-          );
-          if (activeKeys.length === 0) return null;
-          return (
-            <button
-              type="button"
-              onClick={() => setColumnFilters({})}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors"
-              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
-            >
-              <X size={12} />
-              {activeKeys.length} column filter{activeKeys.length === 1 ? "" : "s"} — clear
-            </button>
-          );
-        })()}
 
         {/* One intelligent search box. Type -> server-side, industry-aware
             search (debounced 350ms): the query is resolved to the matching
@@ -2872,6 +2848,50 @@ export default function AccountsPage() {
           })
         }
       />
+
+      {/* Active per-column (header) filters — named, removable chips. Replaces
+          the old blind "N column filters — clear" count in the bar. Panel
+          filters keep their home on the Filtres button, so they're not
+          repeated here (no double-count). Renders only when ≥1 header filter
+          is active; sits just above the smart-filter chips, same band styling. */}
+      {headerFilterChips.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-1.5 px-5 py-2 text-[11px]"
+          style={{ background: "var(--color-bg-page-alt, var(--color-bg-page))" }}
+        >
+          <span style={{ color: "var(--color-text-tertiary)" }}>{t("filters.activeColumns")}</span>
+          {headerFilterChips.map((c) => (
+            <span
+              key={c.key}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5"
+              style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+            >
+              <span className="font-medium">{c.label}</span>
+              <span className="max-w-[180px] truncate">{c.value}</span>
+              <button
+                type="button"
+                onClick={() => setColumnFilters((prev) => { const n = { ...prev }; delete n[c.key]; return n; })}
+                aria-label={t("filters.removeColumn", { label: c.label })}
+                className="ml-0.5 opacity-70 hover:opacity-100"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => setColumnFilters((prev) => {
+              const n = { ...prev };
+              for (const k of Object.keys(FILTER_COLUMNS)) delete n[k];
+              return n;
+            })}
+            className="ml-1 underline"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            {t("filters.clearColumns")}
+          </button>
+        </div>
+      )}
 
       <ActiveFiltersChips
         filters={smartFilters}

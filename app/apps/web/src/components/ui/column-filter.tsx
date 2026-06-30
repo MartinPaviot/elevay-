@@ -36,6 +36,18 @@ export function isColumnFilterActive(s: ColumnFilterState | undefined): boolean 
   return !!(s.text?.trim() || (s.values && s.values.length > 0) || s.presence);
 }
 
+/** Compact human value for an active column filter, for a summary chip
+ *  ("Industry · SaaS +2"). Returns "" when the state isn't active. Multi-value
+ *  enums collapse to "first +N" so the chip stays one line. */
+export function formatColumnFilterValue(s: ColumnFilterState | undefined): string {
+  if (!s || !isColumnFilterActive(s)) return "";
+  if (s.text?.trim()) return s.text.trim();
+  if (s.presence) return s.presence === "has" ? "present" : "empty";
+  const v = s.values ?? [];
+  if (v.length === 1) return v[0];
+  return `${v[0]} +${v.length - 1}`;
+}
+
 export function ColumnFilter({
   label,
   kind,
