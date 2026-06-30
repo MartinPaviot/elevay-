@@ -42,6 +42,7 @@ import { EventCard } from "./_event-card";
 import { takeCachedDetail } from "@/lib/inbox/detail-cache";
 import { extractProposedTime, toDatetimeLocal } from "@/lib/inbox/proposed-time";
 import { type Snippet } from "@/lib/inbox/snippets";
+import { stripSignature } from "@/lib/inbox/mailbox-signature";
 import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
 import { ProspectBriefSection } from "./_prospect-brief";
@@ -345,6 +346,8 @@ export function ConversationPane({
         contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined,
         threadId: conversationKey ?? undefined,
       });
+      // Highlight the seeded tone (the body is the brief/first tone's text).
+      setActiveTone(brief?.tone ?? null);
       if (!brief) toast(t("inbox.toastSuggestFailed"), "warning");
     } catch {
       setComposer({ to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
@@ -875,7 +878,7 @@ export function ConversationPane({
             snippets={snippets}
             onChange={setSnippets}
             currentBody={composer.body}
-            getCurrentBody={() => composerRef.current?.getBody() ?? composer.body}
+            getCurrentBody={() => stripSignature(composerRef.current?.getBody() ?? composer.body)}
             contact={detail?.contact ?? null}
             onInsert={(text) => composerRef.current?.appendBody(text)}
           />

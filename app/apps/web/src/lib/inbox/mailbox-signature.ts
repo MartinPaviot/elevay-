@@ -10,6 +10,19 @@ export function stripSignature(body: string): string {
   return (body ?? "").replace(/\n+-- \n[\s\S]*$/, "").replace(/\s+$/, "");
 }
 
+/**
+ * Split a body into [message, signatureBlock] at the trailing "-- " marker. The
+ * signatureBlock keeps its leading separator (so message + signatureBlock === body)
+ * and is "" when there's no signature. Lets callers append into the message part
+ * ABOVE the signature — so a later signature swap (which strips to end-of-body)
+ * can't wipe the appended content (e.g. a booked meeting link).
+ */
+export function splitSignature(body: string): [string, string] {
+  const b = body ?? "";
+  const m = b.match(/\n+-- \n[\s\S]*$/);
+  return m && m.index != null ? [b.slice(0, m.index), b.slice(m.index)] : [b, ""];
+}
+
 /** Strip any existing signature block, then append the given one once (swap-safe). */
 export function applySignature(body: string, signature: string | undefined): string {
   const stripped = stripSignature(body ?? "");

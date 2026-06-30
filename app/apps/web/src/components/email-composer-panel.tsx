@@ -11,7 +11,7 @@ import { parseRecipients } from "@/lib/inbox/template-vars";
 import { REWRITE_PRESETS } from "@/lib/inbox/rewrite-presets";
 import { TRANSLATE_LANGUAGES } from "@/lib/inbox/translate-languages";
 import { pickDefaultFrom, mailboxDisplay, type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
-import { applySignature } from "@/lib/inbox/mailbox-signature";
+import { applySignature, splitSignature } from "@/lib/inbox/mailbox-signature";
 import { useT } from "@/lib/i18n/locale";
 import {
   draftStorageKey,
@@ -239,7 +239,13 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     ref,
     () => ({
       appendMeetingLink(joinUrl: string) {
-        setEditBody((b) => injectMeetingLink(b, joinUrl));
+        // Insert the link into the MESSAGE part, above any trailing signature —
+        // else a later From-mailbox swap (strip-to-end + re-append signature)
+        // silently wipes the link, the exact payload this exists to deliver.
+        setEditBody((b) => {
+          const [msg, sig] = splitSignature(b);
+          return `${injectMeetingLink(msg, joinUrl)}${sig}`;
+        });
         markEdited();
       },
       setBody(body: string, subject?: string) {
@@ -248,7 +254,12 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         markEdited();
       },
       appendBody(text: string) {
-        setEditBody((b) => (b.trim() ? `${b}\n\n${text}` : text));
+        // Append above the signature too (same swap-safety as the meeting link).
+        setEditBody((b) => {
+          const [msg, sig] = splitSignature(b);
+          const trimmed = msg.replace(/\s+$/, "");
+          return `${trimmed ? `${trimmed}\n\n${text}` : text}${sig}`;
+        });
         markEdited();
       },
       getBody: () => editBodyRef.current,
