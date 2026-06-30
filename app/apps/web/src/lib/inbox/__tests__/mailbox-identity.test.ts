@@ -5,6 +5,27 @@ import {
   stripSignature,
   buildMailboxVoiceBlock,
 } from "@/lib/inbox/mailbox-identity";
+import { splitSignature } from "@/lib/inbox/mailbox-signature";
+
+describe("splitSignature", () => {
+  it("splits at the trailing '-- ' marker; message + signature === body", () => {
+    const body = "Bonjour Marie,\n\n-- \nMartin\nElevay";
+    const [msg, sig] = splitSignature(body);
+    expect(msg).toBe("Bonjour Marie,");
+    expect(sig).toBe("\n\n-- \nMartin\nElevay");
+    expect(msg + sig).toBe(body);
+  });
+  it("returns [body, ''] when there is no signature", () => {
+    expect(splitSignature("Bonjour,")).toEqual(["Bonjour,", ""]);
+    expect(splitSignature("")).toEqual(["", ""]);
+  });
+  it("lets content be appended ABOVE the signature so a strip-to-end can't wipe it", () => {
+    const [msg, sig] = splitSignature("Hi,\n\n-- \nSig");
+    const next = `${msg}\n\nJoin the meeting: https://v/x${sig}`;
+    expect(next.indexOf("Join the meeting")).toBeLessThan(next.indexOf("-- "));
+    expect(stripSignature(next)).toContain("Join the meeting: https://v/x");
+  });
+});
 
 describe("clampMailboxIdentity", () => {
   it("trims, caps, drops blanks", () => {

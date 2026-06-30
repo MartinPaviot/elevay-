@@ -16,12 +16,16 @@ export function SnippetBar({
   onChange,
   onInsert,
   currentBody,
+  getCurrentBody,
   contact,
 }: {
   snippets: Snippet[];
   onChange: (next: Snippet[]) => void;
   onInsert: (text: string) => void;
+  /** Best-effort body for the disabled hint (may lag the live textarea). */
   currentBody: string;
+  /** Live body at call time — used for the actual save so it captures edits. */
+  getCurrentBody?: () => string;
   contact: { name: string; email: string | null } | null;
 }) {
   const [adding, setAdding] = useState(false);
@@ -53,9 +57,11 @@ export function SnippetBar({
 
   function saveCurrent() {
     const trimmed = name.trim();
-    if (!trimmed || !currentBody.trim() || saving) return;
+    // The live body (the inline composer owns it); currentBody can lag.
+    const body = getCurrentBody ? getCurrentBody() : currentBody;
+    if (!trimmed || !body.trim() || saving) return;
     setSaving(true);
-    const next = [...snippets, { id: crypto.randomUUID(), name: trimmed, body: currentBody }];
+    const next = [...snippets, { id: crypto.randomUUID(), name: trimmed, body }];
     void persist(next).finally(() => {
       setSaving(false);
       setAdding(false);

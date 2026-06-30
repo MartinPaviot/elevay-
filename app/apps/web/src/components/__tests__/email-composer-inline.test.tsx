@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createRef } from "react";
 import { render, cleanup, act, fireEvent } from "@testing-library/react";
 
 /**
@@ -18,7 +19,7 @@ vi.mock("@/components/ui/toast", () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { EmailComposerPanel, type EmailComposerDraft } from "@/components/email-composer-panel";
+import { EmailComposerPanel, type EmailComposerDraft, type EmailComposerHandle } from "@/components/email-composer-panel";
 
 const DRAFT: EmailComposerDraft = {
   to: "marie@ems.ch",
@@ -70,6 +71,52 @@ describe("EmailComposerPanel — inline vs drawer", () => {
     expect(ta.style.minHeight).toContain("clamp");
     expect(ta.style.minHeight).toContain("30vh");
     expect(ta.style.minHeight).not.toBe("88px");
+  });
+
+  it("imperative handle reaches the textarea: tone setBody, snippet appendBody, booked appendMeetingLink", async () => {
+    const ref = createRef<EmailComposerHandle>();
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<EmailComposerPanel ref={ref} draft={DRAFT} inline onClose={() => {}} />));
+    });
+    await flush();
+    const ta = () => container.querySelector("textarea")! as HTMLTextAreaElement;
+    expect(ta().value).toBe("Bonjour Marie,");
+
+    // Tone switcher replaces the body.
+    await act(async () => { ref.current!.setBody("Salut Marie !"); });
+    expect(ta().value).toBe("Salut Marie !");
+
+    // Snippet insertion appends below the current body.
+    await act(async () => { ref.current!.appendBody("Tarifs en pièce jointe."); });
+    expect(ta().value).toContain("Salut Marie !");
+    expect(ta().value).toContain("Tarifs en pièce jointe.");
+
+    // Booking a meeting injects the sovereign join link (INBOX-G10) into the reply.
+    await act(async () => { ref.current!.appendMeetingLink("https://visio.example/xyz"); });
+    expect(ta().value).toContain("https://visio.example/xyz");
+
+    // getBody returns the live edited value.
+    expect(ref.current!.getBody()).toBe(ta().value);
+  });
+
+  it("owns its body: a draft.body prop change AFTER mount is ignored (edits must use the handle)", async () => {
+    let container!: HTMLElement;
+    let rerender!: (ui: React.ReactElement) => void;
+    await act(async () => {
+      ({ container, rerender } = render(
+        <EmailComposerPanel draft={{ to: "a@b.io", subject: "Re", body: "first" }} inline onClose={() => {}} />,
+      ));
+    });
+    await flush();
+    expect(container.querySelector("textarea")!.value).toBe("first");
+    await act(async () => {
+      rerender(<EmailComposerPanel draft={{ to: "a@b.io", subject: "Re", body: "SECOND" }} inline onClose={() => {}} />);
+    });
+    // editBody is seeded once; the panel intentionally ignores later draft.body
+    // mutations (that was the latent bug — onBooked mutated the prop and nothing
+    // reached the textarea). External edits now go through the imperative handle.
+    expect(container.querySelector("textarea")!.value).toBe("first");
   });
 
   it("flushes the in-progress draft to localStorage on unmount (no lost keystrokes on close)", async () => {
