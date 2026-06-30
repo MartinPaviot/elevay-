@@ -14,6 +14,7 @@ import { Loader2, Plus, ListPlus } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useT } from "@/lib/i18n/locale";
 
 export interface AccountList {
   id: string;
@@ -38,15 +39,16 @@ export function AddToListModal({
   onCreate: (name: string) => void;
   onAddToExisting: (listId: string) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const trimmed = name.trim();
-  const accountLabel = `${selectedCount} account${selectedCount === 1 ? "" : "s"}`;
+  const accountLabel = `${selectedCount} ${t(selectedCount === 1 ? "accountLists.modal.accountOne" : "accountLists.modal.accountMany")}`;
 
   return (
-    <Modal open={open} onClose={onClose} title="Add to a list" size="sm">
+    <Modal open={open} onClose={onClose} title={t("accountLists.modal.title")} size="sm">
       <div className="flex flex-col gap-4">
         <p className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-          Save {accountLabel} into a list you can reopen from the Accounts filter bar.
+          {t("accountLists.modal.subtitle", { accounts: accountLabel })}
         </p>
 
         {/* Create a new list from the selection */}
@@ -57,21 +59,21 @@ export function AddToListModal({
           }}
         >
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-            New list
+            {t("accountLists.modal.newList")}
           </label>
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Hot leads Q3"
+                placeholder={t("accountLists.modal.placeholder")}
                 maxLength={120}
                 autoFocus
                 className="w-full"
               />
             </div>
             <Button type="submit" variant="gradient" size="sm" icon={busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} disabled={!trimmed || busy}>
-              Create
+              {t("accountLists.modal.create")}
             </Button>
           </div>
         </form>
@@ -80,7 +82,7 @@ export function AddToListModal({
           <div>
             <div className="mb-1.5 flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-                Add to existing
+                {t("accountLists.modal.addExisting")}
               </span>
               <span className="h-px flex-1" style={{ background: "var(--color-border-default)" }} />
             </div>

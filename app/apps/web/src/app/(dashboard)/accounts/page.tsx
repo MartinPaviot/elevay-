@@ -742,7 +742,12 @@ export default function AccountsPage() {
       },
     ];
   }, [serverFacetCounts, serverCounts, familyFacet, familyLoading, t, locale]);
-  const panelActive = panelActiveCount(filterSections, columnFilters);
+  // Enrichment with BOTH unenriched + enriched checked = the full set = no
+  // narrowing (serializeAccountFilters sends no fEnriched), so it must not count
+  // toward the Filtres badge even though it has values.
+  const enrichVals = columnFilters.enrichment?.values ?? [];
+  const enrichmentNoop = enrichVals.includes("unenriched") && enrichVals.includes("enriched");
+  const panelActive = Math.max(0, panelActiveCount(filterSections, columnFilters) - (enrichmentNoop ? 1 : 0));
 
   // Lazy-load the sector-family facet the first time the Filtres panel opens.
   useEffect(() => {
@@ -869,22 +874,22 @@ export default function AccountsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast(data?.error?.message ?? "Couldn't create the list.", res.status === 409 ? "warning" : "error");
+        toast(res.status === 409 ? t("accountLists.toast.createConflict") : t("accountLists.toast.createError"), res.status === 409 ? "warning" : "error");
         return;
       }
       const created = data.list as AccountList;
-      toast(`Created "${created.name}" with ${created.count} account${created.count === 1 ? "" : "s"}.`, "success");
+      toast(t("accountLists.toast.created", { name: created.name, count: created.count }), "success");
       setShowAddToList(false);
       setSelectedRows(new Set());
       await fetchLists();
       setActiveListId(created.id);
     } catch (e) {
-      toast("Couldn't create the list.", "error");
+      toast(t("accountLists.toast.createError"), "error");
       console.warn("accounts: create list failed", e);
     } finally {
       setListBusy(false);
     }
-  }, [selectedRows, toast, fetchLists]);
+  }, [selectedRows, toast, fetchLists, t]);
 
   // Drop the current selection into an existing list (deduped server-side).
   const addSelectionToList = useCallback(async (listId: string) => {
@@ -898,36 +903,36 @@ export default function AccountsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast(data?.error?.message ?? "Couldn't add to the list.", "error");
+        toast(t("accountLists.toast.addError"), "error");
         return;
       }
       const updated = data.list as AccountList;
-      toast(`"${updated.name}" now holds ${updated.count} account${updated.count === 1 ? "" : "s"}.`, "success");
+      toast(t("accountLists.toast.updated", { name: updated.name, count: updated.count }), "success");
       setShowAddToList(false);
       setSelectedRows(new Set());
       await fetchLists();
     } catch (e) {
-      toast("Couldn't add to the list.", "error");
+      toast(t("accountLists.toast.addError"), "error");
       console.warn("accounts: add to list failed", e);
     } finally {
       setListBusy(false);
     }
-  }, [selectedRows, toast, fetchLists]);
+  }, [selectedRows, toast, fetchLists, t]);
 
   // Delete a list (its membership rows cascade; the accounts are untouched).
   const deleteList = useCallback(async (listId: string, name: string) => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete the list "${name}"? The accounts in it are kept.`)) return;
+    if (typeof window !== "undefined" && !window.confirm(t("accountLists.confirm.delete", { name }))) return;
     try {
       const res = await fetch(`/api/account-lists/${listId}`, { method: "DELETE" });
-      if (!res.ok) { toast("Couldn't delete the list.", "error"); return; }
+      if (!res.ok) { toast(t("accountLists.toast.deleteError"), "error"); return; }
       if (activeListId === listId) setActiveListId(null);
-      toast(`Deleted "${name}".`, "success");
+      toast(t("accountLists.toast.deleted", { name }), "success");
       await fetchLists();
     } catch (e) {
-      toast("Couldn't delete the list.", "error");
+      toast(t("accountLists.toast.deleteError"), "error");
       console.warn("accounts: delete list failed", e);
     }
-  }, [activeListId, toast, fetchLists]);
+  }, [activeListId, toast, fetchLists, t]);
 
   // Pending TAM-proposal count for the header entry point.
   useEffect(() => {
@@ -2323,7 +2328,7 @@ export default function AccountsPage() {
             },
           },
           {
-            label: "Add to list",
+            label: t("accountLists.add"),
             icon: <ListPlus size={13} />,
             onClick: () => { if (selectedRows.size > 0) setShowAddToList(true); },
           },
@@ -2532,31 +2537,34 @@ export default function AccountsPage() {
             leave it. The × on the active chip deletes the list (its accounts are
             kept). Lists are created from a selection via the bulk-actions bar. */}
         {lists.length > 0 && (
-          <div className="flex items-center gap-1 border-l pl-2" style={{ borderColor: "var(--color-border-default)" }}>
+          // min-w-0 + overflow-x-auto so many lists scroll horizontally inside
+          // this group instead of pushing the bar wider than the viewport
+          // (founder runs the app half-screen + 200% zoom).
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto border-l pl-2" style={{ borderColor: "var(--color-border-default)" }}>
             {lists.map((l) => {
               const isActive = activeListId === l.id;
               return (
                 <div
                   key={l.id}
-                  className="inline-flex items-center rounded-md"
+                  className="inline-flex shrink-0 items-center rounded-md"
                   style={{ background: isActive ? "var(--color-accent-soft)" : "transparent" }}
                 >
                   <button
                     type="button"
                     onClick={() => setActiveListId(isActive ? null : l.id)}
-                    title={isActive ? "Click to leave this list" : `Show only "${l.name}"`}
+                    title={isActive ? t("accountLists.chip.leave") : t("accountLists.chip.showOnly", { name: l.name })}
                     className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors"
                     style={{ color: isActive ? "var(--color-accent)" : "var(--color-text-tertiary)" }}
                   >
                     <ListPlus size={12} style={{ opacity: 0.7 }} />
-                    <span className="max-w-[160px] truncate">{l.name}</span>
+                    <span className="max-w-[110px] truncate md:max-w-[160px]">{l.name}</span>
                     <span className="tabular-nums" style={{ opacity: 0.7 }}>{l.count}</span>
                   </button>
                   {isActive && (
                     <button
                       type="button"
-                      aria-label={`Delete list ${l.name}`}
-                      title="Delete this list (the accounts are kept)"
+                      aria-label={t("accountLists.chip.deleteAria", { name: l.name })}
+                      title={t("accountLists.chip.deleteTitle")}
                       onClick={() => deleteList(l.id, l.name)}
                       className="mr-1 flex h-4 w-4 items-center justify-center rounded transition-colors hover:bg-[var(--color-bg-hover)]"
                       style={{ color: "var(--color-accent)" }}

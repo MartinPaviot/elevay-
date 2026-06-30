@@ -18,15 +18,17 @@ describe("AddToListModal", () => {
     expect(container.textContent).toBe("");
   });
 
+  // The modal localizes via useT(); rendered without a LocaleProvider it
+  // resolves to the default locale (FR), so assertions are on the FR strings.
   it("shows the selected count and creates a list from the trimmed name", () => {
     const onCreate = vi.fn();
     const { getByPlaceholderText, getByText, container } = render(
       <AddToListModal open onClose={() => {}} selectedCount={1} lists={[]} busy={false} onCreate={onCreate} onAddToExisting={() => {}} />,
     );
-    expect(container.textContent).toContain("1 account"); // singular
-    const input = getByPlaceholderText(/Hot leads/i) as HTMLInputElement;
+    expect(container.textContent).toContain("1 compte"); // singular (FR)
+    const input = getByPlaceholderText(/Prospects chauds/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "  Hot leads Q3  " } });
-    fireEvent.click(getByText("Create"));
+    fireEvent.click(getByText("Créer"));
     expect(onCreate).toHaveBeenCalledWith("Hot leads Q3");
   });
 
@@ -35,8 +37,8 @@ describe("AddToListModal", () => {
     const { getByText, getByPlaceholderText } = render(
       <AddToListModal open onClose={() => {}} selectedCount={5} lists={[]} busy={false} onCreate={onCreate} onAddToExisting={() => {}} />,
     );
-    fireEvent.change(getByPlaceholderText(/Hot leads/i), { target: { value: "   " } });
-    fireEvent.click(getByText("Create"));
+    fireEvent.change(getByPlaceholderText(/Prospects chauds/i), { target: { value: "   " } });
+    fireEvent.click(getByText("Créer"));
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -45,7 +47,7 @@ describe("AddToListModal", () => {
     const { getByText, container } = render(
       <AddToListModal open onClose={() => {}} selectedCount={3} lists={LISTS} busy={false} onCreate={() => {}} onAddToExisting={onAddToExisting} />,
     );
-    expect(container.textContent).toContain("3 accounts"); // plural
+    expect(container.textContent).toContain("3 comptes"); // plural (FR)
     expect(getByText("Romandie SaaS")).toBeTruthy();
     fireEvent.click(getByText("Hot leads"));
     expect(onAddToExisting).toHaveBeenCalledWith("l1");
