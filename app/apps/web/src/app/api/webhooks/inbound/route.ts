@@ -32,6 +32,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { inngest } from "@/inngest/client";
 import { isFreeEmailDomain } from "@/lib/email/is-free-provider";
 import { logger } from "@/lib/observability/logger";
+import { recordEngagementSignal } from "@/lib/signals/engagement-signal";
 import { z } from "zod";
 
 const inboundPayloadSchema = z.object({
@@ -295,6 +296,17 @@ export async function POST(req: Request) {
       contactId,
       err: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  // A demo/trial inbound form is a high-intent buying signal — lift the
+  // contact's account on the priority score so the engine prioritises it. The
+  // company is already resolved above (companyId), so no extra lookup. Newsletter
+  // / generic sources are NOT a buying signal and are skipped. Best-effort.
+  if (source === "demo_request" || source === "trial") {
+    await recordEngagementSignal(tenantId, contactId, "demo_request", {
+      companyId,
+      strength: "high",
+    }).catch(() => {});
   }
 
   // ── Trigger the existing enrich+qualify+notify pipeline ────

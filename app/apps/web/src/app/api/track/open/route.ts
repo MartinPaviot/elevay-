@@ -4,6 +4,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { verifyTrackingId } from "@/lib/emails/tracking-token";
 import { inngest } from "@/inngest/client";
 import { isCadenceBranchingEnabled, buildEngagementEvent } from "@/lib/emails/engagement-event";
+import { recordEngagementSignal } from "@/lib/signals/engagement-signal";
 
 // 1x1 transparent GIF
 const PIXEL = Buffer.from(
@@ -77,6 +78,13 @@ async function recordOpen(emailId: string) {
         summary: "Opened email",
         metadata: { outboundEmailId: emailId },
       });
+
+      // Lift the contact's account on the priority score: an open is a (weak)
+      // first-party buying signal. First-open only (the WHERE openedAt IS NULL
+      // above gates this), idempotent, best-effort.
+      await recordEngagementSignal(email.tenantId, email.contactId, "email_opened", {
+        strength: "low",
+      }).catch(() => {});
     }
 
     // Cadence branching (gap #2): feed the dormant decision engine so a sequenced
