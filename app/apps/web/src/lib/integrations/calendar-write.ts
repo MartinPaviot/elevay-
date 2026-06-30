@@ -131,6 +131,17 @@ function htmlBody(title: string, joinUrl: string, agenda?: string): string {
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+/** Native Meet/Teams mint their own join button, so the body/description carries
+ *  only the agenda (no "Rejoindre la visio" line). Undefined when there's none. */
+export function nativeAgendaText(agenda?: string): string | undefined {
+  return agenda?.trim() || undefined;
+}
+export function nativeHtmlBody(title: string, agenda?: string): string {
+  const agendaHtml = agenda?.trim()
+    ? `<p>${escapeHtml(agenda.trim()).replace(/\n/g, "<br>")}</p>`
+    : "";
+  return `<p>${escapeHtml(title)}</p>${agendaHtml}`;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Entry point                                                        */
@@ -250,6 +261,7 @@ async function writeGoogleEvent(
       conferenceDataVersion: 1,
       requestBody: {
         summary: core.title,
+        description: nativeAgendaText(core.agenda),
         start,
         end: endTime,
         attendees,
@@ -317,7 +329,7 @@ async function writeMicrosoftEvent(
   const requestBody = wopts.native
     ? {
         ...base,
-        body: { contentType: "HTML", content: `<p>${escapeHtml(core.title)}</p>` },
+        body: { contentType: "HTML", content: nativeHtmlBody(core.title, core.agenda) },
         isOnlineMeeting: true,
         onlineMeetingProvider: "teamsForBusiness",
       }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { bookMeetingRequest } from "@/components/meeting-scheduler";
+import { bookMeetingRequest, clampDurationMinutes } from "@/components/meeting-scheduler";
 
 /**
  * bookMeetingRequest is the single POST /api/meetings/book the human card and
@@ -90,5 +90,21 @@ describe("bookMeetingRequest", () => {
     const r = await bookMeetingRequest({ contactId: "ct-1", startTime: "2026-07-01T09:00:00.000Z" });
     expect(r.ok).toBe(false);
     expect(r.error).toBe("Deep-dive weekly cap reached.");
+  });
+});
+
+describe("clampDurationMinutes — the free-duration field's blur commit", () => {
+  it("keeps an in-range value (rounded)", () => {
+    expect(clampDurationMinutes("120")).toBe(120);
+    expect(clampDurationMinutes("45.7")).toBe(46);
+  });
+  it("clamps below 5 up and above 480 down (server's window)", () => {
+    expect(clampDurationMinutes("1")).toBe(5); // a half-typed "1" can't book a 1-min meeting
+    expect(clampDurationMinutes("3")).toBe(5);
+    expect(clampDurationMinutes("500")).toBe(480);
+  });
+  it("falls back to 30 on a blank/garbage draft", () => {
+    expect(clampDurationMinutes("")).toBe(30);
+    expect(clampDurationMinutes("abc")).toBe(30);
   });
 });

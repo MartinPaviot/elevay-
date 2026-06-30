@@ -27,6 +27,16 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/**
+ * Commit a free-duration draft to a bookable value: round, then clamp to the
+ * server's [5,480] window (api/meetings/book caps there). A blank/NaN draft
+ * falls back to 30. Used on the field's blur so a half-typed "1" can never book
+ * a 1-minute meeting (which the server would 400 on).
+ */
+export function clampDurationMinutes(raw: string): number {
+  return Math.min(480, Math.max(5, Math.round(Number(raw) || 30)));
+}
+
 /** The next `n` business days (skipping weekends), local midnight. */
 function nextBusinessDays(n: number): Date[] {
   const days: Date[] = [];
@@ -172,6 +182,12 @@ export function MeetingSchedulerCard({
   // time came from the manual picker instead.
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
   const [duration, setDuration] = useState(45);
+  // What the free-duration field shows while typing. Kept as a raw string so a
+  // user can pass through intermediate states (clear the field, type "1" then
+  // "20") without each keystroke being clamped/reverted; `duration` (the booked
+  // value) follows when the draft parses in-range, and the draft is clamped to
+  // [5,480] on blur. Presets write both.
+  const [durationDraft, setDurationDraft] = useState("45");
   const [title, setTitle] = useState(initialTitle || "");
   // Extra invitees (emails) beyond the prospect + a free agenda for the invite.
   const [attendees, setAttendees] = useState<string[]>([]);
@@ -518,7 +534,7 @@ export function MeetingSchedulerCard({
               <button
                 key={d}
                 type="button"
-                onClick={() => setDuration(d)}
+                onClick={() => { setDuration(d); setDurationDraft(String(d)); }}
                 aria-pressed={duration === d}
                 className="rounded-md px-2 py-0.5 text-[12px] transition-colors"
                 style={duration === d
@@ -534,8 +550,18 @@ export function MeetingSchedulerCard({
               min={5}
               max={480}
               step={5}
-              value={duration}
-              onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 5 && n <= 480) setDuration(n); }}
+              value={durationDraft}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setDurationDraft(raw);
+                const n = Number(raw);
+                if (Number.isFinite(n) && n >= 5 && n <= 480) setDuration(n);
+              }}
+              onBlur={() => {
+                const n = clampDurationMinutes(durationDraft);
+                setDuration(n);
+                setDurationDraft(String(n));
+              }}
               aria-label={t("meeting.duration")}
               className="w-14 rounded-md px-1.5 py-0.5 text-[12px] outline-none"
               style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
@@ -589,12 +615,12 @@ export function MeetingSchedulerCard({
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === "," || e.key === "Tab") {
                   const v = attendeeInput.trim().replace(/,$/, "");
-                  if (/\S+@\S+\.\S+/.test(v)) { e.preventDefault(); if (!attendees.includes(v)) setAttendees((xs) => [...xs, v]); setAttendeeInput(""); }
+                  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { e.preventDefault(); if (!attendees.includes(v)) setAttendees((xs) => [...xs, v]); setAttendeeInput(""); }
                 } else if (e.key === "Backspace" && !attendeeInput && attendees.length) {
                   setAttendees((xs) => xs.slice(0, -1));
                 }
               }}
-              onBlur={() => { const v = attendeeInput.trim(); if (/\S+@\S+\.\S+/.test(v) && !attendees.includes(v)) { setAttendees((xs) => [...xs, v]); setAttendeeInput(""); } }}
+              onBlur={() => { const v = attendeeInput.trim(); if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && !attendees.includes(v)) { setAttendees((xs) => [...xs, v]); setAttendeeInput(""); } }}
               placeholder={attendees.length === 0 ? t("meeting.attendeesPlaceholder") : ""}
               className="min-w-[120px] flex-1 bg-transparent text-[12px] outline-none"
               style={{ color: "var(--color-text-primary)" }}

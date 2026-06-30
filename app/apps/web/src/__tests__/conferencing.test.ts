@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { resolveConferencing, extraCcEmails } from "@/lib/integrations/calendar-write";
+import {
+  resolveConferencing,
+  extraCcEmails,
+  nativeAgendaText,
+  nativeHtmlBody,
+} from "@/lib/integrations/calendar-write";
 
 /** A minimal EventCore for the pure envelope helper. */
 function core(over: { contactEmail?: string; attendees?: Array<{ email: string; name?: string }> } = {}) {
@@ -77,5 +82,24 @@ describe("extraCcEmails — who gets Cc'd on the CalDAV/SMTP invite", () => {
     expect(
       extraCcEmails(core({ attendees: [{ email: "ally@us.io" }, { email: "Ally@us.io" }] })),
     ).toBe("ally@us.io");
+  });
+});
+
+describe("native Meet/Teams invite body carries the agenda (no visio line)", () => {
+  it("nativeAgendaText returns the trimmed agenda, or undefined when blank", () => {
+    expect(nativeAgendaText("  Tour produit + pricing  ")).toBe("Tour produit + pricing");
+    expect(nativeAgendaText("   ")).toBeUndefined();
+    expect(nativeAgendaText(undefined)).toBeUndefined();
+  });
+
+  it("nativeHtmlBody includes the agenda but never a 'Rejoindre la visio' link", () => {
+    const html = nativeHtmlBody("Rendez-vous", "Tour produit\n8 sièges");
+    expect(html).toContain("Rendez-vous");
+    expect(html).toContain("Tour produit<br>8 sièges"); // newline → <br>
+    expect(html).not.toMatch(/Rejoindre la visio|href=/); // native mints its own join
+  });
+
+  it("nativeHtmlBody escapes HTML and omits the agenda block when blank", () => {
+    expect(nativeHtmlBody("A <b>& B", "")).toBe("<p>A &lt;b&gt;&amp; B</p>");
   });
 });
