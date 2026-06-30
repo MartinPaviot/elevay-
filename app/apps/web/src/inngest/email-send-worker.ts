@@ -20,6 +20,7 @@ import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { evaluateSend } from "@/lib/guardrails/sending-gate";
 import { isWithinSendWindow } from "@/lib/emails/send-window";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
+import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -529,6 +530,16 @@ export const processOutboundEmails = inngest.createFunction(
             })
             .where(eq(outboundEmails.id, email.id));
 
+          // Capture the SENT email into the brain (RAG + memory graph), the
+          // outbound mirror of the inbound seam. Fire-and-forget, fail-soft.
+          captureOutboundEmail({
+            tenantId: email.tenantId,
+            contactId: email.contactId ?? null,
+            subject: email.subject,
+            body: email.bodyText,
+            messageId: sendResult.messageId ?? null,
+          });
+
           // Track usage for plan limits
           await trackUsage(email.tenantId, "email_sent").catch(() => {});
 
@@ -877,6 +888,15 @@ export const sendSingleEmail = inngest.createFunction(
           updatedAt: new Date(),
         })
         .where(eq(outboundEmails.id, emailId));
+
+      // Capture the SENT email into the brain (RAG + memory graph). Fail-soft.
+      captureOutboundEmail({
+        tenantId: email.tenantId,
+        contactId: email.contactId ?? null,
+        subject: email.subject,
+        body: email.bodyText,
+        messageId: data?.id ?? null,
+      });
 
       // Track usage for plan limits
       await trackUsage(email.tenantId, "email_sent").catch(() => {});

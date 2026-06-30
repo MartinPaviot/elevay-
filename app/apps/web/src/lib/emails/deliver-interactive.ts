@@ -38,6 +38,7 @@ import { logger } from "@/lib/observability/logger";
 import { recipientBlockReason } from "@/lib/emails/recipient-guardrail";
 import { evaluateSend, isInteractiveRecipientSendable } from "@/lib/guardrails/sending-gate";
 import { watchReplyOutcome } from "@/lib/outcomes/reply-flywheel";
+import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const FALLBACK_FROM = process.env.INVITE_FROM_ADDRESS || "Elevay <outbound@resend.dev>";
@@ -319,6 +320,16 @@ export async function deliverInteractiveEmail(
       void watchReplyOutcome({ tenantId, contactId: input.contactId, replyBody: body }).catch(() => {});
     }
   }
+
+  // Capture the SENT email into the brain (RAG + memory graph), the outbound
+  // mirror of the inbound seam. Fire-and-forget, fail-soft — never blocks send.
+  captureOutboundEmail({
+    tenantId,
+    contactId: input.contactId ?? null,
+    subject,
+    body,
+    messageId,
+  });
 
   return { ok: true, messageId, via, fromAddress };
 }
