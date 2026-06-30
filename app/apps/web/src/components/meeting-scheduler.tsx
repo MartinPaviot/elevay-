@@ -69,7 +69,7 @@ function nextBusinessDays(n: number): Date[] {
 }
 
 const VIDEO_LABEL: Record<string, string> = {
-  sovereign: "Visio",
+  sovereign: "Video call",
   google_meet: "Google Meet",
   teams: "Teams",
   zoom: "Zoom",
@@ -288,7 +288,7 @@ export function MeetingSchedulerCard({
   // actually do: a sovereign Visio is always available; the native tool only on
   // its own provider (offering Teams on a Google box just silently falls back).
   const videoOptions = useMemo<Array<{ key: "sovereign" | "google_meet" | "teams" | "zoom"; label: string }>>(() => {
-    const visio = { key: "sovereign" as const, label: "Visio" };
+    const visio = { key: "sovereign" as const, label: "Video call" };
     if (source === "google") return [visio, { key: "google_meet", label: "Google Meet" }];
     if (source === "microsoft") return [visio, { key: "teams", label: "Teams" }];
     return [visio]; // caldav / smtp / none → only the sovereign Visio is real
@@ -318,7 +318,7 @@ export function MeetingSchedulerCard({
   }, [slots]);
   const weekDays = useMemo(() => nextBusinessDays(5), []);
 
-  const videoLabel = VIDEO_LABEL[conferencing] ?? "Visio";
+  const videoLabel = VIDEO_LABEL[conferencing] ?? "Video call";
   const slotEcho = useMemo(() => {
     if (!when) return "";
     const s = new Date(when);

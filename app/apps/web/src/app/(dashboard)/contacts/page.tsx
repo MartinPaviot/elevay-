@@ -1236,7 +1236,7 @@ export default function ContactsPage() {
           title={t("filters.advancedContacts")}
         >
           <SlidersHorizontal size={12} />
-          Filtres
+          Filters
           {panelActive > 0 && (
             <span className="rounded-full px-1.5 text-[10px] font-medium tabular-nums" style={{ background: "var(--color-accent)", color: "#fff" }}>
               {panelActive}
@@ -1254,7 +1254,7 @@ export default function ContactsPage() {
               style={{ background: "var(--color-accent-soft)", color: "var(--color-accent)" }}
             >
               <X size={12} />
-              {activeKeys.length} filtre{activeKeys.length === 1 ? "" : "s"} actif{activeKeys.length === 1 ? "" : "s"} — effacer
+              {activeKeys.length} filter{activeKeys.length === 1 ? "" : "s"} active — clear
             </button>
           );
         })()}

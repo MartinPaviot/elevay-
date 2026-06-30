@@ -66,23 +66,23 @@ describe("SequenceTemplatesPage", () => {
     render(<SequenceTemplatesPage />);
     await waitFor(() => expect(screen.getByText(/Post-financement/)).toBeTruthy());
     expect(screen.getByText("Recrutement en cours")).toBeTruthy();
-    // FR trigger label (not the raw signal key).
-    expect(screen.getByText("Levée de fonds")).toBeTruthy();
+    // Trigger label (not the raw signal key).
+    expect(screen.getByText("Funding round")).toBeTruthy();
     // The recipient-benefit angle is surfaced.
     expect(screen.getByText(/Lever change la priorité/)).toBeTruthy();
   });
 
-  it("shows 'Utiliser ce modèle' for a fresh template and 'Ajouté' for an instantiated one", async () => {
+  it("shows 'Use this template' for a fresh template and 'Added' for an instantiated one", async () => {
     render(<SequenceTemplatesPage />);
-    await waitFor(() => screen.getByText("Utiliser ce modèle"));
-    // hiring-signal is instantiated → an 'Ajouté' badge + 'Ajouté' button.
-    expect(screen.getAllByText("Ajouté").length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => screen.getByText("Use this template"));
+    // hiring-signal is instantiated → an 'Added' badge + 'Added' button.
+    expect(screen.getAllByText("Added").length).toBeGreaterThanOrEqual(1);
   });
 
   it("POSTs to instantiate when the use button is clicked", async () => {
     render(<SequenceTemplatesPage />);
-    await waitFor(() => screen.getByText("Utiliser ce modèle"));
-    fireEvent.click(screen.getByText("Utiliser ce modèle"));
+    await waitFor(() => screen.getByText("Use this template"));
+    fireEvent.click(screen.getByText("Use this template"));
     await waitFor(() => {
       const calls = (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls;
       const posted = calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST");
@@ -94,7 +94,7 @@ describe("SequenceTemplatesPage", () => {
   it("surfaces a retry affordance on load failure", async () => {
     global.fetch = vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch;
     render(<SequenceTemplatesPage />);
-    await waitFor(() => expect(screen.getByText(/Impossible de charger/)).toBeTruthy());
-    expect(screen.getByText("Réessayer")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Couldn't load/)).toBeTruthy());
+    expect(screen.getByText("Retry")).toBeTruthy();
   });
 });

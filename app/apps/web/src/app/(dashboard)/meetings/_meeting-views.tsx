@@ -218,7 +218,7 @@ function AttendanceControl({
   if (value === "cancelled") {
     return (
       <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>
-        Annulé
+        Cancelled
       </span>
     );
   }
@@ -228,24 +228,24 @@ function AttendanceControl({
   const idle = { color: "var(--color-text-secondary)", border: "1px solid var(--color-border-default)" };
   return (
     <span className="inline-flex items-center gap-1">
-      <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Présence</span>
+      <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>Attendance</span>
       <button
         type="button"
         onClick={() => onChange(held ? null : "held")}
         className={base}
         style={held ? { background: "rgba(34,197,94,.14)", color: "rgb(21,128,61)" } : idle}
-        title={held ? "Marqué tenu — cliquer pour effacer" : "Marquer comme tenu"}
+        title={held ? "Marked as held — click to clear" : "Mark as held"}
       >
-        <Check size={11} /> Tenu
+        <Check size={11} /> Held
       </button>
       <button
         type="button"
         onClick={() => onChange(noShow ? null : "no_show")}
         className={base}
         style={noShow ? { background: "rgba(220,38,38,.12)", color: "rgb(185,28,28)" } : idle}
-        title={noShow ? "Marqué pas venu — cliquer pour effacer" : "Marquer comme pas venu (no-show)"}
+        title={noShow ? "Marked as no-show — click to clear" : "Mark as no-show"}
       >
-        <X size={11} /> Pas venu
+        <X size={11} /> No-show
       </button>
     </span>
   );

@@ -34,15 +34,15 @@ interface TemplateSummary {
 
 /** FR labels for the trigger signal types. */
 const SIGNAL_LABELS: Record<string, string> = {
-  website_visit: "Visite du site",
-  post_funding: "Levée de fonds",
-  hiring_signal: "Recrutement",
-  product_launch: "Lancement produit",
-  leadership_change: "Changement de direction",
-  tech_stack_change: "Changement de stack",
-  exec_engagement: "Engagement dirigeant",
-  review_left: "Avis laissé",
-  competitor_mention: "Mention concurrent",
+  website_visit: "Website visit",
+  post_funding: "Funding round",
+  hiring_signal: "Hiring",
+  product_launch: "Product launch",
+  leadership_change: "Leadership change",
+  tech_stack_change: "Tech stack change",
+  exec_engagement: "Exec engagement",
+  review_left: "Review left",
+  competitor_mention: "Competitor mention",
 };
 
 const CHANNEL_ICON: Record<StepType, typeof Mail> = {
@@ -53,7 +53,7 @@ const CHANNEL_ICON: Record<StepType, typeof Mail> = {
 const CHANNEL_LABEL: Record<StepType, string> = {
   email: "Email",
   linkedin_message: "LinkedIn",
-  phone_task: "Appel",
+  phone_task: "Call",
 };
 
 export default function SequenceTemplatesPage() {
@@ -95,13 +95,13 @@ export default function SequenceTemplatesPage() {
         const { result } = await res.json();
         toast(
           result?.outcome === "skipped_exists"
-            ? `« ${t.name} » est déjà dans vos séquences.`
-            : `« ${t.name} » ajouté en brouillon — activez-le quand vous êtes prêt.`,
+            ? `« ${t.name} » is already in your sequences.`
+            : `« ${t.name} » added as a draft — activate it when you're ready.`,
           "success",
         );
         setTemplates((prev) => prev.map((x) => (x.id === t.id ? { ...x, instantiated: true } : x)));
       } catch {
-        toast("Échec de l'ajout — réessayez dans un instant.", "error");
+        toast("Couldn't add it — try again in a moment.", "error");
       } finally {
         setPendingId(null);
       }
@@ -113,11 +113,11 @@ export default function SequenceTemplatesPage() {
     <div className="flex h-full flex-col animate-content-in">
       <PageHeader
         icon={<LayoutTemplate size={18} />}
-        title="Modèles de séquences"
-        subtitle="Des séquences éprouvées, une par déclencheur — chaque cadence est pensée pour son contexte."
+        title="Sequence templates"
+        subtitle="Proven sequences, one per trigger — each cadence is tailored to its context."
       >
         <Button variant="outline" size="sm" icon={<ArrowLeft size={14} />} onClick={() => router.push("/sequences")}>
-          Séquences
+          Sequences
         </Button>
       </PageHeader>
 
@@ -130,9 +130,9 @@ export default function SequenceTemplatesPage() {
           </div>
         ) : loadError ? (
           <div className="text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
-            Impossible de charger les modèles.{" "}
+            Couldn't load the templates.{" "}
             <button className="underline" onClick={() => void load()}>
-              Réessayer
+              Retry
             </button>
           </div>
         ) : (
@@ -150,7 +150,7 @@ export default function SequenceTemplatesPage() {
                           </h3>
                           {t.instantiated && (
                             <Badge variant="success" size="sm">
-                              Ajouté
+                              Added
                             </Badge>
                           )}
                         </div>
@@ -189,7 +189,7 @@ export default function SequenceTemplatesPage() {
                             className="inline-flex items-center gap-1 text-[11px]"
                             style={{ color: "var(--color-text-tertiary)" }}
                           >
-                            <Clock size={11} /> {t.stepCount} étapes · {t.cadenceDays} j
+                            <Clock size={11} /> {t.stepCount} steps · {t.cadenceDays}d
                           </span>
                         </div>
 
@@ -205,7 +205,7 @@ export default function SequenceTemplatesPage() {
                                 style={{ color: "var(--color-text-tertiary)" }}
                               >
                                 <span className="w-9 shrink-0 tabular-nums" style={{ color: "var(--color-text-secondary)" }}>
-                                  J+{cumulative}
+                                  D+{cumulative}
                                 </span>
                                 <Icon size={11} className="shrink-0" />
                                 <span className="truncate">
@@ -226,7 +226,7 @@ export default function SequenceTemplatesPage() {
                           icon={t.instantiated ? <Check size={14} /> : undefined}
                           onClick={() => void useTemplate(t)}
                         >
-                          {t.instantiated ? "Ajouté" : "Utiliser ce modèle"}
+                          {t.instantiated ? "Added" : "Use this template"}
                         </Button>
                       </div>
                     </div>
