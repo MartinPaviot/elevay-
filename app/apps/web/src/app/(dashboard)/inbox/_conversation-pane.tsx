@@ -826,7 +826,65 @@ export function ConversationPane({
 
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      {composer && (
+        // The reply composer sits ABOVE the thread it answers, so the original
+        // mail reads BELOW it (Gmail/Outlook style). It takes the larger 3:2 share
+        // of the pane for a generous writing area; min-h-0 + the panel's own
+        // overflow-y-auto keep Send reachable on a narrow/zoomed view.
+        <div className="flex min-h-0 flex-col" style={{ flex: "3 1 0%" }}>
+          {replyTones.length > 1 && (
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
+              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                Tone
+              </span>
+              {replyTones.map((r) => {
+                const active = composer.body === r.body;
+                return (
+                  <button
+                    key={r.tone}
+                    type="button"
+                    onClick={() =>
+                      setComposer((c) => (c ? { ...c, subject: r.subject || c.subject, body: r.body } : c))
+                    }
+                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      border: "1px solid var(--color-border-default)",
+                      background: active ? "var(--color-accent-soft)" : "transparent",
+                      color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
+                    }}
+                  >
+                    {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <SnippetBar
+            snippets={snippets}
+            onChange={setSnippets}
+            currentBody={composer.body}
+            contact={detail?.contact ?? null}
+            onInsert={(text) =>
+              setComposer((c) => (c ? { ...c, body: c.body.trim() ? `${c.body}\n\n${text}` : text } : c))
+            }
+          />
+          <EmailComposerPanel
+            draft={composer}
+            mailboxes={sendableMailboxes}
+            inline
+            onClose={() => {
+              setComposer(null);
+              setReplyTones([]);
+            }}
+            onSent={() => void handleSent()}
+          />
+        </div>
+      )}
+
+      <div
+        className="min-h-0 overflow-y-auto px-4 py-3"
+        style={{ flex: composer ? "2 1 0%" : "1 1 0%" }}
+      >
         {/* Meeting scheduler — rendered in the SCROLLABLE reading area (not the
              fixed header) so its full height + the Confirm button stay reachable
              on a narrow or zoomed viewport (the header doesn't scroll). */}
@@ -1114,59 +1172,6 @@ export function ConversationPane({
         </IntelligencePanel>
       </div>
 
-      {composer && (
-        // Shares the pane height with the message list (both flex-1 min-h-0) and
-        // caps at 60vh on tall screens. min-h-0 lets the inline composer shrink so
-        // its Send button stays inside the pane on the founder's narrow+zoomed view.
-        <div className="flex min-h-0 flex-1 flex-col" style={{ maxHeight: "min(60vh, 560px)" }}>
-          {replyTones.length > 1 && (
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
-              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                Tone
-              </span>
-              {replyTones.map((r) => {
-                const active = composer.body === r.body;
-                return (
-                  <button
-                    key={r.tone}
-                    type="button"
-                    onClick={() =>
-                      setComposer((c) => (c ? { ...c, subject: r.subject || c.subject, body: r.body } : c))
-                    }
-                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                    style={{
-                      border: "1px solid var(--color-border-default)",
-                      background: active ? "var(--color-accent-soft)" : "transparent",
-                      color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
-                    }}
-                  >
-                    {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <SnippetBar
-            snippets={snippets}
-            onChange={setSnippets}
-            currentBody={composer.body}
-            contact={detail?.contact ?? null}
-            onInsert={(text) =>
-              setComposer((c) => (c ? { ...c, body: c.body.trim() ? `${c.body}\n\n${text}` : text } : c))
-            }
-          />
-          <EmailComposerPanel
-            draft={composer}
-            mailboxes={sendableMailboxes}
-            inline
-            onClose={() => {
-              setComposer(null);
-              setReplyTones([]);
-            }}
-            onSent={() => void handleSent()}
-          />
-        </div>
-      )}
     </div>
   );
 }

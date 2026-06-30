@@ -58,6 +58,20 @@ describe("EmailComposerPanel — inline vs drawer", () => {
     expect(container.querySelector(".overflow-y-auto")).not.toBeNull();
   });
 
+  it("inline: the writing area has a generous viewport-scaled floor (not the old cramped 88px)", async () => {
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<EmailComposerPanel draft={DRAFT} inline onClose={() => {}} />));
+    });
+    await flush();
+    const ta = container.querySelector("textarea")!;
+    // Founder: "la zone où j'écris n'est pas très grande." The inline reply is now
+    // the pane's primary area, so the floor scales with the viewport, not 88px.
+    expect(ta.style.minHeight).toContain("clamp");
+    expect(ta.style.minHeight).toContain("30vh");
+    expect(ta.style.minHeight).not.toBe("88px");
+  });
+
   it("flushes the in-progress draft to localStorage on unmount (no lost keystrokes on close)", async () => {
     const store: Record<string, string> = {};
     const setItem = vi.fn((k: string, v: string) => { store[k] = v; });
