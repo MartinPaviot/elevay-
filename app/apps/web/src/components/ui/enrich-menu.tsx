@@ -7,6 +7,7 @@ import {
   listExtraCriteria,
   BASE_CRITERIA_KEYS,
 } from "@/lib/providers/company-enrichment/criteria";
+import { useT } from "@/lib/i18n/locale";
 
 /**
  * Split-button criteria picker for the "Enrich" action.
@@ -33,6 +34,7 @@ export function EnrichMenu({
   onEnrich: (criteriaKeys: string[]) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const base = listBaseCriteria();
   const extras = listExtraCriteria();
   const [open, setOpen] = useState(false);
@@ -65,10 +67,10 @@ export function EnrichMenu({
   };
 
   const primaryLabel = running
-    ? `Enriching ${processed}/${total || targetCount}…`
+    ? t("enrich.running", { processed, total: total || targetCount })
     : targetCount > 0
-      ? `Enrich (${targetCount})`
-      : "Enrich";
+      ? t("enrich.primaryCount", { n: targetCount })
+      : t("enrich.primary");
 
   const baseDisabled = disabled || running || targetCount === 0;
 
@@ -82,7 +84,7 @@ export function EnrichMenu({
           disabled={baseDisabled}
           className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           style={{ color: "var(--color-text-secondary)" }}
-          title="Enrich the base firmographics (Industry, Geography, Size, Revenue, LinkedIn)"
+          title={t("enrich.baseTitle")}
         >
           {running ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
           {primaryLabel}
@@ -91,7 +93,7 @@ export function EnrichMenu({
           type="button"
           onClick={() => setOpen((v) => !v)}
           disabled={disabled || running}
-          aria-label="Choose enrichment criteria"
+          aria-label={t("enrich.chooseCriteria")}
           aria-expanded={open}
           className="inline-flex items-center border-l px-1.5 transition-colors hover:bg-[var(--color-bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           style={{ borderColor: "var(--color-border-default)", color: "var(--color-text-tertiary)" }}
@@ -106,18 +108,18 @@ export function EnrichMenu({
           style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-moderate)", boxShadow: "var(--shadow-floating)" }}
         >
           <p className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-            Base criteria
+            {t("enrich.sectionBase")}
           </p>
           {base.map((c) => (
-            <CriterionRow key={c.key} label={c.label} hint={c.hint} checked={selected.has(c.key)} onToggle={() => toggle(c.key)} />
+            <CriterionRow key={c.key} label={t(`enrich.criteria.${c.key}.label`)} hint={t(`enrich.criteria.${c.key}.hint`)} checked={selected.has(c.key)} onToggle={() => toggle(c.key)} />
           ))}
 
           <div className="my-1 border-t" style={{ borderColor: "var(--color-border-default)" }} />
           <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-            Add criteria
+            {t("enrich.sectionAdd")}
           </p>
           {extras.map((c) => (
-            <CriterionRow key={c.key} label={c.label} hint={c.hint} checked={selected.has(c.key)} onToggle={() => toggle(c.key)} />
+            <CriterionRow key={c.key} label={t(`enrich.criteria.${c.key}.label`)} hint={t(`enrich.criteria.${c.key}.hint`)} checked={selected.has(c.key)} onToggle={() => toggle(c.key)} />
           ))}
 
           <div className="mt-1 border-t pt-1.5" style={{ borderColor: "var(--color-border-default)" }}>
@@ -129,7 +131,7 @@ export function EnrichMenu({
               style={{ background: "var(--color-accent)" }}
             >
               <Zap size={13} />
-              {targetCount > 0 ? `Enrich ${targetCount} · ${selected.size} criteria` : "Select accounts first"}
+              {targetCount > 0 ? t("enrich.runSelected", { count: targetCount, n: selected.size }) : t("enrich.selectFirst")}
             </button>
           </div>
         </div>
