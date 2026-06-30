@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
+import { injectMeetingLink } from "@/lib/inbox/meeting-link";
 import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -52,6 +53,25 @@ interface EmailComposerPanelProps {
    *  thread) instead of the right-edge slide-over drawer. The drawer (default)
    *  stays for standalone "new email" compose; the inbox reply passes inline. */
   inline?: boolean;
+}
+
+/**
+ * Imperative handle for parent-driven body edits. The panel owns the editable
+ * body (editBody) as its single source of truth — a parent that mutates the
+ * `draft` prop after mount is ignored — so external writers (the meeting-link
+ * injection on booking, the tone switcher, snippet insertion) MUST go through
+ * this handle to actually reach the textarea. `getBody` lets the parent read
+ * the live body (e.g. "save reply as snippet") without per-keystroke re-renders.
+ */
+export interface EmailComposerHandle {
+  /** Smart-insert the sovereign join link into the current body (INBOX-G10). */
+  appendMeetingLink: (joinUrl: string) => void;
+  /** Replace the body, and optionally the subject (the tone switcher). */
+  setBody: (body: string, subject?: string) => void;
+  /** Append text below the current body (snippet insertion). */
+  appendBody: (text: string) => void;
+  /** The live edited body. */
+  getBody: () => string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,7 +186,10 @@ function EmailField({
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [], inline = false }: EmailComposerPanelProps) {
+export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerPanelProps>(function EmailComposerPanel(
+  { draft, onClose, onSent, mailboxes = [], inline = false },
+  ref,
+) {
   const { toast } = useToast();
   const t = useT();
   const [mounted, setMounted] = useState(false);
@@ -203,6 +226,35 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [], inl
   const markEdited = useCallback(() => {
     userEditedRef.current = true;
   }, []);
+
+  // editBody is the panel's source of truth; mirror it to a ref so the handle's
+  // getBody() returns the LIVE value without forcing a parent re-render.
+  const editBodyRef = useRef(editBody);
+  editBodyRef.current = editBody;
+  // Parent-driven edits (book→link injection, tone switch, snippet insert) reach
+  // the textarea ONLY through this handle — the panel seeds editBody from
+  // draft.body ONCE, so a parent that later mutates the draft prop is ignored.
+  // Every path marks the draft edited so the change persists + sends.
+  useImperativeHandle(
+    ref,
+    () => ({
+      appendMeetingLink(joinUrl: string) {
+        setEditBody((b) => injectMeetingLink(b, joinUrl));
+        markEdited();
+      },
+      setBody(body: string, subject?: string) {
+        setEditBody(body);
+        if (subject != null) setEditSubject(subject);
+        markEdited();
+      },
+      appendBody(text: string) {
+        setEditBody((b) => (b.trim() ? `${b}\n\n${text}` : text));
+        markEdited();
+      },
+      getBody: () => editBodyRef.current,
+    }),
+    [markEdited],
+  );
 
   // Send state
   const [sending, setSending] = useState(false);
@@ -1015,7 +1067,7 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [], inl
     </>,
     document.body,
   );
-}
+});
 
 /* ------------------------------------------------------------------ */
 /*  Convenience hook to manage composer open/close + draft state       */

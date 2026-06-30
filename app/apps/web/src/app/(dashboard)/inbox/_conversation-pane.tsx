@@ -32,14 +32,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { useT } from "@/lib/i18n/locale";
-import { EmailComposerPanel, type EmailComposerDraft } from "@/components/email-composer-panel";
+import { EmailComposerPanel, type EmailComposerDraft, type EmailComposerHandle } from "@/components/email-composer-panel";
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
 import { MeetingSchedulerCard } from "@/components/meeting-scheduler";
 import { timeAgo } from "./_time-ago";
 import { reasonTooltip, type ConversationDetail, type InboxLane } from "./_types";
 import { EmailBody } from "./_email-body";
 import { EventCard } from "./_event-card";
-import { injectMeetingLink } from "@/lib/inbox/meeting-link";
 import { takeCachedDetail } from "@/lib/inbox/detail-cache";
 import { extractProposedTime, toDatetimeLocal } from "@/lib/inbox/proposed-time";
 import { type Snippet } from "@/lib/inbox/snippets";
@@ -138,7 +137,14 @@ export function ConversationPane({
   const [stopping, setStopping] = useState(false);
   const [trustedSenders, setTrustedSenders] = useState<string[]>([]);
   const [replyTones, setReplyTones] = useState<Array<{ tone: string; subject: string; body: string }>>([]);
+  // Which tone chip is highlighted. Tracked explicitly because the composer owns
+  // its body (parent composer.body no longer mirrors the textarea), so the old
+  // `composer.body === r.body` derivation can't drive the highlight.
+  const [activeTone, setActiveTone] = useState<string | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
+  // Imperative handle to push parent-driven edits (booked join link, tone, snippet)
+  // INTO the inline composer's textarea — it ignores draft-prop mutations post-mount.
+  const composerRef = useRef<EmailComposerHandle>(null);
   const [autoDraftOn, setAutoDraftOn] = useState(false);
   // A2: the user's SENDABLE mailboxes for the composer From selector.
   const [sendableMailboxes, setSendableMailboxes] = useState<SendableMailbox[]>([]);
@@ -245,7 +251,11 @@ export function ConversationPane({
   useEffect(() => {
     setComposer(null);
     setReplyTones([]);
+    setActiveTone(null);
     setSchedOpen(false);
+    // Clear the proposed-time prefill too — else it leaks to the next thread and
+    // the plain Book button there reopens the scheduler at THIS thread's time.
+    setPrefillWhen(null);
     setSnoozeOpen(false);
     setUsedDraftId(null);
     setPaneError(false); // clear the error as a new key (or a retry) begins
@@ -733,7 +743,8 @@ export function ConversationPane({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setSchedOpen(true)}
+              // Generic "schedule" — open fresh, never at a stale proposed time.
+              onClick={() => { setPrefillWhen(null); setSchedOpen(true); }}
               className="px-2"
               title={t("inbox.scheduleMeeting")}
               aria-label={t("inbox.scheduleMeeting")}
@@ -838,14 +849,15 @@ export function ConversationPane({
                 Tone
               </span>
               {replyTones.map((r) => {
-                const active = composer.body === r.body;
+                const active = activeTone === r.tone;
                 return (
                   <button
                     key={r.tone}
                     type="button"
-                    onClick={() =>
-                      setComposer((c) => (c ? { ...c, subject: r.subject || c.subject, body: r.body } : c))
-                    }
+                    onClick={() => {
+                      composerRef.current?.setBody(r.body, r.subject || undefined);
+                      setActiveTone(r.tone);
+                    }}
                     className="rounded-full px-2 py-0.5 text-[11px] font-medium"
                     style={{
                       border: "1px solid var(--color-border-default)",
@@ -863,12 +875,12 @@ export function ConversationPane({
             snippets={snippets}
             onChange={setSnippets}
             currentBody={composer.body}
+            getCurrentBody={() => composerRef.current?.getBody() ?? composer.body}
             contact={detail?.contact ?? null}
-            onInsert={(text) =>
-              setComposer((c) => (c ? { ...c, body: c.body.trim() ? `${c.body}\n\n${text}` : text } : c))
-            }
+            onInsert={(text) => composerRef.current?.appendBody(text)}
           />
           <EmailComposerPanel
+            ref={composerRef}
             draft={composer}
             mailboxes={sendableMailboxes}
             inline
@@ -900,9 +912,11 @@ export function ConversationPane({
                 setSchedOpen(false);
                 setPrefillWhen(null);
               }}
-              // Drop the sovereign join link straight into an open reply draft (INBOX-G10).
+              // Drop the sovereign join link straight into an open reply draft
+              // (INBOX-G10) — via the composer handle, since the inline panel owns
+              // its body and ignores draft-prop mutations after mount.
               onBooked={(joinUrl) => {
-                if (joinUrl) setComposer((c) => (c ? { ...c, body: injectMeetingLink(c.body, joinUrl) } : c));
+                if (joinUrl) composerRef.current?.appendMeetingLink(joinUrl);
               }}
             />
           </div>
