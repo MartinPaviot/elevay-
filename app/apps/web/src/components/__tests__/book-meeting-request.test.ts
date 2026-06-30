@@ -45,6 +45,24 @@ describe("bookMeetingRequest", () => {
     expect(body.startTime).toBe("2026-07-01T09:00:00.000Z");
   });
 
+  it("forwards extra attendees + agenda (rich params), and omits empties", async () => {
+    await bookMeetingRequest({
+      contactId: "ct-1",
+      startTime: "2026-07-01T09:00:00.000Z",
+      attendees: ["cofounder@us.io", "vp@prospect.com"],
+      agenda: "  Tour produit + pricing 8 sièges  ",
+    });
+    let body = bodyOfLastCall();
+    expect(body.attendees).toEqual(["cofounder@us.io", "vp@prospect.com"]);
+    expect(body.agenda).toBe("Tour produit + pricing 8 sièges"); // trimmed
+
+    // Empty attendees / blank agenda are dropped, not sent as [] / "".
+    await bookMeetingRequest({ contactId: "ct-1", startTime: "2026-07-01T09:00:00.000Z", attendees: [], agenda: "   " });
+    body = bodyOfLastCall();
+    expect(body.attendees).toBeUndefined();
+    expect(body.agenda).toBeUndefined();
+  });
+
   it("forwards contactId when a contact is linked", async () => {
     await bookMeetingRequest({
       contactId: "ct-1",
