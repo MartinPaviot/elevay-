@@ -40,12 +40,12 @@ const noop = () => {};
 afterEach(cleanup);
 
 describe("MeetingCard attendance capture", () => {
-  it("offers Tenu / Pas venu on a past meeting and marks held", () => {
+  it("offers Held / No-show on a past meeting and marks held", () => {
     const onAtt = vi.fn();
     const { getByText } = render(
       <MeetingCard meeting={meeting({ attendance: "unknown" })} expanded={false} onToggle={noop} onPrep={noop} onAttendance={onAtt} />,
     );
-    fireEvent.click(getByText("Tenu"));
+    fireEvent.click(getByText("Held"));
     expect(onAtt).toHaveBeenCalledWith("act-1", "held");
   });
 
@@ -54,7 +54,7 @@ describe("MeetingCard attendance capture", () => {
     const { getByText } = render(
       <MeetingCard meeting={meeting({ attendance: "unknown" })} expanded={false} onToggle={noop} onPrep={noop} onAttendance={onAtt} />,
     );
-    fireEvent.click(getByText("Pas venu"));
+    fireEvent.click(getByText("No-show"));
     expect(onAtt).toHaveBeenCalledWith("act-1", "no_show");
   });
 
@@ -63,7 +63,7 @@ describe("MeetingCard attendance capture", () => {
     const { getByText } = render(
       <MeetingCard meeting={meeting({ attendance: "held" })} expanded={false} onToggle={noop} onPrep={noop} onAttendance={onAtt} />,
     );
-    fireEvent.click(getByText("Tenu"));
+    fireEvent.click(getByText("Held"));
     expect(onAtt).toHaveBeenCalledWith("act-1", null);
   });
 
@@ -71,23 +71,23 @@ describe("MeetingCard attendance capture", () => {
     const { getByText, queryByText } = render(
       <MeetingCard meeting={meeting({ attendance: "cancelled" })} expanded={false} onToggle={noop} onPrep={noop} onAttendance={noop} />,
     );
-    expect(getByText("Annulé")).toBeTruthy();
-    expect(queryByText("Tenu")).toBeNull();
-    expect(queryByText("Pas venu")).toBeNull();
+    expect(getByText("Cancelled")).toBeTruthy();
+    expect(queryByText("Held")).toBeNull();
+    expect(queryByText("No-show")).toBeNull();
   });
 
   it("no attendance control on an upcoming meeting", () => {
     const { queryByText } = render(
       <MeetingCard meeting={meeting({ isPast: false, attendance: "scheduled" })} expanded={false} onToggle={noop} onPrep={noop} onAttendance={noop} />,
     );
-    expect(queryByText("Tenu")).toBeNull();
-    expect(queryByText("Pas venu")).toBeNull();
+    expect(queryByText("Held")).toBeNull();
+    expect(queryByText("No-show")).toBeNull();
   });
 
   it("renders no control when onAttendance is not provided", () => {
     const { queryByText } = render(
       <MeetingCard meeting={meeting({ attendance: "unknown" })} expanded={false} onToggle={noop} onPrep={noop} />,
     );
-    expect(queryByText("Tenu")).toBeNull();
+    expect(queryByText("Held")).toBeNull();
   });
 });

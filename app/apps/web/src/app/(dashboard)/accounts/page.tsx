@@ -2659,7 +2659,7 @@ export default function AccountsPage() {
           title={t("filters.advancedAccounts")}
         >
           <SlidersHorizontal size={12} />
-          Filtres
+          Filters
           {panelActive > 0 && (
             <span className="rounded-full px-1.5 text-[10px] font-medium tabular-nums" style={{ background: "var(--color-accent)", color: "#fff" }}>
               {panelActive}
