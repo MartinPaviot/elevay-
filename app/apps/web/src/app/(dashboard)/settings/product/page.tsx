@@ -13,6 +13,7 @@ import { SettingsHeader } from "@/components/ui/settings-header";
 import { Textarea, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SALES_MOTIONS } from "@/lib/config/icp-constants";
 
 export default function ProductVoicePage() {
@@ -65,7 +66,43 @@ export default function ProductVoicePage() {
     }
   }
 
-  if (!loaded) return null;
+  if (!loaded) {
+    // Footprint skeleton (not a blank pane) while /api/settings/product loads,
+    // matching the form: header + 4 fields (2 textareas, 2 selects) + save.
+    return (
+      <div>
+        <SettingsHeader
+          title="Product & Voice"
+          subtitle="What you sell and how Elevay writes for you. Used by chat, call scripts, sequences and proposals."
+        />
+        <div className="max-w-2xl space-y-4">
+          {/* Product description (textarea) */}
+          <div>
+            <Skeleton className="h-3 w-28 rounded" />
+            <Skeleton className="mt-1.5 h-20 w-full rounded-lg" />
+          </div>
+          {/* Sales motion (select) */}
+          <div>
+            <Skeleton className="h-3 w-20 rounded" />
+            <Skeleton className="mt-1.5 h-9 w-full rounded-lg" />
+          </div>
+          {/* Primary challenge (textarea) */}
+          <div>
+            <Skeleton className="h-3 w-28 rounded" />
+            <Skeleton className="mt-1.5 h-20 w-full rounded-lg" />
+          </div>
+          {/* Outbound tone (select) */}
+          <div>
+            <Skeleton className="h-3 w-44 rounded" />
+            <Skeleton className="mt-1.5 h-9 w-full rounded-lg" />
+          </div>
+          <div className="pt-2">
+            <Skeleton className="h-8 w-28 rounded-md" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

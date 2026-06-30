@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Shield, Loader2, Save } from "lucide-react";
+import { Shield, Save } from "lucide-react";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { ProviderLogo } from "@/components/ui/provider-logo";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useT } from "@/lib/i18n/locale";
 import { InstantlyMailboxes } from "./_instantly-mailboxes";
@@ -237,10 +238,14 @@ export default function SendingInfrastructurePage() {
       <>
         <SettingsHeader
           title="Sending infrastructure"
-          subtitle="Loading…"
+          subtitle="Where outbound emails leave from, and the protections around your primary domain."
         />
-        <div className="flex items-center gap-2 p-4 text-[12px]">
-          <Loader2 size={14} className="animate-spin" /> Loading
+        {/* Footprint skeleton: reserves the primary-inbox / Instantly / LinkedIn /
+            Voice / managed card stack so swapping to real data doesn't reflow. */}
+        <div className="space-y-4">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <CardSkeleton key={i} />
+          ))}
         </div>
       </>
     );
@@ -544,9 +549,14 @@ function VoiceSection() {
         </p>
 
         {loading ? (
-          <div className="mt-3 flex items-center gap-2 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-            <Loader2 size={12} className="animate-spin" />
-            {t("voice.loadingConfig")}
+          // Footprint skeleton for the status / usage / pool / buy-number area.
+          <div className="mt-3 space-y-3">
+            <Skeleton className="h-14 w-full rounded-md" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-8 w-32 rounded-md" />
+              <Skeleton className="h-8 w-[200px] rounded-md" />
+              <Skeleton className="h-8 w-16 rounded-md" />
+            </div>
           </div>
         ) : (
           <div className="mt-3 space-y-3">

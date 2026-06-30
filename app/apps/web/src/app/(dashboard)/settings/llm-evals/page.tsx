@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, TrendingDown, TrendingUp, Activity, ChevronDown } from "lucide-react";
-import { AIThinking, ConfidenceState } from "@/components/ai-ui";
+import { ConfidenceState } from "@/components/ai-ui";
 import { OnboardingVelocityTile } from "@/components/onboarding-velocity-tile";
 import { EvalRunDrilldown } from "@/components/evals/eval-run-drilldown";
 import { SettingsHeader } from "@/components/ui/settings-header";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 
 /**
  * Sprint-1 audit follow-up — admin dashboard surface for the
@@ -176,7 +177,54 @@ export default function LlmEvalsDashboardPage() {
           started onboarding row ; hides silently otherwise. */}
       <OnboardingVelocityTile />
 
-      {loading && <AIThinking step="Loading observability snapshot…" />}
+      {loading && (
+        // Footprint skeleton reserving the three sections (calls table,
+        // eval-drift timeline, recent failures) so the days-switch reload
+        // and first load don't collapse the layout to a single spinner.
+        <>
+          <section
+            className="rounded-xl"
+            style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+          >
+            <div className="p-4">
+              <Skeleton className="h-4 w-32 rounded" />
+              <Skeleton className="mt-2 h-3 w-56 rounded" />
+            </div>
+            <TableSkeleton rows={4} cols={7} />
+          </section>
+
+          <section
+            className="rounded-xl p-4"
+            style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+          >
+            <Skeleton className="h-4 w-28 rounded" />
+            <Skeleton className="mt-2 h-3 w-64 rounded" />
+            <div className="mt-3 space-y-3">
+              {[0, 1].map((i) => (
+                <div key={i} className="rounded-lg p-3" style={{ background: "var(--color-bg-hover)" }}>
+                  <Skeleton className="h-3 w-40 rounded" />
+                  <Skeleton className="mt-2 h-6 w-full rounded" />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section
+            className="rounded-xl"
+            style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)" }}
+          >
+            <div className="p-4">
+              <Skeleton className="h-4 w-44 rounded" />
+              <Skeleton className="mt-2 h-3 w-60 rounded" />
+            </div>
+            <div className="px-4 pb-4 space-y-2.5">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-4 w-full rounded" />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {error && !loading && (
         <div

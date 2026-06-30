@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { ProviderLogo } from "@/components/ui/provider-logo";
 
@@ -173,8 +174,13 @@ export function LinkedInConnect({ origin }: { origin?: "onboarding" | "settings"
 
         <div className="mt-3 space-y-3">
           {loading ? (
-            <div className="text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-              Loading…
+            // Footprint skeleton for the status badge / source form area.
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <Skeleton className="h-4 w-40 rounded" />
+              </div>
+              <Skeleton className="h-9 w-full rounded-md" />
             </div>
           ) : !data?.configured ? (
             <div

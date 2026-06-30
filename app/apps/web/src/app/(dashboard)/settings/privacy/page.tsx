@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DestructiveConfirm } from "@/components/ui/destructive-confirm";
 import { ProviderLogo } from "@/components/ui/provider-logo";
+import { Skeleton, CardSkeleton } from "@/components/ui/skeleton";
 
 type DpaStatus = "not_started" | "requested" | "signed";
 
@@ -234,16 +235,53 @@ export default function PrivacyPage() {
       )}
 
       {loading ? (
-        <div
-          className="flex items-center gap-2 py-12 text-[13px]"
-          style={{ color: "var(--color-text-muted)" }}
-        >
-          <div
-            className="h-4 w-4 animate-spin rounded-full border-2 border-current"
-            style={{ borderTopColor: "transparent" }}
-          />
-          Loading privacy settings...
-        </div>
+        <>
+          {/* Region card */}
+          <CardSkeleton />
+          {/* Default data visibility — heading + 2-col option grid */}
+          <div>
+            <Skeleton className="h-3 w-40 rounded" />
+            <Skeleton className="mt-2 h-2.5 w-72 rounded" />
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {VISIBILITY_OPTIONS.map((opt) => (
+                <Skeleton key={opt.value} className="h-[76px] rounded-xl" />
+              ))}
+            </div>
+          </div>
+          {/* Sub-processors — heading + one card per provider */}
+          <div>
+            <Skeleton className="h-3 w-28 rounded" />
+            <Skeleton className="mt-2 h-2.5 w-80 rounded" />
+            <div className="mt-3 space-y-2">
+              {Object.keys(DPA_PROVIDER_LABELS).map((key) => (
+                <Card key={key}>
+                  <CardBody className="px-5 py-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="h-8 w-8 rounded-lg" />
+                        <div className="space-y-1.5">
+                          <Skeleton className="h-3 w-24 rounded" />
+                          <Skeleton className="h-2.5 w-40 rounded" />
+                        </div>
+                      </div>
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          </div>
+          {/* Retention card */}
+          <CardSkeleton />
+          {/* Your data — export + delete cards */}
+          <div style={{ borderTop: "1px solid var(--color-border-default)", paddingTop: "24px" }}>
+            <Skeleton className="h-3 w-24 rounded" />
+            <div className="mt-3 space-y-3">
+              <CardSkeleton />
+              <CardSkeleton />
+            </div>
+          </div>
+        </>
       ) : (
         <>
           {/* ── EU Data Region ── */}

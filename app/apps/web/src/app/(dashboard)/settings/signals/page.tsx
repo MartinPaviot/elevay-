@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Input, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsHeader } from "@/components/ui/settings-header";
 import { Radio, Plus, Loader2, Check } from "lucide-react";
 import { z } from "zod";
@@ -151,7 +152,58 @@ export default function CustomSignalsPage() {
   );
   useRegisterPageActions(signalsActions);
 
-  if (!loaded) return null;
+  if (!loaded) {
+    // Footprint skeleton (not a blank page) while /api/custom-signals loads,
+    // matching the create form + signals list layout so there's no reflow.
+    return (
+      <>
+        <SettingsHeader
+          title="Custom signals"
+          subtitle="Define boolean signals — they appear as columns on every account. Describe what you'd like detected; the plan is generated and run against your whole TAM automatically."
+        />
+
+        {/* Create form */}
+        <section
+          className="mt-8 rounded-lg p-4"
+          style={{
+            background: "var(--color-bg-card)",
+            border: "1px solid var(--color-border-default)",
+          }}
+        >
+          <Skeleton className="h-4 w-28 rounded" />
+          <div className="mt-4 space-y-3">
+            <Skeleton className="h-9 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-8 w-40 rounded-md" />
+          </div>
+        </section>
+
+        {/* Existing signals */}
+        <section className="mt-8">
+          <Skeleton className="h-3 w-24 rounded" />
+          <div className="mt-4 space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="rounded-lg p-3 flex items-start gap-3"
+                style={{
+                  background: "var(--color-bg-card)",
+                  border: "1px solid var(--color-border-default)",
+                }}
+              >
+                <Skeleton className="mt-[2px] h-3.5 w-3.5 shrink-0 rounded-full" />
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <Skeleton className="h-3.5 w-40 rounded" />
+                  <Skeleton className="h-3 w-full rounded" />
+                  <Skeleton className="h-2.5 w-24 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </>
+    );
+  }
 
   return (
     <>
