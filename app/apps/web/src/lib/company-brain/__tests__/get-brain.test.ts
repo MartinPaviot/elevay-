@@ -360,14 +360,15 @@ describe("getCompanyBrain — graph facts scoped to the company (P1 06)", () => 
       if (call === 2) return chainOf([{ id: "node-co-1" }]); // company graph node (found)
       if (call === 3) return chainOf([]); // contacts
       if (call === 4) return chainOf([]); // deals
-      if (call === 5) return chainOf([]); // activities
-      if (call === 6) return chainOf([]); // knowledge
-      if (call === 7)
+      if (call === 5) return chainOf([]); // activities (outer select)
+      if (call === 6) return chainOf([]); // A2: contact-scoped union subquery (this company's contact ids)
+      if (call === 7) return chainOf([]); // knowledge
+      if (call === 8)
         // edges scoped to the company node
         return chainOf([
           { sourceId: "node-co-1", targetId: "node-x", relationType: "champion", fact: "F", confidence: 0.9 },
         ]);
-      if (call === 8) return chainOf([]); // memories
+      if (call === 9) return chainOf([]); // memories
       return chainOf([]);
     });
 
