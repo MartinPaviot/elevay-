@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { verifyTrackingId } from "@/lib/emails/tracking-token";
 import { inngest } from "@/inngest/client";
 import { isCadenceBranchingEnabled, buildEngagementEvent } from "@/lib/emails/engagement-event";
+import { recordEngagementSignal } from "@/lib/signals/engagement-signal";
 
 /**
  * Click tracking redirect endpoint.
@@ -73,6 +74,14 @@ async function recordClick(emailId: string, url: string) {
       if (isCadenceBranchingEnabled()) {
         const ev = buildEngagementEvent("clicked", email);
         if (ev) await inngest.send(ev).catch(() => {});
+      }
+
+      // A click is a stronger first-party buying signal than an open — lift the
+      // contact's account on the priority score. First-click only, best-effort.
+      if (email.contactId) {
+        await recordEngagementSignal(email.tenantId, email.contactId, "email_clicked", {
+          strength: "medium",
+        }).catch(() => {});
       }
     }
 

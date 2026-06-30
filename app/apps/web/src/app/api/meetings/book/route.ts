@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { contacts, activities, tenants } from "@/db/schema";
 import { eq, and, gte, isNull, lt, sql } from "drizzle-orm";
 import { bookSovereignMeeting, CalendarNotConnectedError } from "@/lib/integrations/calendar-write";
+import { recordEngagementSignal } from "@/lib/signals/engagement-signal";
 import { apiError } from "@/lib/infra/api-errors";
 import {
   DEEP_DIVE_METADATA_KEY,
@@ -244,6 +245,13 @@ export async function POST(req: Request) {
         override: meetingType === "deep_dive" ? override : false,
       },
     });
+
+    // A booked meeting is the strongest first-party buying signal — lift the
+    // contact's account on the priority score so the engine prioritises the
+    // company in the queue. Best-effort, idempotent (upsert-by-type).
+    await recordEngagementSignal(authCtx.tenantId, resolvedContactId, "meeting_booked", {
+      strength: "high",
+    }).catch(() => {});
 
     return Response.json({
       booked: true,
