@@ -906,10 +906,11 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [], inl
             style={{
               color: "var(--color-text-primary)",
               fontWeight: 400,
-              // Lower floor inline so the in-flow reply doesn't reserve a tall
-              // body on short viewports (it autoResizes + scrolls as you type);
-              // the drawer keeps the roomier 200px.
-              minHeight: inline ? "88px" : "200px",
+              // The inline reply is now the pane's primary area (it sits above the
+              // thread, 3:2 share), so give the writing box a generous floor that
+              // scales with the viewport — not the old cramped 88px. It still
+              // autoResizes + scrolls as you type; the drawer keeps a flat 200px.
+              minHeight: inline ? "clamp(160px, 30vh, 380px)" : "200px",
               whiteSpace: "pre-wrap",
             }}
             placeholder={t("inbox.compose.bodyPlaceholder")}
