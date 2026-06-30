@@ -49,7 +49,11 @@ export async function POST(req: Request) {
         if (dupe) throw new ListNameConflict(dupe.id);
         const [created] = await tx
           .insert(accountLists)
-          .values({ tenantId: authCtx.tenantId, name, ownerId: authCtx.userId })
+          // owner_id is an FK to users(id) — the APP user-id space. Use
+          // `appUserId`, NEVER `userId` (the auth-user id): the latter is a
+          // different id space, so it fails the FK and 500s "Failed to create
+          // list" for every real session. See lib/auth/user-id.ts convention.
+          .values({ tenantId: authCtx.tenantId, name, ownerId: authCtx.appUserId })
           .returning({ id: accountLists.id, name: accountLists.name });
         await insertMembers(tx, created.id, authCtx.tenantId, companyIds);
         return created;
