@@ -364,6 +364,52 @@ describe("CLE-14 /inbox — bookMeeting + stopSequence (lifted pane handlers)", 
   });
 });
 
+describe("Fix A /inbox — book a meeting without a linked contact", () => {
+  it("shows 'Planifier un RDV' even when the sender is not a CRM contact yet", async () => {
+    detailResponse = () => jsonRes({ ...FIXTURE_DETAIL, contact: null, enrollment: null });
+    await mountLoaded();
+    // The calendar action books against the sender email; the server
+    // resolves-or-creates the contact at confirm time, so it must appear
+    // even though detail.contact is null.
+    expect(screen.getByLabelText("Planifier un RDV")).toBeTruthy();
+  });
+
+  it("opening the scheduler from a contactless thread books nothing until confirm", async () => {
+    detailResponse = () => jsonRes({ ...FIXTURE_DETAIL, contact: null, enrollment: null });
+    await mountLoaded();
+    fireEvent.click(screen.getByLabelText("Planifier un RDV"));
+    await flush();
+    expect(callsTo("/api/meetings/book").length).toBe(0);
+  });
+
+  it("hides the button for an automated sender (no-reply) with no linked contact", async () => {
+    detailResponse = () =>
+      jsonRes({
+        ...FIXTURE_DETAIL,
+        contact: null,
+        enrollment: null,
+        conversation: { ...FIXTURE_DETAIL.conversation, fromAddress: "no-reply@notifications.stripe.com" },
+      });
+    await mountLoaded();
+    // Booking a no-reply@ would create a junk contact + email an unmonitored box.
+    expect(screen.queryByLabelText("Planifier un RDV")).toBeNull();
+  });
+
+  it("still shows the button when the sender is a full 'Name <addr>' header", async () => {
+    // Defends the #363 failure mode: a header rather than a bare address must
+    // still parse to an email (extractSenderEmail), so canBook stays true.
+    detailResponse = () =>
+      jsonRes({
+        ...FIXTURE_DETAIL,
+        contact: null,
+        enrollment: null,
+        conversation: { ...FIXTURE_DETAIL.conversation, fromAddress: "Marie Dubois <marie@ems.ch>" },
+      });
+    await mountLoaded();
+    expect(screen.getByLabelText("Planifier un RDV")).toBeTruthy();
+  });
+});
+
 describe("F3 /inbox — pane error vs missing (B5)", () => {
   it("a failed detail fetch shows the pane error + Retry, not 'no longer available'", async () => {
     detailResponse = () => jsonRes({ error: "boom" }, false, 500);

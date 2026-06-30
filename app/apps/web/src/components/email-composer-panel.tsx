@@ -48,6 +48,10 @@ interface EmailComposerPanelProps {
   onSent?: (messageId: string) => void;
   /** A2: the user's SENDABLE mailboxes for the From selector (empty hides it). */
   mailboxes?: SendableMailbox[];
+  /** Render in the document flow (Gmail/Outlook-style reply pinned under the
+   *  thread) instead of the right-edge slide-over drawer. The drawer (default)
+   *  stays for standalone "new email" compose; the inbox reply passes inline. */
+  inline?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -162,7 +166,7 @@ function EmailField({
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: EmailComposerPanelProps) {
+export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [], inline = false }: EmailComposerPanelProps) {
   const { toast } = useToast();
   const t = useT();
   const [mounted, setMounted] = useState(false);
@@ -531,29 +535,30 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
 
   if (!mounted) return null;
 
-  return createPortal(
-    <>
-      {/* Backdrop */}
+  // Inline (Gmail/Outlook reply): an in-flow block pinned under the thread. It is
+  // `flex-1 min-h-0` so it SHARES the pane height with the message list and can
+  // shrink — the body scrolls and the footer (Send) always stays inside the pane,
+  // even on the founder's half-screen + 200% zoom viewport where a fixed-height
+  // panel would push Send under the clipping ancestor. Drawer (default): the
+  // right-edge slide-over for standalone compose.
+  const panel = (
       <div
-        className="fixed inset-0 z-40"
-        style={{
-          background: "var(--color-bg-modal-overlay)",
-          animation: "overlay-fade-in 200ms ease-out",
-        }}
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div
-        className="slide-in-right fixed right-0 top-0 z-50 flex h-full flex-col"
-        style={{
-          width: "min(var(--detail-panel-width, 480px), 100vw)",
-          background: "var(--color-bg-card)",
-          borderLeft: "1px solid var(--color-border-default)",
-          borderTopLeftRadius: "10px",
-          borderBottomLeftRadius: "10px",
-          boxShadow: "var(--shadow-panel)",
-        }}
+        className={inline
+          ? "flex min-h-0 flex-1 flex-col"
+          : "slide-in-right fixed right-0 top-0 z-50 flex h-full flex-col"}
+        style={inline
+          ? {
+              background: "var(--color-bg-card)",
+              borderTop: "1px solid var(--color-border-default)",
+            }
+          : {
+              width: "min(var(--detail-panel-width, 480px), 100vw)",
+              background: "var(--color-bg-card)",
+              borderLeft: "1px solid var(--color-border-default)",
+              borderTopLeftRadius: "10px",
+              borderBottomLeftRadius: "10px",
+              boxShadow: "var(--shadow-panel)",
+            }}
       >
         {/* Header */}
         <div
@@ -878,7 +883,10 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
             style={{
               color: "var(--color-text-primary)",
               fontWeight: 400,
-              minHeight: "200px",
+              // Lower floor inline so the in-flow reply doesn't reserve a tall
+              // body on short viewports (it autoResizes + scrolls as you type);
+              // the drawer keeps the roomier 200px.
+              minHeight: inline ? "88px" : "200px",
               whiteSpace: "pre-wrap",
             }}
             placeholder={t("inbox.compose.bodyPlaceholder")}
@@ -962,8 +970,26 @@ export function EmailComposerPanel({ draft, onClose, onSent, mailboxes = [] }: E
           </div>
         </div>
       </div>
+  );
+
+  // Inline: render in place, no portal, no page-dimming backdrop (the thread
+  // stays interactive behind the reply, like Gmail/Outlook).
+  if (inline) return panel;
+
+  // Drawer: a dimming backdrop + the slide-over, portalled to <body>.
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        style={{
+          background: "var(--color-bg-modal-overlay)",
+          animation: "overlay-fade-in 200ms ease-out",
+        }}
+        onClick={onClose}
+      />
+      {panel}
     </>,
-    document.body
+    document.body,
   );
 }
 

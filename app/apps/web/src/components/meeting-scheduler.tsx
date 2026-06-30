@@ -53,7 +53,14 @@ const VIDEO_LABEL: Record<string, string> = {
  *  CLE-09 page action build. `startTime` is an ISO string (the card converts
  *  its datetime-local input first). */
 export interface BookMeetingSlot {
-  contactId: string;
+  /** The CRM contact to book against. Optional: a thread from a sender who isn't
+   *  yet a contact passes `contactEmail`/`contactName` instead, and the server
+   *  resolves-or-creates the contact at book time (explicit-intent capture). */
+  contactId?: string;
+  /** Sender email when there is no linked contact yet (resolve-or-create server-side). */
+  contactEmail?: string;
+  /** Sender display name, used to name a freshly-created contact. */
+  contactName?: string;
   startTime: string;
   durationMinutes?: number;
   conferencing?: "sovereign" | "google_meet" | "teams" | "zoom";
@@ -86,6 +93,8 @@ export async function bookMeetingRequest(slot: BookMeetingSlot): Promise<BookMee
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contactId: slot.contactId,
+        contactEmail: slot.contactEmail,
+        contactName: slot.contactName,
         startTime: slot.startTime,
         durationMinutes: slot.durationMinutes ?? 45,
         meetingType: "qualification",
@@ -98,10 +107,16 @@ export async function bookMeetingRequest(slot: BookMeetingSlot): Promise<BookMee
       joinUrl?: string;
       meetLink?: string;
       conferencing?: string;
-      error?: string;
+      // apiError(...) returns { error: { code, message } } (an OBJECT) for the
+      // NOT_FOUND / VALIDATION_ERROR paths — incl. "Aucune boîte connectée…", the
+      // most likely first failure. The 409/500 paths return a bare string. Accept
+      // both and ALWAYS surface a string, else the toast renders an object child
+      // and React throws.
+      error?: string | { code?: string; message?: string };
     };
     if (!res.ok || !data.booked) {
-      return { ok: false, error: data.error ?? undefined };
+      const error = typeof data.error === "string" ? data.error : data.error?.message;
+      return { ok: false, error };
     }
     return {
       ok: true,
@@ -115,13 +130,21 @@ export async function bookMeetingRequest(slot: BookMeetingSlot): Promise<BookMee
 
 export function MeetingSchedulerCard({
   contactId,
+  contactEmail,
+  contactName,
   firstName,
   onClose,
   onBooked,
   initialWhen,
   initialTitle,
 }: {
-  contactId: string;
+  /** Linked CRM contact. Omit (and pass contactEmail/contactName) to book against
+   *  a thread sender who isn't a contact yet — the server creates them on book. */
+  contactId?: string;
+  /** Sender email when there's no linked contact (resolve-or-create server-side). */
+  contactEmail?: string;
+  /** Sender display name, to name a freshly-created contact. */
+  contactName?: string;
   firstName: string;
   onClose: () => void;
   /** Fired on a successful booking with the meeting's join link (INBOX-G10), so a
@@ -284,6 +307,8 @@ export function MeetingSchedulerCard({
     // card and the agent path issue one identical request.
     const r = await bookMeetingRequest({
       contactId,
+      contactEmail,
+      contactName,
       startTime: start.toISOString(),
       durationMinutes: duration,
       title,
