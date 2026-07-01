@@ -142,15 +142,42 @@ export function resolveConferencing(
   return "sovereign";
 }
 
-function descriptionText(joinUrl: string, agenda?: string): string {
-  const visio = `Rejoindre la visio : ${joinUrl}`;
-  return agenda?.trim() ? `${agenda.trim()}\n\n${visio}` : visio;
+/**
+ * The human-readable "when" — a prospect's invite must state the date/time, not
+ * just a bare join link (the calendar card shows it, but the email BODY people
+ * read should too). Rendered in the organizer's zone; FR to match the invite
+ * copy (locale-through-the-pipeline is a separate follow-up). "Jeudi 9 juillet
+ * 2026, 09:00–09:30 (UTC+2)".
+ */
+export function whenLine(core: EventCore): string {
+  const tz = isValidTimeZone(core.organizerTimeZone) ? core.organizerTimeZone! : "UTC";
+  const end = new Date(core.startTime.getTime() + core.durationMinutes * 60_000);
+  const day = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric",
+  }).format(core.startTime);
+  const hm = (d: Date) =>
+    new Intl.DateTimeFormat("fr-FR", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(d);
+  const tzName =
+    new Intl.DateTimeFormat("fr-FR", { timeZone: tz, timeZoneName: "short" })
+      .formatToParts(core.startTime)
+      .find((p) => p.type === "timeZoneName")?.value || tz;
+  const dayCap = day.charAt(0).toUpperCase() + day.slice(1); // fr-FR weekday is lowercase
+  return `${dayCap}, ${hm(core.startTime)}–${hm(end)} (${tzName})`;
 }
-function htmlBody(title: string, joinUrl: string, agenda?: string): string {
+
+function descriptionText(joinUrl: string, agenda?: string, when?: string): string {
+  const parts: string[] = [];
+  if (when) parts.push(when);
+  if (agenda?.trim()) parts.push(agenda.trim());
+  parts.push(`Rejoindre la visio : ${joinUrl}`);
+  return parts.join("\n\n");
+}
+function htmlBody(title: string, joinUrl: string, agenda?: string, when?: string): string {
+  const whenHtml = when ? `<p><strong>${escapeHtml(when)}</strong></p>` : "";
   const agendaHtml = agenda?.trim()
     ? `<p>${escapeHtml(agenda.trim()).replace(/\n/g, "<br>")}</p>`
     : "";
-  return `<p>${escapeHtml(title)}</p>${agendaHtml}<p><a href="${joinUrl}">Rejoindre la visio</a><br>${joinUrl}</p>`;
+  return `<p>${escapeHtml(title)}</p>${whenHtml}${agendaHtml}<p><a href="${joinUrl}">Rejoindre la visio</a><br>${joinUrl}</p>`;
 }
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -174,14 +201,18 @@ function googleRecurrence(core: EventCore): string[] | undefined {
 }
 /** Native Meet/Teams mint their own join button, so the body/description carries
  *  only the agenda (no "Rejoindre la visio" line). Undefined when there's none. */
-export function nativeAgendaText(agenda?: string): string | undefined {
-  return agenda?.trim() || undefined;
+export function nativeAgendaText(agenda?: string, when?: string): string | undefined {
+  const parts: string[] = [];
+  if (when) parts.push(when);
+  if (agenda?.trim()) parts.push(agenda.trim());
+  return parts.length ? parts.join("\n\n") : undefined;
 }
-export function nativeHtmlBody(title: string, agenda?: string): string {
+export function nativeHtmlBody(title: string, agenda?: string, when?: string): string {
+  const whenHtml = when ? `<p><strong>${escapeHtml(when)}</strong></p>` : "";
   const agendaHtml = agenda?.trim()
     ? `<p>${escapeHtml(agenda.trim()).replace(/\n/g, "<br>")}</p>`
     : "";
-  return `<p>${escapeHtml(title)}</p>${agendaHtml}`;
+  return `<p>${escapeHtml(title)}</p>${whenHtml}${agendaHtml}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -323,7 +354,7 @@ async function writeGoogleEvent(
       conferenceDataVersion: 1,
       requestBody: {
         summary: core.title,
-        description: nativeAgendaText(core.agenda),
+        description: nativeAgendaText(core.agenda, whenLine(core)),
         location: locationText(undefined, core),
         start,
         end: endTime,
@@ -355,7 +386,7 @@ async function writeGoogleEvent(
     sendUpdates: "all",
     requestBody: {
       summary: core.title,
-      description: descriptionText(wopts.link, core.agenda),
+      description: descriptionText(wopts.link, core.agenda, whenLine(core)),
       location: locationText(wopts.link, core),
       start,
       end: endTime,
@@ -409,7 +440,7 @@ async function writeMicrosoftEvent(
   const requestBody = wopts.native
     ? {
         ...base,
-        body: { contentType: "HTML", content: nativeHtmlBody(core.title, core.agenda) },
+        body: { contentType: "HTML", content: nativeHtmlBody(core.title, core.agenda, whenLine(core)) },
         // Teams mints the join; only a physical place (if any) goes in location.
         ...(core.location?.trim() ? { location: { displayName: core.location.trim() } } : {}),
         isOnlineMeeting: true,
@@ -417,7 +448,7 @@ async function writeMicrosoftEvent(
       }
     : {
         ...base,
-        body: { contentType: "HTML", content: htmlBody(core.title, wopts.link, core.agenda) },
+        body: { contentType: "HTML", content: htmlBody(core.title, wopts.link, core.agenda, whenLine(core)) },
         location: { displayName: locationText(wopts.link, core) },
       };
 
@@ -514,7 +545,7 @@ async function writeCalDavEvent(
     start: core.startTime,
     end,
     summary: core.title,
-    description: descriptionText(link, core.agenda),
+    description: descriptionText(link, core.agenda, whenLine(core)),
     location: locationText(link, core),
     url: link,
     organizer: { email: box.email, name: box.displayName },
@@ -558,7 +589,7 @@ async function writeCalDavEvent(
           to: core.contactEmail,
           cc: extraCcEmails(core, [box.email]) || undefined,
           subject: core.title,
-          html: htmlBody(core.title, link, core.agenda),
+          html: htmlBody(core.title, link, core.agenda, whenLine(core)),
           icsInvite: { method: "REQUEST", content: ics, filename: "invite.ics" },
         },
       );
@@ -588,7 +619,7 @@ async function writeSmtpIcsEvent(
     start: core.startTime,
     end,
     summary: core.title,
-    description: descriptionText(link, core.agenda),
+    description: descriptionText(link, core.agenda, whenLine(core)),
     location: locationText(link, core),
     url: link,
     organizer: { email: box.email, name: box.displayName },
