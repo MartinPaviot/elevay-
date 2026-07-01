@@ -4,17 +4,27 @@ import {
   extraCcEmails,
   nativeAgendaText,
   nativeHtmlBody,
+  whenLine,
 } from "@/lib/integrations/calendar-write";
 
-/** A minimal EventCore for the pure envelope helper. */
-function core(over: { contactEmail?: string; attendees?: Array<{ email: string; name?: string }> } = {}) {
+/** A minimal EventCore for the pure helpers. */
+function core(
+  over: {
+    contactEmail?: string;
+    attendees?: Array<{ email: string; name?: string }>;
+    startTime?: Date;
+    durationMinutes?: number;
+    organizerTimeZone?: string;
+  } = {},
+) {
   return {
     contactEmail: over.contactEmail ?? "prospect@acme.com",
     contactName: "Prospect",
-    startTime: new Date("2026-07-01T09:00:00.000Z"),
-    durationMinutes: 30,
+    startTime: over.startTime ?? new Date("2026-07-01T09:00:00.000Z"),
+    durationMinutes: over.durationMinutes ?? 30,
     title: "Rendez-vous",
     attendees: over.attendees,
+    organizerTimeZone: over.organizerTimeZone,
   };
 }
 
@@ -101,5 +111,29 @@ describe("native Meet/Teams invite body carries the agenda (no visio line)", () 
 
   it("nativeHtmlBody escapes HTML and omits the agenda block when blank", () => {
     expect(nativeHtmlBody("A <b>& B", "")).toBe("<p>A &lt;b&gt;&amp; B</p>");
+  });
+
+  it("native bodies include the WHEN line when provided", () => {
+    expect(nativeHtmlBody("Rdv", "", "Jeudi 9 juillet, 09:00")).toContain("Jeudi 9 juillet, 09:00");
+    expect(nativeAgendaText("Ordre du jour", "Jeudi 9 juillet, 09:00")).toContain("Jeudi 9 juillet, 09:00");
+    // when-only (no agenda) still carries the when.
+    expect(nativeAgendaText(undefined, "Jeudi 9 juillet")).toBe("Jeudi 9 juillet");
+  });
+});
+
+describe("whenLine — the invite states WHEN (date/time/zone in the organizer's zone)", () => {
+  it("renders date + time range + a zone marker, weekday capitalized", () => {
+    // 07:00Z + Europe/Paris (CEST +2) = 09:00 local, 30 min → 09:00–09:30.
+    const w = whenLine(core({ startTime: new Date("2026-07-09T07:00:00.000Z"), durationMinutes: 30, organizerTimeZone: "Europe/Paris" }));
+    expect(w).toContain("9 juillet 2026");
+    expect(w).toContain("09:00");
+    expect(w).toContain("09:30");
+    expect(w).toMatch(/UTC\+2|GMT\+2|CEST|\+2/);
+    expect(w[0]).toBe(w[0].toUpperCase()); // "Jeudi …" not "jeudi …"
+  });
+  it("falls back to UTC when the organizer zone is absent/invalid", () => {
+    const w = whenLine(core({ startTime: new Date("2026-07-09T07:00:00.000Z"), durationMinutes: 30 }));
+    expect(w).toContain("07:00");
+    expect(w).toContain("07:30");
   });
 });
