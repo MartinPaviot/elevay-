@@ -76,6 +76,12 @@ export interface CompanyBrainActivity {
   summary: string | null;
   entityType: string | null;
   entityId: string | null;
+  /**
+   * Bounded head of the activity body (rawContent) — for an email this is the
+   * message text, where the subject-only `summary` can't reach. null for
+   * bodyless activities. See `./excerpt`. Prompt-budget capped.
+   */
+  excerpt?: string | null;
   /** Member who performed the action (user activities only); null otherwise. */
   actorName?: string | null;
 }

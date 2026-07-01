@@ -351,6 +351,61 @@ describe("getCompanyBrain — deal property metadata coercion", () => {
   });
 });
 
+describe("getCompanyBrain — activity body excerpt (Claap parity)", () => {
+  it("surfaces a bounded body excerpt for activities with a body, null otherwise", async () => {
+    let call = 0;
+    selectChainMock.mockImplementation(() => {
+      call++;
+      if (call === 1) return chainOf([COMPANY_ROW]); // company
+      if (call === 2) return chainOf([]); // company graph node (none)
+      if (call === 3) return chainOf([]); // contacts
+      if (call === 4) return chainOf([]); // deals
+      if (call === 5)
+        return chainOf([
+          {
+            id: "act-email",
+            type: "email_received",
+            direction: "inbound",
+            occurredAt: new Date("2026-04-16"),
+            // summary = the SUBJECT — the only thing the brain surfaced before.
+            summary: "Re: proposal",
+            entityType: "company",
+            entityId: "co-1",
+            // excerptRaw = left(rawContent, 300) from the DB — the BODY.
+            excerptRaw: "Yes, we're good to go — send the contract by Friday.",
+          },
+          {
+            id: "act-stage",
+            type: "stage_changed",
+            direction: null,
+            occurredAt: new Date("2026-04-15"),
+            summary: "Moved to demo",
+            entityType: "company",
+            entityId: "co-1",
+            excerptRaw: null, // bodyless activity
+          },
+        ]);
+      return chainOf([]); // knowledge, union subquery, edges, memories, transcripts
+    });
+
+    const brain = await getCompanyBrain(
+      "co-1",
+      { tenantId: "tenant-A" },
+      { predictStallsFn: stallStub, scoreBuyerIntentFn: intentStub as any },
+    );
+
+    const emailAct = brain!.activities.find((a) => a.id === "act-email")!;
+    const stageAct = brain!.activities.find((a) => a.id === "act-stage")!;
+    // The body — not just the subject — now rides on the brain activity.
+    expect(emailAct.excerpt).toBe(
+      "Yes, we're good to go — send the contract by Friday.",
+    );
+    expect(emailAct.summary).toBe("Re: proposal");
+    // Bodyless activity → null excerpt (the chat renderer omits the key).
+    expect(stageAct.excerpt).toBeNull();
+  });
+});
+
 describe("getCompanyBrain — graph facts scoped to the company (P1 06)", () => {
   it("loads graph edges only once the company has a node, then returns them", async () => {
     let call = 0;
