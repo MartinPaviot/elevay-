@@ -31,7 +31,7 @@ import { buildInboxPaletteCommands, type PaletteCommand } from "@/lib/inbox/pale
 import { tomorrowMorning } from "@/lib/inbox/snooze-presets";
 import { InboxFolders } from "./_inbox-folders";
 import { SortMenu } from "./_sort-menu";
-import { isInboxSort, type InboxSort } from "@/lib/inbox/inbox-sort";
+import { isInboxSort, defaultInboxSort, type InboxSort } from "@/lib/inbox/inbox-sort";
 import { EmailComposerPanel } from "@/components/email-composer-panel";
 import { type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
 import { SplitStrip } from "./_split-strip";
@@ -65,6 +65,25 @@ const errResult = (error: string, summary?: string): PageActionResult => ({ ok: 
  *  actions live in one PageAction[] (the registry stores PageAction<unknown>). */
 function definePageAction<P>(a: PageAction<P>): PageAction {
   return a as unknown as PageAction;
+}
+
+// Per-view default sort when the user hasn't explicitly picked one (sort==="auto"):
+// the triage attention lane + its intention splits rank by importance (the
+// explainable priority); every email-client folder (Inbox/Primary, Done, Snoozed,
+// Handled, All Mail, Starred, Trash, Spam, custom + deal lanes) is chronological.
+// Mirrors the route's isPrimaryView rule, then defers to defaultInboxSort(). `lane`
+// here is customLaneId ?? tab (what loadLane is called with).
+function defaultSortForView(lane: string, activeSplit: string | null): InboxSort {
+  const isPrimaryView = lane === "attention" && (!activeSplit || activeSplit === "other");
+  const effLane = isPrimaryView ? "primary" : lane;
+  const hasSplit = activeSplit != null && lane === "attention" && !isPrimaryView;
+  return defaultInboxSort(effLane, hasSplit);
+}
+
+// The sort a view actually uses: an explicit user choice wins globally; otherwise
+// the per-view default above. Single source of truth for both the fetch + the menu.
+function resolveSort(sort: InboxSort | "auto", lane: string, activeSplit: string | null): InboxSort {
+  return sort === "auto" ? defaultSortForView(lane, activeSplit) : sort;
 }
 
 // Rep-adjustable list width (px) for the 3-column master-detail, persisted so the
@@ -229,11 +248,13 @@ export default function InboxPage() {
   // "compact" = one dense single line. Starts comfortable → matches SSR, then a
   // mount effect reads the persisted choice (no hydration gap).
   const [density, setDensity] = useState<InboxDensity>("comfortable");
-  // Sort order (the header SortMenu). Default = "date" (newest received first) —
-  // a real inbox is a chronological folder, not a triage queue; the importance
-  // ranking is opt-in via Priority. Starts "date" on SSR (matches the server
-  // default → no hydration gap); a mount effect reads the persisted choice.
-  const [sort, setSort] = useState<InboxSort>("date");
+  // Sort order (the header SortMenu). "auto" = follow the per-view default
+  // (resolveSort): the triage attention lane + its splits rank by importance,
+  // every other folder is chronological (newest received first). Picking a mode
+  // from the menu overrides that globally + persists. A mount effect reads any
+  // persisted explicit choice; "auto" resolves the same on SSR + client (the menu
+  // renders client-only) so there's no hydration gap.
+  const [sort, setSort] = useState<InboxSort | "auto">("auto");
   // Resizable list width (3-column mode). Default on SSR → first paint matches;
   // a mount effect reads the persisted px, and a persist effect saves it.
   const [listW, setListW] = useState(LIST_W_DEFAULT);
@@ -342,7 +363,7 @@ export default function InboxPage() {
         if (pendingTriage.current) await pendingTriage.current.catch(() => {});
         const mailboxQuery = selectedMailbox ? `&mailbox=${encodeURIComponent(selectedMailbox)}` : "";
         const searchQuery = debouncedSearch ? `&q=${encodeURIComponent(debouncedSearch)}` : "";
-        const sortQuery = `&sort=${sort}`;
+        const sortQuery = `&sort=${resolveSort(sort, lane, activeSplit)}`;
         // Inbox/Primary → the email-client primary view (lane=primary): the default
         // Inbox (no split) and the "Primary" split both show all primary-category mail
         // in the inbox, not just the triage attention subset (Upstream model).
@@ -458,8 +479,8 @@ export default function InboxPage() {
     });
   }, []);
 
-  // Restore the persisted sort order once on mount (client-only — SSR stays
-  // "date" so first paint never mismatches the server default).
+  // Restore the persisted EXPLICIT sort choice once on mount (client-only). No
+  // saved value → stays "auto" → the per-view default applies.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("inbox-sort");
@@ -479,6 +500,14 @@ export default function InboxPage() {
       /* ignore — persistence is best-effort */
     }
   }, []);
+
+  // What the menu highlights + what the fetch uses for the CURRENT view: the
+  // explicit user choice when set, else this view's default (importance on the
+  // attention triage lane/splits, date everywhere else).
+  const effectiveSort = useMemo(
+    () => resolveSort(sort, customLaneId ?? tab, activeSplit),
+    [sort, customLaneId, tab, activeSplit],
+  );
 
   // Restore the persisted list width once on mount, then persist on change.
   useEffect(() => {
@@ -1325,7 +1354,7 @@ export default function InboxPage() {
             {/* Sort order (Date newest ↔ oldest, Priority, Unread first, Sender).
                 Not shown on the Outbound/Bundles tables — they carry their own order. */}
             {tab !== "outbound" && tab !== "bundles" && (
-              <SortMenu value={sort} onChange={handleSortChange} />
+              <SortMenu value={effectiveSort} onChange={handleSortChange} />
             )}
           </>
         )}
