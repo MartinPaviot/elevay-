@@ -106,7 +106,9 @@ function renderBrain(brain: CompanyBrain): string {
       lines.push(
         `  - ${a.occurredAt.toISOString().split("T")[0]} ${a.type}${
           a.direction ? ` (${a.direction})` : ""
-        }${a.summary ? `: ${a.summary.slice(0, 120)}` : ""}`,
+        }${a.summary ? `: ${a.summary.slice(0, 120)}` : ""}${
+          a.excerpt ? ` — ${a.excerpt}` : ""
+        }`,
       );
     }
   }

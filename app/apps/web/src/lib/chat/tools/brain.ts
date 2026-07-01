@@ -70,6 +70,9 @@ function shapeForChat(brain: CompanyBrain) {
     direction: a.direction,
     when: a.occurredAt.toISOString(),
     summary: a.summary,
+    // Bounded body head — the email/note content the subject-only summary can't
+    // carry. Key omitted for bodyless activities so they cost zero tokens.
+    ...(a.excerpt ? { excerpt: a.excerpt } : {}),
   }));
 
   const contacts = brain.contacts.slice(0, 20).map((c: CompanyBrainContact) => ({
@@ -238,6 +241,7 @@ export function buildBrainTools(ctx: ToolContext) {
             direction: a.direction,
             when: a.occurredAt.toISOString(),
             summary: a.summary,
+            ...(a.excerpt ? { excerpt: a.excerpt } : {}),
           })),
           company: {
             id: brain.companyBrain.company.id,
@@ -288,6 +292,7 @@ export function buildBrainTools(ctx: ToolContext) {
             direction: a.direction,
             when: a.occurredAt.toISOString(),
             summary: a.summary,
+            ...(a.excerpt ? { excerpt: a.excerpt } : {}),
           })),
           company: {
             id: brain.companyBrain.company.id,

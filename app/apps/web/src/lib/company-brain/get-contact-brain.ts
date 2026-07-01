@@ -19,7 +19,8 @@
  * `scoreBuyerIntent` / `predictStalls` calls.
  */
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { activityExcerpt } from "./excerpt";
 import { db as defaultDb } from "@/db";
 import {
   contacts as contactsTable,
@@ -129,6 +130,7 @@ export async function getContactBrain(
       summary: activitiesTable.summary,
       entityType: activitiesTable.entityType,
       entityId: activitiesTable.entityId,
+      excerptRaw: sql<string | null>`left(${activitiesTable.rawContent}, 300)`,
       actorType: activitiesTable.actorType,
       actorId: activitiesTable.actorId,
     })
@@ -178,6 +180,7 @@ export async function getContactBrain(
       summary: r.summary,
       entityType: r.entityType,
       entityId: r.entityId,
+      excerpt: activityExcerpt(r.excerptRaw),
       actorName: resolveActorName(r.actorType, r.actorId, memberNames),
     }));
 
