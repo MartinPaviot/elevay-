@@ -9,6 +9,7 @@ import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { buildRejectionCounterPrompt, type DominantInsight } from "@/lib/sequence-drafts/rejection-counter-prompt";
 import { gradeSequenceQuality } from "@/lib/evals/sequence-quality";
 import { judgeFabrication, decideFabricationGate } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { llmCall } from "@/lib/ai/llm-call";
@@ -134,6 +135,19 @@ export async function generateSequence(
           /* keep the loop's output if the corrective regen didn't parse */
         }
       }
+      // M13 T6 — log the G2 verdict: "reworked" when the gate forced a
+      // corrective regeneration, "pass" otherwise. Best-effort by contract.
+      if (options?.tenantId) {
+        await recordGateDecision({
+          tenantId: options.tenantId,
+          subjectType: "step",
+          subjectId: ctx.contact?.id ?? "unknown",
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: fab.blocked ? "reworked" : "pass",
+          reasons: { ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts },
+        });
+      }
     }
   } catch {
     /* never block generation on the gate */
@@ -142,6 +156,22 @@ export async function generateSequence(
   // Attach per-step + sequence-level quality to the result (R7).
   const parsed = JSON.parse(finalOutput) as GeneratedSequence;
   const finalEval = await gradeSequenceQuality(finalOutput, ctx, methodology);
+  // M13 T6 — log the G4 verdict on the WHOLE generated sequence. Advisory on
+  // this path (the evaluator-optimizer loop already regenerated; a below-bar
+  // final output still ships to preview/draft where the per-draft G4 gate and
+  // the human review enforce). Best-effort by contract.
+  if (options?.tenantId) {
+    await recordGateDecision({
+      tenantId: options.tenantId,
+      subjectType: "step",
+      subjectId: ctx.contact?.id ?? "unknown",
+      gate: 4,
+      rubricVersion: GATE_RUBRICS.g4Sequence,
+      score: finalEval.score,
+      verdict: finalEval.pass ? (result.iterations > 1 ? "reworked" : "pass") : "blocked",
+      reasons: { advisory: true, iterations: result.iterations },
+    });
+  }
   return {
     ...parsed,
     steps: parsed.steps.map((s) => {

@@ -77,3 +77,34 @@ export async function recordGateDecision(
 ): Promise<number> {
   return recordGateDecisions([row], database);
 }
+
+/** The two eligibility reasons that ARE the G1 gate (everything else —
+ *  deleted/no_email/suppressed/excluded_company — fails before G1 runs). */
+const G1_REASONS = new Set(["no_fresh_signal", "below_icp_threshold"]);
+
+/**
+ * Map one `checkContactEligibility` outcome to a G1 gate_decisions row.
+ * Returns null when the outcome is not a G1 verdict (the contact failed an
+ * earlier check, so the gate never evaluated). Shared by every enrollment
+ * chokepoint so the vocabulary can't drift.
+ */
+export function g1DecisionRow(args: {
+  tenantId: string;
+  contactId: string;
+  result: { eligible: true } | { eligible: false; reason: string };
+  reasons?: Record<string, unknown>;
+}): GateDecisionInput | null {
+  if (!args.result.eligible && !G1_REASONS.has(args.result.reason)) return null;
+  return {
+    tenantId: args.tenantId,
+    subjectType: "enrollment",
+    subjectId: args.contactId,
+    gate: 1,
+    rubricVersion: GATE_RUBRICS.g1,
+    verdict: args.result.eligible ? "pass" : "blocked",
+    reasons: {
+      ...(args.result.eligible ? {} : { reason: args.result.reason }),
+      ...args.reasons,
+    },
+  };
+}

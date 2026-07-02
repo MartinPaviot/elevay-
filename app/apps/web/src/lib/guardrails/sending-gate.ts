@@ -56,6 +56,7 @@ import {
   runTransportContentQc,
   type TransportContentInput,
 } from "@/lib/emails/transport-content-qc";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 
 /** Spec 35 — SAFE_MODE targeting gate rollout guard (default off; flipped on at
  *  T14 after the targeting backfill so no currently-allowed send breaks). */
@@ -457,6 +458,18 @@ export async function evaluateSend(
       // here. Content absent = legacy caller = no-op. Pure/synchronous.
       if (args.content) {
         const qc = runTransportContentQc(args.content);
+        // M13 T6 — log the G5 verdict (pass AND blocked, so reporting can
+        // compute a block RATE). Best-effort by contract: recordGateDecision
+        // never throws, a lost log line never blocks a send.
+        await recordGateDecision({
+          tenantId: args.tenantId,
+          subjectType: "send",
+          subjectId: args.contactId ?? args.toAddress,
+          gate: 5,
+          rubricVersion: GATE_RUBRICS.g5Transport,
+          verdict: qc.passed ? "pass" : "blocked",
+          reasons: { failures: qc.failures, toAddress: args.toAddress },
+        });
         if (!qc.passed) {
           return {
             send: false,

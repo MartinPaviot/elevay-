@@ -27,6 +27,9 @@ import { tasks, deals, companies, contacts, sequences, sequenceEnrollments } fro
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { deliverInteractiveEmail } from "@/lib/emails/deliver-interactive";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
+import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
 
 export interface ExecutableAction {
   id: string;
@@ -215,7 +218,7 @@ export async function executeAgentAction(
       // no tenantId column, so the contact FK is the only tenant anchor — the
       // executor is the trust boundary, exactly like create_deal / send_followup.
       const validContacts = await db
-        .select({ id: contacts.id, email: contacts.email })
+        .select({ id: contacts.id, email: contacts.email, companyId: contacts.companyId })
         .from(contacts)
         .where(and(inArray(contacts.id, target.contactIds), eq(contacts.tenantId, tenantId), isNull(contacts.deletedAt)));
       // P0-5 — the deferred executor is the REAL write for autopilot/signal
@@ -224,9 +227,35 @@ export async function executeAgentAction(
       const validIds = new Set(
         validContacts.filter((c) => !(c.email && suppressedSet.has(c.email.toLowerCase()))).map((c) => c.id),
       );
+      // M13-G1 (T6) — re-verify the "why now" AT APPROVAL TIME (M2-R4): the
+      // payload was G1-checked when recorded, but the founder may approve days
+      // later and the signal may have expired since. The executor is the trust
+      // boundary; a stale candidate is skipped, never enrolled. (Also drops
+      // contacts with no email — an enrollment that can't send is a dead end.)
+      const companyByContact = new Map(validContacts.map((c) => [c.id, c.companyId]));
+      const emailByContact = new Map(validContacts.map((c) => [c.id, c.email]));
+      const g1Ctx = await loadG1Context(
+        tenantId,
+        validContacts.map((c) => c.companyId),
+      );
+      const g1Rows: GateDecisionInput[] = [];
       let enrolled = 0;
       for (const contactId of target.contactIds) {
         if (!validIds.has(contactId)) continue; // not this tenant's, or soft-deleted
+        const elig = checkContactEligibility({
+          email: emailByContact.get(contactId) ?? null,
+          deletedAt: null, // filtered at the select above
+          companyExcludedReason: null, // executor never loaded it (pre-existing)
+          g1: g1Ctx.forCompany(companyByContact.get(contactId) ?? null),
+        });
+        const g1Row = g1DecisionRow({
+          tenantId,
+          contactId,
+          result: elig,
+          reasons: { sequenceId: target.sequenceId, source: "approval_executor" },
+        });
+        if (g1Row) g1Rows.push(g1Row);
+        if (!elig.eligible) continue;
         // Idempotent: skip a contact already enrolled in this sequence (any status).
         const [existing] = await db
           .select({ id: sequenceEnrollments.id })
@@ -246,6 +275,8 @@ export async function executeAgentAction(
         }).onConflictDoNothing();
         enrolled++;
       }
+      // M13 T6 — best-effort verdict log (never blocks the executor result).
+      await recordGateDecisions(g1Rows);
       const name = str(p.sequenceName) ?? "the sequence";
       // Skipped = already-enrolled + any contact that failed the tenant/deletedAt
       // re-validation (so the count stays honest, not just "already enrolled").

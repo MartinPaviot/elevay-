@@ -5,6 +5,7 @@ import { sequences, sequenceSteps, sequenceEnrollments, contacts, companies } fr
 import { eq, sql, and, isNotNull, gte, isNull } from "drizzle-orm";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
@@ -92,6 +93,7 @@ export async function POST(
     // Filter to the eligible, not-yet-enrolled set (capped at maxEnroll).
     const toEnroll: string[] = [];
     let skippedCount = 0;
+    const g1Rows: GateDecisionInput[] = [];
     for (const contact of candidates) {
       if (toEnroll.length >= maxEnroll) break;
       if (enrolledIds.has(contact.id)) {
@@ -105,12 +107,21 @@ export async function POST(
         suppressedReason: contact.email && suppressedSet.has(contact.email.toLowerCase()) ? "hard_bounce" : null,
         g1: g1Ctx.forCompany(contact.companyId),
       });
+      const g1Row = g1DecisionRow({
+        tenantId: authCtx.tenantId,
+        contactId: contact.id,
+        result: eligibility,
+        reasons: { sequenceId: id, source: "autopilot_route" },
+      });
+      if (g1Row) g1Rows.push(g1Row);
       if (!eligibility.eligible) {
         skippedCount++;
         continue;
       }
       toEnroll.push(contact.id);
     }
+    // M13 T6 — best-effort verdict log (never blocks the selection).
+    await recordGateDecisions(g1Rows);
 
     if (toEnroll.length === 0) {
       return Response.json({
