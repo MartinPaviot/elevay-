@@ -1626,6 +1626,7 @@ export default function InboxPage() {
                   onSpam={handleSpam}
                   isSpamView={tab === "spam"}
                   apiRef={paneApiRef}
+                  onClose={() => setSelectedKey(null)}
                 />
               )}
               </div>

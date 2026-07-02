@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 import { injectMeetingLink } from "@/lib/inbox/meeting-link";
-import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages, ListPlus } from "lucide-react";
+import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
@@ -288,8 +288,6 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
   const [rewriteUndo, setRewriteUndo] = useState<string | null>(null);
   const [translateOpen, setTranslateOpen] = useState(false);
   const [translating, setTranslating] = useState(false);
-  const [draftOpen, setDraftOpen] = useState(false);
-  const [draftBullets, setDraftBullets] = useState("");
   const [drafting, setDrafting] = useState(false);
 
   // Refs
@@ -443,7 +441,10 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
 
   // B1 Cmd/Ctrl+J inside the composer = edit-with-AI (R2.1). With an instruction
   // typed (and a body to act on), submit it through the EXISTING handleRewrite;
-  // otherwise focus the always-visible AI-instructions field so the user can type.
+  // otherwise open the Rewrite menu with its instruction input focused. The
+  // always-visible instruction field is gone — it burned half the toolbar for a
+  // power feature (founder 2026-07-02: "le hit cmd to draft with ai ne sert à
+  // rien"); the shortcut still works through the menu.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
@@ -451,7 +452,8 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         if (rewriteInstruction.trim() && editBody.trim() && !rewriting) {
           void handleRewrite(rewriteInstruction);
         } else {
-          aiInstructionRef.current?.focus();
+          setRewriteOpen(true);
+          setTimeout(() => aiInstructionRef.current?.focus(), 50);
         }
       }
     }
@@ -543,23 +545,39 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     }
   }
 
+  // ONE Draft button (founder 2026-07-02: "mets juste draft — si la personne a
+  // écrit du texte tu peux t'en servir de base"). Body already has text → it IS
+  // the brief: expand it through the bullets endpoint. Empty body on a reply →
+  // the voice-matched thread draft (same endpoint as the pane's Generate
+  // draft). Undo restores whatever was there before.
   async function handleDraft() {
-    if (!draftBullets.trim() || drafting) return;
+    if (drafting) return;
+    const base = editBody.trim();
+    if (!base && !draft.threadId) return; // blank new email: nothing to draft from
     setDrafting(true);
     try {
-      const res = await fetch("/api/inbox/compose/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bullets: draftBullets }),
-      });
+      const res = base
+        ? await fetch("/api/inbox/compose/draft", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // Recipient context so the expansion greets the right person —
+            // without it a reply drafted from typed notes opened "Hi,".
+            body: JSON.stringify({
+              bullets: base,
+              context: toEmails.length > 0 ? `This email goes to ${toEmails.join(", ")}.` : undefined,
+            }),
+          })
+        : await fetch("/api/inbox/compose/reply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: draft.threadId }),
+          });
       const data = res.ok ? ((await res.json()) as { subject?: string; text?: string }) : {};
       if (data.text && data.text.trim()) {
         setRewriteUndo(editBody);
         // Fill the subject only when it's still empty — never clobber a "Re:".
         if (data.subject && data.subject.trim() && !editSubject.trim()) setEditSubject(data.subject.trim());
         setEditBody(data.text.trim());
-        setDraftOpen(false);
-        setDraftBullets("");
         toast(t("inbox.compose.draftedToast"), "success");
       } else {
         toast(t("inbox.compose.draftFailedDetailToast"), "warning");
@@ -724,6 +742,9 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                     className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                     title={`${t("inbox.compose.to")}: ${toEmails.join(", ")} — ${editSubject}`}
                   >
+                    <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                      {t("inbox.compose.to")}:
+                    </span>
                     <span className="shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
                       {toEmails[0]}{toEmails.length > 1 ? ` +${toEmails.length - 1}` : ""}
                     </span>
@@ -917,6 +938,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                   <div className="my-1 border-t" style={{ borderColor: "var(--color-border-default)" }} />
                   <div className="flex items-center gap-1 p-1">
                     <input
+                      ref={aiInstructionRef}
                       value={rewriteInstruction}
                       onChange={(e) => setRewriteInstruction(e.target.value)}
                       onKeyDown={(e) => {
@@ -972,43 +994,19 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               )}
             </div>
 
-            {/* Draft from bullets (INBOX-C07) */}
-            <div className="relative">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setDraftOpen((v) => !v)}
-                disabled={drafting}
-                className="gap-1.5"
-              >
-                {drafting ? <RefreshCw size={12} className="animate-spin" /> : <ListPlus size={12} />}
-                {t("inbox.compose.draftFromBullets")}
-              </Button>
-              {draftOpen && (
-                <div
-                  className="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border p-2 shadow-lg"
-                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
-                >
-                  <textarea
-                    value={draftBullets}
-                    onChange={(e) => setDraftBullets(e.target.value)}
-                    rows={4}
-                    placeholder={t("inbox.compose.bulletsPlaceholder")}
-                    className="w-full resize-none rounded border px-2 py-1 text-[12px] outline-none"
-                    style={{
-                      borderColor: "var(--color-border-default)",
-                      background: "var(--color-bg-page)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                  <div className="mt-1.5 flex justify-end">
-                    <Button size="sm" onClick={() => void handleDraft()} disabled={!draftBullets.trim() || drafting} loading={drafting}>
-                      {t("inbox.compose.generate")}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* ONE Draft button (INBOX-C07 folded in): typed text = the brief
+                it expands from; empty reply = the voice-matched thread draft.
+                No bullets popover — the body IS the input. */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleDraft()}
+              disabled={drafting || (!editBody.trim() && !draft.threadId)}
+              className="gap-1.5"
+            >
+              {drafting ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {t("inbox.compose.draftAction")}
+            </Button>
 
             {rewriteUndo != null && (
               <Button
@@ -1026,33 +1024,6 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             {/* Host extras (inbox SnippetBar chips) join THIS row instead of
                 stacking their own full-width row above the textarea. */}
             {toolbarExtra}
-            {/* B1 edit-with-AI (Upstream canonical position): an always-visible
-                instruction field, the flex-1 tail of the toolbar row. Submits to
-                the SAME handleRewrite; Cmd/Ctrl+J focuses or submits it. */}
-            <div
-              className="flex min-w-[200px] flex-1 items-center gap-1.5 rounded-lg border px-2 py-1"
-              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
-            >
-            <Sparkles size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} aria-hidden />
-            <input
-              ref={aiInstructionRef}
-              value={rewriteInstruction}
-              onChange={(e) => setRewriteInstruction(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && rewriteInstruction.trim() && editBody.trim() && !rewriting) {
-                  e.preventDefault();
-                  void handleRewrite(rewriteInstruction);
-                }
-              }}
-              disabled={rewriting || !editBody.trim()}
-              placeholder={t("inbox.compose.aiInstructionPlaceholder")}
-              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none disabled:opacity-60"
-              style={{ color: "var(--color-text-primary)" }}
-            />
-            {rewriting && (
-              <RefreshCw size={12} className="shrink-0 animate-spin" style={{ color: "var(--color-text-tertiary)" }} aria-hidden />
-            )}
-            </div>
           </div>
           <textarea
             ref={bodyRef}
@@ -1107,12 +1078,15 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           style={{ borderTop: "1px solid var(--color-border-default)" }}
         >
           <div className="flex items-center gap-2">
-            {/* Recipient count */}
-            <span className="text-[11px]" style={{ color: "var(--color-text-muted)" }}>
-              {toEmails.length > 0
-                ? t("inbox.compose.toRecipients", { list: toEmails.join(", ") })
-                : t("inbox.compose.noRecipients")}
-            </span>
+            {/* Recipient guard only — the header row already shows To once
+                (founder 2026-07-02: "ça sert à rien de re-répéter ça, j'aime
+                bien la vue unique de To:"). The footer speaks up only when
+                Send would fail. */}
+            {toEmails.length === 0 && (
+              <span className="text-[11px]" style={{ color: "var(--color-warning)" }}>
+                {t("inbox.compose.noRecipients")}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Auto-save status (drafts persist automatically; click = save now) */}
