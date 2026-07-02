@@ -583,6 +583,40 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     setSendError(null);
 
     try {
+      // M13-R8 (T4) — manual sends pass G2 (factual) + G5 (deliverability
+      // content) BEFORE the wire; a failing check is explained inline so the
+      // founder edits instead of discovering a blocked send. FAIL-CLOSED: a
+      // pregate outage blocks the send (the transport gate would block it
+      // anyway — this only surfaces the reason earlier).
+      const pregateRes = await fetch("/api/send/pregate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: toEmails[0],
+          subject: editSubject,
+          body: editBody,
+          contactId: draft.contactId || undefined,
+        }),
+      });
+      if (!pregateRes.ok) {
+        setSendError(t("inbox.compose.pregateUnavailable"));
+        setSending(false);
+        return;
+      }
+      const pregate = (await pregateRes.json()) as {
+        allowed: boolean;
+        failures?: Array<{ gate: number; detail: string }>;
+      };
+      if (!pregate.allowed) {
+        setSendError(
+          `${t("inbox.compose.pregateBlockedPrefix")} ${(pregate.failures ?? [])
+            .map((f) => f.detail)
+            .join(" · ")}`,
+        );
+        setSending(false);
+        return;
+      }
+
       const res = await fetch("/api/emails/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

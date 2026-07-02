@@ -259,6 +259,8 @@ export const messages: Record<Locale, Messages> = {
     "inbox.compose.bodyEmptyToast": "Le corps de l'e-mail ne peut pas être vide.",
     "inbox.compose.sendFailedStatus": "Échec de l'envoi ({status})",
     "inbox.compose.sendFailedGeneric": "Échec de l'envoi de l'e-mail. Réessayez.",
+    "inbox.compose.pregateUnavailable": "Vérification qualité indisponible — envoi bloqué par précaution. Réessayez.",
+    "inbox.compose.pregateBlockedPrefix": "Bloqué par les contrôles qualité :",
     // Inbox secondary surfaces — bundles, capture review, outbound table, event
     // card, prospect brief, thread tools (summary/ask/notes/labels/assignment).
     "inbox.bundles.empty.title": "Aucune newsletter à regrouper",
@@ -861,6 +863,8 @@ export const messages: Record<Locale, Messages> = {
     "inbox.compose.bodyEmptyToast": "Email body cannot be empty.",
     "inbox.compose.sendFailedStatus": "Send failed ({status})",
     "inbox.compose.sendFailedGeneric": "Failed to send email. Please try again.",
+    "inbox.compose.pregateUnavailable": "Quality check unavailable — send blocked as a precaution. Please retry.",
+    "inbox.compose.pregateBlockedPrefix": "Blocked by quality checks:",
     // Inbox secondary surfaces.
     "inbox.bundles.empty.title": "No newsletters to bundle",
     "inbox.bundles.empty.desc": "Bulk mailings — newsletters, promotions, digests — are grouped here by sender so you can clear them in one pass. Nothing's piled up yet.",

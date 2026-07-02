@@ -73,3 +73,17 @@ describe("INV-1 wiring guards (tenant daily outreach cap)", () => {
     expect(src).not.toMatch(/outreachDailyCap/i);
   });
 });
+
+describe("M13-R8 wiring guards (manual-send pregate)", () => {
+  it("the composer pregates manual sends (G2+G5) BEFORE calling /api/emails/send", () => {
+    const src = read("components/email-composer-panel.tsx");
+    expect(src).toContain("/api/send/pregate");
+    expect(src.indexOf("/api/send/pregate")).toBeLessThan(src.indexOf("/api/emails/send"));
+  });
+
+  it("the pregate never calls an LLM (deterministic G2 layer only)", () => {
+    const src = read("app/api/send/pregate/route.ts");
+    expect(src).toContain("decideFabricationGate");
+    expect(src).not.toMatch(/generateText|generateObject|anthropic|judgeFabrication/);
+  });
+});
