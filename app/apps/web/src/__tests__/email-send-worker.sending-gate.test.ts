@@ -199,6 +199,27 @@ describe("C1 processOutboundEmails — sending gate wired", () => {
     expect(resendSend).not.toHaveBeenCalled();
   });
 
+  // INV-1 (outreach-autopilot T1/T2): the tenant daily outreach cap resets at
+  // the tenant's midnight — same transient shape again. A cap-hit row must
+  // re-queue and go out tomorrow, never silently fail.
+  it("daily_cap_reached -> row re-queued (goes out tomorrow), resend never called", async () => {
+    store = [row({ id: "r1" })];
+    evaluateSend.mockResolvedValue({ send: false, code: "daily_cap_reached", reason: "Tenant daily outreach cap reached (100/100)" });
+    await handler({ step: fakeStep });
+    expect(store[0].status).toBe("queued");
+    expect(store[0].errorMessage).toContain("100/100");
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  // INV-1: the worker derives the send class SERVER-SIDE from its own row.
+  it("passes sendClass derived from the row's inReplyTo to the gate", async () => {
+    store = [row({ id: "r1" })];
+    evaluateSend.mockResolvedValue({ send: false, code: "cold-on-primary-blocked", reason: "x" });
+    await handler({ step: fakeStep });
+    const args = evaluateSend.mock.calls[0]?.[0] as { sendClass?: string };
+    expect(args.sendClass).toBe("outreach"); // row() has no inReplyTo
+  });
+
   it("allowed -> proceeds PAST the gate (not blocked by cold/cap)", async () => {
     // The module-level `resend` is null when RESEND_API_KEY is unset in the test
     // env, so an allowed send fails at the transport stage with that reason — which
