@@ -260,6 +260,13 @@ export function OutreachLearning() {
   if (failed && !data) return null;
 
   const days = data?.window.days ?? 30;
+  // Cold-start = no OUTCOME landed yet (sends is volume, not an outcome).
+  const noOutcomesYet =
+    !!data &&
+    data.outcomes.meetingsHeld === 0 &&
+    data.outcomes.meetingsBooked === 0 &&
+    data.outcomes.positiveReplies === 0 &&
+    data.outcomes.dealsAdvanced === 0;
 
   return (
     <section data-testid="outreach-learning">
@@ -324,6 +331,28 @@ export function OutreachLearning() {
               emphasis="volume"
             />
           </div>
+
+          {/* Cold-start framing (verify finding): five bare zeros read as
+              "broken". When no OUTCOME has landed yet, contextualize the strip
+              the way the forecast/cohort cards below do — "not yet", not
+              "nothing works". Adapts to whether any outreach has gone out. */}
+          {noOutcomesYet && (
+            <div className="mt-2 flex items-start gap-2">
+              <Sparkles
+                size={14}
+                className="mt-0.5 shrink-0"
+                style={{ color: "var(--color-text-muted)" }}
+              />
+              <p
+                className="text-[12px] leading-relaxed"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                {data.outcomes.sends > 0
+                  ? `${data.outcomes.sends.toLocaleString()} outreach sent in the last ${days} days. Meetings, replies, and advanced deals will populate here as they land.`
+                  : "No outreach sent yet. Your first meetings, replies, and deals will appear here as the autopilot runs."}
+              </p>
+            </div>
+          )}
 
           {/* Gates block-rate section. */}
           {sectionTitle("Quality gates: block rate")}

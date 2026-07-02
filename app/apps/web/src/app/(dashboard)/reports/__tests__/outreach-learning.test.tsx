@@ -75,4 +75,36 @@ describe("OutreachLearning", () => {
     const { container } = render(<OutreachLearning />);
     await waitFor(() => expect(container.querySelector("[data-testid='outreach-learning']")).toBeNull());
   });
+
+  it("does NOT show cold-start framing when an outcome has landed", async () => {
+    render(<OutreachLearning />);
+    await screen.findByText("Meetings held");
+    expect(screen.queryByText(/will populate here as they land/)).toBeNull();
+    expect(screen.queryByText(/No outreach sent yet/)).toBeNull();
+  });
+
+  it("cold-start with sends but no outcome: frames the zeros, never bare (verify fix)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...PAYLOAD,
+        outcomes: { meetingsHeld: 0, meetingsBooked: 0, positiveReplies: 0, dealsAdvanced: 0, sends: 42 },
+      }),
+    } as Response);
+    render(<OutreachLearning />);
+    expect(await screen.findByText(/42 outreach sent in the last 30 days/)).toBeTruthy();
+    expect(screen.getByText(/will populate here as they land/)).toBeTruthy();
+  });
+
+  it("cold-start with zero sends: frames as 'no outreach yet' (never five bare zeros)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...PAYLOAD,
+        outcomes: { meetingsHeld: 0, meetingsBooked: 0, positiveReplies: 0, dealsAdvanced: 0, sends: 0 },
+      }),
+    } as Response);
+    render(<OutreachLearning />);
+    expect(await screen.findByText(/No outreach sent yet/)).toBeTruthy();
+  });
 });
