@@ -60,11 +60,12 @@ export function listKnownSignalTypes(): string[] {
  */
 export const SIGNAL_PRIORS: Record<string, number> = {
   // Engagement — the strongest signals: the prospect responded.
+  // `email_opened` is deliberately absent (neutral 1.0): Apple MPP auto-opens
+  // make opens deliverability diagnostics, never a scoring/learning input.
   positive_reply: 2.5,
   meeting_booked: 2.5,
   linkedin_reply: 2.3,
   email_clicked: 1.4,
-  email_opened: 1.15,
   // Warm-network proximity — a 1st-degree path is a real, actionable edge.
   warm_connection: 1.8,
   linkedin_accept: 1.6,
@@ -146,7 +147,7 @@ export function inheritAliasMultipliers(
 /**
  * Attribute the engagement / producer signals that live in
  * `companies.properties.signals[]` (the array recordCompanySignal writes:
- * positive_reply, meeting_booked, email_opened/clicked, demo_request,
+ * positive_reply, meeting_booked, email_clicked, demo_request,
  * warm_connection, funding_recent, ...). The structured detectors only
  * read first-class subtrees, so without this these types never accrue a
  * won/lost outcome and ride their static prior forever. Freshness is
@@ -154,6 +155,12 @@ export function inheritAliasMultipliers(
  * path; the type is canonicalized so an alias rides its learned family.
  * Pure — exported for tests.
  */
+
+// Opens never enter attribution: Apple MPP fires them for unread mail, so a
+// "learned" lift on email_opened would be trained on noise. Recorded in
+// properties.signals[] for visibility, but invisible to the outcome loop.
+const NEVER_ATTRIBUTE = new Set(["email_opened"]);
+
 export function detectArraySignals(
   props: Record<string, unknown>,
   asOf: Date,
@@ -166,6 +173,7 @@ export function detectArraySignals(
   );
   const out: Array<{ signalType: string; firedAt: Date }> = [];
   for (const s of filterFreshSignals(arr, asOf)) {
+    if (NEVER_ATTRIBUTE.has(s.type)) continue;
     if (!s.detectedAt) continue;
     const firedAt = new Date(s.detectedAt);
     if (Number.isNaN(firedAt.getTime())) continue; // unparseable → can't attribute

@@ -8,10 +8,12 @@
  * and the Accounts SCORE column was empty. This is the free, first-party source
  * of signal the engine already produces; this helper routes it to the scorer.
  *
- * Each engagement type already carries an informed prior in
- * `lib/scoring/signal-outcomes.ts` (email_opened 1.15, email_clicked 1.4,
- * meeting_booked 2.5, demo_request 2.2), so recording it lifts the account
- * immediately and accrues outcome attribution once deals close.
+ * Each engagement type carries an informed prior in
+ * `lib/scoring/signal-outcomes.ts` (email_clicked 1.4, meeting_booked 2.5,
+ * demo_request 2.2), so recording it lifts the account immediately and accrues
+ * outcome attribution once deals close. Exception: `email_opened` is still
+ * recorded (visible, diagnostic) but deliberately has NO prior — Apple MPP
+ * auto-opens make it score-neutral (1.0), never a lift.
  *
  * Best-effort + idempotent: `recordCompanySignal` upserts by type (a fresher
  * open replaces a stale one), so repeated calls are safe. Company-level: a
