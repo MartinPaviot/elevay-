@@ -184,10 +184,13 @@
    tight tracking · a faint themed wash under translucent frosted chrome.
    ================================================================ */
 .inbox-shell {
-  /* one ink (#1A1A2E) at opacity steps instead of distinct grays — calmer */
+  /* one ink (#1A1A2E) at opacity steps instead of distinct grays — calmer.
+     muted raised 0.42 → 0.56: at 0.42 the 12px timestamps/chips sat ~3.5:1 on
+     #F1F4FA, under the WCAG AA 4.5:1 floor (audit 2026-07-02). tertiary stays
+     0.42 for decorative-only text. */
   --color-text-secondary: rgba(26, 26, 46, 0.62);
   --color-text-tertiary: rgba(26, 26, 46, 0.42);
-  --color-text-muted: rgba(26, 26, 46, 0.42);
+  --color-text-muted: rgba(26, 26, 46, 0.56);
   --color-text-placeholder: rgba(26, 26, 46, 0.34);
   /* hairline borders (cool, low-contrast) */
   --color-border-default: rgba(26, 26, 46, 0.08);
@@ -221,7 +224,8 @@
 .dark .inbox-shell {
   --color-text-secondary: rgba(237, 237, 245, 0.66);
   --color-text-tertiary: rgba(237, 237, 245, 0.42);
-  --color-text-muted: rgba(237, 237, 245, 0.42);
+  /* same AA floor as light mode (0.42 ≈ 3.6:1 on the dark shell) */
+  --color-text-muted: rgba(237, 237, 245, 0.56);
   --color-text-placeholder: rgba(237, 237, 245, 0.30);
   --color-border-default: rgba(255, 255, 255, 0.08);
   --color-border-moderate: rgba(255, 255, 255, 0.08);

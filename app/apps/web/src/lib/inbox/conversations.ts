@@ -98,6 +98,13 @@ export interface Conversation {
   /** 1 (hot) … 4 (neutral); only meaningful inside the attention lane. */
   priority: number;
   subject: string;
+  /**
+   * The literal RFC subject of the thread (last inbound, else last outbound),
+   * NEVER the AI summary. `subject` above prefers the summary for display — a
+   * reply built from it would break threading with "Re: <summary>" (audit
+   * 2026-07-02, F3). Empty for subjectless channels (LinkedIn).
+   */
+  rawSubject: string;
   contactId: string | null;
   /** Counterparty address (last inbound from, else last outbound to). */
   fromAddress: string;
@@ -528,6 +535,7 @@ export function buildConversations(input: {
         String(lastInboundMeta.subject ?? "") ||
         lastOutbound?.subject ||
         "(no subject)",
+      rawSubject: String(lastInboundMeta.subject ?? "") || lastOutbound?.subject || "",
       contactId: lastInbound?.contactId ?? lastOutbound?.contactId ?? null,
       fromAddress,
       snippet: normalizeSnippet(

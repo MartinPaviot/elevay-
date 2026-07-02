@@ -19,6 +19,10 @@ export interface ConversationListItem {
   lane: InboxLane;
   priority: number;
   subject: string;
+  /** Literal RFC thread subject (never the AI summary) — replies must thread
+   *  under "Re: <rawSubject>". Empty for subjectless channels; served by the
+   *  detail route (list rows omit it). */
+  rawSubject?: string;
   contactId: string | null;
   displayName: string;
   fromAddress: string;

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { outboundEmails, sequenceEnrollments, sequences, deals, activities, contacts, companies } from "@/db/schema";
 import { and, eq, desc, isNull, inArray } from "drizzle-orm";
 import { buildConversations } from "@/lib/inbox/conversations";
+import { senderNameOf } from "@/lib/inbox/sender-display";
 import { selectFreshCompanySignals } from "@/lib/inbox/company-signals";
 import { loadConversationRows, contactNameMap } from "@/lib/inbox/load";
 import { getInboxScope, scopeConversationRows } from "@/lib/inbox/user-scope";
@@ -180,7 +181,9 @@ export async function GET(req: Request) {
     return Response.json({
       conversation: {
         ...conversation,
-        displayName: contact?.name || conversation.fromAddress || "Unknown sender",
+        // Parsed, never the raw RFC header (audit 2026-07-02, F7/F8) — keeps
+        // the pane header + booking payload clean for non-CRM senders.
+        displayName: contact?.name || senderNameOf(conversation.fromAddress) || "Unknown sender",
       },
       contact,
       enrollment,

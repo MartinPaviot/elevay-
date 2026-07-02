@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -110,9 +111,12 @@ export interface BookMeetingResult {
   ok: boolean;
   joinUrl?: string | null;
   conferencing?: string;
-  /** A server-provided error message (already localized by the API, e.g. the FR
-   *  "Aucune boîte connectée…"). Undefined when the failure has no server message. */
+  /** A server-provided error message (English default). Undefined when the
+   *  failure has no server message. */
   error?: string;
+  /** Machine-readable failure reason (e.g. "calendar_not_connected") so the
+   *  caller can localize + render a recovery CTA instead of the raw message. */
+  reason?: string;
   /** The request itself failed (network/exception) — the caller shows a localized
    *  network-error message instead of a server `error`. */
   networkError?: boolean;
@@ -152,16 +156,17 @@ export async function bookMeetingRequest(slot: BookMeetingSlot): Promise<BookMee
       joinUrl?: string;
       meetLink?: string;
       conferencing?: string;
-      // apiError(...) returns { error: { code, message } } (an OBJECT) for the
-      // NOT_FOUND / VALIDATION_ERROR paths — incl. "Aucune boîte connectée…", the
-      // most likely first failure. The 409/500 paths return a bare string. Accept
-      // both and ALWAYS surface a string, else the toast renders an object child
-      // and React throws.
-      error?: string | { code?: string; message?: string };
+      // apiError(...) returns { error: { code, message, ...details } } (an
+      // OBJECT) for the NOT_FOUND / VALIDATION_ERROR paths — incl. the
+      // no-mailbox failure, the most likely first one. The 409/500 paths return
+      // a bare string. Accept both and ALWAYS surface a string, else the toast
+      // renders an object child and React throws.
+      error?: string | { code?: string; message?: string; reason?: string };
     };
     if (!res.ok || !data.booked) {
       const error = typeof data.error === "string" ? data.error : data.error?.message;
-      return { ok: false, error };
+      const reason = typeof data.error === "object" ? data.error?.reason : undefined;
+      return { ok: false, error, reason };
     }
     return {
       ok: true,
@@ -415,7 +420,14 @@ export function MeetingSchedulerCard({
     });
     setBooking(false);
     if (!r.ok) {
-      toast(r.networkError ? t("meeting.networkError") : (r.error ?? t("meeting.bookFailed")), "error");
+      toast(
+        r.networkError
+          ? t("meeting.networkError")
+          : r.reason === "calendar_not_connected"
+            ? t("meeting.noCalendarError")
+            : (r.error ?? t("meeting.bookFailed")),
+        "error",
+      );
       return;
     }
     toast(t("meeting.bookedToast", { name: firstName || t("common.theProspect") }), "success");
@@ -468,8 +480,27 @@ export function MeetingSchedulerCard({
       ) : (
       <>
       {!loadingSlots && source === "none" ? (
-        /* No calendar connected → straight to the manual picker. */
+        /* No calendar connected. Booking WILL fail server-side without a
+           bookable mailbox (CalendarNotConnectedError) — say so up front with a
+           recovery CTA instead of letting the manual picker walk the user into
+           a 400 (audit 2026-07-02, F1/F2). The picker stays below because
+           `source === "none"` can also be a transient availability failure. */
         <div>
+          <div
+            className="mb-2 flex items-center justify-between gap-2 rounded-md px-2.5 py-2"
+            style={{ background: "var(--color-bg-hover)", border: "1px solid var(--color-border-default)" }}
+          >
+            <span className="text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+              {t("meeting.noCalendar")}
+            </span>
+            <Link
+              href="/settings/mail-calendar"
+              className="shrink-0 text-[12px] font-medium hover:underline"
+              style={{ color: "var(--color-accent)" }}
+            >
+              {t("meeting.connectCalendar")}
+            </Link>
+          </div>
           <label className="block text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
             {t("meeting.when")}
             <input
@@ -481,7 +512,6 @@ export function MeetingSchedulerCard({
               style={{ background: "var(--color-bg-page)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
             />
           </label>
-          <p className="mt-1 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>{t("meeting.noCalendar")}</p>
         </div>
       ) : (
         /* Week strip — pick a free slot from your connected calendar. */

@@ -46,6 +46,22 @@ export function CommandPalette({
     setActive((a) => Math.min(a, Math.max(0, ranked.length - 1)));
   }, [ranked.length]);
 
+  // Escape closes the palette even when its input lost focus. Before this,
+  // Escape only lived on the input's onKeyDown — a palette whose focus was
+  // stolen (e.g. by another overlay) became an unclosable full-page z-50
+  // overlay that swallowed every click (audit 2026-07-02, F5). Capture phase +
+  // preventDefault so layers underneath don't also close on the same press.
+  useEffect(() => {
+    if (!open) return;
+    function onDocEscape(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onClose();
+    }
+    document.addEventListener("keydown", onDocEscape, true);
+    return () => document.removeEventListener("keydown", onDocEscape, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   function runCmd(cmd?: PaletteCommand) {

@@ -121,7 +121,7 @@ export const InboxRow = memo(function InboxRow({
       onMouseEnter={() => onHoverStart?.(c.key)}
       onMouseLeave={onHoverEnd}
       title={reasonTitle}
-      className={`group flex w-full items-center gap-2 border-b px-3 text-left transition-colors ${compact ? "" : "py-2"}`}
+      className={`group flex w-full items-center gap-2 border-b px-3 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-accent)] ${compact ? "" : "py-2"}`}
       style={{
         height: compact ? "var(--inbox-row-height-compact)" : "var(--inbox-row-height)",
         borderColor: "var(--color-border-default)",

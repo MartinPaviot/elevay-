@@ -295,13 +295,19 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
 
   // Restore a previously auto-saved draft for this context (run once, client
   // only — avoids an SSR/hydration mismatch by restoring AFTER the first paint).
+  // A parent-supplied BODY (a fresh AI generation, a prepared agent draft) wins
+  // over the cache: restoring here used to silently replace a draft the user
+  // just generated with the stale cached one (audit 2026-07-02). The cache only
+  // fills fields the incoming draft left empty.
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
+    if ((draft.body ?? "").trim()) return;
     const saved = loadDraftFromStorage(storageKey);
     if (!saved) return;
     if (saved.body != null) setEditBody(saved.body);
-    if (saved.subject != null) setEditSubject(saved.subject);
+    // The incoming subject (the thread's Re: subject) beats a cached AI one.
+    if (saved.subject != null && !(draft.subject ?? "").trim()) setEditSubject(saved.subject);
     if (saved.to?.length) setToEmails(saved.to);
     if (saved.cc?.length) {
       setCcEmails(saved.cc);
@@ -312,6 +318,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
       setShowBcc(true);
     }
     if (saved.savedAt) setDraftSavedAt(saved.savedAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   // Debounced auto-save: persist the in-progress draft ~0.8s after the last
@@ -403,10 +410,15 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     }
   }, [mounted]);
 
-  // Escape to close
+  // Escape to close. When the chat dock is open ON TOP of the composer, Escape
+  // belongs to the dock — one press must close the topmost layer only, not
+  // throw away the editing session underneath (audit 2026-07-02, F6). The dock
+  // is a sibling tree, so presence is read from its DOM marker.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (document.querySelector("[data-chat-dock-open]")) return;
+      onClose();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
@@ -976,7 +988,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               minHeight: inline ? "clamp(160px, 30vh, 380px)" : "200px",
               whiteSpace: "pre-wrap",
             }}
-            placeholder={t("inbox.compose.bodyPlaceholder")}
+            placeholder={t(draft.threadId ? "inbox.compose.bodyPlaceholder" : "inbox.compose.bodyPlaceholderNew")}
           />
         </div>
 

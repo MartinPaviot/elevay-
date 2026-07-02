@@ -182,9 +182,14 @@ export function ChatDock() {
 
   // Toggle with Cmd/Ctrl+J (the global shortcut hook ignores meta/ctrl, so
   // there's no conflict with n / "/" / g-chords). Esc closes when open.
+  // Defers on defaultPrevented: the email composer (edit-with-AI) and the
+  // inbox pane (generate-draft) claim Cmd/Ctrl+J via document listeners,
+  // which run before this window listener — without the check the dock
+  // opened ON TOP of the composer and stole focus (audit 2026-07-02, F4).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
+        if (e.defaultPrevented) return;
         e.preventDefault();
         setOpen((v) => !v);
       } else if (e.key === "Escape" && open) {
@@ -362,6 +367,7 @@ export function ChatDock() {
   return (
     <>
       <div
+        data-chat-dock-open
         className="fixed bottom-5 right-5 flex flex-col overflow-hidden rounded-2xl transition-all duration-150"
         style={{
           zIndex: 45,

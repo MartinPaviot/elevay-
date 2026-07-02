@@ -248,9 +248,13 @@ export async function POST(req: Request) {
       });
     } catch (err) {
       if (err instanceof CalendarNotConnectedError) {
+        // English default (the product is EN-by-default; #566 missed this one) +
+        // a machine-readable reason so the scheduler card can localize the
+        // message AND render a "Connect calendar" CTA instead of a bare toast.
         return apiError(
           "VALIDATION_ERROR",
-          "Aucune boîte connectée. Connecte Google, Microsoft, ou ta boîte email (IMAP/SMTP — Zimbra, Infomaniak…) dans Réglages → Mail & Calendar pour planifier une visio.",
+          "No mailbox connected. Connect Google, Microsoft, or your IMAP/SMTP mailbox (Zimbra, Infomaniak…) in Settings → Mail & Calendar to book meetings.",
+          { reason: "calendar_not_connected" },
         );
       }
       throw err;

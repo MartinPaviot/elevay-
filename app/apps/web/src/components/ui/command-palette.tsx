@@ -215,6 +215,9 @@ export function CommandPalette() {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        // A contextual palette (e.g. the inbox's, on the capture phase) already
+        // claimed this press — don't stack a second palette on top (F5).
+        if (e.defaultPrevented) return;
         e.preventDefault();
         setOpen((o) => !o);
       }

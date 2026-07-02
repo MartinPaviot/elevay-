@@ -45,6 +45,8 @@ import { type Snippet } from "@/lib/inbox/snippets";
 import { stripSignature } from "@/lib/inbox/mailbox-signature";
 import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
+import { senderNameOf, senderEmailOf } from "@/lib/inbox/sender-display";
+import { replySubjectFor } from "@/lib/inbox/reply-subject";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { IntelligencePanel } from "./_intelligence-panel";
 import { ThreadSummarySection } from "./_thread-summary";
@@ -311,11 +313,15 @@ export function ConversationPane({
     if (!detail) return;
     setReplyTones([]); // clear any tone chips from a prior thread (INBOX-C02)
     const conv = detail.conversation;
+    // The reply subject is NEVER a model output (audit 2026-07-02, F3): thread
+    // under the literal RFC subject; conv.subject (summary-preferring, display
+    // only) is the last resort for legacy payloads without rawSubject.
+    const threadRe = replySubjectFor(conv.rawSubject) || `Re: ${conv.subject}`;
     if (detail.preparedDraft) {
       setUsedDraftId(detail.preparedDraft.id);
       setComposer({
         to: replyTo,
-        subject: detail.preparedDraft.subject || `Re: ${conv.subject}`,
+        subject: threadRe,
         body: detail.preparedDraft.body,
         contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined,
         threadId: conversationKey ?? undefined, draftId: detail.preparedDraft.id,
@@ -324,7 +330,7 @@ export function ConversationPane({
     }
     const lastInbound = [...conv.messages].reverse().find((m) => m.direction === "inbound");
     if (!lastInbound?.body) {
-      setComposer({ to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
+      setComposer({ to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
       return;
     }
     setDrafting(true);
@@ -345,7 +351,7 @@ export function ConversationPane({
       const brief = data.replies?.find((r) => r.tone === "brief") ?? data.replies?.[0];
       setComposer({
         to: replyTo,
-        subject: brief?.subject ?? `Re: ${conv.subject}`,
+        subject: threadRe,
         body: brief?.body ?? "",
         contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined,
         threadId: conversationKey ?? undefined,
@@ -354,7 +360,7 @@ export function ConversationPane({
       setActiveTone(brief?.tone ?? null);
       if (!brief) toast(t("inbox.toastSuggestFailed"), "warning");
     } catch {
-      setComposer({ to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
+      setComposer({ to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
       toast(t("inbox.toastSuggestFailed"), "warning");
     } finally {
       setDrafting(false);
@@ -369,6 +375,7 @@ export function ConversationPane({
   const generateDraft = useCallback(async () => {
     if (!detail || !conversationKey) return;
     const conv = detail.conversation;
+    const threadRe = replySubjectFor(conv.rawSubject) || `Re: ${conv.subject}`;
     setReplyTones([]); // the voice-matched draft is the primary path, not tone variants
     setDrafting(true);
     try {
@@ -382,7 +389,9 @@ export function ConversationPane({
       if (text) {
         setComposer((c) => ({
           to: c?.to ?? replyTo,
-          subject: data.subject?.trim() || c?.subject || `Re: ${conv.subject}`,
+          // The server already forces the thread subject; the model subject only
+          // survives for subjectless threads (F3).
+          subject: data.subject?.trim() || c?.subject || threadRe,
           body: text,
           contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined,
           threadId: c?.threadId ?? conversationKey ?? undefined, draftId: c?.draftId,
@@ -390,11 +399,11 @@ export function ConversationPane({
       } else {
         // Fail-closed (R1.6): never fabricate. Leave an open composer's body
         // untouched; if none is open, open a blank one so the user can still write.
-        setComposer((c) => c ?? { to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
+        setComposer((c) => c ?? { to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
         toast(t("inbox.toastDraftFailed"), "warning");
       }
     } catch {
-      setComposer((c) => c ?? { to: replyTo, subject: `Re: ${conv.subject}`, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined });
+      setComposer((c) => c ?? { to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined });
       toast(t("inbox.toastDraftFailed"), "warning");
     } finally {
       setDrafting(false);
@@ -682,11 +691,15 @@ export function ConversationPane({
                   {conv.displayName}
                 </span>
               )}
-              {conv.fromAddress && (
-                <span className="truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  {conv.fromAddress}
-                </span>
-              )}
+              {/* Parsed address as secondary metadata — hidden when it IS the
+                  display name, so the header never shows the same string twice
+                  (audit 2026-07-02, F7). */}
+              {senderEmailOf(conv.fromAddress) &&
+                senderEmailOf(conv.fromAddress) !== (detail.contact ? detail.contact.name : conv.displayName) && (
+                  <span className="truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                    {senderEmailOf(conv.fromAddress)}
+                  </span>
+                )}
             </div>
             {/* Last interaction of any channel (INBOX-G03) — recency beyond this thread. */}
             {detail.lastInteraction && (
@@ -860,7 +873,7 @@ export function ConversationPane({
           {replyTones.length > 1 && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
               <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                Tone
+                {t("inbox.tone")}
               </span>
               {replyTones.map((r) => {
                 const active = activeTone === r.tone;
@@ -869,7 +882,9 @@ export function ConversationPane({
                     key={r.tone}
                     type="button"
                     onClick={() => {
-                      composerRef.current?.setBody(r.body, r.subject || undefined);
+                      // Body only — switching tone must never rewrite the reply
+                      // subject away from the thread's (F3).
+                      composerRef.current?.setBody(r.body);
                       setActiveTone(r.tone);
                     }}
                     className="rounded-full px-2 py-0.5 text-[11px] font-medium"
@@ -1010,7 +1025,7 @@ export function ConversationPane({
                   </span>
                 )}
                 <span className="truncate">
-                  {m.direction === "inbound" ? m.from || conv.displayName : t("inbox.you")}
+                  {m.direction === "inbound" ? senderNameOf(m.from) || conv.displayName : t("inbox.you")}
                 </span>
                 {m.direction === "inbound" && m.senderVerified === "pass" && (
                   <ShieldCheck

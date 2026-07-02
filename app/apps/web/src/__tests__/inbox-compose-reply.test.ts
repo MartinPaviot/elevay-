@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeReply, buildReplyPrompt, type ReplyDraft } from "@/lib/inbox/compose-reply";
+import { composeReply, buildReplyPrompt, replySubjectFor, type ReplyDraft } from "@/lib/inbox/compose-reply";
 import type { ThreadMessage } from "@/lib/inbox/summarize-thread";
 
 const msgs: ThreadMessage[] = [
@@ -35,6 +35,53 @@ describe("compose-reply (INBOX-C01/G08)", () => {
       throw new Error("model down");
     };
     expect(await composeReply(msgs, {}, boom)).toEqual({ subject: "", text: "" });
+  });
+});
+
+// Live audit 2026-07-02: the model rewrote the reply subject 4/4 ("Re: Bonjour",
+// "Re: Pricing for your team", …) because the prompt-side "keep the subject"
+// instruction is unenforceable — the model never sees the subject. The thread
+// subject must win in code; the model's subject is only a fallback for
+// subjectless threads (LinkedIn).
+describe("compose-reply forced thread subject (audit 2026-07-02)", () => {
+  const gen = async (): Promise<ReplyDraft> => ({ subject: "Re: Pricing for your team", text: "body" });
+
+  it("the thread subject overrides the model's invented subject", async () => {
+    const d = await composeReply(msgs, { threadSubject: "Re: Scaling outbound at Northwind" }, gen);
+    expect(d.subject).toBe("Re: Scaling outbound at Northwind");
+  });
+
+  it("prefixes Re: when the thread subject has none", async () => {
+    const d = await composeReply(msgs, { threadSubject: "Scaling outbound at Northwind" }, gen);
+    expect(d.subject).toBe("Re: Scaling outbound at Northwind");
+  });
+
+  it("falls back to the model subject for subjectless threads", async () => {
+    const d = await composeReply(msgs, { threadSubject: "" }, gen);
+    expect(d.subject).toBe("Re: Pricing for your team");
+    const d2 = await composeReply(msgs, {}, gen);
+    expect(d2.subject).toBe("Re: Pricing for your team");
+  });
+
+  it("replySubjectFor keeps existing Re:/Fwd: prefixes (any case) and trims", () => {
+    expect(replySubjectFor("RE: hello")).toBe("RE: hello");
+    expect(replySubjectFor("fwd: docs")).toBe("fwd: docs");
+    expect(replySubjectFor("  hello  ")).toBe("Re: hello");
+    expect(replySubjectFor("   ")).toBe("");
+  });
+
+  it("the prompt no longer offers the 'unless a new one is clearly better' escape hatch", () => {
+    const p = buildReplyPrompt(msgs);
+    expect(p).not.toContain("clearly better");
+    expect(p).toContain("only used when the thread has no subject");
+  });
+
+  it("the no-fabrication clause covers product facts, calendar slots and FR register", () => {
+    const p = buildReplyPrompt(msgs);
+    expect(p).toContain("pricing model or structure");
+    expect(p).toContain("SOC 2");
+    expect(p).toContain("Never propose a specific meeting date or time slot");
+    expect(p).toContain('never mix "tu" and "vous"');
   });
 });
 
