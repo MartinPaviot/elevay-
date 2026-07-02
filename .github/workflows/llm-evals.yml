@@ -1,0 +1,51 @@
+# Weekly KEYED eval run — the LLM behavior tiers of every quality gate.
+#
+# The 2026-07-02 hostile audit confirmed the LLM tiers (describe.skipIf(!HAS_LLM))
+# never ran automatically anywhere: CI is keyless so they all SKIP, and no cron
+# existed — a prompt regression passed CI green until someone remembered to run
+# `pnpm eval:run` locally with a key. This workflow is that missing cron.
+#
+# REQUIRES the ANTHROPIC_API_KEY repository secret. The guard step fails loudly
+# when it is absent — a green run must mean the LLM tiers actually executed,
+# never that everything silently skipped.
+name: LLM evals (keyed)
+
+on:
+  schedule:
+    # Mondays 06:30 UTC — before the founder's week starts.
+    - cron: "30 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  eval-run:
+    name: eval:run (LLM tiers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Guard — the key must exist (a keyless run would skip every LLM tier and lie green)
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY repository secret is not set — the LLM eval tiers would all skip. Add it in Settings → Secrets → Actions."
+            exit 1
+          fi
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Eval gate (deterministic floors + LLM tiers)
+        run: pnpm --filter @leadsens/web eval:run
