@@ -2,14 +2,12 @@
  * Shared initials avatar for a sender (INBOX-R06). Deterministic, no remote logo
  * fetch and no provider name — initials + a stable colour derived purely from the
  * sender address (so the same person always gets the same chip across the list
- * and the reading pane). The palette is self-contained (its own light chip on any
- * theme), reusing the pure, unit-tested helpers in lib/inbox/sender-auth.
+ * and the reading pane). Colours come from the app-wide badge token system
+ * (hash → --color-badge-N, the same 10-hue palette every chip derives from) —
+ * the former raw computed-HSL palette was the inbox's last token bypass
+ * (continuity pass 2026-07-02).
  */
 import { initialsFor, avatarColorIndex } from "@/lib/inbox/sender-auth";
-
-// Ten distinct hues; the chip is a light disc with darker same-hue text, legible
-// on both the light and dark inbox backgrounds.
-const HUES = [8, 28, 48, 140, 188, 214, 258, 288, 322, 350];
 
 export function SenderAvatar({
   name,
@@ -21,7 +19,7 @@ export function SenderAvatar({
   size?: number;
 }) {
   const seed = (email || name || "?").toLowerCase();
-  const hue = HUES[avatarColorIndex(seed, HUES.length)];
+  const idx = avatarColorIndex(seed);
   return (
     <span
       aria-hidden
@@ -30,8 +28,9 @@ export function SenderAvatar({
         width: size,
         height: size,
         fontSize: Math.round(size * 0.4),
-        background: `hsl(${hue} 58% 88%)`,
-        color: `hsl(${hue} 52% 30%)`,
+        background: `var(--color-badge-${idx}-bg)`,
+        color: `var(--color-badge-${idx})`,
+        border: `1px solid color-mix(in srgb, var(--color-badge-${idx}) 20%, transparent)`,
       }}
     >
       {initialsFor(name || email)}

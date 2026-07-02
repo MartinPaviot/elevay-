@@ -160,7 +160,7 @@ export const InboxRow = memo(function InboxRow({
           style={{
             borderColor: multiSelected ? "var(--color-accent)" : "var(--color-border-hover)",
             background: multiSelected ? "var(--color-accent)" : "var(--color-bg-card)",
-            color: "#FFFFFF",
+            color: "var(--color-bg-card)",
           }}
           title="Select (x) · Shift-click for a range"
         >
