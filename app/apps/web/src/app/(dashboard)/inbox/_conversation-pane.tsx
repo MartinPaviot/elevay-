@@ -36,6 +36,7 @@ import { EmailComposerPanel, type EmailComposerDraft, type EmailComposerHandle }
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
 import { MeetingSchedulerCard } from "@/components/meeting-scheduler";
 import { timeAgo } from "./_time-ago";
+import { SenderAvatar } from "./_sender-avatar";
 import { reasonTooltip, type ConversationDetail, type InboxLane } from "./_types";
 import { EmailBody } from "./_email-body";
 import { EventCard } from "./_event-card";
@@ -712,6 +713,15 @@ export function ConversationPane({
               )}
             </div>
             <div className="mt-1 flex items-center gap-2">
+              {/* Avatar + DKIM shield live HERE, not on a per-message row: on a
+                  single-message thread that row repeated the header verbatim
+                  (name, time, own To address) and burned ~60px before the body
+                  (founder, UI pass 2026-07-02: "ça bouffe de la place"). */}
+              <SenderAvatar
+                name={detail.contact ? detail.contact.name : conv.displayName}
+                email={senderEmailOf(conv.fromAddress)}
+                size={20}
+              />
               {detail.contact ? (
                 <Link
                   href={`/contacts/${detail.contact.id}`}
@@ -725,6 +735,20 @@ export function ConversationPane({
                   {conv.displayName}
                 </span>
               )}
+              {(() => {
+                const lastInbound = [...conv.messages].reverse().find((m) => m.direction === "inbound");
+                if (lastInbound?.senderVerified === "pass") {
+                  return (
+                    <ShieldCheck size={13} className="shrink-0" style={{ color: "var(--color-success)" }} aria-label="Sender domain verified (SPF/DKIM/DMARC)" />
+                  );
+                }
+                if (lastInbound?.senderVerified === "fail") {
+                  return (
+                    <ShieldAlert size={13} className="shrink-0" style={{ color: "var(--color-warning)" }} aria-label="Sender failed domain authentication" />
+                  );
+                }
+                return null;
+              })()}
               {/* Parsed address as secondary metadata — hidden when it IS the
                   display name, so the header never shows the same string twice
                   (audit 2026-07-02, F7). */}
@@ -1079,7 +1103,20 @@ export function ConversationPane({
 
         {/* ── Messages FIRST (email-first, Upstream feel): the email reads before
              the intelligence stack, which is collapsed below. ── */}
-        {conv.messages.map((m, i) => (
+        {conv.messages.map((m, i) => {
+          // Single-inbound-message thread: the pane header ALREADY carries the
+          // attribution (avatar + name + shield, and "Last interaction: Nd ago ·
+          // email received" = this very message) — repeating it here burned
+          // ~60px before the body (founder, UI pass 2026-07-02: "le bloc SC
+          // Sarah Chen / 12d ago / To … pourrait être en haut, ça bouffe de la
+          // place"). Only hide when the header's last-interaction line really
+          // shows this email's recency, so the timestamp is never lost; the To
+          // line stays only when it says more than "your own mailbox" (+N).
+          const attributionInHeader =
+            conv.messages.length === 1 &&
+            m.direction === "inbound" &&
+            Boolean(detail.lastInteraction && detail.lastInteraction.type.startsWith("email"));
+          return (
           <div
             key={m.id}
             id={`thread-msg-${i}`}
@@ -1092,6 +1129,7 @@ export function ConversationPane({
               marginLeft: m.direction === "outbound" ? "24px" : "0",
             }}
           >
+            {!attributionInHeader && (
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
                 {m.direction === "inbound" && (
@@ -1135,6 +1173,7 @@ export function ConversationPane({
                 {m.at ? timeAgo(m.at) : ""}
               </span>
             </div>
+            )}
             {/* Recipients — m.to was captured but never rendered anywhere, so
                 multi-recipient threads hid who each message actually went to
                 (round 2). recipientPartsOf keeps quoted display-names with
@@ -1142,6 +1181,9 @@ export function ConversationPane({
             {m.to && (() => {
               const parts = recipientPartsOf(m.to);
               if (parts.length === 0) return null;
+              // Attribution folded into the header: "To <your own mailbox>" says
+              // nothing — keep the line only for multi-recipient mails.
+              if (attributionInHeader && parts.length === 1) return null;
               return (
                 <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--color-text-tertiary)" }} title={m.to}>
                   {t("inbox.toRecipient", { name: senderNameOf(parts[0]) })}
@@ -1164,7 +1206,8 @@ export function ConversationPane({
               <AttachmentStrip attachments={m.attachments} />
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {/* ── Intelligence (collapsed by default — one click away from the email) ── */}
         <IntelligencePanel key={conversationKey ?? ""} count={intelCount}>
