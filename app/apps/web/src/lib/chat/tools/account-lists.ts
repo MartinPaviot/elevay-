@@ -26,6 +26,7 @@ import {
   createAccountListWithMembers,
 } from "@/lib/accounts/account-lists-db";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { guardEnrollment } from "@/lib/anti-collision/enroll-guard";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
@@ -186,10 +187,12 @@ export function buildAccountListTools(ctx: ToolContext) {
         // Batch-load the gate inputs: contact + its company's exclusion, the
         // suppression set, and who's already in this sequence.
         const rows = await db
-          .select({ id: contacts.id, email: contacts.email, deletedAt: contacts.deletedAt, companyExcludedReason: companies.excludedReason })
+          .select({ id: contacts.id, email: contacts.email, deletedAt: contacts.deletedAt, companyId: contacts.companyId, companyExcludedReason: companies.excludedReason })
           .from(contacts)
           .leftJoin(companies, eq(contacts.companyId, companies.id))
           .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, ids)));
+        // M13-G1 (T5) — fresh-signal + ICP-fit facts, one batched load.
+        const g1Ctx = await loadG1Context(tenantId, rows.map((r) => r.companyId));
         const suppressed = await loadSuppressedEmails(tenantId, rows.map((r) => r.email).filter((e): e is string => !!e));
         const already = new Set(
           (await db.select({ contactId: sequenceEnrollments.contactId }).from(sequenceEnrollments)
@@ -206,6 +209,7 @@ export function buildAccountListTools(ctx: ToolContext) {
             deletedAt: r.deletedAt,
             companyExcludedReason: r.companyExcludedReason,
             suppressedReason: r.email && suppressed.has(r.email.toLowerCase()) ? "hard_bounce" : null,
+            g1: g1Ctx.forCompany(r.companyId),
           });
           if (!elig.eligible) { skipped++; continue; }
           eligible.push(r.id);

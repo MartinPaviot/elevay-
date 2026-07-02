@@ -37,6 +37,15 @@ vi.mock("@/lib/agents/agent-actions", () => ({
   recordAgentAction: (...a: unknown[]) => recordAgentAction(...a),
 }));
 
+// M13-G1 (T5) — boundary mock, permissive default (fresh signal present, no
+// ICP scoring) so the pre-G1 cases keep their semantics; the loader itself is
+// covered by src/__tests__/eligibility-context.test.ts.
+vi.mock("@/lib/sequences/eligibility-context", () => ({
+  loadG1Context: vi.fn(async () => ({
+    forCompany: () => ({ freshSignalCount: 1, icpScore: null, icpScoringActive: false }),
+  })),
+}));
+
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(),

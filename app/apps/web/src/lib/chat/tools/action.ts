@@ -35,6 +35,7 @@ import { escapeForPrompt, wrapUntrustedInput } from "@/lib/chat/prompt-safety";
 import { generateInviteToken } from "@/lib/auth/invite-token";
 import { makeTool, type ToolContext } from "./context";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import { loadSuppressedEmails, isEmailSuppressed } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
@@ -607,12 +608,22 @@ RULES:
 
         let enrolled = 0;
         let skipped = 0;
-        for (const contactId of input.contactIds.slice(0, 100)) {
+        // M13-G1 (T5) — batch the fresh-signal + ICP-fit facts once for the
+        // whole chat enrollment (parity with /enroll: the agent cannot bypass
+        // the "why now" rule either).
+        const idBatch = input.contactIds.slice(0, 100);
+        const companyRows = await db
+          .select({ id: contacts.id, companyId: contacts.companyId })
+          .from(contacts)
+          .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, idBatch)));
+        const g1Ctx = await loadG1Context(tenantId, companyRows.map((r) => r.companyId));
+        for (const contactId of idBatch) {
           const [contact] = await db
             .select({
               id: contacts.id,
               email: contacts.email,
               deletedAt: contacts.deletedAt,
+              companyId: contacts.companyId,
               companyExcludedReason: companies.excludedReason,
             })
             .from(contacts)
@@ -632,6 +643,7 @@ RULES:
             deletedAt: contact.deletedAt,
             companyExcludedReason: contact.companyExcludedReason,
             suppressedReason: suppressed ? "hard_bounce" : null,
+            g1: g1Ctx.forCompany(contact.companyId),
           });
           if (!eligibility.eligible) {
             skipped++;

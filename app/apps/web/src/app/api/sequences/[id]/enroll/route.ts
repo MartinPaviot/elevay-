@@ -8,8 +8,9 @@ import {
   contacts,
   companies,
 } from "@/db/schema";
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import { isEmailSuppressed } from "@/lib/sequences/suppression";
 import { guardEnrollment, releaseEnrollment } from "@/lib/anti-collision/enroll-guard";
 
@@ -59,6 +60,20 @@ export async function POST(
 
     let enrolled = 0;
     let skipped = 0;
+    const skippedReasons: Record<string, number> = {};
+
+    // M13-G1 (T5) — batch the G1 facts (fresh signals + ICP fit) for every
+    // involved company in ONE load; the manual path is G1-gated like every
+    // other enrollment chokepoint (INV-2: no fresh signal = no enrollment).
+    const idBatch = contactIds.slice(0, 100);
+    const companyRows = await db
+      .select({ id: contacts.id, companyId: contacts.companyId })
+      .from(contacts)
+      .where(and(eq(contacts.tenantId, authCtx.tenantId), inArray(contacts.id, idBatch)));
+    const g1Ctx = await loadG1Context(
+      authCtx.tenantId,
+      companyRows.map((r) => r.companyId),
+    );
 
     // Get first step delay
     const steps = await db
@@ -70,7 +85,7 @@ export async function POST(
 
     const firstStepDelay = steps[0]?.delayDays || 0;
 
-    for (const contactId of contactIds.slice(0, 100)) {
+    for (const contactId of idBatch) {
       // Check contact exists, belongs to tenant. Anti-ICP exclusion
       // (B1) is enforced via leftJoin on companies — a flagged company
       // skips here even if the caller passed its contact explicitly.
@@ -79,6 +94,7 @@ export async function POST(
           id: contacts.id,
           email: contacts.email,
           deletedAt: contacts.deletedAt,
+          companyId: contacts.companyId,
           companyExcludedReason: companies.excludedReason,
         })
         .from(contacts)
@@ -107,9 +123,12 @@ export async function POST(
         deletedAt: contact.deletedAt,
         companyExcludedReason: contact.companyExcludedReason,
         suppressedReason: suppressed ? "hard_bounce" : null,
+        g1: g1Ctx.forCompany(contact.companyId),
       });
       if (!eligibility.eligible) {
         skipped++;
+        skippedReasons[eligibility.reason] =
+          (skippedReasons[eligibility.reason] ?? 0) + 1;
         continue;
       }
 
@@ -160,7 +179,9 @@ export async function POST(
       enrolled++;
     }
 
-    return Response.json({ success: true, enrolled, skipped });
+    // The reasons make a G1 refusal EXPLICIT to the founder (M13-G1 done
+    // criterion) instead of a silent skip count.
+    return Response.json({ success: true, enrolled, skipped, skippedReasons });
   } catch (error) {
     console.error("Failed to enroll contacts:", error);
     return Response.json({ error: "Failed to enroll contacts" }, { status: 500 });

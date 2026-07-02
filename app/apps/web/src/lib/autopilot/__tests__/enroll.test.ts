@@ -6,13 +6,22 @@ import type { recordAgentAction } from "@/lib/agents/agent-actions";
 const guardMock = vi.fn();
 const recordDraftMock = vi.fn();
 const valuesSpy = vi.fn();
+// M13-G1 (T5) — the primitive now resolves the contact's company then loads
+// the G1 facts; both injectable.
+let g1: { freshSignalCount: number; icpScore: number | null; icpScoringActive: boolean } = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
+const loadG1Mock = vi.fn(async () => ({ forCompany: () => g1 }));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const database = { insert: () => ({ values: valuesSpy }) } as any;
+const database = {
+  insert: () => ({ values: valuesSpy }),
+  select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ companyId: "co1" }] }) }) }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
 
 const deps = (): EnrollOneDeps => ({
   guard: guardMock as unknown as typeof guardEnrollment,
   recordDraft: recordDraftMock as unknown as typeof recordAgentAction,
   database,
+  loadG1: loadG1Mock as unknown as EnrollOneDeps["loadG1"],
 });
 
 beforeEach(() => {
@@ -20,6 +29,8 @@ beforeEach(() => {
   recordDraftMock.mockReset().mockResolvedValue(undefined);
   // values() chains .onConflictDoNothing() (enrollment dedup index).
   valuesSpy.mockReset().mockReturnValue({ onConflictDoNothing: () => Promise.resolve(undefined) });
+  g1 = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
+  loadG1Mock.mockClear();
 });
 
 describe("enrollOne", () => {
@@ -52,5 +63,31 @@ describe("enrollOne", () => {
     const res = await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
     expect(res.outcome).toBe("collision");
     expect(valuesSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("enrollOne — M13-G1 (T5)", () => {
+  it("no fresh signal -> ineligible: no draft, no enrollment, guard never claimed", async () => {
+    g1 = { freshSignalCount: 0, icpScore: 80, icpScoringActive: true };
+    for (const action of ["draft", "auto"] as const) {
+      const res = await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action }, deps());
+      expect(res.outcome).toBe("ineligible");
+    }
+    expect(recordDraftMock).not.toHaveBeenCalled();
+    expect(guardMock).not.toHaveBeenCalled();
+    expect(valuesSpy).not.toHaveBeenCalled();
+  });
+
+  it("below ICP threshold with active scoring -> ineligible", async () => {
+    g1 = { freshSignalCount: 2, icpScore: 10, icpScoringActive: true };
+    const res = await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
+    expect(res.outcome).toBe("ineligible");
+  });
+
+  it("unscored tenant (icpScoringActive false) -> the threshold never bites (sane default)", async () => {
+    g1 = { freshSignalCount: 1, icpScore: null, icpScoringActive: false };
+    guardMock.mockResolvedValue({ proceed: true });
+    const res = await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
+    expect(res.outcome).toBe("enrolled");
   });
 });
