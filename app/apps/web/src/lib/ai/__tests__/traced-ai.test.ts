@@ -9,6 +9,7 @@ const {
   getCoachingPromptBlock,
   getObjectionsPromptBlock,
   getWinLossPromptBlock,
+  getDecisionInsightsPromptBlock,
 } = vi.hoisted(() => ({
   getActivePrompt: vi.fn(),
   getFewShotExamples: vi.fn(),
@@ -16,12 +17,16 @@ const {
   getCoachingPromptBlock: vi.fn(),
   getObjectionsPromptBlock: vi.fn(),
   getWinLossPromptBlock: vi.fn(),
+  getDecisionInsightsPromptBlock: vi.fn(),
 }));
 vi.mock("@/lib/evals/flywheel", () => ({ getActivePrompt, getFewShotExamples }));
 vi.mock("@/lib/playbook/get-playbook", () => ({ getPlaybookPromptBlock }));
 vi.mock("@/lib/coaching/get-coaching-guidance", () => ({ getCoachingPromptBlock }));
 vi.mock("@/lib/emails/get-objections", () => ({ getObjectionsPromptBlock }));
 vi.mock("@/lib/analysis/get-winloss", () => ({ getWinLossPromptBlock }));
+vi.mock("@/lib/decision-insights/get-decision-insights", () => ({
+  getDecisionInsightsPromptBlock,
+}));
 
 // Stub the infra siblings traced-ai imports at module load so the unit
 // under test stays hermetic (these are never called by the functions we
@@ -42,11 +47,13 @@ beforeEach(() => {
   getCoachingPromptBlock.mockReset();
   getObjectionsPromptBlock.mockReset();
   getWinLossPromptBlock.mockReset();
+  getDecisionInsightsPromptBlock.mockReset();
   // Default: no entries -> all blocks empty (the common cold-start case).
   getPlaybookPromptBlock.mockResolvedValue("");
   getCoachingPromptBlock.mockResolvedValue("");
   getObjectionsPromptBlock.mockResolvedValue("");
   getWinLossPromptBlock.mockResolvedValue("");
+  getDecisionInsightsPromptBlock.mockResolvedValue("");
 });
 
 describe("injectFewShotExamples", () => {
@@ -335,6 +342,51 @@ describe("applyLearnedContext — per-company win/loss injection", () => {
     await expect(
       applyLearnedContext("draft-email", params, "tenant-1", { companyId: "co1" }),
     ).resolves.toBeUndefined();
+    expect(params.system).toBe("BASE");
+  });
+});
+
+describe("applyLearnedContext — weekly decision-insight injection (T9)", () => {
+  beforeEach(() => {
+    getActivePrompt.mockResolvedValue(null);
+    getFewShotExamples.mockResolvedValue([]);
+  });
+
+  it("appends the decision insights LAST, after every other block", async () => {
+    getPlaybookPromptBlock.mockResolvedValue("PLAYBOOK BLOCK");
+    getWinLossPromptBlock.mockResolvedValue("WINLOSS BLOCK");
+    getDecisionInsightsPromptBlock.mockResolvedValue("INSIGHTS BLOCK");
+
+    const params: Record<string, unknown> = { system: "BASE", prompt: "write a cold email" };
+    await applyLearnedContext("draft-email", params, "tenant-1", { companyId: "co1" });
+
+    expect(getDecisionInsightsPromptBlock).toHaveBeenCalledWith("tenant-1");
+    expect(params.system).toBe("BASE\n\nPLAYBOOK BLOCK\n\nWINLOSS BLOCK\n\nINSIGHTS BLOCK");
+  });
+
+  it("treats the campaign decision engine as a drafting agent (T9 set extension)", async () => {
+    getDecisionInsightsPromptBlock.mockResolvedValue("INSIGHTS BLOCK");
+
+    const params: Record<string, unknown> = { system: "BASE", prompt: "decide next action" };
+    await applyLearnedContext("decision-engine", params, "tenant-1");
+
+    expect(getDecisionInsightsPromptBlock).toHaveBeenCalledWith("tenant-1");
+    expect(params.system).toBe("BASE\n\nINSIGHTS BLOCK");
+  });
+
+  it("does not fetch decision insights for a non-drafting agent", async () => {
+    const params: Record<string, unknown> = { system: "BASE", prompt: "classify" };
+    await applyLearnedContext("process-reply", params, "tenant-1");
+
+    expect(getDecisionInsightsPromptBlock).not.toHaveBeenCalled();
+    expect(params.system).toBe("BASE");
+  });
+
+  it("never throws on the hot path when the insight lookup fails", async () => {
+    getDecisionInsightsPromptBlock.mockRejectedValue(new Error("db down"));
+
+    const params: Record<string, unknown> = { system: "BASE", prompt: "q" };
+    await expect(applyLearnedContext("draft-email", params, "tenant-1")).resolves.toBeUndefined();
     expect(params.system).toBe("BASE");
   });
 });
