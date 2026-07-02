@@ -689,6 +689,26 @@
   outline: none;
 }
 
+/* Chat composer focus: a hairline brand-gradient border hugging the field
+   replaces the global ring, which read thick and detached on the chat bars
+   (2px + 2px offset + a 2px radius that ignores the field's rounded-xl —
+   founder feedback 2026-07-02). Double-background so the gradient follows
+   the field's own radius; --composer-bg lets each composer keep its inner
+   fill (bg-card on /chat, bg-surface in the dock). The gradient border IS
+   the visible focus indicator, so WCAG 2.4.7 stays satisfied; textareas
+   match :focus-visible on any focus, hence plain :focus here. */
+textarea.composer-brand-focus:focus {
+  outline: none;
+  border-color: transparent !important;
+  background:
+    linear-gradient(
+        var(--composer-bg, var(--color-bg-card)),
+        var(--composer-bg, var(--color-bg-card))
+      )
+      padding-box,
+    var(--gradient-brand) border-box !important;
+}
+
 /* Sanitized email HTML body in the reading pane (INBOX-R01). Scoped so a
    message's own markup can never break the 400px pane: images and tables are
    bounded, long tokens wrap, and overflow scrolls instead of pushing layout.

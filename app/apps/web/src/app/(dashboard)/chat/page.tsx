@@ -502,7 +502,7 @@ export default function ChatPage() {
             placeholder="Ask Elevay..."
             autoFocus
             rows={1}
-            className={`block w-full resize-none rounded-xl pl-10 pr-20 outline-none transition-all ${big ? "py-3.5 text-[15px]" : "py-2.5 text-[14px]"}`}
+            className={`composer-brand-focus block w-full resize-none rounded-xl pl-10 pr-20 outline-none transition-all ${big ? "py-3.5 text-[15px]" : "py-2.5 text-[14px]"}`}
             style={{
               background: "var(--color-bg-card)",
               color: "var(--color-text-primary)",
@@ -512,8 +512,6 @@ export default function ChatPage() {
               overflowY: "hidden",
               lineHeight: 1.5,
             }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-border-focus)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--color-border-default)"; }}
             disabled={chat.status === "streaming"}
           />
           <button
