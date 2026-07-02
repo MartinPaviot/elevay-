@@ -183,17 +183,57 @@ export async function checkEmailOutcomes(
     eventType;
 
   for (const outcome of watchingOutcomes) {
-    if (
-      outcome.actionType === "send_followup" ||
-      outcome.actionType === "draft_reply" ||
-      outcome.actionType === "enroll_sequence" ||
-      outcome.actionType === "email-send" ||
-      outcome.actionType === "email-reply" ||
-      // T8 — regular outreach sends (lib/outreach/decision-record.ts) resolve
-      // on the same real-time email events as the other email actions.
-      outcome.actionType === "outreach-send"
-    ) {
+    if (EMAIL_FAMILY_ACTION_TYPES.has(outcome.actionType)) {
       await resolveOutcome(outcome.id, outcomeType);
+    }
+  }
+}
+
+/** The action types whose watchers resolve on email-thread events — shared
+ *  by the email checker above and the meeting checker below (a meeting is
+ *  the OUTCOME of the outreach that produced the thread). Includes T8's
+ *  outreach-send (lib/outreach/decision-record.ts). */
+const EMAIL_FAMILY_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "send_followup",
+  "draft_reply",
+  "enroll_sequence",
+  "email-send",
+  "email-reply",
+  "outreach-send",
+]);
+
+/**
+ * T12 (outreach-autopilot) — meeting outcome producer. Meetings NEVER
+ * resolved a watcher before this: every outreach that led to a booked or
+ * held meeting either expired to no_response (0.0) or was consumed by a
+ * weaker reply event (0.9 max) — a structural bias in the learning data
+ * against exactly the outcomes the POSITIVITY hierarchy values MOST
+ * (meeting_held 1.0 > meeting_booked 0.95, #609). Called from the booking
+ * route (meeting_booked), the attendance mark + the recall webhook
+ * (meeting_held), and swept by the outcome-detector cron as catch-up. The
+ * decision join is automatic: resolveOutcome backfills
+ * outreach_decisions.outcome_id via the watcher snapshot.
+ */
+export async function checkMeetingOutcomes(
+  tenantId: string,
+  contactId: string,
+  eventType: "meeting_booked" | "meeting_held",
+): Promise<void> {
+  const watchingOutcomes = await db
+    .select()
+    .from(actionOutcomes)
+    .where(
+      and(
+        eq(actionOutcomes.tenantId, tenantId),
+        eq(actionOutcomes.entityId, contactId),
+        eq(actionOutcomes.status, "watching"),
+      ),
+    )
+    .limit(10);
+
+  for (const outcome of watchingOutcomes) {
+    if (EMAIL_FAMILY_ACTION_TYPES.has(outcome.actionType)) {
+      await resolveOutcome(outcome.id, eventType);
     }
   }
 }

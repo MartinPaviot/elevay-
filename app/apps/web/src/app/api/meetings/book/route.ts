@@ -4,6 +4,7 @@ import { contacts, activities, tenants } from "@/db/schema";
 import { eq, and, gte, isNull, lt, sql } from "drizzle-orm";
 import { bookSovereignMeeting, CalendarNotConnectedError } from "@/lib/integrations/calendar-write";
 import { recordEngagementSignal } from "@/lib/signals/engagement-signal";
+import { checkMeetingOutcomes } from "@/lib/outcomes/resolve";
 import { apiError } from "@/lib/infra/api-errors";
 import {
   DEEP_DIVE_METADATA_KEY,
@@ -302,6 +303,15 @@ export async function POST(req: Request) {
     await recordEngagementSignal(authCtx.tenantId, resolvedContactId, "meeting_booked", {
       strength: "high",
     }).catch(() => {});
+
+    // T12 (outreach-autopilot) — the booking is the OUTCOME of the outreach
+    // that produced it: resolve the contact's watching outcome as
+    // meeting_booked (positivity 0.95) so the decision-record joins it.
+    // Without this the watcher expired to no_response or was consumed by a
+    // weaker reply event. Best-effort — never blocks the booking.
+    await checkMeetingOutcomes(authCtx.tenantId, resolvedContactId, "meeting_booked").catch(
+      () => {},
+    );
 
     return Response.json({
       booked: true,

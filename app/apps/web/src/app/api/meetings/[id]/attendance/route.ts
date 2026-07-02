@@ -14,6 +14,7 @@ import { activities } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { logger } from "@/lib/observability/logger";
 import { isMeetingAttendance } from "@/lib/meetings/attendance";
+import { checkMeetingOutcomes } from "@/lib/outcomes/resolve";
 import { z } from "zod";
 
 const bodySchema = z.object({
@@ -44,6 +45,7 @@ export async function POST(
     .select({
       id: activities.id,
       entityType: activities.entityType,
+      entityId: activities.entityId,
       activityType: activities.activityType,
       metadata: activities.metadata,
     })
@@ -81,6 +83,16 @@ export async function POST(
       .update(activities)
       .set({ metadata: nextMeta })
       .where(and(eq(activities.id, id), eq(activities.tenantId, authCtx.tenantId), isNull(activities.deletedAt)));
+
+    // T12 (outreach-autopilot) — the human "held" verdict is the strongest
+    // learning outcome (positivity 1.0): resolve the contact's watching
+    // outcome so the decision-record joins it. Only contact-scoped meeting
+    // activities can attribute; best-effort — never blocks the mark.
+    if (next === "held" && activity.entityType === "contact" && activity.entityId) {
+      await checkMeetingOutcomes(authCtx.tenantId, activity.entityId, "meeting_held").catch(
+        () => {},
+      );
+    }
 
     return Response.json({ ok: true, attendance: next });
   } catch (err) {
