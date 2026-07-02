@@ -1461,7 +1461,12 @@ export default function InboxPage() {
               if (!paneActive) listScrollRef.current = e.currentTarget.scrollTop;
             }}
             className={`overflow-y-auto ${paneActive ? "hidden border-r @min-[960px]:block @min-[960px]:w-[var(--inbox-list-w)] @min-[960px]:shrink-0" : "flex-1"}`}
-            style={{ borderColor: "var(--color-border-default)", "--inbox-list-w": `${listW}px` } as CSSProperties}
+            // Content sits on a WHITE surface like the accounts/contacts table
+            // region — transparent columns left the list + reading pane on the
+            // grey page ground while the composer card is white, so opening a
+            // reply popped a stark white block (founder: "d'un coup cela
+            // devient blanc, ça casse tout", 2026-07-02).
+            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", "--inbox-list-w": `${listW}px` } as CSSProperties}
           >
             {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
             <CaptureReviewDrawer />
@@ -1593,7 +1598,7 @@ export default function InboxPage() {
           {/* Draggable divider between the list and the open mail/compose (3-column only). */}
           {paneActive && <ResizeHandle onDelta={handleResizeList} value={listW} min={LIST_W_MIN} max={LIST_W_MAX} />}
           {paneActive && (
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 flex-1 flex-col" style={{ background: "var(--color-bg-card)" }}>
               {/* Single-pane back control: shown only when the inbox area is too
                   narrow for the list (which is then hidden). In 3-column mode the
                   master-detail list is itself the way back. Closes compose if open,
