@@ -27,7 +27,12 @@ import { deriveSurface, type SurfaceIcon } from "@/lib/chat/surface-from-path";
 import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
 import { getActionManifest, locateEntity, highlightEntity } from "@/lib/chat/page-actions/registry";
 import type { UiDirective, HighlightAnchor } from "@/lib/chat/ui-directives";
-import type { OpenerChip, OpenerPayload } from "@/lib/chat/opener";
+import type { OpenerChip } from "@/lib/chat/opener";
+import {
+  readOpenerCache,
+  writeOpenerCache,
+  type OpenerResponse,
+} from "@/lib/chat/opener-cache";
 
 const ICONS: Record<SurfaceIcon, typeof Compass> = {
   building: Building2,
@@ -46,34 +51,6 @@ const OPENER_CHIP_ICONS: Record<OpenerChip["kind"], typeof Compass> = {
   resume: History,
   recipe: Compass,
 };
-
-// CHAT-OPENER: sessionStorage cache so reopening the dock is instant and
-// repeated opens don't re-run the (heavy) up-next assembly server-side.
-const OPENER_CACHE_KEY = "elevay:chat-opener:v1";
-const OPENER_CACHE_TTL_MS = 60_000;
-
-function readOpenerCache(): OpenerPayload | null {
-  try {
-    const raw = window.sessionStorage.getItem(OPENER_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { at: number; data: OpenerPayload };
-    if (!parsed?.data || Date.now() - parsed.at > OPENER_CACHE_TTL_MS) return null;
-    return parsed.data;
-  } catch {
-    return null;
-  }
-}
-
-function writeOpenerCache(data: OpenerPayload) {
-  try {
-    window.sessionStorage.setItem(
-      OPENER_CACHE_KEY,
-      JSON.stringify({ at: Date.now(), data }),
-    );
-  } catch {
-    // Quota/privacy-mode failures just cost a refetch next open.
-  }
-}
 
 /** Page-aware starter prompts keyed by the derived context type. */
 function suggestionsFor(contextType?: string): string[] {
@@ -153,7 +130,7 @@ export function ChatDock() {
 
   // CHAT-OPENER: the agent's first turn (deterministic briefing) + metrics.
   // "fallback" renders the legacy static suggestions (scoped pages, errors).
-  const [opener, setOpener] = useState<OpenerPayload | null>(null);
+  const [opener, setOpener] = useState<OpenerResponse | null>(null);
   const [openerState, setOpenerState] = useState<"loading" | "ready" | "fallback">("loading");
   const openedAtRef = useRef(0);
   const firstActionSentRef = useRef(false);
@@ -297,20 +274,20 @@ export function ChatDock() {
     if (cached) {
       setOpener(cached);
       setOpenerState("ready");
-      trackEvent("", "chat_opener_shown", { ...cached.counts, hasWork: cached.hasWork, cached: true });
+      trackEvent("", "chat_opener_shown", { ...cached.counts, hasWork: cached.hasWork, cached: true, surface: "dock" });
       return;
     }
     let cancelled = false;
     setOpenerState("loading");
     fetch("/api/chat/opener", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: OpenerPayload | null) => {
+      .then((data: OpenerResponse | null) => {
         if (cancelled) return;
         if (data && typeof data.text === "string" && Array.isArray(data.chips)) {
           writeOpenerCache(data);
           setOpener(data);
           setOpenerState("ready");
-          trackEvent("", "chat_opener_shown", { ...data.counts, hasWork: data.hasWork, cached: false });
+          trackEvent("", "chat_opener_shown", { ...data.counts, hasWork: data.hasWork, cached: false, surface: "dock" });
         } else {
           setOpenerState("fallback");
         }
@@ -462,7 +439,7 @@ export function ChatDock() {
   }
 
   function onOpenerChip(chip: OpenerChip, position: number) {
-    trackEvent("", "chat_opener_chip_clicked", { kind: chip.kind, id: chip.id, position });
+    trackEvent("", "chat_opener_chip_clicked", { kind: chip.kind, id: chip.id, position, surface: "dock" });
     markFirstAction("chip");
     if (chip.resumeThreadId) {
       void resumeThread(chip.resumeThreadId);
