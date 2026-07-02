@@ -53,10 +53,12 @@ describe("EmailComposerPanel — inline vs drawer", () => {
     expect(document.querySelector('[style*="overlay-fade-in"]')).toBeNull();
     // The composer body renders INSIDE the caller's container (not portalled away).
     expect(container.querySelector("textarea")).not.toBeNull();
-    // The whole inline composer must be a scroll container (overflow-y-auto): on a
-    // narrow/zoomed pane the tall To/Cc/Subject chrome exceeds the composer's share,
-    // and only an own-scroll keeps the Send footer reachable (verified live).
-    expect(container.querySelector(".overflow-y-auto")).not.toBeNull();
+    // The inline composer is an in-flow CARD in the pane's single scroll — it
+    // must NOT nest its own scroll container (a nested scrollbar would fight
+    // the pane's and re-create the draft/thread seam the founder rejected,
+    // UI pass 2026-07-02). Send stays reachable because the PANE scrolls.
+    expect(container.querySelector(".overflow-y-auto")).toBeNull();
+    expect(container.firstElementChild?.className).toContain("rounded-lg");
   });
 
   it("inline: the writing area has a generous viewport-scaled floor (not the old cramped 88px)", async () => {
