@@ -11,11 +11,11 @@
  * wires Drizzle IO into the injected factory deps.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { sequences, sequenceSteps } from "@/db/schema";
+import { sequences } from "@/db/schema";
 import { apiError } from "@/lib/infra/api-errors";
 import {
   PROVEN_TEMPLATES,
@@ -23,12 +23,8 @@ import {
   toTemplateSummary,
   templateIdOf,
 } from "@/lib/sequences/templates/registry";
-import {
-  instantiateTemplate,
-  type InstantiateDeps,
-  type SequenceInsert,
-  type StepInsert,
-} from "@/lib/sequences/templates/instantiate";
+import { instantiateTemplate } from "@/lib/sequences/templates/instantiate";
+import { tenantInstantiateDeps } from "@/lib/sequences/templates/db-deps";
 
 export async function GET() {
   const authCtx = await getAuthContext();
@@ -57,48 +53,6 @@ export async function GET() {
 }
 
 const useTemplateSchema = z.object({ templateId: z.string().min(1) });
-
-/** Drizzle-wired factory deps for the authenticated tenant. */
-function tenantInstantiateDeps(): InstantiateDeps {
-  return {
-    findExisting: async (tenantId, templateId) => {
-      const [row] = await db
-        .select({ id: sequences.id })
-        .from(sequences)
-        .where(and(eq(sequences.tenantId, tenantId), sql`${sequences.campaignConfig}->>'templateId' = ${templateId}`))
-        .limit(1);
-      return row ? { id: row.id } : null;
-    },
-    insertSequence: async (row: SequenceInsert) => {
-      const [seq] = await db
-        .insert(sequences)
-        .values({
-          tenantId: row.tenantId,
-          name: row.name,
-          description: row.description,
-          status: row.status,
-          campaignConfig: row.campaignConfig,
-          createdBy: row.createdBy,
-        })
-        .returning({ id: sequences.id });
-      return { id: seq.id };
-    },
-    insertSteps: async (rows: StepInsert[]) => {
-      if (rows.length === 0) return;
-      await db.insert(sequenceSteps).values(
-        rows.map((s) => ({
-          sequenceId: s.sequenceId,
-          stepNumber: s.stepNumber,
-          stepType: s.stepType,
-          subjectTemplate: s.subjectTemplate,
-          bodyTemplate: s.bodyTemplate,
-          delayDays: s.delayDays,
-          channelConfig: s.channelConfig,
-        })),
-      );
-    },
-  };
-}
 
 export async function POST(req: Request) {
   const authCtx = await getAuthContext();

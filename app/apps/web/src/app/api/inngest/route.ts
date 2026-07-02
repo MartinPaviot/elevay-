@@ -80,6 +80,8 @@ import { weeklyTrustRecalculation } from "@/inngest/trust-recalculator";
 import { replyFlywheelListener } from "@/inngest/reply-flywheel-listener";
 // P2 — inbox-deal-closer roadmap: proactive follow-up nudges
 import { followupNudgeDaily } from "@/inngest/followup-nudge-cron";
+// home-proposed-lane — "Proposed by Elevay" daily sequence proposals
+import { homeProposalsDaily } from "@/inngest/home-proposals-cron";
 // Campaign Engine 1000x
 import { replyAgent } from "@/inngest/reply-agent";
 import { campaignDecisionEngine, bridgeTrackingEvents } from "@/inngest/campaign-decision-engine";
@@ -317,6 +319,10 @@ export const { GET, POST, PUT } = serve({
     // re-surface on an awaiting-their-reply thread that's gone quiet past
     // the escalation ladder. See lib/inbox/followup-nudge-draft.ts.
     followupNudgeDaily,
+    // home-proposed-lane: daily "Proposed by Elevay" — aggregates fresh
+    // company signals into launch proposals (never sends; launch creates a
+    // DRAFT sequence). See lib/home/sequence-proposals-draft.ts.
+    homeProposalsDaily,
     // Campaign Engine 1000x
     replyAgent,
     campaignDecisionEngine,
