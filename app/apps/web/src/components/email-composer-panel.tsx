@@ -207,6 +207,11 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
   const [showBcc, setShowBcc] = useState(Boolean(draft.bcc));
   const [editSubject, setEditSubject] = useState(draft.subject);
   const [editBody, setEditBody] = useState(draft.body);
+  // Inline replies fold From/To/Cc/Subject into one summary line (they are all
+  // pre-known); a click expands the full field set. Auto-expands when there is
+  // nothing to summarize (no recipient yet) or when Cc/Bcc came pre-filled.
+  const [fieldsExpanded, setFieldsExpanded] = useState(Boolean(draft.cc || draft.bcc));
+  const collapseFields = inline && Boolean(draft.threadId) && !fieldsExpanded && toEmails.length > 0;
 
   // Auto-save (per-context localStorage). storageKey is frozen for the panel's
   // life from the OPENING draft, so editing recipients doesn't move the slot.
@@ -692,19 +697,28 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               boxShadow: "var(--shadow-panel)",
             }}
       >
-        {/* Header */}
+        {/* Header. Inline replies keep it a THIN strip with a small "Reply"
+            label — the subject already reads twice on screen (pane title +
+            Subject field); repeating it a third time at 14px semibold burned
+            ~44px of the composer's scarce height (UI pass 2026-07-02). */}
         <div
-          className="flex items-center justify-between px-4 py-3"
+          className={`flex items-center justify-between px-4 ${inline && draft.threadId ? "py-1.5" : "py-3"}`}
           style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
-          <div className="flex items-center gap-2">
-            <Mail size={15} style={{ color: "var(--color-accent)" }} />
-            <h3
-              className="truncate text-[14px] font-semibold"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {editSubject || t("inbox.compose.newEmail")}
-            </h3>
+          <div className="flex min-w-0 items-center gap-2">
+            <Mail size={inline && draft.threadId ? 13 : 15} style={{ color: "var(--color-accent)" }} />
+            {inline && draft.threadId ? (
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+                {t("inbox.compose.replyLabel")}
+              </span>
+            ) : (
+              <h3
+                className="truncate text-[14px] font-semibold"
+                style={{ color: "var(--color-text-primary)" }}
+              >
+                {editSubject || t("inbox.compose.newEmail")}
+              </h3>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -729,7 +743,32 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           </div>
         )}
 
-        {/* Email fields */}
+        {/* Email fields. On an inline REPLY they are all pre-known (To = the
+            sender, Subject = the thread's Re:) and rarely touched — collapsed
+            to ONE summary line so the writing box is the base element (founder:
+            "quand on clique sur reply, écrire doit être l'élément de base",
+            UI pass 2026-07-02). Click expands the full field set. */}
+        {collapseFields && (
+          <button
+            type="button"
+            onClick={() => setFieldsExpanded(true)}
+            className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+            title={`${t("inbox.compose.to")}: ${toEmails.join(", ")} — ${editSubject}`}
+          >
+            <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+              {t("inbox.compose.to")}
+            </span>
+            <span className="shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+              {toEmails[0]}{toEmails.length > 1 ? ` +${toEmails.length - 1}` : ""}
+            </span>
+            <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-muted)" }}>
+              · {editSubject}
+            </span>
+            <ChevronDown size={12} className="ml-auto shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+          </button>
+        )}
+        {!collapseFields && (<>
         {/* A2: From selector — which connected mailbox this leaves from. Default
             = the thread's own box. One box → static label; many → a menu. */}
         {mailboxes.length > 0 && (() => {
@@ -838,11 +877,14 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             placeholder={t("inbox.compose.subjectPlaceholder")}
           />
         </div>
+        </>)}
 
         {/* Body — plain textarea, keeps markdown formatting */}
-        <div className={inline ? "p-4" : "flex-1 overflow-auto p-4"}>
-          {/* Rewrite toolbar (INBOX-C04): GTM presets + free-form, with undo. */}
-          <div className="mb-2 flex items-center gap-2">
+        <div className={inline ? "px-4 pb-3 pt-2" : "flex-1 overflow-auto p-4"}>
+          {/* Rewrite toolbar (INBOX-C04): GTM presets + free-form, with undo.
+              One row WITH the edit-with-AI field (flex-1 tail) — stacked they
+              cost ~80px of the inline composer's height (UI pass 2026-07-02). */}
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <div className="relative">
               <Button
                 size="sm"
@@ -978,14 +1020,13 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                 <Undo2 size={12} /> {t("inbox.compose.undo")}
               </Button>
             )}
-          </div>
-          {/* B1 edit-with-AI (Upstream canonical position): an always-visible
-              instruction field directly above the body. Submits to the SAME
-              handleRewrite (no new endpoint); Cmd/Ctrl+J focuses or submits it. */}
-          <div
-            className="mb-2 flex items-center gap-1.5 rounded-lg border px-2 py-1"
-            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
-          >
+            {/* B1 edit-with-AI (Upstream canonical position): an always-visible
+                instruction field, the flex-1 tail of the toolbar row. Submits to
+                the SAME handleRewrite; Cmd/Ctrl+J focuses or submits it. */}
+            <div
+              className="flex min-w-[200px] flex-1 items-center gap-1.5 rounded-lg border px-2 py-1"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
+            >
             <Sparkles size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} aria-hidden />
             <input
               ref={aiInstructionRef}
@@ -1005,6 +1046,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             {rewriting && (
               <RefreshCw size={12} className="shrink-0 animate-spin" style={{ color: "var(--color-text-tertiary)" }} aria-hidden />
             )}
+            </div>
           </div>
           <textarea
             ref={bodyRef}
