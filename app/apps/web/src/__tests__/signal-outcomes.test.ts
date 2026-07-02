@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeMultiplier,
+  detectArraySignals,
   inheritAliasMultipliers,
   listKnownSignalTypes,
   priorMultiplier,
@@ -80,6 +81,11 @@ describe("signal-outcomes math", () => {
       expect(priorMultiplier("positive_reply")).toBeGreaterThan(priorMultiplier("email_opened"));
     });
 
+    it("keeps opens exactly score-neutral — Apple MPP auto-opens are never a scoring input", () => {
+      expect("email_opened" in SIGNAL_PRIORS).toBe(false);
+      expect(priorMultiplier("email_opened")).toBe(1);
+    });
+
     it("returns neutral 1.0 for an unknown signal type", () => {
       expect(priorMultiplier("totally_unknown_signal")).toBe(1);
     });
@@ -90,6 +96,23 @@ describe("signal-outcomes math", () => {
         expect(m).toBeGreaterThanOrEqual(0.5);
         expect(m).toBeLessThanOrEqual(2.5);
       }
+    });
+  });
+
+  describe("detectArraySignals — attribution exclusions", () => {
+    const asOf = new Date("2026-07-01T00:00:00Z");
+    const daysAgo = (n: number) => new Date(asOf.getTime() - n * 86400000).toISOString();
+
+    it("never attributes won/lost outcomes to opens (MPP noise); clicks still attribute", () => {
+      const props = {
+        signals: [
+          { type: "email_opened", detectedAt: daysAgo(1) },
+          { type: "email_clicked", detectedAt: daysAgo(1) },
+        ],
+      };
+      const types = detectArraySignals(props, asOf).map((r) => r.signalType);
+      expect(types).not.toContain("email_opened");
+      expect(types).toContain("email_clicked");
     });
   });
 
