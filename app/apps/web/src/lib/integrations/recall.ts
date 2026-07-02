@@ -6,7 +6,11 @@
 import { withCircuitBreaker, RECALL_CIRCUIT } from "../infra/circuit-breaker";
 import type { TranscriptSegment as ChunkTranscriptSegment } from "@/lib/coaching/chunk-transcript";
 
-const RECALL_BASE = "https://us-east-1.recall.ai/api/v1";
+// Region-scoped API host: a Recall key only authenticates against ITS region.
+// Ours lives in eu-central-1 (EU data residency, coherent with the sovereignty
+// pitch) — the old hardcoded us-east-1 made EVERY prod Recall call 401
+// (verified live 2026-07-02). Override via RECALL_REGION if the key moves.
+const RECALL_BASE = `https://${process.env.RECALL_REGION || "eu-central-1"}.recall.ai/api/v1`;
 
 function getApiKey(): string {
   const key = process.env.RECALL_API_KEY;
