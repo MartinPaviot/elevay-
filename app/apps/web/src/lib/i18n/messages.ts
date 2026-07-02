@@ -385,6 +385,7 @@ export const messages: Record<Locale, Messages> = {
     "inbox.keyDetails": "Détails clés",
     "inbox.whatThisTells": "Ce que ce fil révèle",
     "inbox.step": "Étape {n}",
+    "inbox.toRecipient": "À {name}",
     "inbox.due": "échéance",
     // Meetings list — show-rate chip + meeting detail
     "meeting.showRate.title": "Présence RDV",
@@ -985,6 +986,7 @@ export const messages: Record<Locale, Messages> = {
     "inbox.keyDetails": "Key details",
     "inbox.whatThisTells": "What this thread tells us",
     "inbox.step": "Step {n}",
+    "inbox.toRecipient": "To {name}",
     "inbox.due": "due",
     // Meetings list — show-rate chip + meeting detail
     "meeting.showRate.title": "Show rate",

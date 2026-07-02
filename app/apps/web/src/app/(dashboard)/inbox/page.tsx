@@ -1473,8 +1473,8 @@ export default function InboxPage() {
                     setCatchUpCount(0);
                     void fetch("/api/inbox/seen", { method: "POST" }).catch(() => {});
                   }}
-                  className="ml-auto text-[11px] font-medium hover:underline"
-                  style={{ color: "var(--color-text-tertiary)" }}
+                  className="ml-auto text-[12px] font-semibold hover:underline"
+                  style={{ color: "var(--color-text-secondary)" }}
                 >
                   {t("inbox.catchUp.markSeen")}
                 </button>

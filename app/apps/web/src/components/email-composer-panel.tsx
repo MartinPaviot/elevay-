@@ -997,9 +997,9 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           <div
             className="mx-4 mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-[12px]"
             style={{
-              background: "var(--color-error-soft, oklch(0.97 0.015 25))",
-              border: "1px solid var(--color-error, oklch(0.85 0.06 25))",
-              color: "var(--color-error, oklch(0.5 0.14 25))",
+              background: "var(--color-error-soft)",
+              border: "1px solid var(--color-error)",
+              color: "var(--color-error)",
             }}
           >
             <AlertCircle size={14} className="shrink-0" />
@@ -1049,7 +1049,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             {sent ? (
               <span
                 className="flex items-center gap-1 text-[13px] font-medium"
-                style={{ color: "oklch(0.6 0.15 145)" }}
+                style={{ color: "var(--color-success)" }}
               >
                 <Send size={13} />
                 {t("inbox.compose.sent")}
