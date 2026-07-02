@@ -37,6 +37,7 @@ import { trackUsage } from "@/lib/billing/billing";
 import { logger } from "@/lib/observability/logger";
 import { recipientBlockReason } from "@/lib/emails/recipient-guardrail";
 import { evaluateSend, isInteractiveRecipientSendable } from "@/lib/guardrails/sending-gate";
+import { recordOutreachDecision } from "@/lib/outreach/decision-record";
 import { watchReplyOutcome } from "@/lib/outcomes/reply-flywheel";
 import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
 
@@ -279,8 +280,15 @@ export async function deliverInteractiveEmail(
 
   // 5. Record outbound + activity + usage (best-effort, never fails the send).
   await trackUsage(tenantId, "email_sent").catch(() => {});
+  // M12-R1 (T7) — the outbound row id is generated CLIENT-SIDE (same
+  // crypto.randomUUID() the column's $defaultFn would run) so the learning
+  // record below can reference it without adding .returning() to this
+  // best-effort insert.
+  const outboundEmailId = crypto.randomUUID();
+  let outboundRowWritten = false;
   try {
     await db.insert(outboundEmails).values({
+      id: outboundEmailId,
       tenantId,
       contactId: input.contactId || null,
       campaignId: input.dealId || null,
@@ -294,9 +302,29 @@ export async function deliverInteractiveEmail(
       status: "sent",
       sentAt: new Date(),
     });
+    outboundRowWritten = true;
   } catch (err) {
     logger.warn?.("deliver-interactive: outbound record failed (non-fatal)", { err });
   }
+
+  // M12-R1 (T7) — outreach_decisions learning record (C4, interactive). The
+  // gate resolved the class IN-GATE (interactive sends auto-classify; a reply
+  // to a real correspondent records nothing — the writer skips). Recorded
+  // POST-transport here (unlike the queue crons) so a refused/failed
+  // interactive send never records; C4 is request-scoped (no Inngest retry).
+  // The dedup key is the outbound row id ONLY when that insert succeeded — a
+  // dangling id would silently break every downstream join (T8, G5 rows).
+  // Best-effort by contract — never fails the send.
+  await recordOutreachDecision({
+    tenantId,
+    sendClass: interactiveGate.sendClass,
+    contactId: input.contactId ?? null,
+    outboundEmailId: outboundRowWritten ? outboundEmailId : null,
+    toAddress: to,
+    subject,
+    bodyText: body,
+  });
+
   if (input.contactId) {
     try {
       await db.insert(activities).values({

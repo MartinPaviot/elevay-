@@ -66,7 +66,17 @@ function targetingGateEnabled(): boolean {
 
 /** Why the gate refused a send (or that it allows). */
 export type SendingGateOutcome =
-  | { send: true; reason: string }
+  | {
+      send: true;
+      reason: string;
+      /** M12-R1 (T7) — the class `resolveOutreachClass` settled on (a "reply"
+       *  claim it could not verify comes back as "outreach"). Chokepoints use
+       *  it for the outreach-vs-reply learning-record fork instead of
+       *  re-deriving the class (drift). OPTIONAL on purpose: additive, so
+       *  every existing caller/test constructing or mocking the success arm
+       *  stays green. */
+      sendClass?: SendClass;
+    }
   | {
       send: false;
       code:
@@ -495,7 +505,9 @@ export async function evaluateSend(
       }
     }
 
-    return { send: true, reason: decision.reason };
+    // M12-R1 (T7) — surface the resolved class so the chokepoint can record
+    // the outreach_decisions learning row without re-deriving the class.
+    return { send: true, reason: decision.reason, sendClass };
   } catch (err) {
     return {
       send: false,
