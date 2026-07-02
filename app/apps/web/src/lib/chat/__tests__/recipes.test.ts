@@ -66,7 +66,7 @@ describe("slot filling", () => {
     );
     const labels = chips.map((c) => c.label);
     expect(labels).toContain("Define my ICP from my 885 accounts");
-    expect(labels).toContain("Build today's call list (43 callable)");
+    expect(labels).toContain("Build today's call list (43 with phones)");
     expect(labels).toContain("Recap the 12 emails received this week");
   });
 
