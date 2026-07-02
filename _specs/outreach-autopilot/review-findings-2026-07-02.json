@@ -1,0 +1,390 @@
+{
+  "bloquants": [
+    {
+      "lens": "coherence",
+      "severity": "bloquant",
+      "doc": "tasks.md",
+      "summary": "Le câblage de G2 (vérification factuelle) sur TOUS les chemins de génération — cœur du gap P0 INV-10 — n'a aucune tâche : T4 ne couvre que le composer manuel, T6 ne fait que logger les verdicts du fabrication-gate existant, et T20 étend explicitement G3/G4 seulement.",
+      "evidence": "design.md §5, ligne G2 : « [ÉTEND] : câblé sur TOUS les chemins de génération + envois manuels » ; requirements.md récap P0 : « Gates de contenu au transport + QC spec-20 câblé + manuel G2/G5 | INV-10, M13-G2/G5 » et M13-G2 : « seulement sur certains chemins de génération […] violation INV-10 ». Contre-preuve tasks.md : T4 = « le composer l'appelle avant envoi » (manuel uniquement) ; T6 = « écriture depuis […] G2 (fabrication-gate existant) » (logging, pas extension) ; T20 = « rubrique G3 […] seuil G4 […] sur TOUS les chemins de génération » — G2 absent. Aucune tâche n'amène le fabrication-gate sur les chemins de génération qui ne le traversent pas (autopilot prepare, drafts de réponse, chat).",
+      "fix": "Ajouter une tâche it.0 « G2 sur tous les chemins de génération » (ou étendre T20 à G2) avec un Done par chemin : autopilot/prepare, reply-drafts, chat/compose — chaque chemin produit un verdict fabrication-gate loggé dans gate_decisions."
+    },
+    {
+      "lens": "ux",
+      "severity": "bloquant",
+      "doc": "tasks.md",
+      "summary": "Trois surfaces centrales d'ux.md n'ont AUCUNE tâche de construction : le cockpit lui-même (zones « Prêt pour toi », barre d'état/StatBar, review clavier j/k/enter/p), l'UI de revue des séquences (SequenceTimeline, badges signal, rejet-avec-raison, bulk j/k/a/e/x) et la vue « décisions » du reporting — le plan Phase 3 ne peut pas livrer l'écran d'accueil qui porte toute la promesse produit.",
+      "evidence": "design.md:163 déclare « StatBar [NOUVEAU] » et design.md:166 « SequenceTimeline [NOUVEAU] » mais aucune tâche ne les crée (grep StatBar/SequenceTimeline dans tasks.md = 0) ; les seules tâches cockpit sont des cartes/endpoints périphériques (T2:15 « endpoint compteur pour le cockpit », T9:43 « carte cockpit », T14:65 « + carte cockpit », T22:101 « carte cockpit ») ; ux.md:100 exige « Vue « décisions » (M12) : quelles combinaisons persona × signal × angle… » et design.md:182 la trace (« patterns n/lift ») mais T11:51 ne couvre que « écran reports réordonné + section gates » ; ux.md:70-72 (liste groupée, timeline, actions avec raison) n'a pas de tâche UI. Le prompt maître:117 impose « implémente tâche par tâche en cochant tasks.md » — ce qui n'est pas une tâche ne sera pas construit.",
+      "fix": "Ajouter à l'itération 0 : T-cockpit (page /home étendue : StatBar, 3 zones, clavier, états §4) dépendant de T2/T6/T9 ; T-revue-UI (SequenceTimeline + rejet-avec-raison persisté) dépendant de T6 ; étendre T11 avec la vue décisions (design §12 ligne 3.8 la trace déjà)."
+    }
+  ],
+  "majeurs": [
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "tasks.md",
+      "summary": "M5-R2 est dans la ligne P0 du récap (« l'affichage cockpit est à créer ») mais aucune tâche ne construit la surface cockpit : T2 s'arrête à l'endpoint API ; la StatBar et la zone « Prêt pour toi » (ux 3.2) n'existent dans aucune tâche.",
+      "evidence": "requirements.md récap : « P0 | Cap 100/j/tenant […] | INV-1, M5-R1, M5-R2 » et M5-R2 : « l'affichage cockpit est à créer » ; ux.md §4 Cockpit/quota : « Jauge pleine VERTE + “reprise demain 00:00 (fuseau)” ; items différés listés » ; design.md §11 : « Barre d'état cockpit | [NOUVEAU] StatBar sous header ». Contre-preuve tasks.md : T2 Done = « l'API compteur retourne {sent, cap, resetAt} » — rien d'UI ; « StatBar » = 0 occurrence dans tasks.md ; seules des cartes isolées existent (T9 insights, T14 LinkedIn, T22 gifting), jamais l'assemblage 3 zones ni la barre d'état.",
+      "fix": "Tâche dédiée « Cockpit 3.2 : StatBar + zone Prêt pour toi + états quota-atteint/délivrabilité » dépendant de T2/T9/T13, avec e2e sur les états du tableau ux §4."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "tasks.md",
+      "summary": "M13-R6 (P1 : logs de gates VISIBLES dans l'UI, pourquoi un message a été bloqué) n'a pas de tâche : T6 s'arrête à la table, T11 aux agrégats ; l'extension de sequences-review (scores G2-G4 par draft, source datée par affirmation, SequenceTimeline) promise par ux 3.3 et design §11/§12 est absente.",
+      "evidence": "requirements.md récap : « P1 | Pipeline gates à états + logs UI + taux de blocage | M13 préambule, R6, R7 » ; M13-R6 : « VISIBLES dans l'UI (pourquoi un message a été bloqué ou envoyé — la rigueur est une feature visible) » ; ux.md 3.3 : « par affirmation, sa source datée (G2) » + rejet « avec RAISON — la raison nourrit M12 » ; design.md §11 : « Timeline séquence | [NOUVEAU] SequenceTimeline » et §12 (3.3) : « scores G2-G4 par draft, source par claim ». Contre-preuve tasks.md : T6 Done = « chaque verdict de gate crée une ligne exploitable » (DB) ; T11 = reporting agrégé ; « SequenceTimeline » et sequences-review = 0 occurrence ; l'anti-pattern « rejeté N fois sur même motif » (ux 3.3, M12-R2) n'a pas de tâche non plus.",
+      "fix": "Tâche « Revue séquences : gate_scores + citations par claim + raison de rejet persistée » dépendant de T6, avec e2e « un draft bloqué affiche le gate et la raison »."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "tasks.md",
+      "summary": "Le decision-record des actions LinkedIn dispatched — promis par design §9 — n'est écrit par aucune tâche : T7 est explicitement « (email) » et T13-T16 ne mentionnent jamais outreach_decisions ; le dataset P0 M12-R1 perd toute la dimension canal.",
+      "evidence": "design.md §9 : « l'écriture outreach_decisions au moment de l'envoi (transport, après evaluateSend OK) et à chaque action LinkedIn dispatched ». Contre-preuve tasks.md : T7 Fait = « écriture au transport après evaluateSend OK (email) » ; grep outreach_decisions dans l'itération 1 (T13-T16) = 0. Conséquence croisée : M3-R2 (choix de canal appris) et T18 (« channel_first=linkedin ») produiront des décisions LinkedIn jamais enregistrées, donc inapprenables (M12-R1 : « Sans ce dataset dès J1, les paliers 2-3 sont impossibles »).",
+      "fix": "Étendre T13 (ou T7) : une approbation/dispatch LinkedIn écrit un outreach_decisions avec channel=linkedin ; Done : chaque action dispatched a exactement 1 decision-record."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "design.md",
+      "summary": "La seule décision que requirements délègue EXPLICITEMENT au design — le re-scaling replied_negative (-0.3) < no_response (0.0), inverse de la hiérarchie cible M11-R1 — n'est tranchée nulle part : design la déclare réglée par #609, tasks l'ignore, et le hors-périmètre ne la liste pas.",
+      "evidence": "requirements.md M11-R1 : « DIVERGENCE restante assumée à trancher en design : replied_negative (-0.3) < no_response (0.0) dans le code alors que la cible ordonne l'inverse — le re-scaling […] mérite la Phase 2 » + récap P2 « hiérarchie replied_negative/no_response ». Contre-preuve : design.md ne contient aucune occurrence de replied_negative/no_response ; §9 dit seulement « la hiérarchie POSITIVITY (corrigée PR #609) [EXISTE] » — or vérifié sur origin/main (resolve.ts) : #609 a corrigé meeting_held/booked/replied_positive mais replied_negative: -0.3 < no_response: 0.0 subsiste. tasks.md T12 ne couvre que meeting_held ; « Hors périmètre » ne mentionne pas le re-scaling.",
+      "fix": "Ajouter au design §9 la décision (re-scaler ou assumer, avec l'impact learned-trust.ts/stats.ts cité par requirements) + une tâche ou une entrée hors-périmètre explicite."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "requirements.md",
+      "summary": "M11-R5 (pondération du succès configurable par tenant, [ABSENT]) a disparu de la chaîne : ni dans le tableau récap des gaps, ni dans tasks.md, ni dans le hors-périmètre — alors que ux.md s'appuie dessus (principe 4 « les défauts sont sains (M11-R5) »).",
+      "evidence": "requirements.md M11-R5 : « LE SYSTÈME DOIT permettre au tenant de configurer la pondération du succès […] [ABSENT] » ; le tableau « Récapitulatif des gaps » liste 17 lignes sans M11-R5 ; tasks.md : 0 occurrence (ni tâche ni « Hors périmètre explicite (flaggé, pas oublié) ») ; contre-preuve d'usage : ux.md §2 principe 4 cite M11-R5 comme acquis.",
+      "fix": "Soit l'ajouter au récap + une tâche (settings + consommation dans le reporting/insights), soit le déclasser explicitement en hors-périmètre flaggé."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "tasks.md",
+      "summary": "Les garde-fous M12-R5 promis par design §9 (invalidation automatique d'un insight/bras/modèle qui dégrade la délivrabilité + monitoring de dérive KL) n'ont aucune tâche — l'edge case du module 12 (« M12-R5 doit le bloquer ») reste inexécutable.",
+      "evidence": "design.md §9 : « Garde-fous [M12-R5] : un insight/bras/modèle qui augmente le volume vers un segment à bounce élevé est invalidé automatiquement (croisement avec deliverability thresholds) ; monitoring de dérive = distribution des décisions vs semaine précédente (KL-divergence) ». Contre-preuve tasks.md : T9 Done = production d'insights seulement ; T25a Done = « jamais d'arm hors G1-G3 » (autre garde-fou) ; T27b = canary du reward model uniquement. Aucune tâche ne code le croisement insights×délivrabilité ni le monitoring de distribution ; requirements edge case module 12 : « un pattern appris qui […] dégrade la délivrabilité → M12-R5 doit le bloquer ».",
+      "fix": "Étendre T9 (croisement insight×thresholds à la publication) et T25b/T27b (invalidation d'un bras/modèle sur dégradation bounce/spam) + une vérif de dérive dans le cron hebdo."
+    },
+    {
+      "lens": "coherence",
+      "severity": "majeur",
+      "doc": "ux.md",
+      "summary": "« L'objection routée (M8-R1) » est déclarée « Ajout requis par la spec » en ux 3.5, mais aucune tâche n'ajoute l'intent objection de premier niveau à classify.ts — et le gap M8-R1 est aussi absent du tableau récap de requirements.",
+      "evidence": "ux.md 3.5 : « Ajouts requis par la spec : […] l'objection routée (M8-R1) » ; requirements.md M8-R1 : « “objection” n'est pas un intent routable de premier niveau (seulement objectionDetail dans le handler) ». Contre-preuve : tasks.md, 0 occurrence de « objection » ; T10 ne couvre que la file de revue (M8-R2) ; le « Récapitulatif des gaps » de requirements.md ne liste M8-R1 dans aucune ligne.",
+      "fix": "Ajouter M8-R1 au récap (P1 ou P2) + une tâche « intent objection routable » (taxonomie classify.ts + routage + test), ou la fusionner dans T10."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "majeur",
+      "doc": "tasks.md (T13) + design.md §6 + requirements.md M6-R5",
+      "summary": "Le « chemin direct existant » LinkedIn est un seam ORPHELIN : dispatchLinkedInStep et dispatchLinkedInAction ont ZÉRO caller de production ; l'adaptateur séquenceur réel est un stub tâche-manuelle qui échoue bruyamment si un provider est configuré — T13 (1 j) omet tout le câblage + la première exécution live jamais vérifiée.",
+      "evidence": "design.md §6 : « Approbation → dispatchLinkedInAction existant (tous ses garde-fous intacts) » ; requirements M6-R5 « [EXISTE — dispatch-step.ts:1-12] ». Contre-preuve : `git grep dispatchLinkedInStep origin/main` = 0 caller hors le fichier lui-même ; lib/sequence-dispatch/linkedin-adapter.ts:11-13 « SET: the live send path — NOT implemented yet, so it fails loudly » (défaut = manual-task) ; dispatch-step.ts:9-11 lui-même : « that flip + the first live action is the remaining verification step ». T13 devra construire le mapping DispatchInput→LinkedInContact + les closures isSuppressed/isCollisionLocked (paramètres exigés par dispatch-step.ts:28-29, jamais construits nulle part) + flipper le stub + vérifier le premier envoi Unipile live — nettement > 1 j, et M4-R2 « suppression consommée par email ET LinkedIn » n'est vraie qu'en théorie (aucun flux LinkedIn ne traverse ce code en prod).",
+      "fix": "Requalifier M6-R5 en PARTIEL (briques testées, non câblées) ; scinder T13 en T13a (câblage adapter→dispatch-step + closures suppression/anti-collision, 1 j) et T13b (file + approbation, 1 j) ; ajouter un critère de done « premier envoi live Unipile vérifié sur un seat connecté »."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "majeur",
+      "doc": "design.md §3 + tasks.md (T1)",
+      "summary": "sendClass 'reply' non capé est infaisable au chokepoint interactif sans plomberie non chiffrée : le composer (/api/emails/send) ne porte AUCUN contexte de thread/reply, et toute déclaration client de la classe crée exactement le chemin de contournement qu'INV-1 interdit.",
+      "evidence": "design.md §3 : « Chaque chokepoint déclare sa classe ; défaut = outreach » et « une RÉPONSE… reste gated mais pas capée ». Contre-preuve : app/api/emails/send/route.ts:19-29 — le zod schema n'a ni threadId ni inReplyTo ni isReply (to/cc/bcc/subject/body/contactId/dealId/mailboxId seulement), et email-composer-panel.tsx:586 poste sur cette route pour les réponses inline comme pour les cold. Distinguer côté serveur exige une nouvelle vérification « inbound antérieur de cette adresse » : isColdRecipient (sending-gate.ts:96-118) ne convient PAS car un outbound antérieur rend aussi « warm » — un step 2+ de séquence serait classé reply et échapperait au cap. Ce design anti-spoof n'est spécifié nulle part ; T1 (1 j : constante + migration + compteur atomique + sendClass sur 5 chokepoints + fermeture external-connected + tests de course) est sous-estimé.",
+      "fix": "Spécifier la dérivation SERVEUR de la classe : C1/C2/C3 depuis la ligne outbound_emails (enrollmentId/campaignId/inReplyTo existent, db/schema/outbound.ts:396-409) ; C4 : ajouter threadId/inReplyTo au schema + vérification serveur d'une activité INBOUND de l'adresse ; C5 = reply. Re-chiffrer T1 à 2 j ou extraire le sendClass interactif en tâche dédiée."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "majeur",
+      "doc": "tasks.md (T3) + design.md §5 (G5)",
+      "summary": "« Câbler runQc dans evaluateSend » (0,5 j) ignore qu'evaluateSend ne reçoit AUCUN contenu de message, et que runQc tel quel bloquerait la quasi-totalité des envois légitimes (rejet de tout HTML, max 1 lien alors que le transport APPEND un lien de désinscription) ; le check « mention désinscription présente » revendiqué n'existe pas dans runQc.",
+      "evidence": "T3 : « runQc/sendEligible … appelé dans evaluateSend … spam-words, ratio liens, brandViolations, présence lien/mention désinscription. Fail-closed » (0,5 j). Contre-preuve : EvaluateSendArgs (sending-gate.ts:168-196) n'a ni subject ni body — le câblage exige un changement de signature propagé aux 5 chokepoints ; qc.ts:97-98 `plainTextOk = !/<[a-z][\\s\\S]*>/i.test(body)` rejette tout HTML alors que C1/C2/C3 envoient outbound_emails.bodyHtml (colonne NOT NULL, outbound.ts:404) ; qc.ts maxLinks défaut 1 alors que deliver-interactive ajoute buildUnsubscribeUrl en footer ; QcChecks = {spam, links, length, plainText, grounding, brand} (qc.ts:44-51) — aucun check de présence de désinscription, et aucune QcOption pour désactiver plainText. Le « 0 call-site » est exact (grep vérifié), mais le câblage naïf = incident de masse.",
+      "fix": "T3 doit inclure : extension de signature evaluateSend (content optionnel, no-op si absent) + plomberie aux 5 sites, options runQc (plainText désactivable ou passage sur bodyText, maxLinks pré-footer), écriture du check désinscription (nouveau). Re-chiffrer à 1-1,5 j."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "majeur",
+      "doc": "tasks.md (T7) + design.md §2/§9",
+      "summary": "Le done de T7 (« chaque envoi outreach crée 1 decision-record complet, tous champs non-null ») est impossible dans l'ordre proposé : angle/alternatives n'existent nulle part avant T18 (qui dépend de T7, pas l'inverse), et ni outbound_emails ni sequence_drafts ne portent prompt_version/angle — le transport n'a pas accès à ces champs.",
+      "evidence": "T7 (dépend : T1 seul) : « écriture au transport après evaluateSend OK … angle, features message, …, prompt_version, gate_scores » ; done « tous champs non-null sur le chemin nominal ». Contre-preuve : requirements M3-R4 admet lui-même « pas de sélection d'angle explicite tracée » ; `git grep angle` sur lib/autopilot + lib/copy = seul un axe de VARIANTE (copy/variants/generate.ts:13) ; les colonnes de sequence_drafts (outbound.ts:148-230 : subject/body/triggerReason/personalizationSources/spamScore/qualityScore) et d'outbound_emails (outbound.ts:391-420) n'incluent ni angle ni prompt_version. Écrire ces champs au transport exige une persistance côté GÉNÉRATION (colonnes ou jsonb sur le draft/la queue) hors périmètre T7.",
+      "fix": "Soit T7 v1 écrit un record PARTIEL (angle/prompt_version nullable, remplis à partir de T18) et le done l'assume, soit T7 inclut la colonne de passage génération→transport (draft.decision_snapshot jsonb) et passe à 1,5-2 j."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "majeur",
+      "doc": "design.md §2 + tasks.md (T12) + benchmark/raw/elevay-existing.md §11 + requirements.md M8-R4",
+      "summary": "La table `meetings` n'existe PAS (les meetings sont fetchés live des calendriers + stockés en activities) — l'extension « meetings.attendance (migration) » est infaisable telle quelle ; et le tracking attendance held/no_show EXISTE DÉJÀ (PR #270, présent à la ref auditée) — l'audit et M8-R4 l'ont raté, T12 re-construit ~70 % d'existant.",
+      "evidence": "design.md §2 : tables existantes « meetings/invites » + « Extensions : meetings.attendance (held/no_show/unknown) » ; T12 : « colonne meetings.attendance (migration) ; heuristique calendrier ; question UI post-meeting » ; elevay-existing.md §11 : « aucun tracking du “honoré” (présence au meeting) ». Contre-preuve : aucun pgTable meetings dans app/apps/web/src/db/schema/* (grep exhaustif) ; app/api/meetings/route.ts:14-18 fetch calendriers + activities ; lib/meetings/attendance.ts existe (MEETING_ATTENDANCE held/no_show, resolveAttendance avec heuristiques explicit/cancelled/recorded, SHOW_RATE) ; app/api/meetings/[id]/attendance/route.ts:4-8 : « stored on the meeting activity's metadata (no migration) » ; `git log` : commit 0539395a « meeting show rate — held / no-show capture + rate (#270) », présent à 79731970.",
+      "fix": "Corriger l'audit §11 et M8-R4 ; réécrire T12 : PAS de migration — le travail réel est uniquement le producteur d'outcome meeting_booked + la résolution meeting_held sur le watcher depuis resolveAttendance existant (0,5 j)."
+    },
+    {
+      "lens": "completeness",
+      "severity": "majeur",
+      "doc": "design.md + tasks.md",
+      "summary": "L'attribution multi-touch (module 11 du prompt, « attribution au dernier touchpoint + fenêtre multi-touch ») est tombée silencieusement après la Phase 1 : le design réduit explicitement l'attribution au last-touch via le watcher existant, aucune tâche ni entrée hors-périmètre ne couvre la fenêtre multi-touch, et M11-R4 n'apparaît même pas dans le tableau récap des gaps de requirements.md.",
+      "evidence": "Prompt maître ligne 56 : « Attribution : quel message de la séquence, quel canal et quel signal ont déclenché l'outcome (attribution au dernier touchpoint + fenêtre multi-touch) ». requirements.md:146 (M11-R4) le capture [PARTIEL — « l'attribution message-de-séquence + multi-touch n'existe pas »], MAIS design.md:146 tranche : « Le decision-record est JOINT à l'outcome par le watcher existant (action_outcomes) — pas de second système d'attribution » (= last-touch niveau action uniquement) ; grep 'multi-touch' sur design.md/tasks.md = 0 occurrence ; le récap requirements.md:179-197 liste M11-R1/R3 mais pas M11-R4 ; tasks.md:129-134 (hors périmètre explicite) ne la mentionne pas. Incohérence induite : T22 (tasks.md:101) promet que le gifting « rejoint l'attribution » alors qu'un cadeau précédant une réponse à un email ne sera jamais crédité en last-touch.",
+      "fix": "Soit ajouter au design §9 un mécanisme de fenêtre multi-touch (crédit des touchpoints de la fenêtre du watcher joints au même outcome, même fractionnaire) + une tâche dédiée, soit le flagger explicitement hors-scope v1 avec décision founder — mais pas le silence actuel."
+    },
+    {
+      "lens": "completeness",
+      "severity": "majeur",
+      "doc": "design.md + tasks.md",
+      "summary": "M11-R5 (« le succès est configurable par l'utilisateur, ex. pondérer RDV honoré vs volume de réponses, avec des défauts sains ») est posée en requirements puis disparaît totalement : absente du tableau récap des gaps, aucun design (ni colonne, ni écran de pondération), aucune tâche, aucun flag hors-scope — seule la moitié « défauts sains » survit dans ux.md.",
+      "evidence": "Prompt maître ligne 57 : « Le succès est configurable par l'utilisateur … mais avec des défauts sains ». requirements.md:147 : « M11-R5 — LE SYSTÈME DOIT permettre au tenant de configurer la pondération du succès … [ABSENT] » — puis grep 'M11-R5' : une seule autre occurrence, ux.md:44 (« les défauts sont sains (M11-R5) »), qui ne couvre que les défauts. Le récap requirements.md:179-197 ne liste pas M11-R5 ; design.md §2/§9 fige POSITIVITY sans surface de pondération tenant ; tasks.md : 0 tâche ; tasks.md:129-134 hors-périmètre : absent.",
+      "fix": "Ajouter M11-R5 au récap des gaps, puis soit une petite surface design (pondération dans tenant_settings consommée par la labellisation + reporting) + tâche en itération 4, soit un flag hors-scope v1 justifié (défauts sains seulement)."
+    },
+    {
+      "lens": "completeness",
+      "severity": "majeur",
+      "doc": "design.md",
+      "summary": "Le re-scaling de la hiérarchie d'outcomes (« aucune réponse < réponse négative », inversé dans le code actuel) a été explicitement déféré par requirements.md à la Phase 2 (« mérite la Phase 2, pas un hotfix ») et listé au récap P2 — mais design.md ne le traite nulle part et aucune tâche ne le couvre (T12 ne fait que meeting_held).",
+      "evidence": "Prompt maître ligne 54 : hiérarchie « bounce/opt-out/plainte spam (négatif fort) < aucune réponse < réponse négative < … ». requirements.md:143 (M11-R1) : « DIVERGENCE restante assumée à trancher en design : replied_negative (-0.3) < no_response (0.0) dans le code alors que la cible ordonne l'inverse — le re-scaling … mérite la Phase 2, pas un hotfix » ; récap requirements.md:193 : ligne P2 « meeting_held tracking + hiérarchie replied_negative/no_response ». Contre-preuve : grep 'replied_negative|no_response' sur design.md et tasks.md = 0 occurrence hors T12 qui ne couvre que l'attendance (tasks.md:54-56) ; design.md:148 se contente de « la hiérarchie POSITIVITY (corrigée PR #609) » — or PR #609 n'a corrigé que meeting_held/meeting_booked (elevay-existing.md:138,144 documente l'inversion restante).",
+      "fix": "Trancher dans design §9 (re-scaling de POSITIVITY + inventaire des consommateurs : learned-trust.ts:126-131, stats.ts) et ajouter une tâche (probable T12bis, itération 0 ou 2)."
+    },
+    {
+      "lens": "ux",
+      "severity": "majeur",
+      "doc": "wireframes.html",
+      "summary": "Le wireframe 5 affiche l'open rate SUR la page « Résultats » (aside « Délivrabilité (diagnostic) »), en contradiction littérale avec ux.md 3.8 et avec le critère de done testable de T11.",
+      "evidence": "wireframes.html:198 : « Open rate (diagnostic uniquement — non fiable, Apple MPP) 61 % » rendu dans l'aside de l'écran 5 « Résultats » ; contre-preuve ux.md:98 : « L'open rate n'apparaît QUE dans l'écran délivrabilité (INV-7) » et tasks.md:52 (T11) : « l'open rate est ABSENT de la page résultats ». Aggravé par une ambiguïté interne d'ux.md:110 (ligne Reporting du tableau §4 : « Open-rate visible ICI seulement, flaggé « diagnostic » ») qui semble l'autoriser sur le reporting en délivrabilité dégradée.",
+      "fix": "Retirer la carte open-rate de l'écran 5 (garder bounce/spam, ou remplacer par un lien « Diagnostic délivrabilité ») ; corriger la cellule ux.md:110 pour pointer explicitement l'écran délivrabilité afin que wireframe, ux.md et T11 disent la même chose."
+    },
+    {
+      "lens": "ux",
+      "severity": "majeur",
+      "doc": "ux.md",
+      "summary": "La « pause globale » promise partout (principe 3, bouton « Tout mettre en pause » et raccourci p du cockpit) n'a aucun support technique : le design et les tâches ne couvrent la pause que pour le canal LinkedIn.",
+      "evidence": "ux.md:43 : « Pause globale, par séquence, par prospect, par canal — accessible depuis chaque écran sans navigation (M6-R4) » — or M6-R4 (requirements.md:98) est LinkedIn-only ; wireframes.html:69 (« Tout mettre en pause ») et :96 (« p pause globale ») ; contre-preuve : la seule tâche est T15 (tasks.md:69) « pause canal 1 clic (globale/séquence) » côté LinkedIn, design.md §12 ne trace aucune donnée/composant de pause, et aucune tâche ne pause l'email/gifting.",
+      "fix": "Soit ajouter une tâche « pause tenant-wide » (gèle enrollments email + file LinkedIn + gifting, reprise propre — le pattern pauseEnrollment existe) et la tracer en §12, soit dégrader le principe 3 et retirer le bouton/kbd du wireframe cockpit."
+    },
+    {
+      "lens": "ux",
+      "severity": "majeur",
+      "doc": "ux.md",
+      "summary": "L'état non-nominal « signal expiré » promis pour la revue des séquences (§4 : « la ligne… sort du lot actif ») n'a aucun mécanisme : le sweep d'expiration ne couvre que linkedin_action_queue, et M4-R6 (step suspendu si signal périmé) est explicitement hors périmètre des tasks.",
+      "evidence": "ux.md:107 (tableau §4, ligne Revue séquences, colonne Signal expiré) : « La ligne montre « signal expiré » et sort du lot actif » ; contre-preuve design.md:124 : le sweep horaire n'expire que « linkedin_action_queue » (T16, tasks.md:72-74 idem) — rien sur sequence_drafts ; et tasks.md:132 : « Branchements conditionnels in-sequence (M4-R3/R6) — après la file LinkedIn » = l'exigence support (M4-R6, requirements.md:76 [ABSENT]) est déférée alors que l'état UI qui en dépend est promis au MVP.",
+      "fix": "Ajouter l'expiration des sequence_drafts pending sur TTL signal (même pattern que T16 : sweep + état expired + trace) dans l'itération 0, ou marquer honnêtement cet état « post-MVP » dans le tableau §4."
+    },
+    {
+      "lens": "ux",
+      "severity": "majeur",
+      "doc": "ux.md",
+      "summary": "« L'objection routée (M8-R1) » est promise dans le parcours Réponses (3.5) alors que « objection » n'est pas un intent routable dans le code, qu'aucune tâche ne l'ajoute et que design.md §12 ne la trace pas.",
+      "evidence": "ux.md:85 : « l'objection routée (M8-R1) » ; contre-preuves : requirements.md:115 (M8-R1) [PARTIEL — « objection » n'est pas un intent routable de premier niveau (seulement objectionDetail dans le handler)] ; design.md:179 (§12 ligne 3.5) ne liste que « inbox existante + reply_review_queue / classifications < seuil de confiance » ; aucune tâche T1-T28 ne touche la taxonomie d'intents (T10 ne crée que la file de revue).",
+      "fix": "Soit ajouter une sous-tâche à T10 (promouvoir objection en Intent de premier niveau dans lib/reply/classify.ts + routage), soit retirer la promesse de 3.5 et l'annoter comme gap M8-R1 assumé."
+    },
+    {
+      "lens": "ux",
+      "severity": "majeur",
+      "doc": "wireframes.html",
+      "summary": "Les deux exemples de copy GÉNÉRÉE des wireframes (email de séquence et invitation LinkedIn) contiennent des em-dashes, en violation directe de la règle éditoriale de la charte et de M10-R3 — la « copy réelle » de référence enseigne exactement ce que le gate G4 devra bloquer.",
+      "evidence": "wireframes.html:115 : « Bonjour Alex — bravo pour la Série A annoncée le 12/06… » et :136 : « Bravo pour la Série A — je construis Elevay, un revenue engine… » ; contre-preuve design-language.md:129 : « Pas d'em-dash dans la copy générée » et requirements.md:139 (M10-R3) : « aucun emoji, pas d'em-dash ». ux.md:115 revendique pourtant une « copy réelle » dans les wireframes.",
+      "fix": "Réécrire les deux messages d'exemple sans em-dash (ex. « Bonjour Alex, bravo pour la Série A annoncée le 12/06. ») — ces exemples serviront de golden cases pour G4/brandViolations, ils doivent être irréprochables."
+    }
+  ],
+  "mineurs": [
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "La « Vue décisions » du reporting (ux 3.8 : combinaisons persona × signal × angle → outcomes) et sa ligne design §12 n'ont pas de tâche — T11 ne fait que réordonner les métriques et ajouter la section gates.",
+      "evidence": "ux.md 3.8 : « Vue “décisions” (M12) : quelles combinaisons persona × signal × angle produisent les outcomes — la version lisible du decision-record » ; design.md §12 (3.8) : « patterns n/lift » requis. Contre-preuve : tasks.md T11 Fait = « écran reports réordonné […] + section gates » — aucune vue décisions ; aucune autre tâche reporting.",
+      "fix": "Étendre T11 (dépendance T7/T9) avec la vue décisions et un Done sur les agrégats n/lift."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "ux.md",
+      "summary": "Seuils cold-start incohérents : l'UI reporting annonce « l'apprentissage démarre à ~50 » alors que design/T9 affichent des insights dès n ≥ 10 par pattern et que T9 teste qu'un dataset de 30 décisions produit un insight.",
+      "evidence": "ux.md §4 Reporting/vide : « État cold-start chiffré (“14 décisions — l'apprentissage démarre à ~50”) » ; contre-preuve design.md §9 : « Seuil d'affichage : n ≥ 10 décisions par pattern » et tasks.md T9 Done : « avec un dataset synthétique de 30 décisions, le cron produit ≥1 insight ». L'utilisateur verrait des insights bien avant le « ~50 » promis.",
+      "fix": "Aligner la copy ux sur le seuil réel (n ≥ 10 par pattern) ou justifier le ~50 comme seuil global distinct dans design §9."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "design.md",
+      "summary": "§3 classe le rate limit 60/min+600/h parmi les sous-plafonds qui « restent EN DESSOUS du cap » — faux : 600/h ≈ 14 400/j théoriques, très au-dessus de 100/j ; le benchmark fait lui-même ce calcul.",
+      "evidence": "design.md §3 : « Sous-plafonds conservés : 20/j primary, 50/j mailbox, rampe warmup, 60/min+600/h — ils restent EN DESSOUS du cap » ; contre-preuve benchmark/raw/elevay-existing.md §5 : « 600/h tenant ≈ 14 400/j théoriques » ; requirements.md M5-R1 ne liste d'ailleurs que « 20/j primary, 50/j mailbox, rampe warmup » comme sous-plafonds.",
+      "fix": "Reclasser 60/min+600/h comme lissage de débit (safety net), pas comme sous-plafond de volume."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "design.md",
+      "summary": "§5 affirme « T-0 reste 100 % déterministe (<50 ms ajoutés) » alors que le même tableau place la re-vérification G2 des citations à T-0 avec des « HEAD checks » — des I/O réseau ni déterministes en latence ni <50 ms.",
+      "evidence": "design.md §5, ligne G2 : « à la GÉNÉRATION + re-vérification T-0 » / « 1 appel Haiku/message + HEAD checks » vs le bullet coût du même §5 : « T-0 reste 100 % déterministe (<50 ms ajoutés) » ; requirements.md M13 edge case confirme la re-vérification T-0 des citations au transport.",
+      "fix": "Préciser : « <50 ms pour les checks NOUVEAUX (runQc) ; la re-vérification citations T-0 existante reste I/O-bound avec timeout fail-closed »."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "benchmark/raw/elevay-existing.md",
+      "summary": "Trois périmètres de cap coexistent entre les docs : « compte utilisateur » (prompt maître), « compte d'envoi » (recommandation du benchmark), « TENANT » (décision founder dans requirements) — la reco du benchmark contredit les deux autres.",
+      "evidence": "Prompt maître vision 4 : « cap strict de 100 emails/jour/compte utilisateur » ; benchmark §5 fait 1 : « le travail = un cap par-compte-d'envoi/jour dans evaluateSend lui-même » (par mailbox) ; requirements.md décision founder 1 : « Cap d'envoi = 100 emails/jour/TENANT ». Requirements tranche, mais le benchmark — présenté comme « Détail complet » — recommande un périmètre que ni le prompt ni la décision ne portent.",
+      "fix": "Annoter le benchmark (§5) : « périmètre tranché founder 02/07 = tenant » pour tuer l'ambiguïté."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "benchmark/raw/elevay-existing.md",
+      "summary": "Le benchmark décrit comme actuels deux « conflits directs » (opens dans POSITIVITY, meeting_booked 0.9 < replied_positive 1.0, meeting_held inexistant) déjà corrigés sur la ref re-validée par requirements — vérifié dans le code : origin/main a meeting_held 1.0 > booked 0.95 > replied_positive 0.9 et email_opened ABSENT.",
+      "evidence": "benchmark §11 : « email_opened pèse 0,1 dans POSITIVITY (resolve.ts:12) », « replied_positive (1.0) > meeting_booked (0.9) », « “RDV honoré” n'existe pas comme outcome » — exact pour la ref 7973 (git show vérifié) mais requirements.md M11-R1/M11-R2 cite « [corrigé PR #609] » sur la ref re-validée 969123ee, et git show origin/main:…/resolve.ts confirme meeting_held: 1.0, meeting_booked: 0.95, replied_positive: 0.9, email_opened supprimé. Le doc de preuve contredit l'état de référence des requirements sans le signaler.",
+      "fix": "Ajouter un post-scriptum au benchmark : « conflits 1-2 du module 11 corrigés par PR #609 (ref 969123ee) — voir requirements INV-7/M11-R1 »."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "Dépendance injustifiée T19 → T1 : le warmup automatique à la connexion de boîte (rampe mailbox existante 2→50/j) n'utilise ni tenant_send_counters ni sendClass ; la dépendance retarde inutilement un item d'onboarding derrière le chantier cap.",
+      "evidence": "tasks.md T19 : « Dépend : T1. Fait : la connexion d'une boîte déclenche la rampe existante (2→50/j) […] Done : cap effectif jour 1 = début de rampe » — aucun élément du Fait/Done ne touche le compteur tenant ; requirements.md M5-R1 les décrit comme couches indépendantes (« Les caps existants (…rampe warmup) restent des sous-plafonds »). Aucune contre-dépendance technique citée nulle part.",
+      "fix": "Retirer la dépendance (T19 : Dépend : —), ce qui la rend parallélisable avec l'itération 0."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "M7-R4 (« gifting optionnel et OFF par défaut ») n'apparaît dans aucun critère de T22 : ni le Fait ni le Done ne testent l'état OFF par défaut ni le caractère opt-in.",
+      "evidence": "requirements.md M7-R4 : « Le gifting DOIT être optionnel et OFF par défaut ». Contre-preuve tasks.md T22 : Fait = « déclencheur (compte tier haut + signal configuré) → tâche… » ; Done = idempotence, seuil budget, refus — aucun test « tenant sans opt-in gifting → aucune tâche créée ».",
+      "fix": "Ajouter au Done de T22 : « gifting OFF par défaut : sans activation explicite, aucun trigger ne crée de tâche »."
+    },
+    {
+      "lens": "coherence",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "Le producteur d'outcome meeting_booked (gap explicitement noté en M8-R4) n'est créé par aucune tâche, alors que T23 promet « chaque RDV a un récit (100 %) » — une attribution qui dépend de la jointure booking→outcome.",
+      "evidence": "requirements.md M8-R4 : « meeting_booked comme outcome d'action n'a pas de producteur » ; récap P2 : « meeting_held tracking + hiérarchie… | M8-R4, M11-R1 ». Contre-preuve tasks.md : T12 ne couvre que meetings.attendance/meeting_held ; « meeting_booked » n'apparaît dans aucun Fait/Done ; T23 Done exige pourtant « chaque RDV a un récit (100 %, métrique UX) » (idem ux.md §6 : « RDV pris attribuables affichés : 100 % »).",
+      "fix": "Étendre T12 : à la prise de RDV, produire l'outcome meeting_booked sur le watcher du contact (préalable au récit T23)."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "mineur",
+      "doc": "design.md §9 + tasks.md (T9)",
+      "summary": "Le seam « getLearnedContext [EXISTE] » n'existe pas sous ce nom — c'est applyLearnedContext (traced-ai.ts:121), et il est gated sur DRAFTING_AGENT_IDS : injecter les insights hebdo dans un agent decision-engine est un [ÉTEND] (nouvel agent id + nouveau prompt-block getter), pas un [EXISTE].",
+      "evidence": "design.md §9 : « injectés via le seam getLearnedContext [EXISTE] » ; T9 idem. Contre-preuve : `git grep getLearnedContext origin/main` = 0 occurrence ; traced-ai.ts:114-119 `DRAFTING_AGENT_IDS = {draft-email, follow-up-email, suggest-reply, send-sequence-step}` et :151 le bloc appris ne s'applique qu'à ces agents.",
+      "fix": "Renommer en applyLearnedContext et marquer [ÉTEND] : ajout de l'agent decision-engine au set + getter du bloc insights (trivial, ne change pas l'estimation T9)."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "mineur",
+      "doc": "design.md §7 + tasks.md (T17)",
+      "summary": "« EmailVerifierPort » n'existe pas sous ce nom — le slot réel est l'interface `VerifyProvider` de verify-email.ts ; le slot lui-même est réel et complet (VerifySignal porte mailboxOk/catchAll/spamTrap, statuts valid/risky/invalid/catch_all/unknown), donc T17 est faisable comme estimé, seule la référence nominale est fausse.",
+      "evidence": "design.md §7 : « EmailVerifierPort — interface déjà “slotted in” (mx-verify-provider.ts:6) ». Contre-preuve : verify-email.ts:49-53 `export interface VerifyProvider { name; cost; verify(email): Promise<VerifySignal|null> }` ; `git grep EmailVerifierPort origin/main` = 0.",
+      "fix": "Remplacer EmailVerifierPort par VerifyProvider dans design §7 et T17."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "mineur",
+      "doc": "tasks.md (T5)",
+      "summary": "G1 « opposable aux 3 chemins » en 1 j est serré : enrollment-eligibility.ts existe mais est une fonction PURE (email/deletedAt/excluded/suppressed uniquement) consommée à 6 call-sites qui construisent chacun leur input via leur propre query, et le loop autopilot quotidien (enroll.ts) ne la traverse pas du tout — ajouter « ICP ≥ seuil ET ≥1 signal frais » impose un chargement signaux+score à chaque site ou un wrapper DB adopté partout.",
+      "evidence": "T5 : « enrollment-eligibility.ts + règle … opposable aux 3 chemins (autopilot, chat/tools, manuel) » (1 j). Contre-preuve : ContactEligibilityInput (enrollment-eligibility.ts:18-25) n'a ni signal ni score ICP ; consommateurs = api/sequences/[id]/{enroll,autopilot}, chat/tools/action.ts ×2, account-lists.ts, signal-to-sequence (company-level seulement) ; lib/autopilot/enroll.ts:11-12 : « Eligibility … applied at SELECTION (B3.1) » — un 7e chemin distinct dans loadCandidates.",
+      "fix": "Prévoir un wrapper DB-aware (loadEligibilityContext) adopté aux 6 sites + le point d'insertion séparé dans la sélection autopilot ; garder 1 j seulement si le wrapper est le seul livrable testé, sinon 1,5 j."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "mineur",
+      "doc": "design.md §5 (tableau G5) + tasks.md (T6)",
+      "summary": "Deux surestimations d'existant sur le pipeline gates : (a) « le reste existe (suppression, thresholds, warmup, DNS) » dans evaluateSend — warmup et DNS-auth vivent dans les WORKERS/capacity-source, pas dans le gate partagé, donc les envois interactifs ne les traversent jamais ; (b) la state machine sequence_drafts réelle est pending_approval/approved/rejected/expired/sent (pg enum) — l'extension à 5-7 nouveaux états implique ALTER TYPE + refonte exhaustive de canTransition + tous les consommateurs (routes approve/reject/edit, bulk-approve, dispatch-decision, expiry cron, index qualité), ce qui rend T6 (1 j : migration gate_decisions + écritures depuis 4 gates + états étendus) serré.",
+      "evidence": "design.md §5 : « G5 … le reste existe (suppression, thresholds, warmup, DNS) » et « sequence_drafts porte déjà une state machine — on l'étend : draft → gates_running → … ». Contre-preuve : evaluateSend (sending-gate.ts:214-365) ne contient ni warmup ni DNS (warmup = getEffectiveDailyLimit dans email-send-worker.ts:36, DNS = capacity-source.ts:30-36, chemins cron uniquement) ; états réels = sequenceDraftStatusEnum (outbound.ts:141-146) — il n'existe ni « draft » ni « scheduled » ; state-machine.ts:27-39 énumère 5 statuts/6 actions à réécrire exhaustivement.",
+      "fix": "Corriger le tableau G5 (warmup/DNS = worker-side, à porter au gate ou à assumer cron-only) ; chiffrer T6 à 1,5 j ou sortir l'extension d'états en sous-tâche."
+    },
+    {
+      "lens": "feasibility",
+      "severity": "mineur",
+      "doc": "requirements.md INV-1/M5-R1 + design.md §3",
+      "summary": "« Cap s'appliquant à TOUS les modes y compris external-connected/Instantly » n'est démontrable que pour les envois exécutés par les chokepoints Elevay : le send-adapter Instantly n'est lui-même PAS câblé, et un envoi piloté par le scheduler d'Instantly (campagne côté provider) ne traverserait jamais evaluateSend — la limite du périmètre de l'invariant n'est écrite nulle part.",
+      "evidence": "INV-1 : « dans TOUS les modes d'envoi (primary, elevay-managed, external-connected/Instantly) ». Contre-preuve : lib/emails/resend-mailbox-select.ts:6 « must go through the Instantly API (sendViaInstantly), which is not wired » ; lib/providers/instantly/send-adapter.ts existe derrière SendPort sans caller de production ; toute future intégration « campagne Instantly provider-side » contournerait structurellement le compteur tenant_send_counters.",
+      "fix": "Ajouter à INV-1/design §3 la clause de périmètre : le cap gouverne tout envoi initié par Elevay ; le câblage futur de sendViaInstantly DOIT passer par evaluateSend, et le mode campagne-provider-side est interdit (ou capé à l'enrôlement de leads, pas à l'envoi)."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "« objection » comme classe de premier niveau du classifieur de réponses (taxonomie imposée par le module 11 du prompt) : le gap est identifié en requirements et exigé par ux.md (« l'objection routée »), mais aucune tâche n'étend la taxonomie, et M8-R1 est absent du récap des gaps comme du hors-périmètre.",
+      "evidence": "Prompt maître ligne 55 : « Classifieur de réponses par LLM (positif / négatif / objection / pas maintenant / OOO / désinscription) ». requirements.md:115 (M8-R1) : « [PARTIEL — … « objection » n'est pas un intent routable de premier niveau (seulement objectionDetail dans le handler)] » ; ux.md:85 : « l'objection routée (M8-R1) ». Contre-preuve : grep 'objection' sur tasks.md = 0 occurrence ; T10 (tasks.md:46-48) ne couvre que la file de revue basse-confiance (M8-R2) ; récap requirements.md:188 ne cite que M8-R2/M11-R3.",
+      "fix": "Ajouter à T10 (ou une tâche sœur) l'extension de l'Intent de lib/reply/classify.ts avec « objection » routable + son routage inbox."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "Le golden set annoté à la main (excellents vs moyens vs mauvais) exigé pour calibrer les seuils des gates est prévu au design mais n'a aucune tâche de création/annotation : T20 le présuppose déjà annoté, et les seuils G2/G4 (défaut 0.75) ne sont calibrés par aucune tâche.",
+      "evidence": "Prompt maître ligne 106 : « seuils calibrés sur un golden set de messages annotés à la main (excellents vs moyens vs mauvais) ». design.md:117 : « le golden set (lib/evals/golden-cases.ts [EXISTE]) s'enrichit de cas annotés excellent/moyen/mauvais pour calibrer les seuils » — mais tasks.md:92 (T20 Done) consomme « les messages interchangeables annotés » sans aucune tâche amont qui produise l'annotation ; requirements.md:173 prévoit même l'edge case « golden set non annoté (seuils par défaut conservateurs jusqu'à calibration) » sans tâche pour en sortir.",
+      "fix": "Ajouter une tâche explicite (itération 2, avant T20) : annoter N cas excellent/moyen/mauvais dans golden-cases.ts + script de calibration des seuils G3/G4."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "tasks.md",
+      "summary": "Les garde-fous d'apprentissage du module 12 (jamais de pattern qui dégrade délivrabilité/marque, monitoring de dérive KL, séparation train/test structurelle) sont designés (§9) mais aucune tâche ne les implémente : T25a/b et T27a/b ne testent que « jamais d'arm hors G1-G3 » et le split temporel.",
+      "evidence": "Prompt maître ligne 62 : « Garde-fous : jamais d'apprentissage sur des patterns qui améliorent les réponses mais dégradent la délivrabilité ou la marque ; monitoring de dérive ; séparation stricte train/test ». design.md:152 les conçoit (« invalidé automatiquement (croisement avec deliverability thresholds) ; monitoring de dérive = … KL-divergence ») ; contre-preuve : grep 'dérive|drift|KL' sur tasks.md = 0 occurrence ; T25a Done (tasks.md:115) = « jamais d'arm hors G1-G3 » seulement.",
+      "fix": "Ajouter aux Done de T9/T25b/T27b le croisement insights×deliverability-thresholds et le job de monitoring de distribution, ou une tâche T29 dédiée en itération 4."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "ux.md",
+      "summary": "Les états non-nominaux sont exigés « pour chaque écran » mais le tableau §4 omet 2 des 8 parcours : 3.6 RDV-payoff et 3.7 Gifting (ce dernier n'a ses états que côté design via la state machine gifting_tasks, pas côté UX).",
+      "evidence": "Prompt maître ligne 89 : « États non-nominaux pour chaque écran : vide, chargement, erreur, quota atteint, délivrabilité dégradée, signal expiré ». ux.md:104-111 : le tableau couvre Cockpit, Revue séquences, File LinkedIn, Réponses, Reporting, Onboarding — les écrans 3.6 (RDV) et 3.7 (Gifting, ux.md:87-94) n'y figurent pas ; design.md:64 (états suggested/…/expired de gifting_tasks) ne remplace pas les états d'écran vide/chargement/erreur.",
+      "fix": "Ajouter deux lignes au tableau §4 (RDV : pas encore de RDV / calendrier déconnecté / attendance inconnue ; Gifting : aucune tâche / budget épuisé / signal expiré)."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "design.md",
+      "summary": "La Phase 2 exige « prompts système » du moteur de décision parmi ses livrables : design §4 spécifie inputs, sortie JSON stricte, modèle et versioning, mais aucun prompt système n'est rédigé ni même esquissé (contenu, contraintes anti-hallucination en dur, format des règles apprises injectées).",
+      "evidence": "Prompt maître ligne 100 : « Design du moteur de décision IA : prompts système, structure des inputs …, format de sortie JSON strict, … ». design.md:87-101 (§4) couvre inputs/output/canary mais ne contient aucun texte ou squelette de prompt système — seule mention : « Prompt système versionné [EXISTE — registre de prompts + canary] » (design.md:99), qui décrit le pipeline, pas le prompt.",
+      "fix": "Ajouter au design §4 le squelette du prompt système du decision-engine (rôle, faits cités seulement, format des insights/bras injectés, sortie JSON) — c'est lui qui sera versionné/évalué comme du code."
+    },
+    {
+      "lens": "completeness",
+      "severity": "mineur",
+      "doc": "ux.md",
+      "summary": "L'interview UX Étape A (8-12 questions au founder) et la règle permanente « pose-moi tes questions AVANT chaque phase » n'ont pas été exécutées : remplacées par 12 réponses présumées — déviation EXPLICITEMENT flaggée et sourcée (pas une chute silencieuse), mais 3 réponses structurantes restent en confiance « Moyenne » (vue d'accueil, budget temps quotidien, desktop-only) et conditionnent le cockpit et les métriques UX.",
+      "evidence": "Prompt maître lignes 78-84 (« Commence par me poser 8 à 12 questions ciblées ») et ligne 133 (« Pose-moi tes questions de clarification AVANT chaque phase »). ux.md:6-8 : « le founder a levé les STOP inter-phases (02/07). L'interview Étape A est donc remplie par réponses PRÉSUMÉES … Toute correction du founder invalide les sections qui en dépendent » ; ux.md:18-19,27 : questions 3, 4 et 12 en confiance « Moyenne ».",
+      "fix": "Faire valider par le founder au minimum les 3 réponses en confiance Moyenne (Q3 vue d'accueil, Q4 ≤15 min/j, Q12 desktop-only) avant l'implémentation des écrans cockpit/file LinkedIn."
+    },
+    {
+      "lens": "ux",
+      "severity": "mineur",
+      "doc": "wireframes.html",
+      "summary": "Le badge « 12 excellents envoyés — objectif atteint » accolé à la jauge d'envois réintroduit le vocabulaire volume-comme-objectif que INV-11 et le principe 5 bannissent (le cap est un plafond, jamais un objectif).",
+      "evidence": "wireframes.html:73 : « <span class=\"badge ok\">12 excellents envoyés — objectif atteint</span> » à côté de « Envois du jour 12 / 100 » ; contre-preuve requirements.md:31 (INV-11) : « le cap est un plafond, jamais un objectif » et ux.md:21 (interview #6) : « pas comme une jauge à moitié vide. Le cap est un plafond, jamais un objectif ».",
+      "fix": "Reformuler sans le mot « objectif » : « 12 envois, tous excellents — journée réussie » (célèbre la qualité, pas l'atteinte d'un volume)."
+    },
+    {
+      "lens": "ux",
+      "severity": "mineur",
+      "doc": "wireframes.html",
+      "summary": "Tutoiement systématique de l'UI (« Prêt pour toi », « Tu as validé 112 actions », « ton calendrier », « ton choix explicite ») alors que la charte ne documente que le vouvoiement pour le B2B francophone — c'est une ambiguïté de charte improvisée au lieu d'être remontée au founder (INV-4).",
+      "evidence": "wireframes.html:78 (« Prêt pour toi »), :145 (« Tu as validé 112 actions »), :80 (« ton calendrier »), :148 (« ton choix explicite ») ; contre-preuve design-language.md:129 : « vouvoiement pour le B2B francophone » (seule règle d'adresse documentée) + requirements.md:24 (INV-4) : « toute ambiguïté de charte DOIT être remontée au founder, pas improvisée ». Nuance : la copy prospect des wireframes vouvoie correctement (:136 « votre montée en charge »).",
+      "fix": "Poser la question au founder (tutoiement produit-vers-utilisateur vs vouvoiement) avant l'implémentation, puis inscrire la réponse dans design-language.md §éditorial ; d'ici là, aligner les wireframes sur le vouvoiement documenté."
+    },
+    {
+      "lens": "ux",
+      "severity": "mineur",
+      "doc": "design.md",
+      "summary": "La ligne cockpit de §12 (traçabilité UX→technique) est incomplète : trois données promises par ux.md 3.2/§4 manquent des « données temps réel requises » — santé délivrabilité, RDV pris cette semaine, et la liste des « items différés » au cap (dont T2 ne retourne que {sent, cap, resetAt}).",
+      "evidence": "design.md:176 (ligne 3.2) : « compteur cap (lecture directe), files (count + top items), derniers blocks de gates, insights n≥10 » — sans santé délivrabilité ni RDV ; contre-preuves ux.md:65 (« santé délivrabilité (état + lien diagnostic), RDV pris cette semaine »), ux.md:106 (« items différés listés ») et prompt maître:108 qui cite EXACTEMENT cet exemple : « le cockpit exige quotas et santé délivrabilité à jour » ; tasks.md:16 (T2) : « l'API compteur retourne {sent, cap, resetAt fuseau tenant} » — pas d'items différés.",
+      "fix": "Compléter la ligne 3.2 de §12 (santé délivrabilité via thresholds/guard existants, RDV via meetings, items différés via les rows requeued cap_reached) et étendre le done de T2 pour exposer les items différés."
+    },
+    {
+      "lens": "ux",
+      "severity": "mineur",
+      "doc": "design.md",
+      "summary": "La boucle « un enrollment rejeté N fois sur le même motif = anti-pattern injecté » (ux 3.3, M12-R2) n'est pas câblée : le cron palier 1 n'agrège que outreach_decisions × outcomes, or les raisons de rejet vivent dans sequence_drafts et un draft rejeté ne produit jamais d'outreach_decision (écrite à l'envoi).",
+      "evidence": "ux.md:73 : « Un enrollment rejeté N fois sur le même motif = anti-pattern injecté (M12-R2) » ; contre-preuve design.md:149 : « cron… sur agrégats de outreach_decisions × outcomes » et design.md:146 : l'écriture outreach_decisions se fait « au moment de l'envoi (transport, après evaluateSend OK) » — un rejet n'atteint jamais ce dataset ; T9 (tasks.md:43) reprend le même périmètre.",
+      "fix": "Ajouter les raisons de rejet de sequence_drafts comme seconde source d'entrée du cron decision-insights-weekly (T9), et le dire dans design §9."
+    },
+    {
+      "lens": "ux",
+      "severity": "mineur",
+      "doc": "wireframes.html",
+      "summary": "Français des wireframes : aucune faute d'orthographe stricte détectée, mais des incohérences éditoriales user-facing — séparateur décimal mélangé (point anglo-saxon vs virgule FR), franglais dans la copy utilisateur (« groundé », « draft prêt », « slots »), tournure maladroite « choisi contre 2 angles alternatifs », et seuils cold-start divergents entre les copies (14 / ~50 / n≥10).",
+      "evidence": "Décimales : wireframes.html:116 « Gate 4 : 0.86 », :84 « ICP ≥ 0.8 », :192 « seuil 0.75 » vs :91 « 3,2× » et :196 « 0,8 % » ; franglais : :86 « message de félicitations groundé », :79 « draft prêt », :80 « 3 slots réels » ; :165 « (choisi contre 2 angles alternatifs) » (attendu : « face à ») ; cold-start : ux.md:66 « 14 décisions trackées », wireframes.html:93 « ~50 décisions trackées », design.md:149 « n ≥ 10 décisions par pattern » — trois chiffres non reliés.",
+      "fix": "Normaliser la virgule décimale dans toute copy FR (« 0,86 »), franciser la copy user-facing (« étayé par ses sources », « brouillon prêt », « créneaux »), remplacer « choisi contre » par « choisi face à », et sourcer les seuils cold-start sur une seule constante design (n≥10/pattern, ~50 total) citée partout."
+    }
+  ],
+  "verdicts": [
+    "Les 6 documents sont remarquablement alignés sur les chiffres de pilotage (sommes j-h exactes : 10,5+3,5+4,5+3+6 = 27,5 ; quotas LinkedIn 20/100, rampe 2→50, seuils 5%/0,3%/0,1%, N=2, 0.75, 300/2000 cohérents partout) et le graphe de dépendances est un DAG sans cycle. Mais la chaîne casse à trois endroits : (1) la Phase 3 sous-couvre systématiquement la moitié UI et « tous chemins » des lignes P0/P1 du récap — 1 bloquant (G2 jamais étendu à tous les chemins de génération, violation directe d'INV-10 « aucun chemin de contournement ») et 4 surfaces promises sans tâche (cockpit/StatBar P0-M5-R2, logs de gates UI P1-M13-R6, decision-record LinkedIn, objection routée) ; (2) la Phase 2 a esquivé la seule décision que la Phase 1 lui déléguait nommément (re-scaling replied_negative/no_response — vérifié toujours divergent dans le code origin/main) et deux exigences (M11-R5, garde-fous M12-R5) sont tombées du tableau des gaps sans être flaggées hors-périmètre ; (3) le benchmark, présenté comme « détail complet » des annotations, décrit un état pré-#609 contredit par la ref re-validée des requirements (POSITIVITY/opens — vérifié par git show sur les deux refs) et recommande un périmètre de cap (par compte d'envoi) que ni le prompt maître (compte utilisateur) ni la décision founder (tenant) ne portent. Bilan : 1 bloquant, 7 majeurs, 9 mineurs — corriger le bloquant et re-tâcher les 4 surfaces UI avant d'entrer en implémentation, sinon le MVP « vertical » livrera un backend P0 complet avec des invariants UI P0/P1 invérifiables.",
+    "GLOBALEMENT SOLIDE, AVEC 5 SURESTIMATIONS MATÉRIELLES D'EXISTANT. Le socle des specs est vérifié exact contre origin/main (7953fcf9, 6 commits après la ref auditée — dérive négligeable) : evaluateSend est bien LE gate unique fail-closed câblé aux 5 chokepoints exacts (email-send-worker:405/:744, outbound-smtp-send:109, deliver-interactive:183, meetings/send-follow-up:132) avec le précédent requeue-pas-fail #565 en place ; runQc/sendEligible sont construits/testés/0-call-site comme affirmé ; enrollment-eligibility.ts, le slot VerifyProvider, la state machine sequence_drafts, fabrication-gate, canary-ramp, citation-gate, timezone tenant et les 2 sites d'opens à purger existent tous aux emplacements cités. Le point d'insertion du cap 100/j est réel et le compteur atomique est bien conçu. MAIS l'itération 0+1 du MVP repose sur 5 affirmations d'intégration fausses ou sous-chiffrées : (1) le « chemin direct LinkedIn existant » est un seam orphelin à 0 caller derrière un stub tâche-manuelle — T13 doit construire le câblage et la première exécution live ; (2) le sendClass reply-non-capé est indistinguable au chokepoint interactif (le composer ne porte aucun contexte de thread) et sa version naïve rouvre le contournement qu'INV-1 interdit ; (3) T3 « câbler runQc dans evaluateSend » en 0,5 j ignore que le gate ne reçoit aucun contenu et que runQc tel quel bloquerait le HTML et le lien de désinscription ; (4) le done de T7 exige des champs (angle, prompt_version) qui n'existent nulle part avant T18 ; (5) design/T12 étendent une table meetings qui n'existe pas, pour une feature attendance déjà construite (PR #270) que l'audit a ratée. Aucun de ces points n'est un océan — ce sont des corrections de spec + ~3-4 j-h de re-chiffrage sur les ~27,5 estimés — mais tasks.md doit être amendé AVANT implémentation, sinon T3 naïf = incident de blocage de masse et T13/T12 partent sur de fausses fondations.",
+    "Couverture globalement excellente et traçable : les 13 points de vision, les 13 modules de Phase 1, les livrables de Phase 1bis (interview — sous forme présumée flaggée —, 2 personas, principes hiérarchisés avec les 3 obligatoires, 8 parcours écran par écran, wireframes.html avec les 5 écrans exigés sur tokens réels, les 3 métriques UX imposées), de Phase 2 (Mermaid, modèle de données, cap garanti techniquement via compteur atomique + constante compilée, seuils de paliers chiffrés 300/2000, registre de modèles model_registry, critères promotion/rollback AUC+canary, risques) et de Phase 3 (tâches <1j, dépendances, done testables, palier 1 dans l'itération 0, LinkedIn/gifting/bandits/reward-model repoussés comme imposé) sont présents, et les écarts assumés au prompt maître (cap par TENANT et non par compte, LinkedIn 2 modes, gifting tâche manuelle, charte design-language.md au lieu de charte-elevay.md, ordre MVP adapté au brownfield car import/séquenceur/classification/RDV existent) sont TOUS explicitement flaggés comme décisions founder du 02/07. Les 11 règles permanentes techniques sont converties en invariants INV-1..11 opposables et tasksés (cap T1, signal-cite T5/T7, manuel G2+G5 T4, opens T8, no-quota-filling testé dans T5). Exceptions : le module 11 du prompt (définition du succès) est le seul point structurellement fuyant — trois de ses exigences sont tombées silencieusement entre requirements et design/tasks : l'attribution multi-touch (M11-R4, réduite au last-touch sans flag), la pondération du succès configurable par le tenant (M11-R5, disparue partout après requirements) et le re-scaling replied_negative/no_response que requirements déférait explicitement à la Phase 2 et que design.md n'a jamais ramassé. S'y ajoutent 6 mineurs (objection non tasksée, golden set annoté présupposé mais jamais produit, garde-fous de dérive designés non tasksés, états non-nominaux manquants pour RDV/Gifting, prompt système du decision-engine non esquissé, 3 réponses d'interview en confiance Moyenne à faire valider). Rien de bloquant : corriger le trio module 11 avant de lancer l'itération 0 suffit à rendre la chaîne complète.",
+    "Ensemble spec solide et remarquablement ancré brownfield (traçabilité §12 quasi complète, invariant 44px/h-7 respecté, ordre outcomes-first correct, aucun emoji), MAIS incohérent au point exact où il se juge lui-même : tasks.md ne construit pas le cockpit ni l'UI de revue qui portent la promesse UX (bloquant), le wireframe reporting viole la règle open-rate que T11 teste, la « pause globale » et deux états non-nominaux (§4) sont promis sans support, et la copy générée d'exemple viole la charte éditoriale (em-dash) qu'elle est censée incarner. Corriger le bloquant + les 5 majeurs avant de valider la Phase 3 ; les mineurs sont des fixes de copy/traçabilité à passer dans la même passe."
+  ]
+}
