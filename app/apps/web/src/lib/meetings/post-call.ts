@@ -34,6 +34,14 @@ export interface PostCallOptions {
   updateDeal?: boolean;
   dealId?: string;
   force?: boolean;
+  /**
+   * Skip the terminal `coaching/post-interaction` emit. Set when the caller
+   * already emitted it for this activity (e.g. the kMeet sweep, where
+   * processMeetingTranscript emits it before delegating tasks + follow-up here)
+   * — the coaching insight write has no per-activity dedup, so a second emit
+   * would duplicate it.
+   */
+  skipCoaching?: boolean;
 }
 
 /**
@@ -325,12 +333,14 @@ export async function processPostCall(opts: PostCallOptions): Promise<PostCallRe
   // already-processed path returns above), so it's emitted at most once per
   // meeting. Consumers self-gate on an LLM key + load the activity by id;
   // fire-and-forget + fail-soft, never affects the post-call result.
-  await inngest
-    .send({
-      name: "coaching/post-interaction",
-      data: { tenantId, activityId, userId: userId ?? undefined },
-    })
-    .catch((e) => console.warn("post-call: coaching/post-interaction emit failed (non-blocking)", e));
+  if (!opts.skipCoaching) {
+    await inngest
+      .send({
+        name: "coaching/post-interaction",
+        data: { tenantId, activityId, userId: userId ?? undefined },
+      })
+      .catch((e) => console.warn("post-call: coaching/post-interaction emit failed (non-blocking)", e));
+  }
 
   return { success: true, tasks: createdTaskIds.length, followUpDraft, dealUpdated };
 }

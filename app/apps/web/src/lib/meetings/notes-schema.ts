@@ -105,12 +105,37 @@ export type MeetingNotes = z.infer<typeof meetingNotesSchema>;
 /**
  * The extraction prompt, shared by both sites. `transcript` is sliced to 15k
  * chars by the caller's convention; pass the already-sliced text.
+ *
+ * `internal` switches register: an all-internal (cofounder / team) meeting is
+ * NOT a sales call, so the sales/MEDDPICC framing would push the model to
+ * invent a buying group where there is none. In internal mode we ask for the
+ * same schema but steer the qualification fields to stay empty unless a real
+ * external deal was genuinely discussed. Same output shape either way — the
+ * schema fields are all optional, this only changes what the model reaches for.
  */
 export function buildMeetingNotesPrompt(args: {
   transcript: string;
   meetingTitle?: string | null;
   meetingDate?: string | null;
+  internal?: boolean;
 }): string {
+  if (args.internal) {
+    return `Analyze this INTERNAL team meeting transcript and extract structured notes. This is an internal / cofounder sync, NOT a sales call with a prospect.
+
+MEETING: ${args.meetingTitle || "Untitled Meeting"}
+DATE: ${args.meetingDate || "Unknown"}
+
+TRANSCRIPT:
+${args.transcript}
+
+RULES:
+- Extract ONLY information explicitly stated in the transcript; do NOT invent or assume anything.
+- Focus on what the team discussed and settled: summary, key discussion points, DECISIONS made, ACTION ITEMS (who owns what, any deadline), and agreed next steps.
+- This is not a prospect. Leave the sales/qualification fields EMPTY: set the buyingSignals fields to null / empty arrays, set meddic to null, and set contactProfile to null — UNLESS the meeting genuinely discussed a specific external deal, in which case fill only what was explicitly said.
+- For evidence, pair each notable decision or claim with the verbatim transcript line that grounds it.
+- Be specific with action items — include who and what.`;
+  }
+
   return `Analyze this meeting transcript and extract structured notes.
 
 MEETING: ${args.meetingTitle || "Untitled Meeting"}

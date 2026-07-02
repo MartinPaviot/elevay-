@@ -573,16 +573,25 @@ export const cronMeetingRecordingSweep = inngest.createFunction(
           return false;
         }
 
-        // The booked meeting's contact email helps participant matching.
-        let attendeeEmails: string[] | undefined;
+        // Attendee emails feed both participant matching AND the internal-vs-
+        // sales register: an all-internal (cofounder) sync must resolve as
+        // internal, which needs the REAL invite list, not just the linked
+        // contact. Union the booked meeting's attendees with the contact email.
+        const attendeeEmailSet = new Set<string>();
+        if (Array.isArray(meta.attendees)) {
+          for (const a of meta.attendees as Array<{ email?: string }>) {
+            if (a?.email) attendeeEmailSet.add(a.email);
+          }
+        }
         if (activity.entityType === "contact" && activity.entityId) {
           const [c] = await db
             .select({ email: contactsTable.email })
             .from(contactsTable)
             .where(eq(contactsTable.id, activity.entityId))
             .limit(1);
-          if (c?.email) attendeeEmails = [c.email];
+          if (c?.email) attendeeEmailSet.add(c.email);
         }
+        const attendeeEmails = attendeeEmailSet.size ? Array.from(attendeeEmailSet) : undefined;
 
         const { processMeetingTranscript } = await import(
           "@/lib/meetings/process-transcript-core"
@@ -600,6 +609,31 @@ export const cronMeetingRecordingSweep = inngest.createFunction(
           activityId: activity.id,
           source: "kdrive_kmeet",
         });
+
+        // Sovereign-path parity: processMeetingTranscript captures + indexes the
+        // meeting but — unlike the Recall/Jibri path — does not create tasks,
+        // draft a follow-up, or write the MEDDPICC / account / contact
+        // qualification that fills the fiches. Run the post-call enrichment on
+        // the just-written activity so a kMeet meeting lands the same
+        // intelligence a Recall one does. skipCoaching: processMeetingTranscript
+        // already emitted coaching/post-interaction and the insight write has no
+        // per-activity dedup, so a second emit would duplicate it. Non-fatal —
+        // the transcript + notes are already saved; enrichment is additive.
+        try {
+          const { processPostCall } = await import("@/lib/meetings/post-call");
+          await processPostCall({
+            activityId: activity.id,
+            tenantId: activity.tenantId,
+            userId: null,
+            skipCoaching: true,
+          });
+        } catch (e) {
+          console.warn(
+            "recording-sweep: post-call enrichment failed (non-fatal)",
+            e instanceof Error ? e.message : String(e),
+          );
+        }
+
         // processMeetingTranscript merged structuredNotes into metadata; add
         // the sweep's own provenance on top (re-read not needed — merge again).
         await db
