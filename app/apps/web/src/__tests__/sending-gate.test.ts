@@ -160,6 +160,7 @@ vi.mock("@/lib/infra/rate-limit", () => ({
 // tests can pin that the TENANT's timezone drives the day key.
 vi.mock("@/lib/guardrails/outreach-cap", () => ({
   OUTREACH_DAILY_TENANT_CAP: 100,
+  OUTREACH_CAP_REASON_PREFIX: "Tenant daily outreach cap reached",
   tenantDayKey: vi.fn((tz?: string | null) => `day:${tz ?? "UTC"}`),
   consumeOutreachCapSlot: vi.fn(async (tenantId: string, day: string) => {
     if (capState.throwOnConsume) throw new Error("cap store boom");
