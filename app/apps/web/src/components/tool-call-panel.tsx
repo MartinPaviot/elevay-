@@ -183,7 +183,7 @@ export function ToolCallPanel({ toolName, args, result, isStreaming }: ToolCallP
   const columns = tableData ? pickColumns(tableData.records) : [];
 
   return (
-    <div className="my-1">
+    <div className="agent-step-in my-1">
       <button
         onClick={() => !isStreaming && setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-[12px] transition-colors"
@@ -192,17 +192,21 @@ export function ToolCallPanel({ toolName, args, result, isStreaming }: ToolCallP
         aria-expanded={expanded}
       >
         {isStreaming ? (
+          /* Agent-working identity: the brand gradient, not the flat accent. */
           <span
-            className="inline-block h-2 w-2 rounded-full animate-pulse"
-            style={{ background: "var(--color-accent)" }}
+            className="agent-dot inline-block h-2 w-2 rounded-full"
+            style={{ background: "var(--gradient-brand)" }}
           />
         ) : expanded ? (
           <ChevronDown size={12} />
         ) : (
           <ChevronRight size={12} />
         )}
-        <Icon size={12} style={isStreaming ? { color: "var(--color-accent)" } : undefined} />
-        <span style={{ fontWeight: 475 }}>
+        <Icon size={12} />
+        <span
+          className={isStreaming ? "gradient-text-active" : undefined}
+          style={{ fontWeight: isStreaming ? 550 : 475 }}
+        >
           {isStreaming ? display.label + "..." : display.pastLabel}
         </span>
         {resultSummary && (
@@ -418,12 +422,24 @@ export function ToolCallGroup({ calls }: { calls: { toolName: string; args: Reco
         return (
           <div
             key={gi}
-            className="my-1"
-            style={{
-              borderLeft: "2px solid var(--color-border-moderate)",
-              paddingLeft: 8,
-            }}
+            className="relative my-1"
+            style={{ paddingLeft: 10 }}
           >
+            {/* The run's spine: brand gradient while any step in this
+                group is live, neutral once the group settles. */}
+            <span
+              aria-hidden
+              className={anyStreaming ? "agent-rail-active" : undefined}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 2,
+                bottom: 2,
+                width: 2,
+                borderRadius: 1,
+                background: anyStreaming ? undefined : "var(--color-border-moderate)",
+              }}
+            />
             {/* Group header — only show if more than 1 call in group */}
             {group.calls.length > 1 && (
               <div
