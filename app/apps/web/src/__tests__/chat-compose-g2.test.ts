@@ -309,6 +309,46 @@ describe("generateFollowUpEmail — G2 deterministic gate", () => {
     expect(res.emailDraft?.body).toBe(CLEAN_BODY);
     expect(gateRows[0]?.verdict).toBe("pass");
   });
+
+  it("clean body but FABRICATED subject: blocked (the concatenation is gated, not the body alone)", async () => {
+    selectResults.push([CONTACT], [COMPANY]);
+    readCachedBriefMock.mockResolvedValue(null);
+    genOut.value = {
+      subject: "Congrats on your 4,200 Keycloak users",
+      body: CLEAN_BODY,
+      actionItems: [],
+    };
+
+    const tools = buildActionTools(makeCtx());
+    const res = (await run(tools.generateFollowUpEmail, {
+      contactId: "ct-1",
+      context: "Call recap.",
+    })) as { blocked?: boolean; ungrounded?: string[]; emailDraft?: unknown };
+
+    expect(res.blocked).toBe(true);
+    expect(res.emailDraft).toBeUndefined();
+    expect(res.ungrounded).toEqual(expect.arrayContaining(["4,200"]));
+    expect(gateRows[0]?.verdict).toBe("blocked");
+  });
+
+  it("fabricated ACTION ITEM: blocked like a fabricated body", async () => {
+    selectResults.push([CONTACT], [COMPANY]);
+    readCachedBriefMock.mockResolvedValue(null);
+    genOut.value = {
+      subject: "Next steps",
+      body: CLEAN_BODY,
+      actionItems: ["confirm the 8,900 store rollout"],
+    };
+
+    const tools = buildActionTools(makeCtx());
+    const res = (await run(tools.generateFollowUpEmail, {
+      contactId: "ct-1",
+      context: "Call recap.",
+    })) as { blocked?: boolean };
+
+    expect(res.blocked).toBe(true);
+    expect(gateRows[0]?.verdict).toBe("blocked");
+  });
 });
 
 describe("suggestEmailReply — G2 deterministic gate per option", () => {
@@ -413,6 +453,31 @@ describe("suggestEmailReply — G2 deterministic gate per option", () => {
     expect(gateRows).toHaveLength(1);
     expect(gateRows[0].verdict).toBe("pass");
     expect(gateRows[0].reasons).toMatchObject({ optionsBlocked: 0, optionsTotal: 3 });
+  });
+
+  it("clean body but FABRICATED subject: that option is dropped (concatenation gated)", async () => {
+    genOut.value = {
+      replies: [
+        CLEAN_BRIEF_REPLY,
+        {
+          tone: "detailed",
+          subject: "Re: your 12,500 Snowflake seats",
+          body: "Happy to walk you through onboarding whenever suits you.",
+        },
+        CLEAN_DECLINE_REPLY,
+      ],
+    };
+
+    const tools = buildActionTools(makeCtx());
+    const res = (await run(tools.suggestEmailReply, REPLY_INPUT)) as {
+      replies?: Array<{ tone: string }>;
+      droppedOptions?: number;
+    };
+
+    expect(res.replies?.map((r) => r.tone)).toEqual(["brief", "decline"]);
+    expect(res.droppedOptions).toBe(1);
+    expect(gateRows[0].verdict).toBe("reworked");
+    expect(gateRows[0].reasons?.ungrounded).toEqual(expect.arrayContaining(["12,500"]));
   });
 });
 

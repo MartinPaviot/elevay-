@@ -229,7 +229,15 @@ RULES:
         } catch {
           // fail-soft: brief unavailable -> strictest G2 posture
         }
-        const g2 = decideFabricationGate({ body: result.body, brief, prospect });
+        // Gate the CONCATENATION — a fabricated hook in the subject line or an
+        // action item reaches the composer exactly like one in the body.
+        const g2 = decideFabricationGate({
+          body: [result.subject, result.body, ...(result.actionItems ?? [])]
+            .filter(Boolean)
+            .join("\n"),
+          brief,
+          prospect,
+        });
         await recordGateDecision({
           tenantId,
           subjectType: "manual",
@@ -249,7 +257,7 @@ RULES:
           // one cannot be.
           return {
             blocked: true,
-            reason: `Unverifiable claim(s) about this prospect: ${g2.ungrounded.join(", ")} — we hold no data supporting them.`,
+            reason: `Unverifiable claim(s) about this prospect: ${g2.ungrounded.slice(0, 6).join(", ")} — we hold no data supporting them.`,
             ungrounded: g2.ungrounded,
             instruction:
               "Do NOT present a draft. Tell the user which claims are unverifiable and offer to regenerate the follow-up without them.",
@@ -348,7 +356,11 @@ RULES:
           domain: input.senderEmail?.split("@")[1] ?? null,
         };
         const verdicts = options.map((r) =>
-          decideFabricationGate({ body: r.body, prospect: replyProspect })
+          // Subject gated with the body: survivors keep their subject verbatim.
+          decideFabricationGate({
+            body: [r.subject, r.body].filter(Boolean).join("\n"),
+            prospect: replyProspect,
+          })
         );
         const surviving = options.filter((_, i) => !verdicts[i].blocked);
         const droppedCount = options.length - surviving.length;
