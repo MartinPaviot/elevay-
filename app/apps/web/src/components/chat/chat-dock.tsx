@@ -285,10 +285,11 @@ export function ChatDock() {
   // CHAT-OPENER fetch: only when the dock opens EMPTY on the global surface.
   // Scoped pages (account/contact/deal/...) keep their page-aware static
   // chips in v1. Failure or non-JSON → legacy fallback, never an error state.
-  // Re-runs when messages drop back to 0 (New chat) so the opener returns.
+  // Re-runs when messages drop back to 0 (New chat) and on surface changes —
+  // the dock outlives routes, so navigating scoped↔global must re-decide.
   useEffect(() => {
     if (!open || chat.messages.length > 0) return;
-    if (surfaceRef.current.contextType) {
+    if (surface.contextType) {
       setOpenerState("fallback");
       return;
     }
@@ -320,7 +321,7 @@ export function ChatDock() {
     return () => {
       cancelled = true;
     };
-  }, [open, chat.messages.length]);
+  }, [open, chat.messages.length, surface.contextType]);
 
   // Persist the conversation to a thread after the assistant finishes. Creates
   // the thread on the first exchange (scoped to the current page context), then
