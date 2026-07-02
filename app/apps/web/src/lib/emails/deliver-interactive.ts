@@ -186,6 +186,15 @@ export async function deliverInteractiveEmail(
     sentTodayFromPrimary: mailbox?.sentToday ?? 0,
     contactId: input.contactId, // spec 35 — account-scope suppression
     interactive: true, // human-initiated: exempt from the SAFE_MODE targeting gate (D6)
+    // M13-G5 (T3) — replies to correspondents auto-classify and skip the
+    // content gate; a manual COLD send is outreach and is content-gated
+    // (spam, links, unsubscribe). This path attaches the List-Unsubscribe
+    // header below unless the caller opted out of it.
+    content: {
+      subject: input.subject,
+      bodyText: input.body,
+      unsubscribeProvided: !input.skipUnsubscribe,
+    },
   });
   if (!interactiveGate.send) {
     return interactiveGate.code === "opted_out"

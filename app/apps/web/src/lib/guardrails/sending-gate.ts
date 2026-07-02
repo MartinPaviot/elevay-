@@ -52,6 +52,10 @@ import {
   OUTREACH_DAILY_TENANT_CAP,
   tenantDayKey,
 } from "@/lib/guardrails/outreach-cap";
+import {
+  runTransportContentQc,
+  type TransportContentInput,
+} from "@/lib/emails/transport-content-qc";
 
 /** Spec 35 — SAFE_MODE targeting gate rollout guard (default off; flipped on at
  *  T14 after the targeting backfill so no currently-allowed send breaks). */
@@ -73,7 +77,8 @@ export type SendingGateOutcome =
         | "lawful_basis_blocked"
         | "not_targeted"
         | "deliverability_paused"
-        | "daily_cap_reached";
+        | "daily_cap_reached"
+        | "content_blocked";
       reason: string;
     };
 
@@ -247,6 +252,15 @@ export interface EvaluateSendArgs {
    * email before it exempts the send from the daily cap.
    */
   sendClass?: SendClass;
+  /**
+   * M13-G5 (T3) — the OUTBOUND CONTENT as stored by the chokepoint, for the
+   * deterministic transport QC (spam signals, pre-footer link budget,
+   * unsubscribe mechanism). Optional: absent = no content check (legacy
+   * callers). Only OUTREACH-class sends are content-gated; a verified reply
+   * never is. `unsubscribeProvided` must be TRUE only when the path really
+   * attaches a mechanism (RFC-8058 header / footer link) after this gate.
+   */
+  content?: TransportContentInput;
 }
 
 /**
@@ -434,12 +448,29 @@ export async function evaluateSend(
       };
     }
 
-    // INV-1 — the tenant-wide 100/day OUTREACH cap, consumed LAST so a send
-    // blocked by any check above never burns a slot. Applies to EVERY mode
-    // (including external-connected, which has no per-mailbox cap). Only
-    // verified replies are exempt (resolveOutreachClass). A thrown consume
-    // fails closed via the outer catch.
-    if ((await resolveOutreachClass(args)) === "outreach") {
+    // Resolved ONCE for both outreach-only stages below (content QC + cap).
+    const sendClass = await resolveOutreachClass(args);
+
+    if (sendClass === "outreach") {
+      // M13-G5 (T3) — deterministic transport content QC, BEFORE the cap so
+      // blocked content never burns budget. Replies are never content-gated
+      // here. Content absent = legacy caller = no-op. Pure/synchronous.
+      if (args.content) {
+        const qc = runTransportContentQc(args.content);
+        if (!qc.passed) {
+          return {
+            send: false,
+            code: "content_blocked",
+            reason: `Content blocked at transport (G5): ${qc.failures.join(", ")}`,
+          };
+        }
+      }
+
+      // INV-1 — the tenant-wide 100/day OUTREACH cap, consumed LAST so a send
+      // blocked by any check above never burns a slot. Applies to EVERY mode
+      // (including external-connected, which has no per-mailbox cap). Only
+      // verified replies are exempt (resolveOutreachClass). A thrown consume
+      // fails closed via the outer catch.
       const day = tenantDayKey(settings?.timezone);
       const slot = await consumeOutreachCapSlot(args.tenantId, day);
       if (!slot.granted) {

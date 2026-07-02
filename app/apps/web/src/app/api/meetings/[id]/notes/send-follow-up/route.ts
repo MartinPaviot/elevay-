@@ -134,6 +134,16 @@ export async function POST(
         toAddress: e,
         sentTodayFromPrimary: 0,
         interactive: true, // human-initiated follow-up: exempt from targeting gate (D6)
+        // M13-G5 (T3) — honest declaration: this route attaches NO unsubscribe
+        // mechanism yet (bulk resend send, no per-recipient URL — T21 finishes
+        // it). Attendees with email history auto-classify as replies (never
+        // content-gated); a never-corresponded attendee without an opt-out
+        // mention in the draft is dropped by G5 with the reason.
+        content: {
+          subject: draft.subject,
+          bodyText: draft.body,
+          unsubscribeProvided: false,
+        },
       }),
     })),
   );
