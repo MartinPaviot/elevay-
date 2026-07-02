@@ -122,7 +122,15 @@ async function draftDueNudges(
     try {
       const { instructions, context } = await buildReplyInstructions(tenantId, userId, c, scope, "nudge");
       const guided = [instructions, escalationGuidance(stage)].filter(Boolean).join("\n\n");
-      const draft = await composeReply(toThreadMessages(c), { instructions: guided, context, mode: "nudge", threadSubject: c.subject });
+      const draft = await composeReply(toThreadMessages(c), {
+        instructions: guided,
+        context,
+        mode: "nudge",
+        // rawSubject, not subject: `subject` prefers the AI summary for display —
+        // a nudge sent under "Re: <summary>" would break the recipient's threading.
+        threadSubject: c.rawSubject,
+        selfAddresses: [...scope.addresses],
+      });
       if (!draft.text.trim()) continue; // fail-closed: same contract as compose-reply.ts
 
       const now = Date.now();

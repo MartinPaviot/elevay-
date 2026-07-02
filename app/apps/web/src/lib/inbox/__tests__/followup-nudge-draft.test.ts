@@ -46,7 +46,7 @@ vi.mock("../load", () => ({
   loadConversationRows: (...args: any[]) => mockLoadConversationRows(...args),
 }));
 
-const mockGetInboxScope = vi.fn(async (..._args: any[]) => ({ hasMailbox: true, mailboxes: [] }) as any);
+const mockGetInboxScope = vi.fn(async (..._args: any[]) => ({ hasMailbox: true, mailboxes: [], addresses: new Set<string>() }) as any);
 vi.mock("../user-scope", () => ({
   getInboxScope: (...args: any[]) => mockGetInboxScope(...args),
   scopeConversationRows: (rows: any) => rows,
@@ -98,7 +98,7 @@ beforeEach(() => {
   insertCalls.length = 0;
   updateCalls.length = 0;
   fixtureConversations = [];
-  mockGetInboxScope.mockResolvedValue({ hasMailbox: true, mailboxes: [] } as any);
+  mockGetInboxScope.mockResolvedValue({ hasMailbox: true, mailboxes: [], addresses: new Set<string>() } as any);
   mockComposeReply.mockResolvedValue({ subject: "Re: hello", text: "Just checking in!" });
 });
 
@@ -164,6 +164,24 @@ describe("draftAndReconcileNudgesForUser", () => {
 
     expect(result.drafted).toBe(0);
     expect(insertCalls).toHaveLength(0);
+  });
+
+  it("passes rawSubject (not the AI display subject) + the scope's own addresses to composeReply", async () => {
+    // Invariant (reference_reply-subject-invariant): the reply subject derives
+    // from the literal RFC subject — `subject` prefers the AI summary, and a
+    // nudge sent under "Re: <summary>" would break the recipient's threading.
+    mockGetInboxScope.mockResolvedValue({ hasMailbox: true, mailboxes: [], addresses: new Set(["me@x.com"]) } as any);
+    fixtureConversations = [conversation({ subject: "Pricing chat with Anna", rawSubject: "Re: pricing" })];
+    selectQueue.push([]); // reconcile
+    selectQueue.push([]); // draft: no existing rows
+
+    await draftAndReconcileNudgesForUser("t1", "u1");
+
+    expect(mockComposeReply).toHaveBeenCalledTimes(1);
+    const opts = mockComposeReply.mock.calls[0][1];
+    expect(opts.threadSubject).toBe("Re: pricing");
+    expect(opts.selfAddresses).toEqual(["me@x.com"]);
+    expect(opts.threadSubject).not.toBe("Pricing chat with Anna");
   });
 
   it("falls back to the conversation's own subject when the generator returns no subject", async () => {
