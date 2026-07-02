@@ -23,6 +23,7 @@ import {
 } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { reviewEmail, type PreSendContext } from "@/lib/coaching/pre-send-review";
+import { readActivitySignals } from "@/lib/enrichment/read-extracted-signals";
 import { scoreInteraction, type InteractionContext } from "@/lib/coaching/interaction-scorer";
 import { aggregatePerformance } from "@/lib/coaching/performance-aggregator";
 
@@ -107,20 +108,11 @@ export const analyzeOutgoingEmail = inngest.createFunction(
 
       for (const act of recentActs) {
         if (act.summary) recentSummaries.push(act.summary);
-        const meta = act.metadata as Record<string, unknown> | null;
-        const signals = meta?.extractedSignals as Record<string, unknown> | undefined;
-        if (signals) {
-          if (Array.isArray(signals.objections)) {
-            for (const o of signals.objections) {
-              if (typeof o === "string" && !knownObjections.includes(o)) knownObjections.push(o);
-            }
-          }
-          if (Array.isArray(signals.next_steps)) {
-            for (const ns of signals.next_steps) {
-              if (typeof ns === "string") pendingNextSteps.push(ns);
-            }
-          }
+        const signals = readActivitySignals(act.metadata as Record<string, unknown> | null);
+        for (const o of signals.objections) {
+          if (!knownObjections.includes(o)) knownObjections.push(o);
         }
+        for (const ns of signals.nextSteps) pendingNextSteps.push(ns.action);
       }
     }
 
