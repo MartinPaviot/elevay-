@@ -33,8 +33,32 @@ import {
 import { Button } from "@/components/ui/button";
 import type { DraftListItem } from "./sequence-draft-list";
 
+/** A personalization source cited by the copy engine (AI-UI primitive shape).
+ *  Every field is optional — older drafts stored looser objects. */
+interface DraftCitation {
+  kind?: string;
+  label?: string;
+  href?: string;
+  quote?: string;
+}
+
+/** T11c — one gate's verdict for the review panel. */
+interface GateScore {
+  score: number | null;
+  verdict: string;
+}
+
 interface ContextBundle {
-  draft: { id: string; status: string; triggerReason: string | null; generatedAt: string };
+  draft: {
+    id: string;
+    status: string;
+    triggerReason: string | null;
+    generatedAt: string;
+    // T11c — the data-backed composite quality score (0-1), when graded.
+    qualityScore?: number | null;
+  };
+  // T11c — { g1?, g2?, g4?, g5? } => verdict + score (M13-R7).
+  gateScores?: Record<string, GateScore>;
   contact: {
     id: string;
     firstName: string | null;
@@ -64,8 +88,40 @@ interface ContextBundle {
     summary: string | null;
     sentiment: string | null;
   }>;
-  signalsAtTriggerTime: unknown;
+  signalsAtTriggerTime: DraftCitation[] | null;
 }
+
+/** Normalize the loosely-typed personalization_sources into citations.
+ *  Exported for unit testing — this IS the T11c citation logic. */
+export function toCitations(raw: unknown): DraftCitation[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+    .map((s) => ({
+      kind: typeof s.kind === "string" ? s.kind : undefined,
+      label: typeof s.label === "string" ? s.label : undefined,
+      href: typeof s.href === "string" ? s.href : undefined,
+      quote: typeof s.quote === "string" ? s.quote : undefined,
+    }))
+    .filter((c) => c.label || c.quote || c.href || c.kind);
+}
+
+/** Verdict -> token color (pass = success, blocked = error, reworked = warn).
+ *  Exported for unit testing. */
+export function verdictColor(verdict: string): string {
+  if (verdict === "pass") return "var(--color-success)";
+  if (verdict === "blocked") return "var(--color-error)";
+  if (verdict === "reworked") return "var(--color-warning)";
+  return "var(--color-text-tertiary)";
+}
+
+/** The gates surfaced in the panel, in reading order, with human labels. */
+const GATE_META: Array<{ key: string; label: string }> = [
+  { key: "g1", label: "Targeting" },
+  { key: "g2", label: "Factual" },
+  { key: "g4", label: "Copy quality" },
+  { key: "g5", label: "Deliverability" },
+];
 
 interface SequenceDraftPreviewProps {
   draft: DraftListItem;
@@ -354,27 +410,105 @@ export function SequenceDraftPreview({
             </p>
           )}
 
-          {context?.signalsAtTriggerTime ? (
-            <div className="mt-2">
-              <p
-                className="mb-1 text-[10px] uppercase tracking-wider"
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                Signals at trigger time
-              </p>
-              <pre
-                className="overflow-x-auto rounded-md p-2 text-[10px]"
-                style={{
-                  background: "var(--color-bg-page)",
-                  color: "var(--color-text-secondary)",
-                  border: "1px solid var(--color-border-default)",
-                }}
-              >
-                {JSON.stringify(context.signalsAtTriggerTime, null, 2)}
-              </pre>
-            </div>
-          ) : null}
+          {(() => {
+            // T11c — the per-claim SOURCES the copy used, as citation chips
+            // (was a raw JSON.stringify dump). Each is the label + an optional
+            // kind badge + a link when the source has an href; the verbatim
+            // quote is the hover title so the founder can trace every claim.
+            const citations = toCitations(context?.signalsAtTriggerTime);
+            if (citations.length === 0) return null;
+            return (
+              <div className="mt-2">
+                <p
+                  className="mb-1 text-[10px] uppercase tracking-wider"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  Sources cited
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {citations.map((c, i) => {
+                    const text = c.label || c.quote || c.href || c.kind || "source";
+                    const chip = (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]"
+                        style={{
+                          background: "var(--color-accent-soft)",
+                          color: "var(--color-accent)",
+                          border: "1px solid var(--color-accent-muted)",
+                        }}
+                        title={c.quote || undefined}
+                      >
+                        {c.kind ? (
+                          <span
+                            className="text-[9px] uppercase tracking-wider"
+                            style={{ color: "var(--color-text-tertiary)" }}
+                          >
+                            {c.kind}
+                          </span>
+                        ) : null}
+                        <span className="max-w-[220px] truncate">{text}</span>
+                      </span>
+                    );
+                    return c.href ? (
+                      <a
+                        key={i}
+                        href={c.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="no-underline"
+                      >
+                        {chip}
+                      </a>
+                    ) : (
+                      <span key={i}>{chip}</span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </ContextSection>
+
+        {/* T11c — Quality gates: the verdicts behind this draft (M13-R7). */}
+        {context?.gateScores && Object.keys(context.gateScores).length > 0 && (
+          <ContextSection title="Quality gates" icon={<CheckCircle2 size={12} />}>
+            {typeof context.draft.qualityScore === "number" ? (
+              <div className="mb-2 flex items-center justify-between text-[12px]">
+                <span style={{ color: "var(--color-text-secondary)" }}>Composite quality</span>
+                <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>
+                  {(context.draft.qualityScore * 100).toFixed(0)}%
+                </span>
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-1.5">
+              {GATE_META.map(({ key, label }) => {
+                const g = context.gateScores?.[key];
+                if (!g) return null;
+                return (
+                  <div key={key} className="flex items-center justify-between text-[12px]">
+                    <span style={{ color: "var(--color-text-secondary)" }}>{label}</span>
+                    <span className="inline-flex items-center gap-2">
+                      {typeof g.score === "number" ? (
+                        <span style={{ color: "var(--color-text-tertiary)" }}>
+                          {(g.score * 100).toFixed(0)}%
+                        </span>
+                      ) : null}
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider"
+                        style={{
+                          color: verdictColor(g.verdict),
+                          border: `1px solid ${verdictColor(g.verdict)}`,
+                        }}
+                      >
+                        {g.verdict}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </ContextSection>
+        )}
 
         {/* Contact */}
         {context?.contact && (

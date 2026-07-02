@@ -24,8 +24,9 @@ import {
   companies,
   deals,
   activities,
+  gateDecisions,
 } from "@/db/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, desc, isNull } from "drizzle-orm";
 
 export async function GET(
   _req: Request,
@@ -124,6 +125,32 @@ export async function GET(
     .orderBy(desc(activities.occurredAt))
     .limit(5);
 
+  // T11c (M13-R7) — the gate verdicts behind this draft: G4 wrote them at
+  // generation (subject_type 'draft', subject_id = draft.id). Ascending by
+  // createdAt so the LAST row per gate wins (a reworked draft supersedes its
+  // earlier verdict). Reduced to one entry per gate for the review panel.
+  const gateRows = await db
+    .select({
+      gate: gateDecisions.gate,
+      score: gateDecisions.score,
+      verdict: gateDecisions.verdict,
+      reasons: gateDecisions.reasons,
+    })
+    .from(gateDecisions)
+    .where(
+      and(
+        eq(gateDecisions.tenantId, authCtx.tenantId),
+        eq(gateDecisions.subjectType, "draft"),
+        eq(gateDecisions.subjectId, draft.id),
+      ),
+    )
+    .orderBy(asc(gateDecisions.createdAt));
+
+  const gateScores: Record<string, { score: number | null; verdict: string }> = {};
+  for (const row of gateRows) {
+    gateScores[`g${row.gate}`] = { score: row.score ?? null, verdict: row.verdict };
+  }
+
   return Response.json({
     draft: {
       id: draft.id,
@@ -134,7 +161,11 @@ export async function GET(
       spamScore: draft.spamScore ?? null,
       spamSeverity: draft.spamSeverity ?? null,
       spamWarnings: draft.spamWarnings ?? [],
+      // T11c — the data-backed composite quality score (0-1), if graded.
+      qualityScore: draft.qualityScore ?? null,
     },
+    // T11c — { g1?, g2?, g4?, g5? } => { score, verdict } for the gates panel.
+    gateScores,
     contact: contactRow
       ? {
           id: contactRow.id,
