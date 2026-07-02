@@ -19,6 +19,7 @@
 
 import { describe, it, expect } from "vitest";
 import { buildReplyPrompt, composeReply } from "@/lib/inbox/compose-reply";
+import { buildSuggestReplyPrompt } from "@/lib/inbox/suggest-reply-prompt";
 import { unsourcedAmounts } from "@/lib/evals/inbox-metrics";
 import type { ThreadMessage } from "@/lib/inbox/summarize-thread";
 
@@ -92,6 +93,38 @@ describe("inbox-objection gate — the prompt carries the objection + the must-h
       context: SCENARIOS[0].context,
       mode: "nudge",
     });
+    expect(prompt.toLowerCase()).not.toContain("address each one directly");
+  });
+});
+
+// The SECOND reply generator (the "Répondre" button, /api/emails/suggest-reply).
+// The 2026-07-02 audit confirmed #601 covered only composeReply, leaving the
+// founder's primary reply button producing warm deflections on objection-
+// carrying deals. Same brief, same must-handle contract, via the prompt seam.
+describe("suggest-reply prompt carries the objection brief + must-handle directive (keyless)", () => {
+  const base = {
+    emailContent: SCENARIOS[0].warmBody,
+    senderName: "Sarah Chen",
+    senderEmail: "sarah@northwind.io",
+    knowledge: "",
+  };
+
+  it("with an account brief listing open objections, the directive is present", () => {
+    const prompt = buildSuggestReplyPrompt({ ...base, accountBrief: SCENARIOS[0].context });
+    expect(prompt).toContain(SCENARIOS[0].context);
+    expect(prompt.toLowerCase()).toContain("open objections");
+    expect(prompt.toLowerCase()).toContain("address each one directly");
+  });
+
+  it("with a brief that has NO open objections, no directive is injected", () => {
+    const prompt = buildSuggestReplyPrompt({ ...base, accountBrief: "Open deal stage: demo." });
+    expect(prompt.toLowerCase()).not.toContain("address each one directly");
+    expect(prompt).toContain("Open deal stage: demo.");
+  });
+
+  it("with no account brief, the prompt has no CRM block at all (contact-less senders unchanged)", () => {
+    const prompt = buildSuggestReplyPrompt({ ...base, accountBrief: "" });
+    expect(prompt).not.toContain("What you know about them");
     expect(prompt.toLowerCase()).not.toContain("address each one directly");
   });
 });

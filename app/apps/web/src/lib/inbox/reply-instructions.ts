@@ -52,6 +52,40 @@ export async function resolveRecipientSegment(
   return { email, title, tags };
 }
 
+/**
+ * The account-grounding brief for a matched contact: open deal stage +
+ * extracted signals (open objections, next steps, budget/champion/competitor)
+ * via buildReplyContextBrief. Fail-soft "" — grounding is additive, it must
+ * never fail a draft. Shared by BOTH reply generators (compose/reply via
+ * buildReplyInstructions, and /api/emails/suggest-reply) so the founder's two
+ * reply buttons ground on the same facts.
+ */
+export async function loadAccountBriefForContact(
+  tenantId: string,
+  contactId: string | null,
+): Promise<string> {
+  if (!contactId) return "";
+  try {
+    const [deal] = await db
+      .select({ id: deals.id, stage: deals.stage })
+      .from(deals)
+      .where(and(eq(deals.tenantId, tenantId), eq(deals.contactId, contactId), isNull(deals.deletedAt)))
+      .orderBy(desc(deals.updatedAt))
+      .limit(1);
+    // maxEmails:0 — the brief uses only signals + graph facts, so skip
+    // the (discarded) verbatim email-body fetch; the thread is already
+    // in the prompt.
+    const enriched = await buildEnrichedContext(contactId, tenantId, {
+      ...(deal?.id ? { dealId: deal.id } : {}),
+      maxEmails: 0,
+    }).catch(() => null);
+    return buildReplyContextBrief(enriched, deal?.stage ?? null);
+  } catch {
+    // Account grounding is additive — never fail a draft over it.
+    return "";
+  }
+}
+
 export interface ConversationForInstructions {
   fromAddress?: string | null;
   contactId?: string | null;
@@ -112,28 +146,7 @@ export async function buildReplyInstructions(
       ? ["", ""]
       : await Promise.all([
           loadReplyKnowledgeBlock(tenantId),
-          (async () => {
-            if (!contactId) return "";
-            try {
-              const [deal] = await db
-                .select({ id: deals.id, stage: deals.stage })
-                .from(deals)
-                .where(and(eq(deals.tenantId, tenantId), eq(deals.contactId, contactId), isNull(deals.deletedAt)))
-                .orderBy(desc(deals.updatedAt))
-                .limit(1);
-              // maxEmails:0 — the brief uses only signals + graph facts, so skip
-              // the (discarded) verbatim email-body fetch; the thread is already
-              // in the prompt.
-              const enriched = await buildEnrichedContext(contactId, tenantId, {
-                ...(deal?.id ? { dealId: deal.id } : {}),
-                maxEmails: 0,
-              }).catch(() => null);
-              return buildReplyContextBrief(enriched, deal?.stage ?? null);
-            } catch {
-              // Account grounding is additive — never fail a draft over it.
-              return "";
-            }
-          })(),
+          loadAccountBriefForContact(tenantId, contactId),
         ]);
   const groundedInstructions = [instructions, knowledgeSection(knowledge)].filter(Boolean).join("\n\n");
   return { instructions: groundedInstructions, context: accountBrief || undefined };
