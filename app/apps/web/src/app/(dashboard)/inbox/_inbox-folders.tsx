@@ -161,8 +161,8 @@ export function InboxFolders({
 
   return (
     <div
-      className="inbox-rail flex w-[184px] shrink-0 flex-col overflow-y-auto border-r xl:w-[224px]"
-      style={{ borderColor: "var(--color-border-default)" }}
+      className="flex w-[184px] shrink-0 flex-col overflow-y-auto border-r xl:w-[224px]"
+      style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-sidebar)" }}
     >
       <div className="h-2" />
 

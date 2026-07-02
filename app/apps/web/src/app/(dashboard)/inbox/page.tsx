@@ -1368,7 +1368,9 @@ export default function InboxPage() {
           width (≈ viewport − global sidebar), not the viewport — so a thread
           stays 3-column only while the reading pane is actually comfortable
           (≥ ~600px) on any monitor, and collapses to single-pane otherwise. */}
-      <div ref={shellRef} className="inbox-shell @container flex min-h-0 flex-1">
+      {/* No .inbox-shell reskin class — the inbox sits on the same root
+          tokens/ground as every other dashboard page (continuity 2026-07-02). */}
+      <div ref={shellRef} className="@container flex min-h-0 flex-1" style={{ background: "var(--color-bg-page)" }}>
       {/* Left: mailbox folders + Splits (the Upstream IA). Collapses to single-pane
           only when a full-width reader is actually shown — i.e. a thread is open AND
           we're in the list/pane branch (not the outbound/bundles table, where a stale
