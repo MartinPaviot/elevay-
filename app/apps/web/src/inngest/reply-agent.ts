@@ -28,6 +28,8 @@ import { buildProspectContext, formatContextForPrompt } from "@/lib/context/pros
 import { gateAction } from "@/lib/campaign-engine/execution-gate";
 import { updateTrustScore } from "@/lib/campaign-engine/trust-score";
 import { buildIntelligenceBrief } from "@/lib/campaign-engine/build-intelligence-brief";
+import { applyG2FabricationGate, type G2GatedReply } from "@/lib/reply/g2-fabrication";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 
 const replySchema = z.object({
   subject: z.string(),
@@ -187,44 +189,99 @@ INTELLIGENCE BRIEF:
       });
     }
 
-    // Send the reply (if gate allows)
-    if (gateResult.status === "execute" || gateResult.status === "delayed") {
-      const status = gateResult.status === "delayed" ? "draft" : "queued";
+    // M13 T6b — G2 factual gate before ANY stored body (this path can
+    // auto-send via gateAction "execute"). gateAction is an AUTONOMY gate,
+    // not a fabrication gate — both must hold. Runs after the early-return
+    // branches (escalate/close store no email body).
+    const gated: G2GatedReply = await step.run("g2-gate", async () =>
+      applyG2FabricationGate({
+        reply: { subject: reply.subject, body: reply.body },
+        ctx: {
+          contact: ctx.contact,
+          company: ctx.company,
+          researchBrief: ctx.researchBrief,
+        },
+        model: anthropic("claude-sonnet-4-6"),
+        basePrompt: buildReplyPrompt(classification, replyContent, contextBlock, briefContext, originalSubject, ctx.aiTone),
+        trace: { tenantId, contactId, companyId: ctx.company?.id ?? undefined, inputPreview: `${classification} reply g2 rework` },
+      }),
+    );
 
-      await step.run("create-reply-email", async () => {
-        await db.insert(outboundEmails).values({
+    // Send the reply (if BOTH gates allow — a blocked G2 verdict forces draft)
+    if (gateResult.status === "execute" || gateResult.status === "delayed") {
+      const status = gateResult.status === "delayed" || gated.verdict === "blocked" ? "draft" : "queued";
+
+      const outboundEmailId = await step.run("create-reply-email", async () => {
+        const [row] = await db.insert(outboundEmails).values({
           tenantId,
           enrollmentId,
           contactId,
           stepNumber: 200, // high number = reply, not sequence step
           fromAddress: "pending@rotation",
           toAddress: ctx.contact.email || "",
-          subject: reply.subject,
-          bodyHtml: `<div>${reply.body.replace(/\n/g, "<br>")}</div>`,
-          bodyText: reply.body,
+          subject: gated.subject,
+          bodyHtml: `<div>${gated.body.replace(/\n/g, "<br>")}</div>`,
+          bodyText: gated.body,
           status,
           queuedAt: status === "queued" ? new Date() : null,
-        });
+        }).returning({ id: outboundEmails.id });
+        return row?.id ?? null;
       });
+
+      await step.run("g2-log", async () =>
+        recordGateDecision({
+          tenantId,
+          subjectType: "draft",
+          subjectId: outboundEmailId ?? contactId,
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: gated.verdict,
+          reasons: {
+            ungrounded: gated.ungrounded,
+            briefHasFacts: gated.briefHasFacts,
+            path: "reply_agent",
+            ...(gateResult.status === "execute" && gated.verdict === "blocked" ? { autoSendDowngraded: true } : {}),
+            ...(gated.failClosed ? { failClosed: gated.failClosed } : {}),
+          },
+        }),
+      );
 
       return { result: status === "queued" ? "auto_sent" : "draft_created", action: reply.action, reasoning: reply.reasoning };
     }
 
     // Gate blocked or needs approval — create draft
-    await step.run("create-draft", async () => {
-      await db.insert(outboundEmails).values({
+    const draftEmailId = await step.run("create-draft", async () => {
+      const [row] = await db.insert(outboundEmails).values({
         tenantId,
         enrollmentId,
         contactId,
         stepNumber: 200,
         fromAddress: "pending@rotation",
         toAddress: ctx.contact.email || "",
-        subject: reply.subject,
-        bodyHtml: `<div>${reply.body.replace(/\n/g, "<br>")}</div>`,
-        bodyText: reply.body,
+        subject: gated.subject,
+        bodyHtml: `<div>${gated.body.replace(/\n/g, "<br>")}</div>`,
+        bodyText: gated.body,
         status: "draft",
-      });
+      }).returning({ id: outboundEmails.id });
+      return row?.id ?? null;
     });
+
+    await step.run("g2-log-draft", async () =>
+      recordGateDecision({
+        tenantId,
+        subjectType: "draft",
+        subjectId: draftEmailId ?? contactId,
+        gate: 2,
+        rubricVersion: GATE_RUBRICS.g2Deterministic,
+        verdict: gated.verdict,
+        reasons: {
+          ungrounded: gated.ungrounded,
+          briefHasFacts: gated.briefHasFacts,
+          path: "reply_agent",
+          ...(gated.failClosed ? { failClosed: gated.failClosed } : {}),
+        },
+      }),
+    );
 
     return { result: "pending_approval", action: reply.action, gateReason: gateResult.reason };
   }

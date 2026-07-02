@@ -21,6 +21,8 @@ import { personalizeStepEmail } from "@/lib/agents/sequence-generator";
 import { STEP_STRATEGIES } from "@/lib/scoring/outbound-methodologies";
 import { generateCopyMessage, persistShadowSample, isCopyEnginePrimaryEnabled } from "@/lib/copy/personalization/db-shadow";
 import { resolveTenantCopyLang } from "@/lib/copy/assets/db-store";
+import { decideFabricationGate, type FabricationInput } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { logger } from "@/lib/observability/logger";
 import { decideRouteMode } from "@/lib/sequence-drafts/router";
@@ -752,7 +754,21 @@ export const sendSequenceStep = inngest.createFunction(
           || STEP_STRATEGIES[0];
 
         const out = await personalizeStepEmail(ctx, { subject, body }, strategy);
-        return { ok: true as const, out };
+        // T6b — carried out of the step for the G2 gate at the insert seam:
+        // the brief is the gate's ground truth; prospect identity mirrors the
+        // reply paths. Older memoized runs lack these fields — the gate then
+        // falls back to the strict empty-brief posture.
+        return {
+          ok: true as const,
+          out,
+          brief: ctx.researchBrief,
+          prospect: {
+            name: ctx.contact.fullName,
+            title: ctx.contact.title,
+            company: ctx.company?.name ?? null,
+            domain: ctx.company?.domain ?? null,
+          } as FabricationInput["prospect"],
+        };
       } catch (err) {
         logger.warn("sequence.personalize.failed", {
           tenantId,
@@ -787,7 +803,10 @@ export const sendSequenceStep = inngest.createFunction(
         const out = await generateCopyMessage(contact.id, tenantId, { lang });
         if (out.ran && out.message && out.message.personalization_level === "high") {
           await persistShadowSample(tenantId, contact.id, lang, out.message, out.evidenceCount ?? 0);
-          return { subject: out.message.subject ?? subject, body: out.message.body };
+          // T6b — the copy engine's caller-verified whitelist (evidence facts +
+          // asset text) rides along so the insert-seam G2 gate never re-flags
+          // specifics the source gate already verified.
+          return { subject: out.message.subject ?? subject, body: out.message.body, groundTruth: out.groundTruth ?? [] };
         }
       } catch (err) {
         logger.warn("send-sequence-step.copy_engine_primary_failed", {
@@ -821,12 +840,41 @@ export const sendSequenceStep = inngest.createFunction(
       return { enrollmentId, sent: false, reason: "Opted out" };
     }
 
+    // M13 T6b — G2 factual gate on the FINAL auto-send body at the insert seam,
+    // whatever produced it (legacy personalisation, template-only fallback, or
+    // the copy-engine primary). DETERMINISTIC layer only: this is a bulk cron
+    // path — the SEMANTIC judge (judgeFabrication) lives on the generator/reply
+    // paths. Pure + computed from memoized step outputs, so it replays
+    // deterministically without its own step. Tenant-authored template text is
+    // ground truth by construction; the copy engine's caller-verified whitelist
+    // rides along so a source-gate PASS is never re-flagged here.
+    const g2Prospect: FabricationInput["prospect"] =
+      (personalized.ok ? personalized.prospect : undefined) ?? {
+        name: contactName || null,
+        title: contact.title,
+        company: null,
+        domain: null,
+      };
+    const g2 = decideFabricationGate({
+      body: [subject, body].filter(Boolean).join("\n"),
+      brief: personalized.ok ? personalized.brief : undefined,
+      prospect: g2Prospect,
+      extraGroundTruth: [
+        stepTemplate.subjectTemplate,
+        stepTemplate.bodyTemplate,
+        ...(copyPrimary?.groundTruth ?? []),
+      ].filter(Boolean),
+    });
+
     // Create outbound email record. Routes through the enqueueOutbound seam so
     // the tenant's CLE-11 undo window applies: window 0 → status "queued"
     // (byte-identical to before — the send worker sets fromAddress from the
     // rotation, so we let it default to "pending@rotation"); window>0 → "held"
     // + holdUntil, released by the send worker after the window or canceled by
     // an undo. The `[fallback:...]` tag rides through via errorMessage.
+    // A blocked G2 verdict downgrades the auto-send to a reviewable draft
+    // (forceDraft — never picked up by the send worker), mirroring the
+    // reply-handler downgrade.
     const undoSettings = await getTenantSettings(tenantId);
     const outboundEmail = await step.run("create-outbound-email", async () =>
       enqueueOutbound({
@@ -846,52 +894,81 @@ export const sendSequenceStep = inngest.createFunction(
           ? `[fallback:${personalisationFallbackReason}] sent with template-only personalisation`
           : null,
         settings: undoSettings,
+        forceDraft: g2.blocked,
       }),
     );
 
-    await step.run("track-email-queued", async () => {
-      await trackPipeline({
-        traceId: enrollmentId,
+    // T6b — log the verdict on the stored row. Best-effort by contract
+    // (recordGateDecision never throws).
+    await step.run("g2-log-step", async () =>
+      recordGateDecision({
         tenantId,
-        companyId: contact.companyId,
-        contactId: enrollment.contactId,
-        enrollmentId,
-        outboundEmailId: outboundEmail.id,
-        stage: "email_queued",
-        sourceSystem: "inngest",
-        metadata: { step: enrollment.currentStep, subject },
-      });
-    });
+        subjectType: "draft",
+        subjectId: outboundEmail.id,
+        gate: 2,
+        rubricVersion: GATE_RUBRICS.g2Deterministic,
+        verdict: g2.blocked ? "blocked" : "pass",
+        reasons: {
+          ungrounded: g2.ungrounded.slice(0, 8),
+          briefHasFacts: g2.briefHasFacts,
+          path: "sequence_step_auto",
+          ...(g2.blocked ? { autoSendDowngraded: true } : {}),
+        },
+      }),
+    );
 
-    // Log activity
-    await step.run("log-send", async () => {
-      await db.insert(activities).values({
-        tenantId,
-        actorType: "system",
-        actorId: null,
-        entityType: "contact",
-        entityId: enrollment.contactId,
-        activityType: "sequence_step_sent",
-        channel: "email",
-        direction: "outbound",
-        summary: `Sequence step ${enrollment.currentStep}: ${subject}`,
-        rawContent: body,
-        metadata: {
-          sequenceId: enrollment.sequenceId,
-          stepNumber: enrollment.currentStep,
+    // T6b — a downgraded draft was neither queued nor sent: skip the queued
+    // pipeline stage and the sent activity (both would record something that
+    // did not happen); the draft row + gate_decisions row are the record. The
+    // enrollment still advances below so the sequence never stalls on the step
+    // (the idempotency check above would otherwise re-hit the draft forever).
+    if (!g2.blocked) {
+      await step.run("track-email-queued", async () => {
+        await trackPipeline({
+          traceId: enrollmentId,
+          tenantId,
+          companyId: contact.companyId,
+          contactId: enrollment.contactId,
           enrollmentId,
           outboundEmailId: outboundEmail.id,
-          to: contact.email,
-        },
+          stage: "email_queued",
+          sourceSystem: "inngest",
+          metadata: { step: enrollment.currentStep, subject },
+        });
       });
-    });
+
+      // Log activity
+      await step.run("log-send", async () => {
+        await db.insert(activities).values({
+          tenantId,
+          actorType: "system",
+          actorId: null,
+          entityType: "contact",
+          entityId: enrollment.contactId,
+          activityType: "sequence_step_sent",
+          channel: "email",
+          direction: "outbound",
+          summary: `Sequence step ${enrollment.currentStep}: ${subject}`,
+          rawContent: body,
+          metadata: {
+            sequenceId: enrollment.sequenceId,
+            stepNumber: enrollment.currentStep,
+            enrollmentId,
+            outboundEmailId: outboundEmail.id,
+            to: contact.email,
+          },
+        });
+      });
+    }
 
     // Advance to next step (shared cadence logic).
     await step.run("advance-step", async () => {
       await advanceEnrollment(enrollment, tenantId, enrollmentId);
     });
 
-    return { enrollmentId, sent: true, step: enrollment.currentStep };
+    return g2.blocked
+      ? { enrollmentId, sent: false, step: enrollment.currentStep, reason: "g2_fabrication_blocked - draft created" }
+      : { enrollmentId, sent: true, step: enrollment.currentStep };
   }
 );
 

@@ -14,6 +14,8 @@ import { db as defaultDb } from "@/db";
 import { copyShadowSample } from "@/db/schema";
 import { buildProspectContext } from "@/lib/context/prospect-context";
 import { copyContextForTenant } from "@/lib/copy/assets/db-store";
+import { decideFabricationGate, type FabricationInput } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { prospectContextToEvidence } from "./db-evidence";
 import {
   generateMessage,
@@ -90,9 +92,15 @@ export async function personalizationRunAgent(
 
 export interface ShadowOutcome {
   ran: boolean;
+  /** "no_prospect_context" | "copy_shadow_disabled" | "g2_fabrication_blocked" */
   reason?: string;
   message?: Message;
   evidenceCount?: number;
+  /** T6b — the caller-verified whitelist this message was gated against
+   *  (evidence facts + tenant asset text). The insert-seam re-gate passes it
+   *  through as extraGroundTruth so a source-gate PASS is never re-flagged by
+   *  a weaker whitelist. */
+  groundTruth?: string[];
 }
 
 /** Whether the grounded copy engine is the PRIMARY draft path (cutover). Default OFF. */
@@ -105,7 +113,9 @@ export function isCopyEnginePrimaryEnabled(): boolean {
  * Core: run the copy engine for a contact and return the message — NO flag gate,
  * NO persist. Used by both the shadow (gated + persisted) and the primary cutover
  * (where the high-personalization message becomes the live draft). Returns
- * ran:false only when the prospect context is missing.
+ * ran:false only when the prospect context is missing; ran:true WITHOUT a message
+ * when the G2 factual gate blocks (reason "g2_fabrication_blocked") — every
+ * consumer treats an absent message as "keep the legacy personalisation".
  */
 export async function generateCopyMessage(
   contactId: string,
@@ -135,7 +145,61 @@ export async function generateCopyMessage(
     winningFormats: copyCtx.voice?.formats,
   });
 
-  return { ran: true, message, evidenceCount: evidence.length };
+  // M13 T6b — G2 factual gate at the copy-engine SOURCE, so every consumer
+  // (autopilot prepare, draft-router primary, auto-send, V2 conductor, shadow)
+  // inherits it with zero call-site changes. DETERMINISTIC layer only at this
+  // seam — this core runs on bulk paths, so the SEMANTIC judge (one Haiku call
+  // per draft) stays on the sequence-generator path. Prospect/brief assembly is
+  // fail-soft (a throw = no brief = the strict empty-brief posture); the verdict
+  // itself is fail-closed: a blocked body never leaves this function.
+  // ctx is non-null here (checked above); no brief = the strict empty-brief
+  // posture on the gate call below.
+  const prospect: FabricationInput["prospect"] = {
+    name: ctx.contact?.fullName,
+    title: ctx.contact?.title,
+    company: ctx.company?.name,
+    domain: ctx.company?.domain,
+  };
+  // The engine grounds on ctx.funding/technologies (evidence OUTSIDE the
+  // researchBrief) and bakes tenant asset text into the body (assembleBody:
+  // positioning+offer+cta). Both are CALLER-verified ground truth — whitelist
+  // them so the gate flags fabrication, not the engine's own grounding. The
+  // subject is gated WITH the body: it ships verbatim at every cutover site.
+  const groundTruth = [
+    ...evidence.map((e) => e.fact),
+    copyCtx.assets.positioning ?? "",
+    copyCtx.assets.offer ?? "",
+    copyCtx.assets.cta ?? "",
+  ].filter(Boolean);
+  const fab = decideFabricationGate({
+    body: [message.subject, message.body].filter(Boolean).join("\n"),
+    brief: ctx.researchBrief,
+    prospect,
+    extraGroundTruth: groundTruth,
+  });
+  // Verdict log — best-effort by contract (recordGateDecision never throws);
+  // honors the module's injection seam like persistShadowSample.
+  await recordGateDecision(
+    {
+      tenantId,
+      subjectType: "step",
+      subjectId: contactId,
+      gate: 2,
+      rubricVersion: GATE_RUBRICS.g2Deterministic,
+      verdict: fab.blocked ? "blocked" : "pass",
+      reasons: { ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts, path: "copy_engine" },
+    },
+    database,
+  );
+  if (fab.blocked) {
+    // Absent message = the fallback every caller already handles: the cutover
+    // sites require `out.message` + personalization_level "high" and keep the
+    // legacy personalisation otherwise; the shadow skips the persist; the
+    // autopilot discards the outcome. No consumer special-cases the block.
+    return { ran: true, reason: "g2_fabrication_blocked", evidenceCount: evidence.length };
+  }
+
+  return { ran: true, message, evidenceCount: evidence.length, groundTruth };
 }
 
 /**

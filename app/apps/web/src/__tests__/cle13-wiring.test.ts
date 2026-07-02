@@ -152,3 +152,49 @@ describe("M13-T6 wiring guards (gate_decisions verdicts)", () => {
     expect(read("lib/sequence-drafts/gate-runner.ts")).not.toMatch(/process\.env/);
   });
 });
+
+describe("M13-T6b wiring guards (G2 on every generation path)", () => {
+  it("every LLM body-generation seam runs the fabrication gate AND logs its verdict", () => {
+    for (const f of [
+      "inngest/reply-handler.ts", // positive + objection replies (can auto-send)
+      "inngest/reply-agent.ts", // delegated classifications (can auto-send)
+      "lib/chat/tools/action.ts", // generateFollowUpEmail + suggestEmailReply
+      "lib/copy/personalization/db-shadow.ts", // copy engine source
+      "inngest/functions.ts", // sendSequenceStep — the default AUTO-mode path
+      "lib/sequence/db-conductor.ts", // V2 conductor sendEmail port
+    ]) {
+      expect(read(f), f).toMatch(/applyG2FabricationGate|decideFabricationGate/);
+      expect(read(f), f).toMatch(/recordGateDecisions?\(/);
+    }
+  });
+
+  it("a blocked auto-send can only ever become a draft (forceDraft seam)", () => {
+    const hold = read("lib/emails/outbound-hold.ts");
+    expect(hold).toContain("forceDraft");
+    // The downgrade must clear queuedAt — the send worker picks up queued/held only.
+    expect(hold).toMatch(/forceDraft\s*\?\s*"draft"/);
+    expect(read("inngest/functions.ts")).toContain("forceDraft: g2.blocked");
+    expect(read("lib/sequence/db-conductor.ts")).toContain("forceDraft");
+  });
+
+  it("the reply gate helper stays the single shared implementation", () => {
+    const helper = read("lib/reply/g2-fabrication.ts");
+    expect(helper).toContain("applyG2FabricationGate");
+    expect(helper).toContain("judgeFabrication");
+    // Both auto-send-capable reply modules import IT, not their own copy.
+    expect(read("inngest/reply-handler.ts")).toMatch(/from\s+["']@\/lib\/reply\/g2-fabrication["']/);
+    expect(read("inngest/reply-agent.ts")).toMatch(/from\s+["']@\/lib\/reply\/g2-fabrication["']/);
+  });
+
+  it("interactive/bulk deterministic paths never call the semantic judge", () => {
+    expect(read("lib/chat/tools/action.ts")).not.toContain("judgeFabrication");
+    expect(read("lib/copy/personalization/db-shadow.ts")).not.toContain("judgeFabrication");
+  });
+
+  it("extraGroundTruth extends the whitelist without arming down the gate", () => {
+    const gate = read("lib/evals/fabrication-gate.ts");
+    expect(gate).toContain("extraGroundTruth");
+    // briefHasFacts must never be derived from extraGroundTruth.
+    expect(gate).toMatch(/briefHasSourcedFacts\(input\.brief\)/);
+  });
+});

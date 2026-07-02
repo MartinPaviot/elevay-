@@ -35,8 +35,10 @@ import { isEmailKnownUnsendable } from "@/lib/contacts/email/db-status";
 import { isSuppressed as isOptoutSuppressed } from "@/lib/guardrails/sending-gate";
 import { isSuppressedDb, drizzleSuppressionLoader } from "@/lib/suppression/db-store";
 import { releaseEnrollment } from "@/lib/anti-collision/enroll-guard";
-import { buildProspectContext } from "@/lib/context/prospect-context";
+import { buildProspectContext, type ResearchBriefContext } from "@/lib/context/prospect-context";
 import { personalizeStepEmail } from "@/lib/agents/sequence-generator";
+import { decideFabricationGate, type FabricationInput } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { STEP_STRATEGIES } from "@/lib/scoring/outbound-methodologies";
 import { guardTrippedForTenant } from "@/lib/deliverability/db-guard";
 import { generateCopyMessage, persistShadowSample, isCopyEnginePrimaryEnabled } from "@/lib/copy/personalization/db-shadow";
@@ -166,6 +168,13 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
   // Captured by pullVariant, read by sendEmail to tag template-only fallbacks
   // (legacy `[fallback:...]` observability). Reset per step inside pullVariant.
   let lastFallbackReason: string | null = null;
+  // T6b — captured by pullVariant, read by sendEmail's G2 gate at the insert
+  // seam: the research brief + prospect identity from the prospect context,
+  // the tenant-authored step templates, and the copy engine's caller-verified
+  // whitelist when it produced the body. Reset per step inside pullVariant.
+  let lastBrief: ResearchBriefContext | undefined;
+  let lastProspect: FabricationInput["prospect"] | null = null;
+  let lastGroundTruth: string[] = [];
 
   // Spec 25 parity — respect manual-approval mode. The legacy sendSequenceStep
   // bails on manual so routeSequenceStepToDraft writes a draft; that draft router
@@ -197,6 +206,9 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
     releaseLock: async () => releaseEnrollment(tenantId, contact.id, enrollmentId),
     pullVariant: async (step) => {
       lastFallbackReason = null;
+      lastBrief = undefined;
+      lastProspect = null;
+      lastGroundTruth = [];
       const sr = stepRows.find((s) => s.id === step.id);
       if (!sr) return null;
       const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
@@ -208,6 +220,8 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
       };
       let subject = applyVars(sr.subjectTemplate, vars);
       let body = applyVars(sr.bodyTemplate, vars);
+      // Tenant-authored template text is G2 ground truth by construction.
+      lastGroundTruth = [sr.subjectTemplate, sr.bodyTemplate].filter(Boolean);
       // LLM personalization parity with the legacy path (spec-19/sequence-generator).
       // personalizeStepEmail already falls back to the template when no model is
       // configured; we also fall back (template-only) on any throw. Legacy parity:
@@ -216,6 +230,13 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
       try {
         const ctx = await buildProspectContext(contact.id, tenantId);
         if (ctx) {
+          lastBrief = ctx.researchBrief;
+          lastProspect = {
+            name: ctx.contact.fullName,
+            title: ctx.contact.title,
+            company: ctx.company?.name ?? null,
+            domain: ctx.company?.domain ?? null,
+          };
           const stepNumber = stepNumberByStepId.get(step.id) ?? enrollment.currentStepIndex + 1;
           const strategy = STEP_STRATEGIES.find((s) => s.stepNumber === stepNumber) ?? STEP_STRATEGIES[0];
           const out = await personalizeStepEmail(ctx, { subject, body }, strategy, tenantId);
@@ -240,6 +261,10 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
             subject = out.message.subject ?? subject;
             body = out.message.body;
             lastFallbackReason = null; // grounded copy is not a template fallback
+            // T6b — the copy engine's caller-verified whitelist (evidence facts
+            // + asset text) so the insert-seam G2 gate never re-flags specifics
+            // the source gate already verified.
+            lastGroundTruth.push(...(out.groundTruth ?? []));
           }
         } catch {
           /* keep the legacy personalisation */
@@ -251,6 +276,25 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
       const stepNumber = stepNumberByStepId.get(step.id) ?? (enrollment.currentStepIndex + 1);
       const subject = variant.subject ?? "";
       const body = variant.body ?? "";
+      // T6b — G2 factual gate on the FINAL body at the insert seam, whatever
+      // produced it (legacy personalisation, template fallback, or the copy
+      // primary). DETERMINISTIC layer only: this is a bulk cron path — the
+      // SEMANTIC judge lives on the generator/reply paths. A blocked body must
+      // not go out on this auto path: the row is written as a reviewable draft
+      // (forceDraft — never picked up by the send worker), mirroring the
+      // reply-handler downgrade. The engine still marks the step handled, so
+      // the sequence never stalls on it.
+      const fab = decideFabricationGate({
+        body: [subject, body].filter(Boolean).join("\n"),
+        brief: lastBrief,
+        prospect: lastProspect ?? {
+          name: [contact.firstName, contact.lastName].filter(Boolean).join(" ") || null,
+          title: contact.title,
+          company: null,
+          domain: null,
+        },
+        extraGroundTruth: lastGroundTruth,
+      });
       // Legacy parity: route through enqueueOutbound so the tenant's CLE-11 undo
       // window applies (queued vs held+holdUntil). NOT best-effort — the row IS
       // the send, so a failure must surface (the engine treats a throw as un-sent).
@@ -267,7 +311,31 @@ export async function tickEnrollmentV2(enrollmentId: string, database: typeof de
           ? `[fallback:${lastFallbackReason}] sent with template-only personalisation`
           : null,
         settings: fullSettings ?? undefined,
+        forceDraft: fab.blocked,
       });
+      // T6b — log the verdict on the stored row. Best-effort by contract
+      // (recordGateDecision never throws).
+      await recordGateDecision(
+        {
+          tenantId,
+          subjectType: "draft",
+          subjectId: result.id,
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: fab.blocked ? "blocked" : "pass",
+          reasons: {
+            ungrounded: fab.ungrounded.slice(0, 8),
+            briefHasFacts: fab.briefHasFacts,
+            path: "sequence_step_v2",
+            ...(fab.blocked ? { autoSendDowngraded: true } : {}),
+          },
+        },
+        database,
+      );
+      // T6b — a downgraded draft was neither queued nor sent: skip the queued
+      // pipeline stage and the sent activity (both would record something that
+      // did not happen); the draft row + gate_decisions row are the record.
+      if (fab.blocked) return;
       // Analytics + audit parity (best-effort — observability must not fail a send).
       await trackPipeline({
         traceId: enrollmentId,

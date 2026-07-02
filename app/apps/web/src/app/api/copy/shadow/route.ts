@@ -27,6 +27,11 @@ export async function POST(request: Request) {
       const status = result.reason === "copy_shadow_disabled" ? 403 : 404;
       return Response.json({ error: result.reason }, { status });
     }
+    // ran:true without a message = the G2 fabrication gate blocked the sample
+    // (M13 T6b) — surface the reason so the UI can tell "blocked" from "broken".
+    if (!result.message) {
+      return Response.json({ sample: undefined, reason: result.reason ?? "g2_fabrication_blocked", evidenceCount: result.evidenceCount });
+    }
     return Response.json({ sample: result.message, evidenceCount: result.evidenceCount });
   } catch (error) {
     console.error("Copy shadow generation failed:", error);

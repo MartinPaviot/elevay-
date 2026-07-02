@@ -31,6 +31,10 @@ export interface FabricationInput {
   prospect: { name?: string | null; title?: string | null; company?: string | null; domain?: string | null };
   /** Optional — per-claim verdicts from the semantic judge (grounded:false = fabricated). */
   semanticClaims?: ClaimVerdict[];
+  /** Optional — evidence the CALLER verified itself (copy-engine citations,
+   *  tenant asset text baked into the body). Extends the whitelist ONLY: it
+   *  never flips briefHasFacts, so the deterministic layer stays armed. */
+  extraGroundTruth?: string[];
 }
 
 export interface FabricationVerdict {
@@ -127,6 +131,7 @@ function buildGroundTruth(input: FabricationInput): string {
       }
     }
   }
+  parts.push(...(input.extraGroundTruth ?? []));
   return parts.join(" \n ").toLowerCase();
 }
 

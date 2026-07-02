@@ -24,7 +24,7 @@ import { openai } from "@ai-sdk/openai";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { z } from "zod";
 import { randomBytes } from "crypto";
-import { buildProspectContext } from "@/lib/context/prospect-context";
+import { buildProspectContext, type ResearchBriefContext } from "@/lib/context/prospect-context";
 import { generateSequence } from "@/lib/agents/sequence-generator";
 import { pauseEnrollmentsForContacts } from "@/lib/sequences/enrollment";
 import { sendInviteEmail } from "@/lib/emails/email-invite";
@@ -36,7 +36,8 @@ import { generateInviteToken } from "@/lib/auth/invite-token";
 import { makeTool, type ToolContext } from "./context";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
-import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
+import { GATE_RUBRICS, g1DecisionRow, recordGateDecision, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
+import { decideFabricationGate } from "@/lib/evals/fabrication-gate";
 import { loadSuppressedEmails, isEmailSuppressed } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
@@ -202,6 +203,67 @@ RULES:
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = object as any;
 
+        // G2 factual gate (M13 T6b) — DETERMINISTIC layer only, mirroring
+        // /api/send/pregate: interactive path, the semantic judge is out of
+        // latency budget. Brief load is fail-soft — no cached brief means the
+        // strict empty-brief rule applies, which is exactly the intent.
+        const prospect = {
+          name: contactName || null,
+          title: contact.title,
+          company: company?.name ?? null,
+          domain: company?.domain ?? null,
+        };
+        let brief: ResearchBriefContext | undefined;
+        try {
+          if (contact.companyId) {
+            // Dynamic import on purpose: build-intelligence-brief transitively
+            // constructs an Anthropic client at module scope; a static import
+            // here would put that into buildAllChatTools' import graph, which
+            // the real-registry tests load in a keyless environment.
+            const { readCachedBrief, toResearchBriefContext } = await import(
+              "@/lib/campaign-engine/build-intelligence-brief"
+            );
+            const cached = await readCachedBrief(tenantId, contact.companyId, input.contactId);
+            if (cached) brief = toResearchBriefContext(cached);
+          }
+        } catch {
+          // fail-soft: brief unavailable -> strictest G2 posture
+        }
+        // Gate the CONCATENATION — a fabricated hook in the subject line or an
+        // action item reaches the composer exactly like one in the body.
+        const g2 = decideFabricationGate({
+          body: [result.subject, result.body, ...(result.actionItems ?? [])]
+            .filter(Boolean)
+            .join("\n"),
+          brief,
+          prospect,
+        });
+        await recordGateDecision({
+          tenantId,
+          subjectType: "manual",
+          subjectId: input.contactId,
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: g2.blocked ? "blocked" : "pass",
+          reasons: {
+            ungrounded: g2.ungrounded.slice(0, 8),
+            briefHasFacts: g2.briefHasFacts,
+            path: "chat_follow_up",
+          },
+        });
+        if (g2.blocked) {
+          // Fail-closed: no draft body on a blocked verdict — a draft
+          // returned "with a warning" still gets copy-pasted; a withheld
+          // one cannot be.
+          return {
+            blocked: true,
+            reason: `Unverifiable claim(s) about this prospect: ${g2.ungrounded.slice(0, 6).join(", ")} — we hold no data supporting them.`,
+            ungrounded: g2.ungrounded,
+            instruction:
+              "Do NOT present a draft. Tell the user which claims are unverifiable and offer to regenerate the follow-up without them.",
+          };
+        }
+
         return {
           emailDraft: {
             to: contact.email,
@@ -275,8 +337,68 @@ RULES:
         });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = object as any;
+        const options = (result.replies ?? []) as Array<{
+          tone: string;
+          subject: string;
+          body: string;
+        }>;
+        if (options.length === 0) return { replies: options };
 
-        return { replies: result.replies };
+        // G2 factual gate (M13 T6b) — deterministic layer on EACH option,
+        // zero LLM (interactive path). No contact/brief context exists here,
+        // so the strict empty-brief rule applies: a reply must not assert
+        // hard prospect-specifics (counts, named tech, events) we cannot
+        // verify. Blocked options are dropped; survivors ship.
+        const replyProspect = {
+          name: input.senderName ?? null,
+          title: null,
+          company: null,
+          domain: input.senderEmail?.split("@")[1] ?? null,
+        };
+        const verdicts = options.map((r) =>
+          // Subject gated with the body: survivors keep their subject verbatim.
+          decideFabricationGate({
+            body: [r.subject, r.body].filter(Boolean).join("\n"),
+            prospect: replyProspect,
+          })
+        );
+        const surviving = options.filter((_, i) => !verdicts[i].blocked);
+        const droppedCount = options.length - surviving.length;
+        const ungrounded = [...new Set(verdicts.flatMap((v) => v.ungrounded))];
+        await recordGateDecision({
+          tenantId,
+          subjectType: "manual",
+          subjectId: input.senderEmail ?? input.senderName ?? "unknown",
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict:
+            surviving.length === 0 ? "blocked" : droppedCount > 0 ? "reworked" : "pass",
+          reasons: {
+            ungrounded: ungrounded.slice(0, 8),
+            briefHasFacts: false,
+            optionsBlocked: droppedCount,
+            optionsTotal: options.length,
+            path: "chat_suggest_reply",
+          },
+        });
+        if (surviving.length === 0) {
+          // Fail-closed: no reply drafts on a fully blocked verdict.
+          return {
+            blocked: true,
+            reason: `Every reply option asserted unverifiable specifics: ${ungrounded.slice(0, 6).join(", ")} — we hold no data supporting them.`,
+            ungrounded,
+            instruction:
+              "Do NOT present any reply draft. Tell the user which claims were unverifiable and offer to regenerate replies without them.",
+          };
+        }
+        if (droppedCount > 0) {
+          return {
+            replies: surviving,
+            droppedOptions: droppedCount,
+            droppedReason: `unverifiable specifics not supported by any data we hold: ${ungrounded.slice(0, 6).join(", ")}`,
+          };
+        }
+        return { replies: surviving };
       },
     }),
 
