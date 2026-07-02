@@ -26,6 +26,14 @@ import { and, eq, lt, sql } from "drizzle-orm";
 export const OUTREACH_DAILY_TENANT_CAP = 100 as const;
 
 /**
+ * Stable prefix of the gate's refusal reason. The workers persist the full
+ * reason into `outbound_emails.error_message` on requeue; the cockpit API
+ * (app/api/outreach/cap) identifies deferred rows by THIS prefix — keep the
+ * two in sync through this constant, never by retyping the string.
+ */
+export const OUTREACH_CAP_REASON_PREFIX = "Tenant daily outreach cap reached";
+
+/**
  * The tenant's current calendar day as YYYY-MM-DD in ITS timezone (the reset
  * boundary is the tenant's midnight, M5-R1). Invalid/missing timezone falls
  * back to UTC — a wrong-but-stable boundary, never a crash.
