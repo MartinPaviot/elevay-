@@ -36,14 +36,16 @@ export function SortMenu({ value, onChange }: { value: InboxSort; onChange: (s: 
     <div ref={ref} className="relative shrink-0">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex h-7 w-7 items-center justify-center rounded-md border transition-colors"
-        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-secondary)" }}
+        // Header icon control: transparent + token hover, matching the shared
+        // Button icon grammar (continuity pass 2026-07-02).
+        className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+        style={{ color: "var(--color-text-secondary)" }}
         title="Sort conversations"
         aria-label="Sort conversations"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <ArrowUpDown size={15} />
+        <ArrowUpDown size={13} />
       </button>
 
       {open && (

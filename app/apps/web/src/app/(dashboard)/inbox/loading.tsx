@@ -11,7 +11,7 @@ export default function InboxLoading() {
           <div
             key={r}
             className="skeleton-row flex items-center gap-4 px-6"
-            style={{ height: 56, borderBottom: "1px solid var(--color-border-default)" }}
+            style={{ height: "var(--inbox-row-height)", borderBottom: "1px solid var(--color-border-default)" }}
           >
             <Skeleton className="h-2 w-2 rounded-full" />
             <Skeleton className="h-8 w-8 shrink-0 rounded-full" />

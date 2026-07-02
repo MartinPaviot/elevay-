@@ -18,7 +18,7 @@
  */
 
 import { memo } from "react";
-import { AlarmClock, CheckSquare, Square, Star } from "lucide-react";
+import { AlarmClock, Check, Star } from "lucide-react";
 import { mailTimestamp } from "./_time-ago";
 import { reasonTooltip, type ConversationListItem, type InboxLane } from "./_types";
 import { dirOf } from "@/lib/inbox/text-direction";
@@ -126,12 +126,15 @@ export const InboxRow = memo(function InboxRow({
       onMouseEnter={() => onHoverStart?.(c.key)}
       onMouseLeave={onHoverEnd}
       title={reasonTitle}
-      className={`group flex w-full items-center gap-2 border-b px-3 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-accent)] ${compact ? "" : "py-2"}`}
+      // Hover + selection follow the table grammar (bg-hover / bg-selected +
+      // 3px inset accent bar) — the row used accent-soft with a 2px bar and no
+      // hover at all, the only such list in the app (continuity 2026-07-02).
+      className={`group flex w-full items-center gap-2 border-b px-3 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-accent)] ${compact ? "" : "py-2"} ${selected || multiSelected ? "" : "hover:bg-[var(--color-bg-hover)]"}`}
       style={{
         height: compact ? "var(--inbox-row-height-compact)" : "var(--inbox-row-height)",
         borderColor: "var(--color-border-default)",
-        background: selected || multiSelected ? "var(--color-accent-soft)" : "transparent",
-        boxShadow: selected ? "inset 2px 0 0 var(--color-accent)" : "none",
+        background: selected || multiSelected ? "var(--color-bg-selected)" : "transparent",
+        boxShadow: selected ? "inset 3px 0 0 var(--color-accent)" : "none",
       }}
       data-conversation-key={c.key}
       // The open thread + unread state are only visual (background/weight/dot);
@@ -149,13 +152,19 @@ export const InboxRow = memo(function InboxRow({
             e.stopPropagation();
             onToggleSelect(c.key, e.shiftKey);
           }}
-          className={`flex h-4 w-4 shrink-0 items-center justify-center transition-opacity ${
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-opacity ${
             multiSelected || hasSelection ? "opacity-100" : "opacity-40 group-hover:opacity-100"
           }`}
-          style={{ color: multiSelected ? "var(--color-accent)" : "var(--color-text-muted)" }}
+          // The shared checkbox visual (16px rounded square, accent fill +
+          // white check when on) instead of lucide CheckSquare glyphs.
+          style={{
+            borderColor: multiSelected ? "var(--color-accent)" : "var(--color-border-hover)",
+            background: multiSelected ? "var(--color-accent)" : "var(--color-bg-card)",
+            color: "#FFFFFF",
+          }}
           title="Select (x) · Shift-click for a range"
         >
-          {multiSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+          {multiSelected && <Check size={12} strokeWidth={3} />}
         </span>
       )}
       {/* Star (Upstream): a LEADING toggle tight beside the checkbox. Filled
