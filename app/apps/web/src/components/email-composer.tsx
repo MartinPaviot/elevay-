@@ -161,7 +161,7 @@ export function EmailComposer({ to, subject, body, onClose, onSend }: EmailCompo
       <div
         className="slide-in-right fixed right-0 top-0 z-50 flex h-full flex-col"
         style={{
-          width: "min(var(--detail-panel-width, 420px), 100vw)",
+          width: "min(var(--detail-panel-width, 400px), 100vw)",
           background: "var(--color-bg-card)",
           borderLeft: "1px solid var(--color-border-default)",
           borderTopLeftRadius: "10px",

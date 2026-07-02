@@ -1,12 +1,18 @@
 "use client";
 
 /**
- * Split-tab strip (inbox-shell-redesign V2) — Upstream's SECOND nav axis: a
- * horizontal band above the conversation list that sub-segments the attention
- * lane by intention/category. Primary · Needs Reply · Follow Ups · Promotions ·
- * Social · <custom> · Noise, each a small colored icon + a count chip. Selecting a
- * tab drives the page's activeSplit over the already-wired `?split=` route; the
- * sidebar's intention rows stay in sync with the same state. Frontend-only.
+ * Split-tab strip — the inbox's SECOND nav axis: a horizontal band above the
+ * conversation list that sub-segments the attention lane by intention/category.
+ * Primary · Needs Reply · Follow Ups · Promotions · Social · <custom> · Noise.
+ * Selecting a tab drives the page's activeSplit over the already-wired
+ * `?split=` route; the sidebar's intention rows stay in sync. Frontend-only.
+ *
+ * Styled as the STANDARD dashboard filter bar (continuity pass 2026-07-02):
+ * 40px --filter-bar-height, px-6, and the accounts/contacts pill grammar —
+ * rounded-md px-2.5 py-1 text-[12px] font-medium, active = accent-soft bg +
+ * accent text, inactive = text-tertiary. The former Upstream styling (38px
+ * underline tabs, 14px labels, per-category colored icons) was the only
+ * multi-color tab bar in the app.
  */
 
 import { Inbox, Reply, Clock, Megaphone, Users, VolumeX, Hash } from "lucide-react";
@@ -22,14 +28,14 @@ const BUILTIN_SPLIT_KEY: Record<string, string> = {
   social: "inbox.split.social",
 };
 
-/** Per-split icon + a badge color token (Upstream uses colored category icons). */
-const SPLIT_STYLE: Record<string, { icon: React.ReactNode; color: string }> = {
-  other: { icon: <Inbox size={14} />, color: "var(--color-badge-0)" }, // Primary
-  needs_reply: { icon: <Reply size={14} />, color: "var(--color-badge-3)" },
-  follow_ups: { icon: <Clock size={14} />, color: "var(--color-badge-5)" },
-  promotions: { icon: <Megaphone size={14} />, color: "var(--color-badge-6)" },
-  social: { icon: <Users size={14} />, color: "var(--color-badge-4)" },
-  noise: { icon: <VolumeX size={14} />, color: "var(--color-text-tertiary)" },
+/** Per-split icon — monochrome, inherits the pill's text color. */
+const SPLIT_ICON: Record<string, React.ReactNode> = {
+  other: <Inbox size={12} />, // Primary
+  needs_reply: <Reply size={12} />,
+  follow_ups: <Clock size={12} />,
+  promotions: <Megaphone size={12} />,
+  social: <Users size={12} />,
+  noise: <VolumeX size={12} />,
 };
 
 function Tab({
@@ -45,22 +51,19 @@ function Tab({
   active: boolean;
   onClick: () => void;
 }) {
-  const style = SPLIT_STYLE[id] ?? { icon: <Hash size={14} />, color: "var(--color-badge-2)" };
   return (
     <button
       onClick={onClick}
-      className="flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[14px] font-normal transition-colors"
+      className="flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--color-bg-hover)]"
       style={{
-        borderColor: active ? "var(--color-accent)" : "transparent",
-        color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+        background: active ? "var(--color-accent-soft)" : "transparent",
+        color: active ? "var(--color-accent)" : "var(--color-text-tertiary)",
       }}
     >
-      <span className="shrink-0" style={{ color: style.color }}>
-        {style.icon}
-      </span>
+      <span className="shrink-0">{SPLIT_ICON[id] ?? <Hash size={12} />}</span>
       {name}
       {count > 0 && (
-        <span className="text-[11px] tabular-nums" style={{ color: "var(--color-text-tertiary)" }}>
+        <span className="text-[11px] tabular-nums opacity-70">
           {count}
         </span>
       )}
@@ -86,8 +89,12 @@ export function SplitStrip({
   const t = useT();
   return (
     <div
-      className="flex items-center gap-1 overflow-x-auto border-b px-2"
-      style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+      className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b px-6"
+      style={{
+        height: "var(--filter-bar-height)",
+        borderColor: "var(--color-border-default)",
+        background: "var(--color-bg-card)",
+      }}
     >
       {splits.map((s) => (
         <Tab

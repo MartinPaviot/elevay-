@@ -60,7 +60,6 @@ import { ThreadLabels } from "./_thread-labels";
 import { ThreadPresence } from "./_thread-presence";
 import { MoreMenu, type MoreMenuItem } from "@/components/ui/more-menu";
 import { shouldSummarize } from "@/lib/inbox/thread-summary-prep";
-import { initialsFor, avatarColorIndex } from "@/lib/inbox/sender-auth";
 import { parseWhen } from "@/lib/inbox/parse-when";
 import { dirOf } from "@/lib/inbox/text-direction";
 import { decodeDisplay } from "@/lib/inbox/text-decode";
@@ -667,10 +666,10 @@ export function ConversationPane({
               type="button"
               onClick={onClose}
               title={t("inbox.backToList")}
-              className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
               style={{ color: "var(--color-text-tertiary)" }}
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           )}
         </div>
@@ -687,7 +686,7 @@ export function ConversationPane({
                   can no longer push the span past the pane bounds (round 2).
                   The full subject stays reachable via the title tooltip. */}
               <span
-                className="max-w-full truncate text-[17px] font-semibold leading-tight"
+                className="max-w-full truncate text-[16px] font-semibold leading-tight"
                 style={{ color: "var(--color-text-primary)" }}
                 dir={dirOf(decodeDisplay(conv.subject))}
                 title={decodeDisplay(conv.subject)}
@@ -807,17 +806,17 @@ export function ConversationPane({
           {conv.replyWorthy ? (
             <>
               <Button size="sm" onClick={generateDraft} disabled={drafting} className="gap-1.5" title={t("inbox.generateDraftTitle")}>
-                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {drafting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 {drafting ? t("inbox.drafting") : t("inbox.generateDraft")}
               </Button>
               <Button size="sm" variant="outline" onClick={openReply} disabled={drafting} className="gap-1.5">
-                <Mail className="h-3.5 w-3.5" />
+                <Mail size={13} />
                 {t("inbox.reply")}
               </Button>
             </>
           ) : (
             <Button size="sm" onClick={openReply} disabled={drafting} className="gap-1.5">
-              {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+              {drafting ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
               {drafting ? t("inbox.drafting") : t("inbox.reply")}
             </Button>
           )}
@@ -835,7 +834,7 @@ export function ConversationPane({
               title={t("inbox.scheduleMeeting")}
               aria-label={t("inbox.scheduleMeeting")}
             >
-              <CalendarPlus className="h-3.5 w-3.5" />
+              <CalendarPlus size={13} />
             </Button>
           )}
           {/* Secondary actions behind the overflow (nudge / stop sequence /
@@ -846,7 +845,7 @@ export function ConversationPane({
             {triageable && (
               <div className="relative" ref={snoozeRef}>
                 <Button variant="outline" size="sm" onClick={() => setSnoozeOpen((v) => !v)} className="gap-1.5">
-                  <AlarmClock className="h-3.5 w-3.5" />
+                  <AlarmClock size={13} />
                   {t("inbox.snooze")}
                   <ChevronDown className="h-3 w-3" />
                 </Button>
@@ -910,7 +909,7 @@ export function ConversationPane({
             )}
             {triageable ? (
               <Button size="sm" variant="outline" onClick={() => void onTriage(conv.key, "done")} className="gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 size={13} />
                 {t("inbox.done")}
               </Button>
             ) : lane === "done" ? (
@@ -1100,17 +1099,14 @@ export function ConversationPane({
             {!attributionInHeader && (
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                {/* SenderAvatar (shared): same seed as the list row + pane
+                    header, so a sender keeps ONE chip colour everywhere. */}
                 {m.direction === "inbound" && (
-                  <span
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
-                    style={{
-                      background: `var(--color-badge-${avatarColorIndex(m.from || conv.displayName)}-bg)`,
-                      color: `var(--color-badge-${avatarColorIndex(m.from || conv.displayName)})`,
-                    }}
-                    aria-hidden
-                  >
-                    {initialsFor(m.from || conv.displayName)}
-                  </span>
+                  <SenderAvatar
+                    name={senderNameOf(m.from) || conv.displayName}
+                    email={extractSenderEmail(m.from)}
+                    size={20}
+                  />
                 )}
                 <span className="truncate">
                   {m.direction === "inbound" ? senderNameOf(m.from) || conv.displayName : t("inbox.you")}
@@ -1245,14 +1241,18 @@ export function ConversationPane({
         {/* ── Key details (INBOX-S05): high-signal entities (money / dates / phones). ── */}
         {(detail.entities.amounts.length > 0 || detail.entities.dates.length > 0 || detail.entities.phones.length > 0) && (
           <div className="mb-3 flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-muted)" }}>
+            <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
               {t("inbox.keyDetails")}
             </span>
             {[...detail.entities.amounts, ...detail.entities.dates, ...detail.entities.phones].map((e, i) => (
               <span
                 key={i}
-                className="rounded px-1.5 py-0.5 text-[11px]"
-                style={{ background: "var(--color-badge-0-bg)", color: "var(--color-badge-0)" }}
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={{
+                  background: "var(--color-badge-0-bg)",
+                  color: "var(--color-badge-0)",
+                  border: "1px solid color-mix(in srgb, var(--color-badge-0) 25%, transparent)",
+                }}
               >
                 {e}
               </span>

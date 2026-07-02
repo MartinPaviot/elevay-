@@ -88,7 +88,7 @@ function EmailPill({ email, onRemove }: { email: string; onRemove: () => void })
       style={{
         background: "var(--color-bg-muted)",
         color: "var(--color-text-primary)",
-        border: "0.5px solid var(--color-border-default)",
+        border: "1px solid var(--color-border-default)",
       }}
     >
       {email}
@@ -145,7 +145,7 @@ function EmailField({
   return (
     <div
       className="flex items-start gap-2 px-4 py-2"
-      style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+      style={{ borderBottom: "1px solid var(--color-border-default)" }}
       onClick={() => inputRef.current?.focus()}
     >
       <span
@@ -711,7 +711,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               borderColor: "var(--color-border-default)",
             }
           : {
-              width: "min(var(--detail-panel-width, 480px), 100vw)",
+              width: "min(var(--detail-panel-width, 400px), 100vw)",
               background: "var(--color-bg-card)",
               borderLeft: "1px solid var(--color-border-default)",
               borderTopLeftRadius: "10px",
@@ -732,7 +732,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             <Mail size={inline && draft.threadId ? 13 : 15} className="shrink-0" style={{ color: "var(--color-accent)" }} />
             {inline && draft.threadId ? (
               <>
-                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+                <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
                   {t("inbox.compose.replyLabel")}
                 </span>
                 {collapseFields && (
@@ -766,14 +766,8 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           </div>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
             style={{ color: "var(--color-text-tertiary)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--color-bg-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-            }}
           >
             <X size={14} />
           </button>
@@ -800,7 +794,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           return (
             <div
               className="flex items-center gap-2 px-4 py-2"
-              style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+              style={{ borderBottom: "1px solid var(--color-border-default)" }}
             >
               <span className="w-12 shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-tertiary)" }}>
                 {t("inbox.compose.from")}
@@ -824,8 +818,8 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setFromOpen(false)} />
                       <div
-                        className="absolute left-0 top-full z-20 mt-1 min-w-[220px] rounded-lg border p-1 shadow-lg"
-                        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                        className="absolute left-0 top-full z-20 mt-1 min-w-[220px] rounded-lg border p-1"
+                        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", boxShadow: "var(--shadow-floating)" }}
                       >
                         {mailboxes.map((m) => {
                           const active = m.id === selected.id;
@@ -862,7 +856,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         {showBcc && <EmailField label={t("inbox.compose.bcc")} emails={bccEmails} onChange={(v) => { markEdited(); setBccEmails(v); }} />}
         <div
           className="flex items-center gap-3 px-4 py-1.5"
-          style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+          style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
           <button
             onClick={() => setShowCc((v) => !v)}
@@ -885,7 +879,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         {/* Subject */}
         <div
           className="flex items-center gap-2 px-4 py-2"
-          style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+          style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
           <span
             className="w-12 shrink-0 text-[12px] font-medium"
@@ -922,8 +916,8 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               </Button>
               {rewriteOpen && (
                 <div
-                  className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border p-1 shadow-lg"
-                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                  className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border p-1"
+                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", boxShadow: "var(--shadow-floating)" }}
                 >
                   {REWRITE_PRESETS.map((p) => (
                     <button
@@ -977,8 +971,8 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               </Button>
               {translateOpen && (
                 <div
-                  className="absolute left-0 top-full z-20 mt-1 w-40 rounded-lg border p-1 shadow-lg"
-                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+                  className="absolute left-0 top-full z-20 mt-1 w-40 rounded-lg border p-1"
+                  style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", boxShadow: "var(--shadow-floating)" }}
                 >
                   {TRANSLATE_LANGUAGES.map((l) => (
                     <button
@@ -1057,18 +1051,16 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           >
             <AlertCircle size={14} className="shrink-0" />
             <span className="flex-1">{sendError}</span>
-            <button
+            <Button
+              size="sm"
+              variant="outline"
               onClick={handleSend}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
-              style={{
-                background: "var(--color-bg-card)",
-                color: "var(--color-error)",
-                border: "1px solid var(--color-error)",
-              }}
+              className="gap-1"
+              style={{ background: "var(--color-bg-card)", color: "var(--color-error)", borderColor: "var(--color-error)" }}
             >
-              <RefreshCw size={10} />
+              <RefreshCw size={12} />
               {t("common.retry")}
-            </button>
+            </Button>
           </div>
         )}
 

@@ -5,9 +5,9 @@ import { dirname, join } from "node:path";
 
 /**
  * F1 G-design gate (machine half) — no inbox .tsx may use a RAW color literal as
- * a color value; every color must be a var(--color-*) token. The data-derived
- * HSL in SenderAvatar is the one allowed exception (it is computed from the
- * sender, not a token-replaceable brand color).
+ * a color value; every color must be a var(--color-*) token. No exceptions:
+ * SenderAvatar's former data-derived HSL carve-out was migrated to the badge
+ * token system (continuity pass 2026-07-02).
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,8 +33,9 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-const LITERAL = /#[0-9a-fA-F]{3,8}\b|rgba?\(\s*[0-9]|hsl\(\s*[0-9]|oklch\(\s*[0-9.]/g;
-const ALLOW_FILE = /_sender-avatar\.tsx$/; // data-derived HSL avatar color
+// Also catches template-literal hsl(`${...}`) which the digit-anchored form
+// used to miss — that hole hid the avatar/label HSL bypasses for weeks.
+const LITERAL = /#[0-9a-fA-F]{3,8}\b|rgba?\(\s*[0-9$`]|hsl\(\s*[0-9$`]|oklch\(\s*[0-9.$`]/g;
 
 describe("F1 tokens contract — no raw color literals in the inbox tree", () => {
   const files = tsxFiles(INBOX_DIR);
@@ -46,7 +47,6 @@ describe("F1 tokens contract — no raw color literals in the inbox tree", () =>
   it("every inbox .tsx uses var(--color-*), not a raw hex/rgb/hsl/oklch literal", () => {
     const violations: string[] = [];
     for (const f of files) {
-      if (ALLOW_FILE.test(f)) continue;
       const body = stripComments(readFileSync(f, "utf8"));
       const hits = body.match(LITERAL);
       if (hits) violations.push(`${f.split(/[\\/]/).pop()}: ${[...new Set(hits)].join(", ")}`);

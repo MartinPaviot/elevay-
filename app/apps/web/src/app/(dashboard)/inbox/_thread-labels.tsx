@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useId } from "react";
 import { Tag, X, Plus } from "lucide-react";
-import { labelHue } from "@/lib/inbox/labels";
+import { avatarColorIndex } from "@/lib/inbox/sender-auth";
 import { useT } from "@/lib/i18n/locale";
 
 export function ThreadLabels({
@@ -84,15 +84,17 @@ export function ThreadLabels({
     <div className="flex flex-wrap items-center gap-1.5">
       <Tag size={12} className="shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
       {labels.map((l) => {
-        const hue = labelHue(l);
+        // Badge token system (hash -> --color-badge-N), not raw computed HSL —
+        // the same 10-hue palette every chip in the app derives from.
+        const idx = avatarColorIndex(l);
         return (
           <span
             key={l}
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
             style={{
-              background: `hsl(${hue} 70% 95%)`,
-              color: `hsl(${hue} 60% 32%)`,
-              border: `1px solid hsl(${hue} 60% 85%)`,
+              background: `var(--color-badge-${idx}-bg)`,
+              color: `var(--color-badge-${idx})`,
+              border: `1px solid color-mix(in srgb, var(--color-badge-${idx}) 25%, transparent)`,
             }}
           >
             {l}

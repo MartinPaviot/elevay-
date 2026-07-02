@@ -449,8 +449,13 @@ export function MeetingSchedulerCard({
         <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--color-text-tertiary)" }}>
           {booked ? t("meeting.bookedTitle") : t("meeting.proposeTime")}
         </span>
-        <button onClick={onClose} aria-label={t("common.close")} style={{ color: "var(--color-text-tertiary)" }}>
-          <X size={13} />
+        <button
+          onClick={onClose}
+          aria-label={t("common.close")}
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          <X size={14} />
         </button>
       </div>
 
@@ -550,7 +555,7 @@ export function MeetingSchedulerCard({
                           className="rounded-md px-2 py-1 text-[12px] transition-colors"
                           style={sel
                             ? { background: "var(--color-accent)", color: "#fff" }
-                            : { background: "var(--color-bg-card)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-default)" }}
+                            : { background: "var(--color-bg-page)", color: "var(--color-text-secondary)", border: "1px solid var(--color-border-default)" }}
                         >
                           {new Date(iso).toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" })}
                         </button>
@@ -679,7 +684,7 @@ export function MeetingSchedulerCard({
               <span
                 key={a}
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
-                style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)", border: "0.5px solid var(--color-border-default)" }}
+                style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-default)" }}
               >
                 {a}
                 <button type="button" onClick={() => setAttendees((xs) => xs.filter((_, idx) => idx !== i))} aria-label={t("common.close")} style={{ color: "var(--color-text-muted)" }}>
@@ -791,7 +796,7 @@ export function MeetingSchedulerCard({
           {booking ? t("meeting.booking") : manualConfirm ? t("meeting.bookAnyway") : t("common.confirm")}
         </Button>
       </div>
-      <p className="mt-1.5 text-[10px]" style={{ color: "var(--color-text-tertiary)" }}>
+      <p className="mt-1.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
         {conferencing === "sovereign" ? t("meeting.descSovereign") : t("meeting.descProvider")}
       </p>
       </>

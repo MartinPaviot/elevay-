@@ -151,8 +151,8 @@ function ResizeHandle({ onDelta, value, min, max }: { onDelta: (dx: number) => v
     >
       <div className="absolute inset-y-0 -left-1 w-2 cursor-col-resize" />
       <div className="pointer-events-none absolute inset-y-0 -left-px w-px bg-transparent transition-colors group-hover:bg-[var(--color-accent)] group-focus:bg-[var(--color-accent)]" />
-      <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-7 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded border opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus:opacity-100"
-        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}>
+      <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-7 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded border opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+        style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", boxShadow: "var(--shadow-button)" }}>
         <MoveHorizontal size={12} style={{ color: "var(--color-text-muted)" }} />
       </div>
     </div>
@@ -1305,6 +1305,10 @@ export default function InboxPage() {
           <>
             <Button
               size="sm"
+              // gradient = THE one primary CTA per header bar, like accounts'
+              // "+ Create account" / contacts' "+ Create contact" (continuity
+              // pass 2026-07-02 — Compose was the only solid-accent header CTA).
+              variant="gradient"
               onClick={() => {
                 // Compose renders in the reading-pane column, which only exists on
                 // a mail lane — not the Outbound/Bundles tables. Switch to the inbox
@@ -1315,12 +1319,12 @@ export default function InboxPage() {
               className="shrink-0 gap-1.5"
               title={t("inbox.compose.title")}
             >
-              <PenSquare size={14} /> {t("inbox.compose.label")}
+              <PenSquare size={13} /> {t("inbox.compose.label")}
             </Button>
             {/* Width shrinks with the viewport so a half-screen window doesn't
                 over-fill the 44px header and wrap the title (regression guard). */}
             <div className="relative w-40 min-w-0 sm:w-56 lg:w-80">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
+              <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1329,11 +1333,11 @@ export default function InboxPage() {
                 aria-label={t("inbox.search.ariaLabel")}
                 placeholder={wideSearch ? t("inbox.search.placeholder") : t("inbox.search.placeholderShort")}
                 // h-7 (28px) so the control matches the Compose button and the
-                // single-row header stays at the 44px --header-height standard
-                // (was py-1.5 ≈ 31px, which grew the inbox header taller than the
-                // rest of the app). Icons inside stay vertically centered.
-                className="h-7 w-full rounded-md border pl-8 pr-8 text-[13px] outline-none"
-                style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-primary)" }}
+                // single-row header stays at the 44px --header-height standard.
+                // bg-card + 12px like the dashboard's h-7 search inputs — the
+                // bg-page fill read as a grey pill inside the white header.
+                className="h-7 w-full rounded-md border pl-8 pr-8 text-[12px] outline-none"
+                style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}
               />
               {search && (
                 <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: "var(--color-text-muted)" }} title={t("inbox.search.clear")}>
@@ -1346,14 +1350,15 @@ export default function InboxPage() {
             <button
               onClick={toggleDensity}
               aria-pressed={density === "compact"}
-              // h-7 w-7 (28px) — matches the search field + Compose button so the
-              // header row sits at the 44px --header-height standard (was h-8 = 32px).
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors"
-              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)", color: "var(--color-text-secondary)" }}
+              // h-7 w-7 (28px) header icon control, transparent + token hover —
+              // the shared Button icon grammar (a bordered bg-page square was
+              // the only one of its kind in a header).
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+              style={{ color: "var(--color-text-secondary)" }}
               title={density === "comfortable" ? t("inbox.density.titleCompact") : t("inbox.density.titleComfortable")}
               aria-label={density === "comfortable" ? t("inbox.density.ariaCompact") : t("inbox.density.ariaComfortable")}
             >
-              {density === "comfortable" ? <AlignJustify size={15} /> : <Rows2 size={15} />}
+              {density === "comfortable" ? <AlignJustify size={13} /> : <Rows2 size={13} />}
             </button>
             {/* Sort order (Date newest ↔ oldest, Priority, Unread first, Sender).
                 Not shown on the Outbound/Bundles tables — they carry their own order. */}
@@ -1368,7 +1373,9 @@ export default function InboxPage() {
           width (≈ viewport − global sidebar), not the viewport — so a thread
           stays 3-column only while the reading pane is actually comfortable
           (≥ ~600px) on any monitor, and collapses to single-pane otherwise. */}
-      <div ref={shellRef} className="inbox-shell @container flex min-h-0 flex-1">
+      {/* No .inbox-shell reskin class — the inbox sits on the same root
+          tokens/ground as every other dashboard page (continuity 2026-07-02). */}
+      <div ref={shellRef} className="@container flex min-h-0 flex-1" style={{ background: "var(--color-bg-page)" }}>
       {/* Left: mailbox folders + Splits (the Upstream IA). Collapses to single-pane
           only when a full-width reader is actually shown — i.e. a thread is open AND
           we're in the list/pane branch (not the outbound/bundles table, where a stale
@@ -1454,7 +1461,12 @@ export default function InboxPage() {
               if (!paneActive) listScrollRef.current = e.currentTarget.scrollTop;
             }}
             className={`overflow-y-auto ${paneActive ? "hidden border-r @min-[960px]:block @min-[960px]:w-[var(--inbox-list-w)] @min-[960px]:shrink-0" : "flex-1"}`}
-            style={{ borderColor: "var(--color-border-default)", "--inbox-list-w": `${listW}px` } as CSSProperties}
+            // Content sits on a WHITE surface like the accounts/contacts table
+            // region — transparent columns left the list + reading pane on the
+            // grey page ground while the composer card is white, so opening a
+            // reply popped a stark white block (founder: "d'un coup cela
+            // devient blanc, ça casse tout", 2026-07-02).
+            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)", "--inbox-list-w": `${listW}px` } as CSSProperties}
           >
             {/* Capture review (INBOX-G02) — auto-captured interactions awaiting approval. */}
             <CaptureReviewDrawer />
@@ -1485,7 +1497,9 @@ export default function InboxPage() {
             {selection.keys.length > 0 && (
               <div
                 className="sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2"
-                style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border-default)" }}
+                // bg-selected like the shared BulkActionsBar (bg-elevated is the
+                // modal/dropdown token — wrong layer for an in-flow bar).
+                style={{ background: "var(--color-bg-selected)", borderColor: "var(--color-border-default)" }}
               >
                 <span className="text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
                   {t("inbox.bulk.selected", { n: selection.keys.length })}
@@ -1584,7 +1598,7 @@ export default function InboxPage() {
           {/* Draggable divider between the list and the open mail/compose (3-column only). */}
           {paneActive && <ResizeHandle onDelta={handleResizeList} value={listW} min={LIST_W_MIN} max={LIST_W_MAX} />}
           {paneActive && (
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 flex-1 flex-col" style={{ background: "var(--color-bg-card)" }}>
               {/* Single-pane back control: shown only when the inbox area is too
                   narrow for the list (which is then hidden). In 3-column mode the
                   master-detail list is itself the way back. Closes compose if open,

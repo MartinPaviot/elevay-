@@ -18,25 +18,25 @@ import { useT } from "@/lib/i18n/locale";
 type LaneId = InboxLane | "outbound" | "bundles" | "starred" | "drafts" | "scheduled" | "all" | "trash" | "spam";
 
 const LANE_META: Record<LaneId, { labelKey: string; icon: React.ReactNode }> = {
-  attention: { labelKey: "inbox.folder.attention", icon: <Inbox size={15} /> },
-  snoozed: { labelKey: "inbox.folder.snoozed", icon: <AlarmClock size={15} /> },
-  done: { labelKey: "inbox.folder.done", icon: <CheckCircle2 size={15} /> },
-  handled: { labelKey: "inbox.folder.handled", icon: <Bot size={15} /> },
-  outbound: { labelKey: "inbox.folder.outbound", icon: <Send size={15} /> },
-  bundles: { labelKey: "inbox.folder.bundles", icon: <Layers size={15} /> },
-  starred: { labelKey: "inbox.folder.starred", icon: <Star size={15} /> },
-  drafts: { labelKey: "inbox.folder.drafts", icon: <FileText size={15} /> },
-  scheduled: { labelKey: "inbox.folder.scheduled", icon: <SendHorizontal size={15} /> },
-  all: { labelKey: "inbox.folder.all", icon: <Mails size={15} /> },
-  trash: { labelKey: "inbox.folder.trash", icon: <Trash2 size={15} /> },
-  spam: { labelKey: "inbox.folder.spam", icon: <ShieldAlert size={15} /> },
+  attention: { labelKey: "inbox.folder.attention", icon: <Inbox size={16} /> },
+  snoozed: { labelKey: "inbox.folder.snoozed", icon: <AlarmClock size={16} /> },
+  done: { labelKey: "inbox.folder.done", icon: <CheckCircle2 size={16} /> },
+  handled: { labelKey: "inbox.folder.handled", icon: <Bot size={16} /> },
+  outbound: { labelKey: "inbox.folder.outbound", icon: <Send size={16} /> },
+  bundles: { labelKey: "inbox.folder.bundles", icon: <Layers size={16} /> },
+  starred: { labelKey: "inbox.folder.starred", icon: <Star size={16} /> },
+  drafts: { labelKey: "inbox.folder.drafts", icon: <FileText size={16} /> },
+  scheduled: { labelKey: "inbox.folder.scheduled", icon: <SendHorizontal size={16} /> },
+  all: { labelKey: "inbox.folder.all", icon: <Mails size={16} /> },
+  trash: { labelKey: "inbox.folder.trash", icon: <Trash2 size={16} /> },
+  spam: { labelKey: "inbox.folder.spam", icon: <ShieldAlert size={16} /> },
 };
 
 const SPLIT_ICON: Record<string, React.ReactNode> = {
-  needs_reply: <Reply size={15} />,
-  follow_ups: <Clock size={15} />,
-  promotions: <Megaphone size={15} />,
-  social: <Users size={15} />,
+  needs_reply: <Reply size={16} />,
+  follow_ups: <Clock size={16} />,
+  promotions: <Megaphone size={16} />,
+  social: <Users size={16} />,
 };
 
 function FolderRow({
@@ -57,15 +57,18 @@ function FolderRow({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors ${
+      // 13px rows + the main-sidebar active grammar (accent-soft bg, primary
+      // text, accent ICON only) — the rail sits right beside the app sidebar
+      // and was the only 14px/full-accent nav in the app (continuity 2026-07-02).
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors ${
         active ? "" : "hover:bg-[var(--color-bg-hover)]"
       }`}
       style={{
         background: active ? "var(--color-accent-soft)" : "transparent",
-        color: active ? "var(--color-accent)" : muted ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
+        color: active ? "var(--color-text-primary)" : muted ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
       }}
     >
-      <span className="shrink-0">{icon}</span>
+      <span className="shrink-0" style={active ? { color: "var(--color-accent)" } : undefined}>{icon}</span>
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
       {count != null && count > 0 && (
         <span
@@ -84,7 +87,7 @@ function FolderRow({
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+    <div className="px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
       {children}
     </div>
   );
@@ -161,8 +164,8 @@ export function InboxFolders({
 
   return (
     <div
-      className="inbox-rail flex w-[184px] shrink-0 flex-col overflow-y-auto border-r xl:w-[224px]"
-      style={{ borderColor: "var(--color-border-default)" }}
+      className="flex w-[184px] shrink-0 flex-col overflow-y-auto border-r xl:w-[224px]"
+      style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-sidebar)" }}
     >
       <div className="h-2" />
 
@@ -201,7 +204,7 @@ export function InboxFolders({
           <>
             <GroupLabel>{t("inbox.folder.mailboxesGroup")}</GroupLabel>
             <FolderRow
-              icon={<Mail size={15} />}
+              icon={<Mail size={16} />}
               label={t("inbox.folder.allInboxes")}
               active={selectedMailbox === null}
               onClick={() => onSelectMailbox(null)}
@@ -233,7 +236,7 @@ export function InboxFolders({
             {dealLanes.map((d) => (
               <FolderRow
                 key={d.id}
-                icon={<Target size={15} />}
+                icon={<Target size={16} />}
                 label={d.name}
                 count={d.count}
                 active={customLaneId === d.id}
@@ -250,7 +253,7 @@ export function InboxFolders({
             {customLanes.map((l) => (
               <FolderRow
                 key={l.id}
-                icon={<Inbox size={15} />}
+                icon={<Inbox size={16} />}
                 label={l.name}
                 count={l.count}
                 active={customLaneId === l.id}
