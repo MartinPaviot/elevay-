@@ -91,6 +91,8 @@ import { linkedinEngagementSourcingCron } from "@/inngest/linkedin-engagement-so
 import { linkedinContactHydrationCron } from "@/inngest/linkedin-contact-hydration-cron";
 import { linkedinSearchMonitorCron } from "@/inngest/linkedin-search-monitor-cron";
 import { campaignWeeklyReport } from "@/inngest/campaign-weekly-report";
+// outreach-autopilot T9 — weekly decision-level insights (patterns + anti-patterns)
+import { decisionInsightsWeekly } from "@/inngest/decision-insights-weekly";
 // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
 import { postProcessCall } from "@/inngest/calls-post-process";
 // tam-lifecycle — living-TAM loops (propose into the approval queue)
@@ -338,6 +340,9 @@ export const { GET, POST, PUT } = serve({
     // Re-runs saved ICP queries and sources net-new matches (source-only, no enroll).
     linkedinSearchMonitorCron,
     campaignWeeklyReport,
+    // outreach-autopilot T9 — Monday 06:00 UTC: persona x signal patterns +
+    // rejection anti-patterns into weekly_decision_insights (M12-R5 guarded).
+    decisionInsightsWeekly,
     // voice-cold-call Phase 1 — post-call LLM extraction + CRM sync
     postProcessCall,
     // tam-lifecycle — living-TAM loops: refresh stale rows + source
