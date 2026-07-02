@@ -64,6 +64,9 @@ export interface DeliverInteractiveInput {
   source?: string;
   /** Attach an iCalendar part (e.g. an RSVP REPLY) — passed to the transport. */
   icsInvite?: { method: "REQUEST" | "PUBLISH" | "CANCEL" | "REPLY"; content: string; filename?: string };
+  /** Regular file attachments (the composer's paperclip) — base64 content,
+   *  size-capped at the API layer (Vercel request bodies max out at 4.5 MB). */
+  attachments?: { filename: string; contentBase64: string; contentType?: string }[];
   /** Skip the CAN-SPAM unsubscribe footer/header — for transactional sends
    *  (an RSVP reply to a meeting organizer is not marketing). */
   skipUnsubscribe?: boolean;
@@ -245,6 +248,7 @@ export async function deliverInteractiveEmail(
           cc: input.cc && input.cc.length > 0 ? input.cc.join(", ") : undefined,
           bcc: input.bcc && input.bcc.length > 0 ? input.bcc.join(", ") : undefined,
           icsInvite: input.icsInvite,
+          attachments: input.attachments,
         },
       );
       messageId = res.messageId;
@@ -260,9 +264,21 @@ export async function deliverInteractiveEmail(
         bcc: input.bcc && input.bcc.length > 0 ? input.bcc : undefined,
         subject,
         text,
-        attachments: input.icsInvite
-          ? [{ filename: input.icsInvite.filename || "reply.ics", content: Buffer.from(input.icsInvite.content) }]
-          : undefined,
+        attachments: (() => {
+          // Regular files (base64 content — Resend accepts base64 strings)
+          // merged with the optional iCalendar part.
+          const files = (input.attachments ?? []).map((a) => ({
+            filename: a.filename,
+            content: a.contentBase64,
+          }));
+          if (input.icsInvite) {
+            files.push({
+              filename: input.icsInvite.filename || "reply.ics",
+              content: Buffer.from(input.icsInvite.content).toString("base64"),
+            });
+          }
+          return files.length > 0 ? files : undefined;
+        })(),
         headers: input.skipUnsubscribe ? undefined : { "List-Unsubscribe": `<${unsubUrl}>` },
       });
       if (error) return { ok: false, code: "send_failed", error: error.message };

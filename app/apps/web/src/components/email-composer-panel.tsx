@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 import { injectMeetingLink } from "@/lib/inbox/meeting-link";
-import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages } from "lucide-react";
+import { X, Send, ChevronDown, ChevronUp, Mail, Save, AlertCircle, RefreshCw, Sparkles, Undo2, Languages, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ContactCollisionNotice } from "@/components/collision/contact-collision-notice";
@@ -289,6 +289,12 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
   const [translateOpen, setTranslateOpen] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  // The paperclip. Content held as base64 in memory only — deliberately NOT
+  // part of the localStorage draft cache (size) nor the DB draft row.
+  const [attachments, setAttachments] = useState<
+    { name: string; size: number; type: string; contentBase64: string }[]
+  >([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Refs
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -545,6 +551,44 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     }
   }
 
+  /* ── Attachments (the paperclip) ─────────────────────────────── */
+
+  const MAX_ATTACH_FILES = 5;
+  // ~3 MB of files once decoded — mirrors the API gate (Vercel caps request
+  // bodies at 4.5 MB; larger files need a storage-backed upload, a v2).
+  const MAX_ATTACH_TOTAL_BASE64 = 4_000_000;
+
+  async function addAttachments(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const next = [...attachments];
+    for (const file of Array.from(list)) {
+      if (next.length >= MAX_ATTACH_FILES) {
+        toast(t("inbox.compose.attachTooMany"), "warning");
+        break;
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let bin = "";
+      const CHUNK = 0x8000; // String.fromCharCode arg-count limit
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      const b64 = btoa(bin);
+      const total = next.reduce((n, a) => n + a.contentBase64.length, 0) + b64.length;
+      if (total > MAX_ATTACH_TOTAL_BASE64) {
+        toast(t("inbox.compose.attachTooBig"), "warning");
+        continue;
+      }
+      next.push({ name: file.name, size: file.size, type: file.type, contentBase64: b64 });
+    }
+    setAttachments(next);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function humanSize(bytes: number): string {
+    if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
   // ONE Draft button (founder 2026-07-02: "mets juste draft — si la personne a
   // écrit du texte tu peux t'en servir de base"). Body already has text → it IS
   // the brief: expand it through the bullets endpoint. Empty body on a reply →
@@ -655,6 +699,14 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           contactId: draft.contactId || undefined,
           dealId: draft.dealId || undefined,
           mailboxId: fromMailboxId || undefined,
+          attachments:
+            attachments.length > 0
+              ? attachments.map((a) => ({
+                  filename: a.name,
+                  contentType: a.type || undefined,
+                  contentBase64: a.contentBase64,
+                }))
+              : undefined,
         }),
       });
 
@@ -677,6 +729,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         void fetch(`/api/inbox/drafts/${id}/consume`, { method: "POST" }).catch(() => {});
       }
       setSent(true);
+      setAttachments([]);
       toast(t("inbox.compose.sentToast"), "success");
       onSent?.(messageId);
 
@@ -1015,10 +1068,57 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                 <Undo2 size={12} /> {t("inbox.compose.undo")}
               </Button>
             )}
+            {/* The paperclip — files ride the send as base64 (v1: 5 files,
+                ~3 MB total; the platform body limit is the real ceiling). */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => void addAttachments(e.target.files)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="gap-1.5"
+              title={t("inbox.compose.attach")}
+            >
+              <Paperclip size={12} />
+            </Button>
             {/* Host extras (inbox SnippetBar chips) join THIS row instead of
                 stacking their own full-width row above the textarea. */}
             {toolbarExtra}
           </div>
+          {/* Attached files — chips with a per-file remove, Gmail-style. */}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {attachments.map((a, i) => (
+                <span
+                  key={`${a.name}-${i}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px]"
+                  style={{
+                    borderColor: "var(--color-border-default)",
+                    background: "var(--color-bg-page)",
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  <Paperclip size={11} style={{ color: "var(--color-text-tertiary)" }} />
+                  <span className="max-w-[180px] truncate">{a.name}</span>
+                  <span style={{ color: "var(--color-text-tertiary)" }}>{humanSize(a.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    aria-label={t("inbox.compose.attachRemove", { name: a.name })}
+                    className="opacity-60 transition-opacity hover:opacity-100"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={bodyRef}
             value={editBody}

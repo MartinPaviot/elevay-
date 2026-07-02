@@ -26,7 +26,24 @@ const sendEmailSchema = z.object({
   dealId: z.string().optional(),
   // A2: send from this specific owned+active mailbox (re-resolved server-side).
   mailboxId: z.string().optional(),
+  // The composer's paperclip. base64 content; per-file and TOTAL size are
+  // gated below (Vercel caps request bodies at 4.5 MB — larger files need a
+  // storage-backed upload, deliberately out of this v1).
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().min(1).max(255),
+        contentType: z.string().max(120).optional(),
+        contentBase64: z.string().min(1),
+      }),
+    )
+    .max(5)
+    .optional(),
 });
+
+/** Total base64 payload cap (~3 MB of files once decoded) — keeps the whole
+ *  request safely under Vercel's 4.5 MB body limit. */
+const MAX_ATTACHMENTS_BASE64 = 4_000_000;
 
 const STATUS_BY_CODE: Record<string, number> = {
   opted_out: 403,
@@ -61,6 +78,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // Attachment size gate — the transports would accept more, but the request
+  // itself dies at the platform body limit; fail with a clear message instead.
+  if (parsed.attachments && parsed.attachments.length > 0) {
+    const total = parsed.attachments.reduce((n, a) => n + a.contentBase64.length, 0);
+    if (total > MAX_ATTACHMENTS_BASE64) {
+      return NextResponse.json(
+        { error: "Attachments are too large — 3 MB total maximum." },
+        { status: 413 },
+      );
+    }
+  }
+
   // Test-mode guardrail: block COLD recipients (strangers) so a campaign can't
   // blast real prospects while testing — but allow a WARM recipient (someone who
   // already corresponds with the tenant, i.e. the person you're replying to) so
@@ -82,6 +111,7 @@ export async function POST(req: Request) {
     contactId: parsed.contactId,
     dealId: parsed.dealId,
     mailboxId: parsed.mailboxId,
+    attachments: parsed.attachments,
     source: "composer",
   });
 
