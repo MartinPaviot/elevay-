@@ -25,6 +25,7 @@ import { and, desc, eq, isNull, notInArray, or, inArray } from "drizzle-orm";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { openai } from "@ai-sdk/openai";
 import { llmCall } from "@/lib/ai/llm-call";
+import { readActivitySignals } from "@/lib/enrichment/read-extracted-signals";
 import { ageInStage } from "./deal-helpers";
 import { dealBriefSchema, type DealBrief } from "./deal-briefing-schema";
 import {
@@ -325,35 +326,15 @@ function extractSignalsFromActivities(
   const result = { objections: [] as string[], nextSteps: [] as string[], champions: [] as string[], budget: [] as string[] };
 
   for (const row of rows) {
-    const meta = row.metadata as Record<string, unknown> | null;
-    if (!meta) continue;
-    const signals = meta.extractedSignals as Record<string, unknown> | undefined;
-    if (!signals) continue;
-
-    if (Array.isArray(signals.objections)) {
-      for (const o of signals.objections) {
-        if (typeof o === "string" && !result.objections.includes(o)) {
-          result.objections.push(o);
-        }
-      }
+    const signals = readActivitySignals(row.metadata as Record<string, unknown> | null);
+    for (const o of signals.objections) {
+      if (!result.objections.includes(o)) result.objections.push(o);
     }
-    if (Array.isArray(signals.next_steps)) {
-      for (const ns of signals.next_steps) {
-        if (typeof ns === "string" && !result.nextSteps.includes(ns)) {
-          result.nextSteps.push(ns);
-        }
-      }
+    for (const ns of signals.nextSteps) {
+      if (!result.nextSteps.includes(ns.action)) result.nextSteps.push(ns.action);
     }
-    if (Array.isArray(signals.champion_signals)) {
-      for (const cs of signals.champion_signals) {
-        if (typeof cs === "string") result.champions.push(cs);
-      }
-    }
-    if (Array.isArray(signals.budget_mentions)) {
-      for (const bm of signals.budget_mentions) {
-        if (typeof bm === "string") result.budget.push(bm);
-      }
-    }
+    result.champions.push(...signals.championSignals);
+    result.budget.push(...signals.budgetMentions);
   }
 
   return result;

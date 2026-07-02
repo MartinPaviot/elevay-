@@ -15,6 +15,7 @@ import {
   formatContextForPrompt,
   type ProspectContext,
 } from "./prospect-context";
+import { readActivitySignals } from "@/lib/enrichment/read-extracted-signals";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@ async function loadExtractedSignals(
     .select({
       metadata: activities.metadata,
       occurredAt: activities.occurredAt,
+      direction: activities.direction,
     })
     .from(activities)
     .where(
@@ -117,48 +119,29 @@ async function loadExtractedSignals(
     .limit(50);
 
   for (const row of rows) {
-    const meta = row.metadata as Record<string, unknown> | null;
-    if (!meta) continue;
-
-    const signals = meta.extractedSignals as Record<string, unknown> | undefined;
-    if (!signals) continue;
-
+    const signals = readActivitySignals(row.metadata as Record<string, unknown> | null);
     const dateStr = row.occurredAt?.toISOString().split("T")[0] ?? "unknown";
 
-    if (Array.isArray(signals.objections)) {
-      for (const obj of signals.objections) {
-        if (typeof obj === "string") {
-          empty.objections.push({ text: obj, date: dateStr, status: "open" });
-        }
-      }
+    for (const text of signals.objections) {
+      empty.objections.push({ text, date: dateStr, status: "open" });
     }
-    if (Array.isArray(signals.next_steps)) {
-      for (const ns of signals.next_steps) {
-        if (typeof ns === "string") {
-          empty.nextSteps.push({ text: ns, owner: "us" });
-        }
-      }
+    for (const ns of signals.nextSteps) {
+      // "sender" of an inbound email is the prospect ("them"); of an outbound, us.
+      const senderIsThem = row.direction === "inbound";
+      const owner: "us" | "them" =
+        ns.owner === "sender" ? (senderIsThem ? "them" : "us")
+        : ns.owner === "recipient" ? (senderIsThem ? "us" : "them")
+        : "us";
+      empty.nextSteps.push({ text: ns.action, owner, ...(ns.dueDate ? { deadline: ns.dueDate } : {}) });
     }
-    if (Array.isArray(signals.champion_signals)) {
-      for (const cs of signals.champion_signals) {
-        if (typeof cs === "string") {
-          empty.championSignals.push({ text: cs, contactName: "" });
-        }
-      }
+    for (const text of signals.championSignals) {
+      empty.championSignals.push({ text, contactName: "" });
     }
-    if (Array.isArray(signals.budget_mentions)) {
-      for (const bm of signals.budget_mentions) {
-        if (typeof bm === "string") {
-          empty.budgetMentions.push({ text: bm });
-        }
-      }
+    for (const text of signals.budgetMentions) {
+      empty.budgetMentions.push({ text, amount: text });
     }
-    if (Array.isArray(signals.competitor_mentions)) {
-      for (const cm of signals.competitor_mentions) {
-        if (typeof cm === "string") {
-          empty.competitorMentions.push({ competitor: cm, context: "" });
-        }
-      }
+    for (const competitor of signals.competitorMentions) {
+      empty.competitorMentions.push({ competitor, context: "" });
     }
   }
 
