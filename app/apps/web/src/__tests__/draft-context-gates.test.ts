@@ -85,17 +85,22 @@ describe("GET draft context — gate scores (T11c)", () => {
       [
         // gate rows ASC by createdAt — the later g2 supersedes the earlier.
         { gate: 4, score: 0.9, verdict: "pass", reasons: {} },
-        { gate: 2, score: null, verdict: "blocked", reasons: {} },
-        { gate: 2, score: null, verdict: "reworked", reasons: {} },
+        { gate: 2, score: null, verdict: "blocked", reasons: { ungrounded: ["700k users"] } },
+        { gate: 2, score: null, verdict: "reworked", reasons: { ungrounded: ["n8n", "supabase"] } },
       ],
     ];
     const res = await call();
     const body = await res.json();
 
     expect(body.draft.qualityScore).toBe(0.82);
-    expect(body.gateScores.g4).toEqual({ score: 0.9, verdict: "pass" });
-    // last g2 wins:
-    expect(body.gateScores.g2).toEqual({ score: null, verdict: "reworked" });
+    // T11c follow-up — the shape gained `reason` (null on a pass verdict).
+    expect(body.gateScores.g4).toEqual({ score: 0.9, verdict: "pass", reason: null });
+    // last g2 wins AND its reason is surfaced from the reasons jsonb.
+    expect(body.gateScores.g2).toEqual({
+      score: null,
+      verdict: "reworked",
+      reason: "Unverifiable: n8n, supabase",
+    });
   });
 
   it("a draft with no verdicts returns an empty gateScores map (no throw)", async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { gateReasonText } from "@/app/api/sequences/drafts/[id]/context/route";
+import { gateReasonText } from "@/lib/sequence-drafts/gate-reason";
 
 /**
  * T11c follow-up — the "gate fautif ET la raison" Done item: gateReasonText
