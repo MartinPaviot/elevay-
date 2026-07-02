@@ -19,8 +19,8 @@
  */
 
 import { db } from "@/db";
-import { trustEvents } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { trustEvents, chatMemories } from "@/db/schema";
+import { and, desc, eq, or } from "drizzle-orm";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { getTenantKnowledge } from "@/lib/knowledge/get-tenant-knowledge";
 
@@ -42,6 +42,10 @@ export interface MemoryEntry {
   /** When an entry can be edited (inferred facts, explicit settings,
    *  user knowledge). Summaries and learned-preferences are read-only. */
   editable: boolean;
+  /** When an entry is a chat_memories row the user can remove — the seam
+   *  for a future delete affordance (`id` is the chat_memories row id).
+   *  Absent/false for settings/knowledge/trust entries. */
+  deletable?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -126,8 +130,19 @@ export interface MemorySnapshot {
   priorityNote: string;
 }
 
+/** chat_memories keys are snake_case retrieval slugs ("communication_style",
+ *  "deal_strategy_acme"); the panel wants a human label. */
+export function humanizeMemoryKey(key: string): string {
+  const s = key.replace(/[_-]+/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Memory";
+}
+
 export async function buildMemorySnapshot(
   tenantId: string,
+  // The viewing user — needed to scope chat_memories exactly like the
+  // system-prompt read path (workspace-shared + this user's private,
+  // never another user's private). Omitted → workspace-scoped only.
+  userId?: string,
 ): Promise<MemorySnapshot> {
   const settings = await getTenantSettings(tenantId);
   const entries: MemoryEntry[] = [];
@@ -322,6 +337,52 @@ export async function buildMemorySnapshot(
     confidence: settings.trustScore ?? 0,
     editable: false,
   });
+
+  // ── chat_memories: what the agent has actually learned about you from
+  //    conversations (communication style, deal strategy, relationship
+  //    notes). These already shape the agent's replies (injected into the
+  //    system prompt) but were invisible here — surfacing them so the
+  //    human can see and (once the panel gains a delete button) remove
+  //    them. Scoped exactly like the read path: workspace-shared + this
+  //    user's private. ──
+  try {
+    const scopeClause = userId
+      ? or(
+          eq(chatMemories.scope, "workspace"),
+          and(eq(chatMemories.scope, "user"), eq(chatMemories.userId, userId)),
+        )
+      : eq(chatMemories.scope, "workspace");
+    const memories = await db
+      .select({
+        id: chatMemories.id,
+        key: chatMemories.key,
+        content: chatMemories.content,
+        category: chatMemories.category,
+        scope: chatMemories.scope,
+        updatedAt: chatMemories.updatedAt,
+      })
+      .from(chatMemories)
+      .where(and(eq(chatMemories.tenantId, tenantId), scopeClause!))
+      .orderBy(desc(chatMemories.updatedAt))
+      .limit(50);
+    for (const m of memories) {
+      entries.push({
+        id: m.id,
+        category: "learned-preference",
+        label: humanizeMemoryKey(m.key),
+        value: m.content,
+        source:
+          m.scope === "workspace"
+            ? "learned from conversations (shared with your workspace)"
+            : "learned from your conversations",
+        editable: false,
+        deletable: true,
+        updatedAt: (m.updatedAt ?? new Date()).toISOString(),
+      });
+    }
+  } catch {
+    // Memory surfacing is best-effort — never break the snapshot on it.
+  }
 
   // ── FINDING-010: TTL + priority resolution ──
   const now = new Date();

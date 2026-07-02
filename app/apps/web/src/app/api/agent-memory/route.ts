@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const snapshot = await buildMemorySnapshot(authCtx.tenantId);
+  const snapshot = await buildMemorySnapshot(authCtx.tenantId, authCtx.appUserId);
 
   // T2+T4 — first open of the panel flips the gate so WS-1's nudge
   // engine is allowed to surface suggestions. Idempotent — the helper
