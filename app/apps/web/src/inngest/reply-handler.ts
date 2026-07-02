@@ -19,7 +19,13 @@ import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { EMAIL_RULES, ANTI_HALLUCINATION_RULES } from "@/lib/prompts/shared-rules";
-import { buildProspectContext, formatContextForPrompt } from "@/lib/context/prospect-context";
+import {
+  buildProspectContext,
+  formatContextForPrompt,
+  type ResearchBriefContext,
+} from "@/lib/context/prospect-context";
+import { decideFabricationGate, judgeFabrication } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { getAvailableSlots, formatSlotsForEmail } from "@/lib/integrations/meeting-booking";
 import { updateTrustScore } from "@/lib/campaign-engine/trust-score";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
@@ -36,6 +42,85 @@ const replyEmailSchema = z.object({
   subject: z.string().describe("Reply subject (usually Re: original subject)"),
   body: z.string().describe("Reply body — professional, contextual, concise"),
 });
+
+interface G2GatedReply {
+  subject: string;
+  body: string;
+  verdict: "pass" | "reworked" | "blocked";
+  ungrounded: string[];
+  briefHasFacts: boolean;
+  failClosed?: "gate_error";
+}
+
+/**
+ * M13 T6b — G2 (factual) gate for the reply path. The positive branch can
+ * AUTO-SEND, so a fabricated specific here reaches a real prospect with no
+ * human in between. The semantic judge (1 Haiku call, ANTHROPIC_API_KEY-guarded,
+ * fail-open) feeds the deterministic gate; if blocked, ONE corrective
+ * regeneration, then the DETERMINISTIC layer alone re-checks (no second judge
+ * call). A gate infrastructure failure fails CLOSED ("blocked") — callers must
+ * map "blocked" to draft-only, never queued.
+ */
+async function applyG2FabricationGate(args: {
+  reply: { subject: string; body: string };
+  // ProspectContext after step.run serialization — only the fields the gate reads.
+  ctx: {
+    contact?: { fullName?: string | null; title?: string | null } | null;
+    company?: { name?: string | null; domain?: string | null } | null;
+    researchBrief?: ResearchBriefContext;
+  };
+  model: unknown;
+  basePrompt: string;
+  trace: { tenantId: string; contactId: string; companyId?: string; inputPreview: string };
+}): Promise<G2GatedReply> {
+  const { reply, ctx, basePrompt } = args;
+  const prospect = {
+    name: ctx.contact?.fullName ?? null,
+    title: ctx.contact?.title ?? null,
+    company: ctx.company?.name ?? null,
+    domain: ctx.company?.domain ?? null,
+  };
+  try {
+    let claims: Awaited<ReturnType<typeof judgeFabrication>> = [];
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        claims = await judgeFabrication(reply.body, ctx.researchBrief, prospect);
+      } catch {
+        claims = []; // judge is advisory — the deterministic layer still enforces
+      }
+    }
+    const fab = decideFabricationGate({
+      body: reply.body,
+      brief: ctx.researchBrief,
+      prospect,
+      semanticClaims: claims,
+    });
+    if (!fab.blocked) {
+      return { subject: reply.subject, body: reply.body, verdict: "pass", ungrounded: [], briefHasFacts: fab.briefHasFacts };
+    }
+    let corrected: { subject: string; body: string };
+    try {
+      const { object } = await tracedGenerateObject({
+        model: args.model,
+        schema: replyEmailSchema,
+        prompt: `${basePrompt}\n\nPREVIOUS ATTEMPT FEEDBACK — fix these issues:\nCRITICAL — these specifics are NOT supported by the research and read as fabricated. Remove them or replace with a verified fact, and do NOT invent any new prospect-specific fact: ${fab.ungrounded.slice(0, 8).join("; ")}.`,
+        _trace: { agentId: "follow-up-email", ...args.trace },
+      });
+      corrected = object as { subject: string; body: string };
+    } catch {
+      // Corrective regeneration failed — the blocked original must stay draft-only.
+      return { subject: reply.subject, body: reply.body, verdict: "blocked", ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts };
+    }
+    const recheck = decideFabricationGate({ body: corrected.body, brief: ctx.researchBrief, prospect });
+    if (recheck.blocked) {
+      return { subject: corrected.subject, body: corrected.body, verdict: "blocked", ungrounded: recheck.ungrounded.slice(0, 8), briefHasFacts: recheck.briefHasFacts };
+    }
+    return { subject: corrected.subject, body: corrected.body, verdict: "reworked", ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts };
+  } catch {
+    // Gate infrastructure failure: an auto-send must never happen ungated.
+    return { subject: reply.subject, body: reply.body, verdict: "blocked", ungrounded: [], briefHasFacts: false, failClosed: "gate_error" };
+  }
+}
 
 interface ReplyClassifiedEvent {
   data: {
@@ -158,11 +243,8 @@ export const handleReplyIntelligently = inngest.createFunction(
         return formatSlotsForEmail(slots, 3);
       });
 
-      const reply = await step.run("generate-positive-reply", async () => {
-        const { object } = await tracedGenerateObject({
-          model,
-          schema: replyEmailSchema,
-          prompt: `You are replying to a POSITIVE response from a prospect. They are interested or want a meeting.
+      // Hoisted so the G2 gate step can reuse it for the corrective regeneration.
+      const positivePrompt = `You are replying to a POSITIVE response from a prospect. They are interested or want a meeting.
 
 ${contextBlock}
 
@@ -189,11 +271,29 @@ ADDITIONAL RULES:
 - Keep it under 100 words
 - Subject: "Re: ${lastEmail?.subject || "our conversation"}"
 - Do NOT restate the product pitch — they already know
-- Match the tone: "${ctx.aiTone}"`,
+- Match the tone: "${ctx.aiTone}"`;
+
+      const reply = await step.run("generate-positive-reply", async () => {
+        const { object } = await tracedGenerateObject({
+          model,
+          schema: replyEmailSchema,
+          prompt: positivePrompt,
           _trace: { agentId: "follow-up-email", tenantId, contactId: contact.id, companyId: contact.companyId ?? undefined, inputPreview: `Positive reply from ${ctx.contact.fullName}` },
         });
         return object as { subject: string; body: string };
       });
+
+      // M13 T6b — G2 gate BEFORE the insert. This is the one generated body
+      // that can auto-send with no human review, so it is gated blocking.
+      const gated: G2GatedReply = await step.run("g2-gate-positive", async () =>
+        applyG2FabricationGate({
+          reply,
+          ctx,
+          model,
+          basePrompt: positivePrompt,
+          trace: { tenantId, contactId: contact.id, companyId: contact.companyId ?? undefined, inputPreview: `G2 rework (positive) for ${ctx.contact.fullName}` },
+        }),
+      );
 
       // Auto-queue the positive reply for sending (not just draft).
       // The email-send-worker picks it up on its next 2-min cron cycle.
@@ -220,23 +320,52 @@ ADDITIONAL RULES:
       });
       const autoSend = approvalDecision.allowed;
 
-      await step.run("create-positive-reply", async () => {
-        await db.insert(outboundEmails).values({
-          tenantId,
-          enrollmentId,
-          contactId: enrollment.contactId,
-          stepNumber: (enrollment.currentStep || 1) + 100,
-          fromAddress: "pending@rotation",
-          toAddress: contact.email!,
-          subject: reply.subject,
-          bodyHtml: `<div>${reply.body.replace(/\n/g, "<br>")}</div>`,
-          bodyText: reply.body,
-          status: autoSend ? "queued" : "draft",
-          queuedAt: autoSend ? new Date() : null,
-        });
+      // T6b — a reply that still asserts unverifiable specifics after the one
+      // corrective regeneration must NEVER auto-send: downgrade to draft.
+      const autoSendDowngraded = autoSend && gated.verdict === "blocked";
+      const effectiveAutoSend = autoSend && !autoSendDowngraded;
+
+      const outboundEmailId: string | null = await step.run("create-positive-reply", async () => {
+        const [row] = await db
+          .insert(outboundEmails)
+          .values({
+            tenantId,
+            enrollmentId,
+            contactId: enrollment.contactId,
+            stepNumber: (enrollment.currentStep || 1) + 100,
+            fromAddress: "pending@rotation",
+            toAddress: contact.email!,
+            subject: gated.subject,
+            bodyHtml: `<div>${gated.body.replace(/\n/g, "<br>")}</div>`,
+            bodyText: gated.body,
+            status: effectiveAutoSend ? "queued" : "draft",
+            queuedAt: effectiveAutoSend ? new Date() : null,
+          })
+          .returning({ id: outboundEmails.id });
+        return row?.id ?? null;
       });
 
-      return { enrollmentId, result: autoSend ? "auto_queued" : "draft_created", classification, urgency };
+      // T6b — log the G2 verdict on the stored row (contactId when the insert
+      // id is unavailable). Best-effort by contract, never blocks the reply.
+      await step.run("g2-log-positive", async () =>
+        recordGateDecision({
+          tenantId,
+          subjectType: "draft",
+          subjectId: outboundEmailId ?? enrollment.contactId,
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: gated.verdict,
+          reasons: {
+            ungrounded: gated.ungrounded,
+            briefHasFacts: gated.briefHasFacts,
+            path: "reply_positive",
+            ...(autoSendDowngraded ? { autoSendDowngraded: true } : {}),
+            ...(gated.failClosed ? { failClosed: gated.failClosed } : {}),
+          },
+        }),
+      );
+
+      return { enrollmentId, result: effectiveAutoSend ? "auto_queued" : "draft_created", classification, urgency };
     }
 
     if (classification.startsWith("objection_")) {
@@ -257,11 +386,8 @@ ADDITIONAL RULES:
         .map((k: { topic: string; content: string }) => `${k.topic}: ${k.content}`)
         .join("\n");
 
-      const reply = await step.run("generate-objection-reply", async () => {
-        const { object } = await tracedGenerateObject({
-          model,
-          schema: replyEmailSchema,
-          prompt: `You are replying to an OBJECTION from a prospect. Handle it with empathy and intelligence.
+      // Hoisted so the G2 gate step can reuse it for the corrective regeneration.
+      const objectionPrompt = `You are replying to an OBJECTION from a prospect. Handle it with empathy and intelligence.
 
 ${contextBlock}
 
@@ -292,26 +418,66 @@ ADDITIONAL RULES:
 - Never trash the competition by name
 - Keep it under 120 words
 - Subject: "Re: ${lastEmail?.subject || "our conversation"}"
-- Tone: "${ctx.aiTone}" — empathetic but confident`,
+- Tone: "${ctx.aiTone}" — empathetic but confident`;
+
+      const reply = await step.run("generate-objection-reply", async () => {
+        const { object } = await tracedGenerateObject({
+          model,
+          schema: replyEmailSchema,
+          prompt: objectionPrompt,
           _trace: { agentId: "follow-up-email", tenantId, contactId: contact.id, companyId: contact.companyId ?? undefined, inputPreview: `Objection (${objectionType}) from ${ctx.contact.fullName}` },
         });
         return object as { subject: string; body: string };
       });
 
-      await step.run("create-objection-draft", async () => {
-        await db.insert(outboundEmails).values({
-          tenantId,
-          enrollmentId,
-          contactId: enrollment.contactId,
-          stepNumber: (enrollment.currentStep || 1) + 100,
-          fromAddress: "pending@rotation",
-          toAddress: contact.email!,
-          subject: reply.subject,
-          bodyHtml: `<div>${reply.body.replace(/\n/g, "<br>")}</div>`,
-          bodyText: reply.body,
-          status: "draft",
-        });
+      // M13 T6b — G2 gate on the objection draft too: it stays draft-only, but
+      // a fabricated specific a founder trusts and sends is the same harm.
+      const gated: G2GatedReply = await step.run("g2-gate-objection", async () =>
+        applyG2FabricationGate({
+          reply,
+          ctx,
+          model,
+          basePrompt: objectionPrompt,
+          trace: { tenantId, contactId: contact.id, companyId: contact.companyId ?? undefined, inputPreview: `G2 rework (objection) for ${ctx.contact.fullName}` },
+        }),
+      );
+
+      const outboundEmailId: string | null = await step.run("create-objection-draft", async () => {
+        const [row] = await db
+          .insert(outboundEmails)
+          .values({
+            tenantId,
+            enrollmentId,
+            contactId: enrollment.contactId,
+            stepNumber: (enrollment.currentStep || 1) + 100,
+            fromAddress: "pending@rotation",
+            toAddress: contact.email!,
+            subject: gated.subject,
+            bodyHtml: `<div>${gated.body.replace(/\n/g, "<br>")}</div>`,
+            bodyText: gated.body,
+            status: "draft",
+          })
+          .returning({ id: outboundEmails.id });
+        return row?.id ?? null;
       });
+
+      // T6b — log the G2 verdict. Best-effort by contract.
+      await step.run("g2-log-objection", async () =>
+        recordGateDecision({
+          tenantId,
+          subjectType: "draft",
+          subjectId: outboundEmailId ?? enrollment.contactId,
+          gate: 2,
+          rubricVersion: GATE_RUBRICS.g2Deterministic,
+          verdict: gated.verdict,
+          reasons: {
+            ungrounded: gated.ungrounded,
+            briefHasFacts: gated.briefHasFacts,
+            path: "reply_objection",
+            ...(gated.failClosed ? { failClosed: gated.failClosed } : {}),
+          },
+        }),
+      );
 
       return { enrollmentId, result: "draft_created", classification, objectionType };
     }
