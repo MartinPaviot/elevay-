@@ -179,8 +179,10 @@ describe("GET /api/reports/outreach-learning", () => {
     await mod.GET(req());
 
     const eqCalls = vi.mocked(eq).mock.calls;
+    // eq's first param is typed Column/SQLWrapper; the schema mock returns
+    // string sentinels for the columns, so compare through unknown.
     const scoped = (col: string) =>
-      eqCalls.some((c) => c[0] === col && c[1] === "t1");
+      eqCalls.some((c) => (c[0] as unknown) === col && (c[1] as unknown) === "t1");
     expect(scoped("actionOutcomes.tenantId")).toBe(true);
     expect(scoped("outreachDecisions.tenantId")).toBe(true);
     expect(scoped("gateDecisions.tenantId")).toBe(true);
