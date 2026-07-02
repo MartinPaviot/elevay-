@@ -134,6 +134,10 @@ export function ChatDock() {
   const [openerState, setOpenerState] = useState<"loading" | "ready" | "fallback">("loading");
   const openedAtRef = useRef(0);
   const firstActionSentRef = useRef(false);
+  // Chip pre-routing: set by onOpenerChip just before send(), consumed by
+  // the NEXT request's body() — one-shot, so typed follow-ups never
+  // inherit a stale forced tool.
+  const pendingForcedToolRef = useRef<string | null>(null);
 
   const transport = useMemo(
     () =>
@@ -153,6 +157,10 @@ export function ChatDock() {
           if (threadIdRef.current) payload.threadId = threadIdRef.current;
           const manifest = manifestRef.current;
           if (manifest.length > 0) payload.pageActions = manifest; // CLE-03: current page's actions
+          if (pendingForcedToolRef.current) {
+            payload.forcedTool = pendingForcedToolRef.current;
+            pendingForcedToolRef.current = null;
+          }
           return payload;
         },
       }),
@@ -451,7 +459,10 @@ export function ChatDock() {
       setOpen(false);
       return;
     }
-    if (chip.send) send(chip.send);
+    if (chip.send) {
+      pendingForcedToolRef.current = chip.tool ?? null;
+      send(chip.send);
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {

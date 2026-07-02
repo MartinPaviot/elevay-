@@ -58,10 +58,23 @@ export default function ChatPage() {
   const [threadId, setThreadId] = useState<string | null>(searchParams.get("thread"));
   const [threadLoaded, setThreadLoaded] = useState(!searchParams.get("thread"));
 
+  // Chip pre-routing: set by onOpenerChip just before sendMessage, consumed
+  // by the NEXT request's body() — one-shot (typed follow-ups never inherit
+  // a stale forced tool).
+  const pendingForcedToolRef = useRef<string | null>(null);
+
   const chat = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
       credentials: "include",
+      body: () => {
+        if (pendingForcedToolRef.current) {
+          const forcedTool = pendingForcedToolRef.current;
+          pendingForcedToolRef.current = null;
+          return { forcedTool };
+        }
+        return {};
+      },
     }),
   });
 
@@ -247,7 +260,10 @@ export default function ChatPage() {
       router.push(chip.href);
       return;
     }
-    if (chip.send) chat.sendMessage({ text: chip.send });
+    if (chip.send) {
+      pendingForcedToolRef.current = chip.tool ?? null;
+      chat.sendMessage({ text: chip.send });
+    }
   }
 
   // Auto-send query from persistent chat bar
