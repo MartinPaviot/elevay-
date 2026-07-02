@@ -178,10 +178,14 @@ describe("C2 sendSingleEmail — sending gate wired", () => {
     evaluateSend.mockResolvedValue({ send: true, reason: "warm under cap" });
     const res = await handler({ event: { data: { emailId: "e1" } }, step: fakeStep });
     expect(evaluateSend).toHaveBeenCalled();
-    // Not stopped at the gate.
-    expect(store[0].status).not.toBe("failed");
-    // resend is null in the test env -> returns the not-configured reason, proving
-    // it passed the gate and reached the transport stage.
+    // resend is null in the test env -> the not-configured reason proves it
+    // passed the gate and reached the transport stage — where (T8) the row
+    // goes TERMINAL-failed like the batch path: a stuck non-terminal row
+    // would let the decision watcher expire into a phantom "sent, no
+    // response" learning unit. The gate itself did not block (its reason
+    // never lands on the row).
     expect(res.reason).toMatch(/RESEND_API_KEY/);
+    expect(store[0].status).toBe("failed");
+    expect(store[0].errorMessage).toMatch(/RESEND_API_KEY/);
   });
 });
