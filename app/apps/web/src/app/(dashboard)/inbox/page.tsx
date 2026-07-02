@@ -35,6 +35,7 @@ import { isInboxSort, defaultInboxSort, type InboxSort } from "@/lib/inbox/inbox
 import { EmailComposerPanel } from "@/components/email-composer-panel";
 import { type SendableMailbox } from "@/lib/inbox/pick-from-mailbox";
 import { SplitStrip } from "./_split-strip";
+import { ReviewLane } from "./_review-lane";
 import { InboxListSkeleton } from "./_skeleton";
 import { pickListState } from "@/lib/inbox/list-state";
 import { createLoadGuard } from "@/lib/inbox/load-guard";
@@ -198,6 +199,10 @@ export default function InboxPage() {
   const [activeSplit, setActiveSplit] = useState<string | null>(null);
   const [splitCounts, setSplitCounts] = useState<SplitCount[]>([]);
   const [noiseCount, setNoiseCount] = useState(0);
+  // T10: pending low-confidence reply classifications — the trailing
+  // "To classify" pseudo-tab (the noise model). The count rides the
+  // conversations payload; resolving a row in the lane decrements it here.
+  const [reviewCount, setReviewCount] = useState(0);
   const [starredCount, setStarredCount] = useState(0);
   const [draftsCount, setDraftsCount] = useState(0);
   const [scheduledCount, setScheduledCount] = useState(0);
@@ -386,6 +391,7 @@ export default function InboxPage() {
           dealLanes?: Array<{ id: string; name: string; stage: string; count: number }>;
           splits?: SplitCount[];
           noiseCount?: number;
+          reviewCount?: number;
           starredCount?: number;
           draftsCount?: number;
           scheduledCount?: number;
@@ -405,6 +411,7 @@ export default function InboxPage() {
         setDealLanes(data.dealLanes ?? []);
         setSplitCounts(data.splits ?? []);
         setNoiseCount(data.noiseCount ?? 0);
+        setReviewCount(data.reviewCount ?? 0);
         setStarredCount(data.starredCount ?? 0);
         setDraftsCount(data.draftsCount ?? 0);
         setScheduledCount(data.scheduledCount ?? 0);
@@ -1427,7 +1434,7 @@ export default function InboxPage() {
           the narrow single-pane reader so the open thread stands alone. */}
       {mailboxConnected && tab === "attention" && !customLaneId && (
         <div className={paneActive ? "hidden @min-[960px]:block" : "block"}>
-          <SplitStrip splits={splitCounts} noiseCount={noiseCount} active={activeSplit} onSelect={setActiveSplit} />
+          <SplitStrip splits={splitCounts} noiseCount={noiseCount} reviewCount={reviewCount} active={activeSplit} onSelect={setActiveSplit} />
         </div>
       )}
       {!mailboxConnected ? (
@@ -1448,6 +1455,13 @@ export default function InboxPage() {
       ) : tab === "bundles" && !customLaneId ? (
         <div className="flex flex-1 overflow-hidden">
           <BundlesView bundles={bundles} onClear={handleClearBundle} clearing={clearingBundle} />
+        </div>
+      ) : activeSplit === "to_classify" && tab === "attention" && !customLaneId ? (
+        // T10 "To classify": the review lane replaces the conversation list while
+        // the pseudo-tab is active (the strip above stays as the way back). The
+        // lane fetches its own queue; resolving a row decrements the strip badge.
+        <div className="flex flex-1 overflow-hidden">
+          <ReviewLane onResolved={() => setReviewCount((n) => Math.max(0, n - 1))} />
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">

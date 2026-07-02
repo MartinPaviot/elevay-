@@ -13,7 +13,7 @@ const splits = [
 
 describe("SplitStrip", () => {
   it("renders one tab per split with its count, plus a Noise tab when noiseCount > 0", () => {
-    render(<SplitStrip splits={splits} noiseCount={7} active={null} onSelect={vi.fn()} />);
+    render(<SplitStrip splits={splits} noiseCount={7} reviewCount={0} active={null} onSelect={vi.fn()} />);
     expect(screen.getByText("Primary")).toBeTruthy();
     expect(screen.getByText("Promotions")).toBeTruthy();
     expect(screen.getByText("41")).toBeTruthy();
@@ -22,23 +22,46 @@ describe("SplitStrip", () => {
   });
 
   it("omits the Noise tab when noiseCount is 0", () => {
-    render(<SplitStrip splits={splits} noiseCount={0} active={null} onSelect={vi.fn()} />);
+    render(<SplitStrip splits={splits} noiseCount={0} reviewCount={0} active={null} onSelect={vi.fn()} />);
     expect(screen.queryByText("Noise")).toBeNull();
   });
 
   it("clicking a tab selects it; clicking the active tab clears it (back to all)", () => {
     const onSelect = vi.fn();
-    const { rerender } = render(<SplitStrip splits={splits} noiseCount={0} active={null} onSelect={onSelect} />);
+    const { rerender } = render(<SplitStrip splits={splits} noiseCount={0} reviewCount={0} active={null} onSelect={onSelect} />);
     fireEvent.click(screen.getByText("Promotions"));
     expect(onSelect).toHaveBeenCalledWith("promotions");
-    rerender(<SplitStrip splits={splits} noiseCount={0} active="promotions" onSelect={onSelect} />);
+    rerender(<SplitStrip splits={splits} noiseCount={0} reviewCount={0} active="promotions" onSelect={onSelect} />);
     fireEvent.click(screen.getByText("Promotions"));
     expect(onSelect).toHaveBeenLastCalledWith(null);
   });
 
   it("the active tab carries the accent underline", () => {
-    render(<SplitStrip splits={splits} noiseCount={0} active="needs_reply" onSelect={vi.fn()} />);
+    render(<SplitStrip splits={splits} noiseCount={0} reviewCount={0} active="needs_reply" onSelect={vi.fn()} />);
     const tab = screen.getByText("Needs Reply").closest("button")!;
     expect(tab.getAttribute("style")).toContain("var(--color-accent)");
+  });
+
+  // T10 — the trailing "To classify" pseudo-tab (pending low-confidence
+  // reply classifications), mirroring the Noise-tab model exactly.
+  it("renders a trailing To classify tab when reviewCount > 0", () => {
+    render(<SplitStrip splits={splits} noiseCount={0} reviewCount={3} active={null} onSelect={vi.fn()} />);
+    expect(screen.getByText("To classify")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("omits the To classify tab when reviewCount is 0", () => {
+    render(<SplitStrip splits={splits} noiseCount={0} reviewCount={0} active={null} onSelect={vi.fn()} />);
+    expect(screen.queryByText("To classify")).toBeNull();
+  });
+
+  it("clicking To classify selects it; clicking again clears it (back to all)", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<SplitStrip splits={splits} noiseCount={0} reviewCount={3} active={null} onSelect={onSelect} />);
+    fireEvent.click(screen.getByText("To classify"));
+    expect(onSelect).toHaveBeenCalledWith("to_classify");
+    rerender(<SplitStrip splits={splits} noiseCount={0} reviewCount={3} active="to_classify" onSelect={onSelect} />);
+    fireEvent.click(screen.getByText("To classify"));
+    expect(onSelect).toHaveBeenLastCalledWith(null);
   });
 });
