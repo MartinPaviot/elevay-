@@ -410,6 +410,14 @@ export const processOutboundEmails = inngest.createFunction(
           // INV-1 — server-side class from OUR row, never from a request body;
           // the gate re-verifies a reply claim against a real inbound email.
           sendClass: email.inReplyTo ? "reply" : "outreach",
+          // M13-G5 (T3) — this path appends the unsubscribe footer + RFC-8058
+          // headers AFTER the gate, so the link budget is counted pre-footer.
+          content: {
+            subject: email.subject,
+            bodyText: email.bodyText,
+            bodyHtml: email.bodyHtml,
+            unsubscribeProvided: true,
+          },
         });
         if (!sendGate.send) {
           // P4: rate_limited is the same transient-condition shape as
@@ -751,6 +759,13 @@ export const sendSingleEmail = inngest.createFunction(
       contactId: email.contactId, // spec 35 — account-scope suppression + targeting
       // INV-1 — server-side class from OUR row (see batch path above).
       sendClass: email.inReplyTo ? "reply" : "outreach",
+      // M13-G5 (T3) — unsubscribe footer + headers are appended after the gate.
+      content: {
+        subject: email.subject,
+        bodyText: email.bodyText,
+        bodyHtml: email.bodyHtml,
+        unsubscribeProvided: true,
+      },
     });
     if (!singleGate.send) {
       // P4: rate_limited is the same transient-condition shape as

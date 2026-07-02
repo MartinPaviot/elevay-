@@ -28,6 +28,7 @@ import { isSendableBody } from "@/lib/guardrails/empty-body";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { isWithinSendWindow } from "@/lib/emails/send-window";
 import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
+import { buildUnsubscribeUrl } from "@/lib/emails/unsubscribe-token";
 
 const BATCH = 25;
 
@@ -113,6 +114,14 @@ export const dispatchOutboundSmtp = inngest.createFunction(
           contactId: o.contactId, // spec 35 — account-scope suppression + targeting
           // INV-1 — server-side class from OUR row (gate re-verifies replies).
           sendClass: o.inReplyTo ? "reply" : "outreach",
+          // M13-G5 (T3) — this path now attaches the RFC-8058 headers + text
+          // footer below (it previously sent with NO unsubscribe mechanism).
+          content: {
+            subject: o.subject,
+            bodyText: o.bodyText,
+            bodyHtml: o.bodyHtml,
+            unsubscribeProvided: true,
+          },
         });
         if (!smtpGate.send) {
           // P4: rate_limited is the same transient-condition shape as
@@ -164,6 +173,21 @@ export const dispatchOutboundSmtp = inngest.createFunction(
 
         try {
           const password = decryptSecret(mb.secretEncrypted);
+          // M13-G5/M9-R2 (T3) — outreach sends carry a real unsubscribe
+          // mechanism (RFC-8058 headers + text footer, mirroring the resend
+          // worker path). Replies thread into a human conversation and get
+          // neither. This path previously sent outreach with NO mechanism.
+          const isReply = !!o.inReplyTo;
+          // Lazy: only outreach needs the URL, and buildUnsubscribeUrl throws
+          // without AUTH_SECRET — a reply must never fail on that.
+          const unsubUrl = isReply
+            ? null
+            : buildUnsubscribeUrl(
+                process.env.NEXT_PUBLIC_APP_URL || "https://app.elevay.com",
+                o.tenantId,
+                o.toAddress,
+              );
+          const textBody = o.bodyText || undefined;
           const { messageId } = await sendViaSmtp(
             {
               emailAddress: mb.emailAddress,
@@ -176,8 +200,18 @@ export const dispatchOutboundSmtp = inngest.createFunction(
               to: o.toAddress,
               subject: o.subject,
               html: o.bodyHtml,
-              text: o.bodyText || undefined,
+              text: !unsubUrl
+                ? textBody
+                : textBody
+                  ? `${textBody}\n\n---\nUnsubscribe: ${unsubUrl}`
+                  : undefined,
               inReplyTo: o.inReplyTo,
+              headers: !unsubUrl
+                ? undefined
+                : {
+                    "List-Unsubscribe": `<${unsubUrl}>`,
+                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                  },
             },
           );
           await db
