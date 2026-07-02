@@ -39,7 +39,10 @@ export const messages: Record<Locale, Messages> = {
     "meeting.pickManually": "Choisir manuellement",
     "meeting.selectSlot": "Sélectionne un créneau",
     "meeting.complet": "Complet",
-    "meeting.noCalendar": "Calendrier non connecté — saisis une date",
+    "meeting.noCalendar": "Aucun calendrier connecté — la réservation nécessite une boîte connectée.",
+    "meeting.connectCalendar": "Connecter le calendrier",
+    "meeting.noCalendarError":
+      "Aucune boîte connectée. Connecte Google, Microsoft ou ta boîte IMAP/SMTP dans Réglages → Mail & Calendar pour planifier une visio.",
     "meeting.details": "Détails",
     "meeting.slotBusy": "Ce créneau chevauche un événement de ton agenda.",
     "meeting.bookAnyway": "Confirmer quand même",
@@ -623,7 +626,10 @@ export const messages: Record<Locale, Messages> = {
     "meeting.pickManually": "Pick manually",
     "meeting.selectSlot": "Select a time",
     "meeting.complet": "Full",
-    "meeting.noCalendar": "No calendar connected — enter a date",
+    "meeting.noCalendar": "No calendar connected — booking needs a connected mailbox.",
+    "meeting.connectCalendar": "Connect calendar",
+    "meeting.noCalendarError":
+      "No mailbox connected. Connect Google, Microsoft, or your IMAP/SMTP mailbox in Settings → Mail & Calendar to book meetings.",
     "meeting.details": "Details",
     "meeting.slotBusy": "This time overlaps an event on your calendar.",
     "meeting.bookAnyway": "Book anyway",
