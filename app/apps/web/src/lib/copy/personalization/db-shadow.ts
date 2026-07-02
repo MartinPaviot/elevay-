@@ -12,8 +12,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db as defaultDb } from "@/db";
 import { copyShadowSample } from "@/db/schema";
-import { buildProspectContext } from "@/lib/context/prospect-context";
+import { buildProspectContext, type ResearchBriefContext } from "@/lib/context/prospect-context";
 import { copyContextForTenant } from "@/lib/copy/assets/db-store";
+import { decideFabricationGate, type FabricationInput } from "@/lib/evals/fabrication-gate";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { prospectContextToEvidence } from "./db-evidence";
 import {
   generateMessage,
@@ -90,6 +92,7 @@ export async function personalizationRunAgent(
 
 export interface ShadowOutcome {
   ran: boolean;
+  /** "no_prospect_context" | "copy_shadow_disabled" | "g2_fabrication_blocked" */
   reason?: string;
   message?: Message;
   evidenceCount?: number;
@@ -105,7 +108,9 @@ export function isCopyEnginePrimaryEnabled(): boolean {
  * Core: run the copy engine for a contact and return the message — NO flag gate,
  * NO persist. Used by both the shadow (gated + persisted) and the primary cutover
  * (where the high-personalization message becomes the live draft). Returns
- * ran:false only when the prospect context is missing.
+ * ran:false only when the prospect context is missing; ran:true WITHOUT a message
+ * when the G2 factual gate blocks (reason "g2_fabrication_blocked") — every
+ * consumer treats an absent message as "keep the legacy personalisation".
  */
 export async function generateCopyMessage(
   contactId: string,
@@ -134,6 +139,45 @@ export async function generateCopyMessage(
     runAgent: (input) => personalizationRunAgent(input, opts.generate),
     winningFormats: copyCtx.voice?.formats,
   });
+
+  // M13 T6b — G2 factual gate at the copy-engine SOURCE, so every consumer
+  // (autopilot prepare, draft-router primary, auto-send, V2 conductor, shadow)
+  // inherits it with zero call-site changes. DETERMINISTIC layer only at this
+  // seam — this core runs on bulk paths, so the SEMANTIC judge (one Haiku call
+  // per draft) stays on the sequence-generator path. Prospect/brief assembly is
+  // fail-soft (a throw = no brief = the strict empty-brief posture); the verdict
+  // itself is fail-closed: a blocked body never leaves this function.
+  let prospect: FabricationInput["prospect"] = {};
+  let gateBrief: ResearchBriefContext | undefined;
+  try {
+    prospect = {
+      name: ctx.contact?.fullName,
+      title: ctx.contact?.title,
+      company: ctx.company?.name,
+      domain: ctx.company?.domain,
+    };
+    gateBrief = ctx.researchBrief;
+  } catch {
+    /* strictest posture: the gate below runs with no brief */
+  }
+  const fab = decideFabricationGate({ body: message.body, brief: gateBrief, prospect });
+  // Verdict log — best-effort by contract (recordGateDecision never throws).
+  await recordGateDecision({
+    tenantId,
+    subjectType: "step",
+    subjectId: contactId,
+    gate: 2,
+    rubricVersion: GATE_RUBRICS.g2Deterministic,
+    verdict: fab.blocked ? "blocked" : "pass",
+    reasons: { ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts, path: "copy_engine" },
+  });
+  if (fab.blocked) {
+    // Absent message = the fallback every caller already handles: the cutover
+    // sites require `out.message` + personalization_level "high" and keep the
+    // legacy personalisation otherwise; the shadow skips the persist; the
+    // autopilot discards the outcome. No consumer special-cases the block.
+    return { ran: true, reason: "g2_fabrication_blocked", evidenceCount: evidence.length };
+  }
 
   return { ran: true, message, evidenceCount: evidence.length };
 }
