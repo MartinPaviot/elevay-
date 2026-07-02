@@ -142,11 +142,11 @@ describe("buildOpener text", () => {
 });
 
 describe("buildOpener chips", () => {
-  it("work chips in priority order reply > drafts > deal > meeting, capped at 4", () => {
+  it("work chips cap at 3 (priority reply > drafts > deal) and slot 4 is a guaranteed recipe", () => {
     const out = buildOpener(
       base({ todos: [reply(), deal(), meeting()], draftsPending: 2, lastThread: { id: "th1", title: "x", updatedAt: null } }),
     );
-    expect(out.chips.map((c) => c.kind)).toEqual(["reply", "drafts", "deal_risk", "meeting"]);
+    expect(out.chips.map((c) => c.kind)).toEqual(["reply", "drafts", "deal_risk", "recipe"]);
     expect(out.chips).toHaveLength(OPENER_MAX_CHIPS);
   });
 
@@ -211,7 +211,7 @@ describe("buildOpener chips", () => {
     expect(last.label).toBe("Continue: Pipeline digging");
   });
 
-  it("resume chip is dropped when work already fills all 4 slots", () => {
+  it("resume chip is dropped when 3 work chips + the guaranteed recipe fill all slots", () => {
     const out = buildOpener(
       base({
         todos: [reply(), deal(), meeting()],
@@ -220,6 +220,27 @@ describe("buildOpener chips", () => {
       }),
     );
     expect(out.chips.some((c) => c.kind === "resume")).toBe(false);
+    expect(out.chips.filter((c) => c.kind === "recipe")).toHaveLength(1);
+  });
+
+  it("v2 recipes input replaces the static fallback", () => {
+    const out = buildOpener(
+      base({
+        recipes: [
+          { id: "recipe:signals-scan", kind: "recipe", label: "Scan my 885 accounts for buying signals", send: "Scan my accounts for buying signals like funding rounds and hiring. What did you find?" },
+        ],
+      }),
+    );
+    expect(out.chips).toHaveLength(1);
+    expect(out.chips[0].id).toBe("recipe:signals-scan");
+    expect(out.chips[0].label).toContain("885");
+  });
+
+  it("empty recipes array means no recipe chips at all (gates said nothing lands)", () => {
+    const out = buildOpener(
+      base({ todos: [reply()], recipes: [], lastThread: { id: "th3", title: "x", updatedAt: null } }),
+    );
+    expect(out.chips.map((c) => c.kind)).toEqual(["reply", "resume"]);
   });
 
   it("untitled last thread gets the generic continue label", () => {
