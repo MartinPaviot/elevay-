@@ -54,6 +54,101 @@ export function money(v: number | null | undefined): string {
   return `€${v}`;
 }
 
+// ── Address hygiene (shared by À faire + Actualités) ────────────────
+
+/** Bare lowercase domain of an address that may be a full From header
+ *  (`"Paul Madelénat" <paul@pilae.ch>`) or a bare email. Null when there is
+ *  no parseable mailbox. */
+export function emailDomainOf(address: string | null | undefined): string | null {
+  if (!address) return null;
+  const angled = /<([^<>\s]+@[^<>\s]+)>/.exec(address);
+  const bare = (angled?.[1] ?? address).trim();
+  const at = bare.lastIndexOf("@");
+  if (at < 0 || at === bare.length - 1) return null;
+  return bare.slice(at + 1).toLowerCase();
+}
+
+/** Seed/demo senders must never reach the founder's dashboard. `seedtest.io`
+ *  is the e2e seed domain that leaked into prod feeds; example.* / .test /
+ *  .invalid / .example are RFC 2606-reserved and never a real prospect. */
+export function isSeedAddress(address: string | null | undefined): boolean {
+  const d = emailDomainOf(address);
+  if (!d) return false;
+  return (
+    d === "seedtest.io" ||
+    d.endsWith(".seedtest.io") ||
+    /^example\.(com|org|net)$/.test(d) ||
+    d.endsWith(".test") ||
+    d.endsWith(".invalid") ||
+    d.endsWith(".example")
+  );
+}
+
+/** Freemail domains never identify a workspace: a founder on @gmail.com must
+ *  not blanket-filter every gmail prospect as a "colleague". */
+const FREEMAIL = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "outlook.fr", "hotmail.com",
+  "hotmail.fr", "live.com", "live.fr", "yahoo.com", "yahoo.fr", "icloud.com",
+  "me.com", "proton.me", "protonmail.com", "gmx.com", "gmx.ch", "gmx.fr",
+  "bluewin.ch", "orange.fr", "free.fr", "wanadoo.fr", "laposte.net",
+]);
+
+/** Distinct company domains of the workspace's own members. Mail from these
+ *  domains is colleague traffic, not founder work. */
+export function internalDomainsFromEmails(
+  emails: Array<string | null | undefined>,
+): string[] {
+  const out = new Set<string>();
+  for (const e of emails) {
+    const d = emailDomainOf(e);
+    if (d && !FREEMAIL.has(d)) out.add(d);
+  }
+  return [...out];
+}
+
+/** Calendar RSVP notifications ("Accepted: …" / "Accepté : …" / Declined /
+ *  Tentative + FR equivalents) are receipts, not replies awaiting an answer. */
+export function isCalendarRsvpSubject(subject: string | null | undefined): boolean {
+  if (!subject) return false;
+  return /^\s*(accepted|accept[ée]e?|declined|refus[ée]e?|tentative|provisoire)\s*:/i.test(subject);
+}
+
+/** A reply nobody acted on for this long is no longer "up next" — it ages out
+ *  of the dashboard. The inbox keeps it (nothing is mutated); Done/Snooze
+ *  there remain the explicit ways out before the window closes. */
+export const REPLY_MAX_AGE_DAYS = 14;
+
+/**
+ * Gate for a "Needs you" reply item — the dashboard shows work, so every rule
+ * here answers "is this a prospect the founder still owes an answer?":
+ *   1. not a seed/demo sender (isSeedAddress);
+ *   2. not a colleague (the sender's domain is not a workspace member domain);
+ *   3. not a calendar RSVP receipt;
+ *   4. not older than REPLY_MAX_AGE_DAYS since the last inbound.
+ * Pure: the route resolves internalDomains (a DB fact) and injects the clock.
+ * The awaiting-our-reply rule lives on the Conversation (lane + direction) and
+ * is applied by the route, not here.
+ */
+export function shouldShowReplyTodo(input: {
+  subject: string | null;
+  fromAddress: string | null;
+  lastInboundAt: string | null;
+  internalDomains: string[];
+  now: Date;
+}): boolean {
+  if (isSeedAddress(input.fromAddress)) return false;
+  const domain = emailDomainOf(input.fromAddress);
+  if (domain && input.internalDomains.includes(domain)) return false;
+  if (isCalendarRsvpSubject(input.subject)) return false;
+  if (input.lastInboundAt) {
+    const t = new Date(input.lastInboundAt).getTime();
+    if (Number.isFinite(t) && input.now.getTime() - t > REPLY_MAX_AGE_DAYS * 86_400_000) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── KPIs ────────────────────────────────────────────────────────────
 
 export interface KpiMetrics {
@@ -250,6 +345,7 @@ export function aggregateClicks(rows: ClickRow[]): Actualite[] {
  *
  *   1. it's attributed to a contact — `unassigned` service/newsletter mail
  *      is never news;
+ *   1b. the sender isn't a seed/demo address (isSeedAddress);
  *   2. the sender isn't machine-generated — checked on the From header,
  *      falling back to the contact's email because legacy rows lost their
  *      From header (clobber bug #260) so the machine check would otherwise
@@ -273,6 +369,9 @@ export function shouldSurfaceInboundEvent(input: {
   engaged: boolean;
 }): boolean {
   if (input.entityType !== "contact") return false;
+  // Seed/demo contacts (seedtest.io & friends) pollute the feed exactly like
+  // machine mail — same gate, same place.
+  if (isSeedAddress(input.fromHeader) || isSeedAddress(input.contactEmail)) return false;
   const senderHint = (input.fromHeader || "").trim() || (input.contactEmail || "");
   if (senderHint && classifyInboundSender({ fromHeader: senderHint }).isMachineSent) {
     return false;
