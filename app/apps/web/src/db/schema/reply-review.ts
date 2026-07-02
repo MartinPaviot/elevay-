@@ -14,6 +14,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const replyReviewQueue = pgTable(
   "reply_review_queue",
@@ -47,9 +48,11 @@ export const replyReviewQueue = pgTable(
       table.state,
       table.createdAt,
     ),
-    // One review entry per classified reply — Inngest-retry dedup key.
-    uniqueIndex("reply_review_queue_outbound_email_idx").on(
-      table.outboundEmailId,
-    ),
+    // One PENDING review entry per classified reply — Inngest-retry dedup.
+    // Partial (review fix): a SECOND low-confidence reply on the same thread
+    // after the first was resolved must queue again, not vanish forever.
+    uniqueIndex("reply_review_queue_outbound_pending_idx")
+      .on(table.outboundEmailId)
+      .where(sql`state = 'pending'`),
   ],
 );

@@ -10,7 +10,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let queueRows: Array<Record<string, unknown>> = [];
 let emailRows: Array<Record<string, unknown>> = [];
+let casLoses = false;
 const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
 const sent: Array<Record<string, unknown>> = [];
 const flywheel: Array<{ agentId: string; input: string; output: string; source: string }> = [];
 
@@ -37,6 +39,20 @@ vi.mock("@/db", () => ({
       set: (values: Record<string, unknown>) => ({
         where: () => {
           updates.push({ table, values });
+          // The CAS rail chains .returning(); a lost race returns []. Plain
+          // awaits (the outbound overwrite) resolve directly.
+          const p = Promise.resolve(undefined) as Promise<unknown> & {
+            returning: () => Promise<Array<{ id: string }>>;
+          };
+          p.returning = () => Promise.resolve(casLoses ? [] : [{ id: "rq1" }]);
+          return p;
+        },
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: (v: Record<string, unknown>) => ({
+        onConflictDoNothing: () => {
+          inserts.push({ table, values: v });
           return Promise.resolve(undefined);
         },
       }),
@@ -47,6 +63,11 @@ vi.mock("@/db/schema", () => ({
   replyReviewQueue: { __t: "queue", id: "q.id", tenantId: "q.tenant", state: "q.state", createdAt: "q.created", outboundEmailId: "q.oe", contactId: "q.contact", classification: "q.class" },
   outboundEmails: { __t: "emails", id: "oe.id", tenantId: "oe.tenant", subject: "oe.subject", replySnippet: "oe.snippet", toAddress: "oe.to" },
   contacts: { id: "c.id", tenantId: "c.tenant", firstName: "c.fn", lastName: "c.ln" },
+  sequenceEnrollments: { __t: "enrollments", id: "se.id", status: "se.status" },
+  emailOptouts: { __t: "optouts" },
+}));
+vi.mock("@/lib/anti-collision/enroll-guard", () => ({
+  releaseEnrollmentById: vi.fn(async () => undefined),
 }));
 vi.mock("@/inngest/client", () => ({
   inngest: { send: vi.fn(async (ev: Record<string, unknown>) => { sent.push(ev); }) },
@@ -83,8 +104,10 @@ const post = (id: string, body: unknown) =>
 
 beforeEach(() => {
   queueRows = [pendingItem()];
-  emailRows = [{ replySnippet: "we already use a competitor" }];
+  emailRows = [{ replySnippet: "we already use a competitor", toAddress: "Prospect@Acme.com" }];
+  casLoses = false;
   updates.length = 0;
+  inserts.length = 0;
   sent.length = 0;
   flywheel.length = 0;
 });
@@ -123,17 +146,48 @@ describe("POST /api/inbox/review/[id] — correct", () => {
     expect(updates).toHaveLength(0);
   });
 
-  it("no enrollment on the row -> the correction persists but nothing re-emits", async () => {
-    queueRows = [pendingItem({ enrollmentId: null })];
+  it("not_now is NOT in the live vocabulary -> 400 guard", async () => {
     const res = await post("rq1", { action: "correct", classification: "not_now" });
-    // not_now is NOT in the live classification vocabulary -> 400 guard first.
     expect(res.status).toBe(400);
+  });
 
-    queueRows = [pendingItem({ enrollmentId: null })];
-    const res2 = await post("rq1", { action: "correct", classification: "unsubscribe" });
-    expect(await res2.json()).toMatchObject({ ok: true, reRouted: false });
+  it("correcting to UNSUBSCRIBE opts the address out directly — never via the re-emit", async () => {
+    const res = await post("rq1", { action: "correct", classification: "unsubscribe" });
+    expect(await res.json()).toMatchObject({ ok: true, state: "corrected", reRouted: false });
+
+    // The real semantics, mirrored from processReply's terminal branch:
+    // global opt-out (lowercased) + enrollment unsubscribed. NO reply/classified
+    // (the reply-agent would draft an acknowledgment instead of opting out).
     expect(sent).toHaveLength(0);
-    expect(emailUpdates()).toHaveLength(1);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].values).toMatchObject({
+      tenantId: "t1",
+      emailAddress: "prospect@acme.com",
+      reason: "unsubscribe",
+    });
+    const enrollmentUpdate = updates.find(
+      (u) => (u.values as { status?: string }).status === "unsubscribed",
+    );
+    expect(enrollmentUpdate).toBeTruthy();
+    // The founder label still feeds learning.
+    expect(flywheel[0]).toMatchObject({ output: "unsubscribe", source: "user_edited" });
+  });
+
+  it("correcting to OOO persists the label but re-routes NOTHING (no dispatch branch exists)", async () => {
+    const res = await post("rq1", { action: "correct", classification: "ooo" });
+    expect(await res.json()).toMatchObject({ ok: true, state: "corrected", reRouted: false });
+    expect(sent).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+    expect(emailUpdates()).toHaveLength(1); // the lane column still updates
+  });
+
+  it("a lost CAS race returns alreadyResolved — no double emit, no double label", async () => {
+    casLoses = true;
+    const res = await post("rq1", { action: "correct", classification: "interested" });
+    expect(await res.json()).toMatchObject({ ok: true, alreadyResolved: true });
+    expect(sent).toHaveLength(0);
+    expect(emailUpdates()).toHaveLength(0);
+    expect(flywheel).toHaveLength(0);
   });
 
   it("a cross-tenant or unknown id is a 404 (no leak)", async () => {

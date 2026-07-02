@@ -1,8 +1,9 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { replyReviewQueue, outboundEmails } from "@/db/schema";
+import { replyReviewQueue, outboundEmails, sequenceEnrollments, emailOptouts } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
+import { releaseEnrollmentById } from "@/lib/anti-collision/enroll-guard";
 import { isReplyClassification } from "@/lib/reply/classifications";
 import { recordFlywheelCandidate } from "@/lib/evals/flywheel";
 
@@ -26,6 +27,20 @@ import { recordFlywheelCandidate } from "@/lib/evals/flywheel";
  *      tagged user_edited (the strongest teaching signal).
  * confirm: state 'confirmed' + a user_approved candidate — "the AI got it
  * right" is also a label.
+ *
+ * TERMINAL labels are handled DIRECTLY, never via the re-emit (review fix):
+ * "unsubscribe" re-emitted would reach the reply-agent, which DRAFTS an
+ * acknowledgment instead of opting the contact out — the real semantics
+ * live in processReply's terminal branch, mirrored here (opt-out insert +
+ * enrollment unsubscribed + lock release). "ooo" has no dispatch branch and
+ * its reschedule needs the reply-text date parse at classify time — the
+ * label persists, nothing re-routes.
+ *
+ * KNOWN ASYMMETRY (documented, deliberate): a LOW-confidence terminal
+ * classification already executed its terminal branch at classify time
+ * (opt-out inserted, enrollment closed). Correcting AWAY from it re-routes
+ * the reply but never auto-undoes a suppression — un-suppressing an address
+ * is a founder decision on the suppression surface, not a side effect.
  */
 export async function POST(
   req: Request,
@@ -57,7 +72,7 @@ export async function POST(
   }
 
   const [email] = await db
-    .select({ replySnippet: outboundEmails.replySnippet })
+    .select({ replySnippet: outboundEmails.replySnippet, toAddress: outboundEmails.toAddress })
     .from(outboundEmails)
     .where(
       and(
@@ -74,11 +89,31 @@ export async function POST(
       : {};
   const now = new Date();
 
-  if (body.action === "confirm") {
-    await db
+  // CAS rail (review fix): only the transition FROM 'pending' wins — two
+  // concurrent clicks cannot double-emit or double-label. Returns the row
+  // only when THIS request made the transition.
+  const claimResolution = async (values: Record<string, unknown>) => {
+    const claimed = await db
       .update(replyReviewQueue)
-      .set({ state: "confirmed", reviewedAt: now, reviewedBy: authCtx.appUserId ?? null })
-      .where(eq(replyReviewQueue.id, item.id));
+      .set(values)
+      .where(
+        and(
+          eq(replyReviewQueue.id, item.id),
+          eq(replyReviewQueue.tenantId, authCtx.tenantId),
+          eq(replyReviewQueue.state, "pending"),
+        ),
+      )
+      .returning({ id: replyReviewQueue.id });
+    return claimed.length > 0;
+  };
+
+  if (body.action === "confirm") {
+    const won = await claimResolution({
+      state: "confirmed",
+      reviewedAt: now,
+      reviewedBy: authCtx.appUserId ?? null,
+    });
+    if (!won) return Response.json({ ok: true, alreadyResolved: true });
     // M11-R3 — "the AI was right" is a label too. Best-effort by design.
     await recordFlywheelCandidate(
       "process-reply",
@@ -91,15 +126,13 @@ export async function POST(
   }
 
   const corrected = body.classification as string;
-  await db
-    .update(replyReviewQueue)
-    .set({
-      state: "corrected",
-      corrected: { classification: corrected },
-      reviewedAt: now,
-      reviewedBy: authCtx.appUserId ?? null,
-    })
-    .where(eq(replyReviewQueue.id, item.id));
+  const won = await claimResolution({
+    state: "corrected",
+    corrected: { classification: corrected },
+    reviewedAt: now,
+    reviewedBy: authCtx.appUserId ?? null,
+  });
+  if (!won) return Response.json({ ok: true, alreadyResolved: true });
 
   await db
     .update(outboundEmails)
@@ -111,9 +144,31 @@ export async function POST(
       ),
     );
 
-  // Re-route through the SAME dispatch the original classification took.
-  // Fail-soft: a re-route failure must not lose the correction itself.
-  if (item.enrollmentId) {
+  // TERMINAL labels: direct semantics, no re-emit (see the doc block).
+  let reRouted = false;
+  if (corrected === "unsubscribe") {
+    // Mirror processReply's terminal branch: global opt-out on the replier's
+    // address + enrollment closed + anti-collision lock released.
+    if (email?.toAddress) {
+      await db
+        .insert(emailOptouts)
+        .values({
+          tenantId: authCtx.tenantId,
+          emailAddress: email.toAddress.toLowerCase(),
+          reason: "unsubscribe",
+        })
+        .onConflictDoNothing();
+    }
+    if (item.enrollmentId) {
+      await db
+        .update(sequenceEnrollments)
+        .set({ status: "unsubscribed" })
+        .where(eq(sequenceEnrollments.id, item.enrollmentId));
+      await releaseEnrollmentById(item.enrollmentId).catch(() => undefined);
+    }
+  } else if (corrected !== "ooo" && item.enrollmentId) {
+    // Re-route through the SAME dispatch the original classification took.
+    // Fail-soft: a re-route failure must not lose the correction itself.
     try {
       await inngest.send({
         name: "reply/classified",
@@ -126,6 +181,7 @@ export async function POST(
           replyContent: replySnippet.slice(0, 1000),
         },
       });
+      reRouted = true;
     } catch {
       // The corrected label is persisted; routing can be retried by hand.
     }
@@ -140,5 +196,5 @@ export async function POST(
     "user_edited",
   ).catch(() => null);
 
-  return Response.json({ ok: true, state: "corrected", reRouted: !!item.enrollmentId });
+  return Response.json({ ok: true, state: "corrected", reRouted });
 }

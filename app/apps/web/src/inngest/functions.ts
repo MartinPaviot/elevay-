@@ -1015,10 +1015,14 @@ export const processReply = inngest.createFunction(
             objectionDetail: z.string().optional().describe("Specific concern if objection"),
             nextAction: z.string().describe("Recommended next action"),
             urgency: z.enum(["high", "medium", "low"]),
+            // OPTIONAL (review fix): a model omitting the field must degrade
+            // to "queue for review" (absence = zero below), never to a
+            // schema throw -> 3 retries -> dead-letter of the whole reply.
             confidence: z
               .number()
               .min(0)
               .max(1)
+              .optional()
               .describe("How certain you are of the classification (0-1)"),
           }),
           prompt: `Classify this email reply with precision:
@@ -1054,13 +1058,15 @@ Also determine:
       // Same floor as the spec-26 classifier (single source of truth).
       const confidence: number =
         typeof result.confidence === "number" ? result.confidence : 0;
-      if (outboundEmailId && confidence < DEFAULT_MIN_CONFIDENCE) {
+      // tenantId required (review fix): a "default"-tenant row would be
+      // invisible to every tenant lane — a dead row is worse than none.
+      if (outboundEmailId && tenantId && confidence < DEFAULT_MIN_CONFIDENCE) {
         await step.run("queue-review", async () => {
           try {
             await db
               .insert(replyReviewQueue)
               .values({
-                tenantId: tenantId ?? "default",
+                tenantId,
                 outboundEmailId,
                 enrollmentId,
                 contactId: (event.data as { contactId?: string }).contactId ?? null,
