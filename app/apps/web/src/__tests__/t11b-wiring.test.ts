@@ -80,6 +80,19 @@ describe("T11b wiring — the ready route queries the three REAL tables only", (
     expect(code).toContain('"pending_approval"');
     expect(code).toContain('"pending"');
   });
+
+  it("scopes the actions count to prospect-facing types (excludes internal create_task)", () => {
+    const code = codeOf(READY_ROUTE);
+    // The verify-finding fix: only consequential, prospect-facing types count,
+    // so 940 internal create_task rows never flood "actions to approve".
+    expect(code).toContain("inArray(agentActions.actionType");
+    for (const t of ["send_followup", "draft_reply", "enroll_sequence", "advance_deal"]) {
+      expect(code, `allowlist must include ${t}`).toContain(`"${t}"`);
+    }
+    // create_task must NOT be an allowlisted type (comment lines are stripped
+    // by codeOf, so a doc comment naming it as excluded can't trip this).
+    expect(code).not.toContain('"create_task"');
+  });
 });
 
 describe("T11b wiring — future tables are NEVER referenced", () => {
