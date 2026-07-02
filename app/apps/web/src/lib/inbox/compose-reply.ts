@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { pickKeyMessages } from "./thread-summary-prep";
 import { replySubjectFor } from "./reply-subject";
+import { senderEmailOf, senderNameOf } from "./sender-display";
 import type { ThreadMessage } from "./summarize-thread";
 
 export interface ReplyDraft {
@@ -43,6 +44,17 @@ export interface ComposeReplyOpts {
    * used for subjectless threads (e.g. LinkedIn messages).
    */
   threadSubject?: string;
+  /**
+   * The USER's own mailbox addresses (scope.addresses). Anchors role
+   * attribution two ways: a thread message whose From matches one of these is
+   * labelled "You" even when it was captured as inbound (internal same-domain
+   * threads sync the user's own replies back in as inbound activities), and
+   * the reply target is picked as the latest message NOT from these addresses.
+   * Live audit 2026-07-02: on an all-inbound internal thread the prompt had no
+   * "You" line at all, so the model guessed the salesperson's identity from
+   * the quoted history and drafted AS the counterparty ("Salut Martin,").
+   */
+  selfAddresses?: string[];
 }
 
 // Canonical implementation lives in reply-subject.ts (pure, client-safe);
@@ -58,22 +70,60 @@ function taskSentence(mode: "reply" | "nudge"): string {
 }
 
 export function buildReplyPrompt(messages: ThreadMessage[], opts: ComposeReplyOpts = {}): string {
+  const self = new Set(
+    (opts.selfAddresses ?? []).map((a) => a.toLowerCase().trim()).filter(Boolean),
+  );
+  const isSelf = (m: ThreadMessage) =>
+    m.direction === "outbound" || (self.size > 0 && self.has(senderEmailOf(m.from)));
   const picked = new Set(pickKeyMessages(messages, 8));
   const lines = messages
     .map((m, i) => {
       if (!picked.has(m)) return null;
-      const who = m.direction === "outbound" ? "You" : m.from || "Them";
+      const who = isSelf(m) ? "You" : m.from || "Them";
       return `[${i}] ${who}: ${(m.body || "").slice(0, 1500)}`;
     })
     .filter(Boolean)
     .join("\n---\n");
   const preamble = opts.instructions ? `${opts.instructions}\n\n` : "";
   const ctx = opts.context ? `\nWhat you know about them: ${opts.context}\n` : "";
-  return `${preamble}${taskSentence(opts.mode ?? "reply")}${ctx}
+  const roles = rolesSection(messages, isSelf, self);
+  return `${preamble}${taskSentence(opts.mode ?? "reply")}${roles}${ctx}
 Return the body, plus a short subject line (only used when the thread has no subject of its own).
 
 Thread:
 ${lines}`;
+}
+
+/**
+ * Explicit role anchoring. The "You" labels alone are not enough: an internal
+ * same-domain thread where the user never replied through Elevay has ZERO
+ * outbound messages, so the prompt carried no "You" line and the model
+ * inferred the roles from quoted history — and drafted as the counterparty.
+ * Names the reply target (latest non-self sender) the way suggest-reply-prompt
+ * names its FROM. Empty when the thread has no identifiable counterparty, so
+ * those prompts stay byte-identical.
+ */
+function rolesSection(
+  messages: ThreadMessage[],
+  isSelf: (m: ThreadMessage) => boolean,
+  self: Set<string>,
+): string {
+  const counter = [...messages].reverse().find((m) => !isSelf(m) && (m.from || "").trim());
+  if (!counter) return "";
+  const rawFrom = (counter.from || "").trim();
+  const name = senderNameOf(rawFrom);
+  const email = senderEmailOf(rawFrom);
+  // No address part (LinkedIn sender) → keep the header's original casing;
+  // senderNameOf falls back to senderEmailOf, which lowercases.
+  const target = !email.includes("@")
+    ? rawFrom
+    : name.toLowerCase() !== email
+      ? `${name} <${email}>`
+      : rawFrom;
+  const selfAddr = self.size > 0 ? [...self][0] : "";
+  return `
+Roles — never confuse them: you are the salesperson${selfAddr ? ` writing from ${selfAddr}` : ""}; messages labelled "You" are yours. The reply goes TO ${target}. Greet and address ${target.split(" <")[0]} — never greet or address yourself. Quoted lines inside a message body (after "wrote:", "a écrit :", ">") are earlier history, not the sender's own words.
+`;
 }
 
 async function defaultGenerate(prompt: string): Promise<{ subject: string; text: string }> {

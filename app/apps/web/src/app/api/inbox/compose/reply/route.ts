@@ -68,6 +68,9 @@ export async function POST(req: Request) {
       // rawSubject, not subject: `subject` prefers the AI summary for display —
       // a reply under "Re: <summary>" would break the recipient's threading.
       threadSubject: conversation.rawSubject,
+      // Role anchor: without it, an all-inbound internal thread has no "You"
+      // line and the model can draft as the counterparty (audit 2026-07-02).
+      selfAddresses: [...scope.addresses],
     });
     return Response.json(result);
   } catch (error) {
