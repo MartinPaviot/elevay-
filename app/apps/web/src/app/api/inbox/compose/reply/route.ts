@@ -65,6 +65,7 @@ export async function POST(req: Request) {
       instructions,
       context,
       mode,
+      threadSubject: conversation.subject,
     });
     return Response.json(result);
   } catch (error) {
