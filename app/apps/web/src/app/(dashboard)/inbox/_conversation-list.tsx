@@ -6,7 +6,7 @@
  */
 
 import { useRef, useCallback } from "react";
-import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX, Reply, Clock } from "lucide-react";
+import { Inbox, CheckCircle2, AlarmClock, Bot, SearchX, Reply, Clock, Star, FileText, CalendarClock, Mail, Trash2, ShieldAlert } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { type ConversationListItem, type InboxLane } from "./_types";
@@ -19,6 +19,20 @@ const EMPTY_COPY: Record<InboxLane, { titleKey: string; descKey: string }> = {
   snoozed: { titleKey: "inbox.empty.snoozed.title", descKey: "inbox.empty.snoozed.desc" },
   done: { titleKey: "inbox.empty.done.title", descKey: "inbox.empty.done.desc" },
   handled: { titleKey: "inbox.empty.handled.title", descKey: "inbox.empty.handled.desc" },
+};
+
+// Per-folder empty copy: the email-client folders (Drafts, Starred, …) render
+// through the attention lane, which used to paste the ATTENTION resting copy
+// ("Incoming replies land here, hottest first…") onto an empty Drafts folder
+// (audit 2026-07-02, F10).
+export type InboxFolder = "starred" | "drafts" | "scheduled" | "all" | "trash" | "spam";
+const FOLDER_EMPTY_COPY: Record<InboxFolder, { icon: React.ReactNode; titleKey: string; descKey: string }> = {
+  starred: { icon: <Star size={28} />, titleKey: "inbox.empty.starred.title", descKey: "inbox.empty.starred.desc" },
+  drafts: { icon: <FileText size={28} />, titleKey: "inbox.empty.drafts.title", descKey: "inbox.empty.drafts.desc" },
+  scheduled: { icon: <CalendarClock size={28} />, titleKey: "inbox.empty.scheduled.title", descKey: "inbox.empty.scheduled.desc" },
+  all: { icon: <Mail size={28} />, titleKey: "inbox.empty.all.title", descKey: "inbox.empty.all.desc" },
+  trash: { icon: <Trash2 size={28} />, titleKey: "inbox.empty.trash.title", descKey: "inbox.empty.trash.desc" },
+  spam: { icon: <ShieldAlert size={28} />, titleKey: "inbox.empty.spam.title", descKey: "inbox.empty.spam.desc" },
 };
 
 // Per-split empty copy (Upstream parity): the AI-output tabs have their own
@@ -59,6 +73,7 @@ export function ConversationList({
   onToggleStar,
   activeSplit = null,
   density = "comfortable",
+  folder,
 }: {
   lane: InboxLane;
   conversations: ConversationListItem[];
@@ -83,6 +98,8 @@ export function ConversationList({
   activeSplit?: string | null;
   /** Outlook-style display density (comfortable 2-line / compact 1-line). */
   density?: InboxDensity;
+  /** Active email-client folder view — drives its own resting empty copy. */
+  folder?: InboxFolder;
 }) {
   const t = useT();
   const selectedSet = new Set(selectedKeys);
@@ -108,15 +125,18 @@ export function ConversationList({
     // F3 R3.4/R3.5: an empty result under an active search is "no matches" (with a
     // way out), not the lane's resting empty copy.
     const splitEmpty = activeSplit ? SPLIT_EMPTY_COPY[activeSplit] : undefined;
+    const folderEmpty = folder ? FOLDER_EMPTY_COPY[folder] : undefined;
     const empty = hasQuery
       ? {
           icon: <SearchX size={28} />,
           title: t("inbox.search.noMatch.title"),
           description: t("inbox.search.noMatch.desc"),
         }
-      : splitEmpty
-        ? { icon: splitEmpty.icon, title: t(splitEmpty.titleKey), description: t(splitEmpty.descKey) }
-        : { icon: LANE_ICON[lane], title: t(EMPTY_COPY[lane].titleKey), description: t(EMPTY_COPY[lane].descKey) };
+      : folderEmpty
+        ? { icon: folderEmpty.icon, title: t(folderEmpty.titleKey), description: t(folderEmpty.descKey) }
+        : splitEmpty
+          ? { icon: splitEmpty.icon, title: t(splitEmpty.titleKey), description: t(splitEmpty.descKey) }
+          : { icon: LANE_ICON[lane], title: t(EMPTY_COPY[lane].titleKey), description: t(EMPTY_COPY[lane].descKey) };
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState

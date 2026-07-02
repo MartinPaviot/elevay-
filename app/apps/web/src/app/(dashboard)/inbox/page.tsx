@@ -1571,6 +1571,12 @@ export default function InboxPage() {
                   onToggleStar={handleToggleStar}
                   activeSplit={activeSplit}
                   density={density}
+                  folder={
+                    !customLaneId &&
+                    (tab === "starred" || tab === "drafts" || tab === "scheduled" || tab === "all" || tab === "trash" || tab === "spam")
+                      ? tab
+                      : undefined
+                  }
                 />
               );
             })()}

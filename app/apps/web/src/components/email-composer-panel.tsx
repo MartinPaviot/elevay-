@@ -988,7 +988,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               minHeight: inline ? "clamp(160px, 30vh, 380px)" : "200px",
               whiteSpace: "pre-wrap",
             }}
-            placeholder={t("inbox.compose.bodyPlaceholder")}
+            placeholder={t(draft.threadId ? "inbox.compose.bodyPlaceholder" : "inbox.compose.bodyPlaceholderNew")}
           />
         </div>
 
