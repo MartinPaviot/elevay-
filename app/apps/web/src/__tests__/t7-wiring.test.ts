@@ -55,7 +55,13 @@ describe("T7 wiring guards (outreach_decisions learning record)", () => {
 
   it("the schema keeps SOFT references (log table never locks business tables)", () => {
     const src = read("db/schema/outreach-learning.ts");
-    expect(src).not.toContain(".references(");
-    expect(src).toContain("outreach_decisions_outbound_email_idx");
+    // Guard the CODE, not the prose — the file's own doc comment legitimately
+    // says "NO .references()" and must not trip this (the T2/outreach-cap lesson).
+    const code = src
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*"))
+      .join("\n");
+    expect(code).not.toContain(".references(");
+    expect(code).toContain("outreach_decisions_outbound_email_idx");
   });
 });
