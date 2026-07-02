@@ -300,6 +300,67 @@ export const inboxFollowupNudges = pgTable(
   ],
 );
 
+// home-proposed-lane — "Proposed by Elevay" sequence proposals. A daily cron
+// aggregates the STANDING STOCK of fresh company signals into founder-facing
+// launch proposals ("Recent funding — 7 accounts → post-funding sequence").
+// The pull-side complement to signalAutoEnroll (push, per-detection). Launch
+// NEVER sends: it instantiates the proven template as a DRAFT sequence and
+// enrolls the cohort — activation stays a separate human act in /sequences.
+// Mirrors inboxFollowupNudges' shape (snapshot-at-generation, optimistic
+// lock, reconcile/expire). See lib/home/sequence-proposals.ts (pure core)
+// and inngest/home-proposals-cron.ts (daily producer).
+export const homeSequenceProposalStatusEnum = pgEnum("home_sequence_proposal_status", [
+  "pending_review",
+  "launched",
+  "dismissed",
+  "expired",
+]);
+
+export const homeSequenceProposals = pgTable(
+  "home_sequence_proposals",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    tenantId: text("tenant_id").notNull(),
+    /** Canonical signal family (funding, hiring, …) — SIGNAL_CANONICAL_ALIAS
+     *  applied at compute time, never a raw producer key. */
+    signalFamily: text("signal_family").notNull(),
+    /** Proven-template id (lib/sequences/templates/catalog.ts) the launch
+     *  instantiates — the family→template bridge is FAMILY_TO_TEMPLATE. */
+    templateId: text("template_id").notNull(),
+    title: text("title").notNull(),
+    /** Cohort snapshot at generation time: every company carrying a fresh
+     *  signal of this family (deduped per company, excluded/deleted dropped). */
+    companyIds: jsonb("company_ids").$type<string[]>().notNull(),
+    /** ≤6 names for render — the card never re-queries the cohort. */
+    companyNames: jsonb("company_names").$type<string[]>().notNull(),
+    companyCount: integer("company_count").notNull(),
+    /** Contacts in the cohort with an email or a LinkedIn URL — the honest
+     *  "how many people can we actually reach" number shown on the card. */
+    contactableCount: integer("contactable_count").notNull(),
+    freshestAt: timestamp("freshest_at", { withTimezone: true }).notNull(),
+    /** sha1 of the sorted cohort ids. The unique index below makes dedupe
+     *  content-based: a dismissed family re-proposes ONLY when the cohort
+     *  changes (new company → new hash → new row). */
+    cohortHash: text("cohort_hash").notNull(),
+    status: homeSequenceProposalStatusEnum("status").notNull().default("pending_review"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    launchedAt: timestamp("launched_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Set on launch — the draft sequence + account list the founder reviews. */
+    launchedSequenceId: text("launched_sequence_id"),
+    launchedListId: text("launched_list_id"),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("hsp_tenant_status_idx").on(table.tenantId, table.status),
+    uniqueIndex("hsp_dedupe_idx").on(table.tenantId, table.signalFamily, table.cohortHash),
+  ],
+);
+
 // === OUTBOUND EMAIL TABLES ===
 
 export const mailboxStatusEnum = pgEnum("mailbox_status", [
