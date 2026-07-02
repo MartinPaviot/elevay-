@@ -22,6 +22,7 @@ import {
 import { EmailComposerPanel } from "@/components/email-composer-panel";
 import type { EmailComposerDraft } from "@/components/email-composer-panel";
 import { UpNextSkeleton } from "@/components/up-next/up-next-skeleton";
+import { greetingForHour } from "@/lib/home/greeting";
 
 interface Kpi { key: string; label: string; value: string; sub: string | null; delta: number | null; }
 type ActualiteKind =
@@ -162,7 +163,11 @@ export function UpNextView({ apiRef }: { apiRef?: Ref<UpNextApi | null> } = {}) 
   // or collapses to a spinner before content arrives.
   if (loading) return <UpNextSkeleton />;
 
-  const greeting = `${data?.greeting ?? "Welcome"}${data?.firstName ? `, ${data.firstName}` : ""}`;
+  // Greeting is computed with the BROWSER's local hour — the API's
+  // server-computed greeting is UTC on Vercel (wrong by 2h for CH users)
+  // and used a different evening threshold than /chat. Rendered only in
+  // the loaded branch (post-mount), so no SSR/CSR hydration mismatch.
+  const greeting = `${greetingForHour(new Date().getHours())}${data?.firstName ? `, ${data.firstName}` : ""}`;
   const kpis = data?.kpis ?? [];
   const actualites = data?.actualites ?? [];
   const todos = data?.todos ?? [];
