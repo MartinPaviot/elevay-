@@ -19,6 +19,7 @@ import { buildAllChatTools, type ToolContext } from "@/lib/chat/tools";
 import type { PageActionManifest } from "@/lib/chat/page-actions/types";
 import { resolveCapabilities, type SurfaceContext } from "@/lib/agents/capability-resolver";
 import { routeTools } from "@/lib/chat/tool-router";
+import { resolveForcedTool } from "@/lib/chat/forced-tool";
 import { orchestrate } from "@/lib/agents/orchestrator";
 import { getActivePromptVersion } from "@/lib/prompts/prompt-canary";
 import { getChatExperimentDelta, applyPromptDelta, recordExperimentMetric } from "@/lib/prompts/prompt-experiments";
@@ -406,6 +407,7 @@ export async function POST(req: Request) {
     surface: surfaceInput,
     threadId,
     pageActions,
+    forcedTool,
   }: {
     messages: UIMessage[];
     contextType?: string;
@@ -422,6 +424,12 @@ export async function POST(req: Request) {
      * wire). Absent off-web (Slack/MCP) or on the /chat page (no dock).
      */
     pageActions?: PageActionManifest;
+    /**
+     * Opener chip pre-routing: force this tool on the FIRST agent step
+     * (no selection detour for one-tap actions). Capability drops always
+     * win — see resolveForcedTool.
+     */
+    forcedTool?: string;
   } = await req.json();
 
   // If the Anthropic circuit breaker is open, skip straight to OpenAI
@@ -650,6 +658,12 @@ export async function POST(req: Request) {
     chatTools = routeTools(resolved.tools, lastUserText);
   }
 
+  // Opener chip pre-routing: validate the chip's tool hint against the
+  // capability-resolved set (permissions win), re-adding it if only the
+  // text router dropped it, then force it on step 0 below.
+  const forced = resolveForcedTool(forcedTool, chatTools, resolved.tools);
+  chatTools = forced.tools;
+
   // Prompt canary: check if a versioned prompt exists for "chat".
   // If a canary version is active, it replaces the hardcoded prompt
   // for a subset of tenants (consistent hashing on tenantId).
@@ -741,6 +755,16 @@ export async function POST(req: Request) {
       maxOutputTokens: 4000,
       temperature: 0.4,
       stopWhen: stepCountIs(10),
+      // Chip pre-routing: the opener chip already named its tool — force
+      // it on step 0 (no selection detour), then free loop for synthesis.
+      ...(forced.toolName
+        ? {
+            prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+              stepNumber === 0
+                ? { toolChoice: { type: "tool" as const, toolName: forced.toolName as string } }
+                : undefined,
+          }
+        : {}),
       providerOptions: {
         anthropic: {
           cacheControl: { type: "ephemeral" },
@@ -753,6 +777,7 @@ export async function POST(req: Request) {
         surfaceType: inferredSurface.type,
         allowedToolCount: Object.keys(chatTools).length,
         droppedToolCount: resolved.droppedTools.length,
+        ...(forced.toolName ? { forcedTool: forced.toolName } : {}),
         orchestratorRouted: orchestratorResult.routed,
         orchestratorSpecialists: orchestratorResult.decision.specialists.join(",") || "none",
         orchestratorConfidence: orchestratorResult.decision.confidence,
@@ -828,6 +853,14 @@ export async function POST(req: Request) {
         messages: convertedMessages,
         tools: chatTools,
         stopWhen: stepCountIs(10),
+        ...(forced.toolName
+          ? {
+              prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+                stepNumber === 0
+                  ? { toolChoice: { type: "tool" as const, toolName: forced.toolName as string } }
+                  : undefined,
+            }
+          : {}),
         _trace: {
           agentId: "chat",
           tenantId,

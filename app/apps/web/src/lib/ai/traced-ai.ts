@@ -47,6 +47,8 @@ interface TraceMetadata {
   orchestratorRouted?: boolean;
   orchestratorSpecialists?: string;
   orchestratorConfidence?: number;
+  // Chip pre-routing: tool forced on step 0 by an opener chip (if any).
+  forcedTool?: string;
   // Entity the call is about — lets the learned-context seam fetch
   // per-entity context (this contact's open objections, this company's
   // win/loss lessons) for drafting agents. Optional; absent → tenant-only.
@@ -332,6 +334,8 @@ export async function tracedStreamText(
       allowedToolCount: _trace.allowedToolCount,
       toolsSelected: toolCalls.map((tc: any) => tc.name),
       userIntent: _trace.inputPreview?.slice(0, 200),
+      // Chip pre-routing observability: measure forced-vs-free selection.
+      ...(_trace.forcedTool ? { forcedTool: _trace.forcedTool } : {}),
     };
 
     recordTrace(
