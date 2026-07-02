@@ -61,8 +61,11 @@ describe("T8 wiring — decision↔outcome join", () => {
     expect(code).toContain('outbound.status === "bounced"');
     expect(code).toContain("outbound.sentAt != null");
     expect(code).not.toContain('"permanent"');
-    // Real-time email events resolve the T8 watchers too.
-    expect(code).toContain('outcome.actionType === "outreach-send"');
+    // Real-time email events resolve the T8 watchers too — outreach-send is
+    // in the shared email-family set (T12 factored the literal comparison
+    // into EMAIL_FAMILY_ACTION_TYPES; the guard follows the structure).
+    expect(code).toContain('"outreach-send"');
+    expect(code).toContain("EMAIL_FAMILY_ACTION_TYPES");
   });
 });
 
