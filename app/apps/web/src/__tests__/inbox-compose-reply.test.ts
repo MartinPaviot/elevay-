@@ -85,6 +85,63 @@ describe("compose-reply forced thread subject (audit 2026-07-02)", () => {
   });
 });
 
+// Live audit 2026-07-02 (internal same-domain thread): the user never replied
+// through Elevay, so every message was inbound, the prompt carried ZERO "You"
+// lines, and the model inferred the roles from the quoted history — it drafted
+// AS the counterparty and opened "Salut Martin,". The fix anchors identity the
+// way suggest-reply-prompt does with its FROM line: label the user's own
+// messages via their mailbox addresses, and name the reply target explicitly.
+describe("compose-reply role anchoring (internal-thread audit 2026-07-02)", () => {
+  const internal: ThreadMessage[] = [
+    {
+      direction: "inbound",
+      from: "Paul Madelenat <paul.madelenat@pilae.ch>",
+      body: "Salut Martin, on avance sur YC ?\n\nLe 30 juin 2026, martin.paviot@pilae.ch a écrit :\n> Paul, regarde ça",
+      at: "2026-07-01T10:00:00Z",
+    },
+  ];
+
+  it("names the reply target + the user's own address on an all-inbound internal thread", () => {
+    const p = buildReplyPrompt(internal, { selfAddresses: ["martin.paviot@pilae.ch"] });
+    expect(p).toContain("The reply goes TO Paul Madelenat <paul.madelenat@pilae.ch>");
+    expect(p).toContain("writing from martin.paviot@pilae.ch");
+    expect(p).toContain("never greet or address yourself");
+    expect(p).toContain("not the sender's own words"); // quoted-history clause
+  });
+
+  it("relabels the user's own inbound-captured messages to You and skips them as reply target", () => {
+    const withOwnReply: ThreadMessage[] = [
+      { direction: "inbound", from: "Paul Madelenat <paul.madelenat@pilae.ch>", body: "Question", at: "2026-07-01T10:00:00Z" },
+      { direction: "inbound", from: "martin.paviot@pilae.ch", body: "Ma reponse synchronisee via IMAP", at: "2026-07-01T11:00:00Z" },
+    ];
+    const p = buildReplyPrompt(withOwnReply, { selfAddresses: ["MARTIN.PAVIOT@pilae.ch"] }); // case-insensitive
+    expect(p).toContain("[1] You: Ma reponse synchronisee via IMAP");
+    // The LATEST message is the user's own — the target must be the latest NON-self sender.
+    expect(p).toContain("The reply goes TO Paul Madelenat <paul.madelenat@pilae.ch>");
+  });
+
+  it("still names the target from direction labels alone when selfAddresses is absent", () => {
+    const p = buildReplyPrompt(msgs);
+    expect(p).toContain("The reply goes TO anna@acme.ch");
+    expect(p).not.toContain("writing from");
+    // No "<a@x> <a@x>" duplication when the header has no display name.
+    expect(p).not.toContain("anna@acme.ch <anna@acme.ch>");
+  });
+
+  it("omits the roles block when the thread has no identifiable counterparty", () => {
+    const own: ThreadMessage[] = [{ direction: "outbound", from: "me@pilae.ch", body: "ping", at: null }];
+    const p = buildReplyPrompt(own);
+    expect(p).not.toContain("Roles — never confuse them");
+  });
+
+  it("handles a LinkedIn-style sender without an email address", () => {
+    const li: ThreadMessage[] = [{ direction: "inbound", from: "Jane Doe", body: "hi", at: null }];
+    const p = buildReplyPrompt(li, { selfAddresses: ["me@pilae.ch"] });
+    expect(p).toContain("The reply goes TO Jane Doe.");
+    expect(p).not.toContain("<jane doe>");
+  });
+});
+
 describe("compose-reply nudge mode (B7 B3.1)", () => {
   it("nudge mode swaps to the gentle follow-up task with never-pushy / no-new-facts constraints", () => {
     const p = buildReplyPrompt(msgs, { mode: "nudge" });
