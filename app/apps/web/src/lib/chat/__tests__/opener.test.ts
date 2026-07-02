@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOpener,
+  parseFromHeader,
   parseSilentDays,
   OPENER_ALL_CLEAR,
   OPENER_MAX_CHIPS,
@@ -66,7 +67,35 @@ describe("parseSilentDays", () => {
   });
 });
 
+describe("parseFromHeader", () => {
+  it("extracts quoted display name and bare address from an RFC header", () => {
+    expect(parseFromHeader('"Paul Madelénat" <paul.madelenat@pilae.ch>')).toEqual({
+      name: "Paul Madelénat",
+      address: "paul.madelenat@pilae.ch",
+    });
+  });
+  it("handles unquoted display names", () => {
+    expect(parseFromHeader("Paul M <p@x.ch>")).toEqual({ name: "Paul M", address: "p@x.ch" });
+  });
+  it("angle-only header yields a null name", () => {
+    expect(parseFromHeader("<p@x.ch>")).toEqual({ name: null, address: "p@x.ch" });
+  });
+  it("bare address passes through", () => {
+    expect(parseFromHeader("marie@pilae.ch")).toEqual({ name: null, address: "marie@pilae.ch" });
+  });
+});
+
 describe("buildOpener text", () => {
+  it("raw RFC From headers surface as the display name (live-verified defect)", () => {
+    const raw = '"Paul Madelénat" <paul.madelenat@pilae.ch>';
+    const out = buildOpener(
+      base({ todos: [reply({ title: raw, toAddress: raw, subtitle: "Re: YC" })] }),
+    );
+    expect(out.text).toBe("A reply from Paul Madelénat is waiting on you.");
+    expect(out.chips[0].label).toBe('Reply to Paul Madelénat: "Re: YC"');
+    expect(out.chips[0].send).toBe('Draft a reply to paul.madelenat@pilae.ch about "Re: YC"');
+  });
+
   it("full house: replies, drafts, deal in priority order, capped at 3 sentences", () => {
     const out = buildOpener(
       base({

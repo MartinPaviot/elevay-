@@ -76,6 +76,23 @@ export function parseSilentDays(why: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * Inbox rows carry the raw RFC From header ('"Paul M" <p@x.ch>').
+ * Copy wants the display name; the send text wants the bare address
+ * (live-verified 2026-07-02: the raw header read terribly in the dock).
+ */
+export function parseFromHeader(raw: string): { name: string | null; address: string } {
+  const angle = /<([^<>\s]+@[^<>\s]+)>/.exec(raw);
+  if (!angle) return { name: null, address: raw.trim() };
+  const name =
+    raw
+      .slice(0, angle.index)
+      .trim()
+      .replace(/^"(.*)"$/, "$1")
+      .trim() || null;
+  return { name, address: angle[1] };
+}
+
 /** Always-available fallbacks; each routes to a tool every tenant can run. */
 const RECIPE_CHIPS: OpenerChip[] = [
   {
@@ -114,12 +131,15 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
     counts.replies > 0 || counts.drafts > 0 || counts.deals > 0 || counts.meetings > 0;
 
   // ── Text: priority order replies > drafts > top deal > meeting, max 3 ──
+  const topFrom =
+    replies.length > 0 ? parseFromHeader(replies[0].toAddress || replies[0].title) : null;
+  const topFromDisplay = topFrom ? topFrom.name ?? topFrom.address : "";
   const sentences: string[] = [];
   if (replies.length === 1) {
-    sentences.push(`A reply from ${replies[0].title} is waiting on you.`);
+    sentences.push(`A reply from ${topFromDisplay} is waiting on you.`);
   } else if (replies.length > 1) {
     sentences.push(
-      `${replies.length} replies are waiting on you, the latest from ${replies[0].title}.`,
+      `${replies.length} replies are waiting on you, the latest from ${topFromDisplay}.`,
     );
   }
   if (drafts === 1) {
@@ -148,19 +168,17 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
 
   // ── Chips: same priority, cap 4; recipes fill to 3; resume goes last ──
   const chips: OpenerChip[] = [];
-  if (replies.length > 0) {
+  if (replies.length > 0 && topFrom) {
     const top = replies[0];
-    const address = top.toAddress || top.title;
     const subject = top.subtitle ? truncate(top.subtitle, 40) : null;
+    const chipName = topFrom.name ?? shortAddress(topFrom.address);
     chips.push({
       id: "reply:top",
       kind: "reply",
-      label: subject
-        ? `Reply to ${shortAddress(address)}: "${subject}"`
-        : `Reply to ${shortAddress(address)}`,
+      label: subject ? `Reply to ${chipName}: "${subject}"` : `Reply to ${chipName}`,
       send: top.subtitle
-        ? `Draft a reply to ${address} about "${top.subtitle}"`
-        : `Draft a reply to ${address}`,
+        ? `Draft a reply to ${topFrom.address} about "${top.subtitle}"`
+        : `Draft a reply to ${topFrom.address}`,
     });
   }
   if (drafts > 0) {
