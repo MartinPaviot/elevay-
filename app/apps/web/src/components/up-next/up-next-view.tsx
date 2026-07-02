@@ -61,6 +61,15 @@ const ACT_GRADIENT: Record<ActualiteKind, string> = {
   campaign: "linear-gradient(135deg, #F59E0B 0%, #FF7A3D 100%)",
 };
 const TODO_ICON: Record<TodoKind, typeof Mail> = { reply: Mail, deal_risk: AlertTriangle, meeting: Calendar, task: CheckSquare };
+// "Needs you" chips reuse the ACT_GRADIENT hue families so both columns read as
+// one system: reply = the email blues, deal_risk = the red family (deal_lost),
+// meeting = the teal→blue booking run, task = the neutral slate.
+const TODO_GRADIENT: Record<TodoKind, string> = {
+  reply: "linear-gradient(135deg, #2C6BED 0%, #17C3B2 100%)",
+  deal_risk: "linear-gradient(135deg, #EF4444 0%, #E8653A 100%)",
+  meeting: "linear-gradient(135deg, #17C3B2 0%, #2C6BED 100%)",
+  task: "linear-gradient(135deg, #94A3B8 0%, #64748B 100%)",
+};
 const TODO_TINT: Record<string, string> = {
   reply: "var(--color-accent)", risk: "var(--color-error)", meeting: "var(--color-badge-1)", task: "var(--color-text-tertiary)",
 };
@@ -240,14 +249,15 @@ export function UpNextView({ apiRef }: { apiRef?: Ref<UpNextApi | null> } = {}) 
               {todos.map((t) => {
                 const Icon = TODO_ICON[t.kind] ?? CheckSquare;
                 const tint = TODO_TINT[t.tone] ?? "var(--color-text-tertiary)";
+                const grad = TODO_GRADIENT[t.kind] ?? "var(--gradient-brand)";
                 return (
                   <div
                     key={t.id}
                     className="flex items-center gap-2.5 rounded-xl p-3"
                     style={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border-default)", borderLeft: `3px solid ${tint}` }}
                   >
-                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `color-mix(in srgb, ${tint} 12%, transparent)` }}>
-                      <Icon size={13} style={{ color: tint }} />
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: grad, boxShadow: "var(--shadow-button)" }}>
+                      <Icon size={13} style={{ color: "#FFFFFF" }} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
