@@ -121,3 +121,34 @@ describe("decideFabricationGate — semantic layer", () => {
     expect(v.ungrounded).not.toContain("is a CTO");
   });
 });
+
+describe("decideFabricationGate — extraGroundTruth (T6b: caller-verified evidence)", () => {
+  it("whitelists tokens the caller verified itself (copy-engine evidence, asset text)", () => {
+    const v = decideFabricationGate({
+      body: "Congrats on the $4,200,000 raise. Trusted by 500 clients, we cut onboarding time.",
+      prospect,
+      extraGroundTruth: ["Series B · $4,200,000", "Trusted by 500 clients to cut onboarding time."],
+    });
+    expect(v.blocked).toBe(false);
+    expect(v.ungrounded).toEqual([]);
+  });
+
+  it("never flips briefHasFacts — the deterministic layer stays armed for NON-whitelisted specifics", () => {
+    const v = decideFabricationGate({
+      body: "Congrats on the $4,200,000 raise — your 81 nations rollout on Keycloak is impressive.",
+      prospect,
+      extraGroundTruth: ["Series B · $4,200,000"],
+    });
+    expect(v.briefHasFacts).toBe(false);
+    expect(v.blocked).toBe(true);
+    expect(v.ungrounded).toEqual(expect.arrayContaining(["81", "keycloak"]));
+    expect(v.ungrounded).not.toContain("4,200,000");
+  });
+
+  it("absent extraGroundTruth = byte-identical behavior (regression)", () => {
+    const withOut = decideFabricationGate({ body: "You run 3,848 projects on Supabase.", prospect });
+    const withEmpty = decideFabricationGate({ body: "You run 3,848 projects on Supabase.", prospect, extraGroundTruth: [] });
+    expect(withEmpty).toEqual(withOut);
+    expect(withOut.blocked).toBe(true);
+  });
+});

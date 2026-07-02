@@ -236,4 +236,52 @@ describe("generateCopyMessage — G2 factual gate (deterministic layer)", () => 
     expect(res.message).toBeUndefined();
     expect(inserted).toBe(false);
   });
+
+  // T6b review fix — the engine grounds on ctx.funding/technologies, which live
+  // OUTSIDE researchBrief; without extraGroundTruth the gate false-blocked the
+  // engine's own verified evidence.
+  it("a body grounded ONLY by engine evidence (outside the brief) PASSES", async () => {
+    const ctx = highCtx() as Record<string, unknown>;
+    // Provider-verified amount with a 3+ digit figure the empty brief knows
+    // nothing about — only the evidence whitelist can ground it.
+    (ctx as { funding: unknown }).funding = { stage: "Series B", amount: null, amountPrinted: "$4,200,000" };
+    ctxState.ctx = ctx;
+    const res = await generateCopyMessage("c1", "t1", {
+      database: stubDb({ assets: assetsRow }),
+      generate: async () => JSON.stringify({ line: "Congrats on the $4,200,000 raise — relevant to onboarding speed.", citedIds: ["funding"] }),
+    });
+    expect(res.message?.personalization_level).toBe("high");
+    expect(gateState.calls[0]).toMatchObject({ verdict: "pass" });
+  });
+
+  it("tenant ASSET text baked into the body is whitelisted (positioning with a count)", async () => {
+    ctxState.ctx = highCtx();
+    const res = await generateCopyMessage("c1", "t1", {
+      database: stubDb({
+        assets: [{ id: "a1", tenantId: "t1", campaignId: null, lang: "en", kind: "positioning", content: "Trusted by 500 clients to cut onboarding time.", version: 1, isCurrent: true, createdAt: new Date() }],
+      }),
+      generate: async () => JSON.stringify({ line: "Congrats on the Series A, relevant to onboarding speed.", citedIds: ["funding"] }),
+    });
+    // assembleBody bakes "500 clients" into the body; the gate must not flag
+    // the tenant's own claim about itself.
+    expect(res.message?.personalization_level).toBe("high");
+    expect(gateState.calls[0]).toMatchObject({ verdict: "pass" });
+  });
+
+  it("a fabricated SUBJECT with a clean body blocks (concatenation gated)", async () => {
+    ctxState.ctx = highCtx();
+    const res = await generateCopyMessage("c1", "t1", {
+      database: stubDb({ assets: assetsRow }),
+      generate: async () =>
+        JSON.stringify({
+          line: "Congrats on the Series A, relevant to onboarding speed.",
+          citedIds: ["funding"],
+          subject: "Your 8,900 stores deserve faster onboarding",
+        }),
+    });
+    expect(res.message).toBeUndefined();
+    expect(res.reason).toBe("g2_fabrication_blocked");
+    const reasons = gateState.calls[0].reasons as { ungrounded: string[] };
+    expect(reasons.ungrounded).toEqual(expect.arrayContaining(["8,900"]));
+  });
 });

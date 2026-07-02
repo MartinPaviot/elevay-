@@ -12,7 +12,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { db as defaultDb } from "@/db";
 import { copyShadowSample } from "@/db/schema";
-import { buildProspectContext, type ResearchBriefContext } from "@/lib/context/prospect-context";
+import { buildProspectContext } from "@/lib/context/prospect-context";
 import { copyContextForTenant } from "@/lib/copy/assets/db-store";
 import { decideFabricationGate, type FabricationInput } from "@/lib/evals/fabrication-gate";
 import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
@@ -147,30 +147,44 @@ export async function generateCopyMessage(
   // per draft) stays on the sequence-generator path. Prospect/brief assembly is
   // fail-soft (a throw = no brief = the strict empty-brief posture); the verdict
   // itself is fail-closed: a blocked body never leaves this function.
-  let prospect: FabricationInput["prospect"] = {};
-  let gateBrief: ResearchBriefContext | undefined;
-  try {
-    prospect = {
-      name: ctx.contact?.fullName,
-      title: ctx.contact?.title,
-      company: ctx.company?.name,
-      domain: ctx.company?.domain,
-    };
-    gateBrief = ctx.researchBrief;
-  } catch {
-    /* strictest posture: the gate below runs with no brief */
-  }
-  const fab = decideFabricationGate({ body: message.body, brief: gateBrief, prospect });
-  // Verdict log — best-effort by contract (recordGateDecision never throws).
-  await recordGateDecision({
-    tenantId,
-    subjectType: "step",
-    subjectId: contactId,
-    gate: 2,
-    rubricVersion: GATE_RUBRICS.g2Deterministic,
-    verdict: fab.blocked ? "blocked" : "pass",
-    reasons: { ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts, path: "copy_engine" },
+  // ctx is non-null here (checked above); no brief = the strict empty-brief
+  // posture on the gate call below.
+  const prospect: FabricationInput["prospect"] = {
+    name: ctx.contact?.fullName,
+    title: ctx.contact?.title,
+    company: ctx.company?.name,
+    domain: ctx.company?.domain,
+  };
+  // The engine grounds on ctx.funding/technologies (evidence OUTSIDE the
+  // researchBrief) and bakes tenant asset text into the body (assembleBody:
+  // positioning+offer+cta). Both are CALLER-verified ground truth — whitelist
+  // them so the gate flags fabrication, not the engine's own grounding. The
+  // subject is gated WITH the body: it ships verbatim at every cutover site.
+  const fab = decideFabricationGate({
+    body: [message.subject, message.body].filter(Boolean).join("\n"),
+    brief: ctx.researchBrief,
+    prospect,
+    extraGroundTruth: [
+      ...evidence.map((e) => e.fact),
+      copyCtx.assets.positioning ?? "",
+      copyCtx.assets.offer ?? "",
+      copyCtx.assets.cta ?? "",
+    ].filter(Boolean),
   });
+  // Verdict log — best-effort by contract (recordGateDecision never throws);
+  // honors the module's injection seam like persistShadowSample.
+  await recordGateDecision(
+    {
+      tenantId,
+      subjectType: "step",
+      subjectId: contactId,
+      gate: 2,
+      rubricVersion: GATE_RUBRICS.g2Deterministic,
+      verdict: fab.blocked ? "blocked" : "pass",
+      reasons: { ungrounded: fab.ungrounded.slice(0, 8), briefHasFacts: fab.briefHasFacts, path: "copy_engine" },
+    },
+    database,
+  );
   if (fab.blocked) {
     // Absent message = the fallback every caller already handles: the cutover
     // sites require `out.message` + personalization_level "high" and keep the
