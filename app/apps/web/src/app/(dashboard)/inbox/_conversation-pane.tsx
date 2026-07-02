@@ -45,7 +45,7 @@ import { type Snippet } from "@/lib/inbox/snippets";
 import { stripSignature } from "@/lib/inbox/mailbox-signature";
 import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
-import { senderNameOf, senderEmailOf } from "@/lib/inbox/sender-display";
+import { senderNameOf, senderEmailOf, recipientPartsOf } from "@/lib/inbox/sender-display";
 import { replySubjectFor } from "@/lib/inbox/reply-subject";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { IntelligencePanel } from "./_intelligence-panel";
@@ -496,6 +496,11 @@ export function ConversationPane({
       setDetail((d) => (d ? { ...d, preparedDraft: null } : d));
     }
     toast(t("inbox.toastReplySent"), "success");
+    // Refetch the open thread so the just-sent reply appears in it immediately.
+    // The detail effect keys on [conversationKey, detailRetry] and send bumped
+    // neither — the OPEN pane never showed the sent message until re-opened
+    // (round 2; the list self-heals via its 15s poll, the pane didn't).
+    setDetailRetry((n) => n + 1);
   }
 
   // CLE-14 §lift: returns {ok,error?} so the chat action can report the outcome
@@ -659,7 +664,16 @@ export function ConversationPane({
             {/* Subject leads (Upstream hierarchy): the thread title is the
                 prominent element; the sender drops to a secondary line below. */}
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[17px] font-semibold leading-tight" style={{ color: "var(--color-text-primary)" }} dir={dirOf(decodeDisplay(conv.subject))}>
+              {/* truncate (overflow:hidden) also collapses the flex item's
+                  min-content width, so an unbroken token (base64 id, long URL)
+                  can no longer push the span past the pane bounds (round 2).
+                  The full subject stays reachable via the title tooltip. */}
+              <span
+                className="max-w-full truncate text-[17px] font-semibold leading-tight"
+                style={{ color: "var(--color-text-primary)" }}
+                dir={dirOf(decodeDisplay(conv.subject))}
+                title={decodeDisplay(conv.subject)}
+              >
                 {decodeDisplay(conv.subject)}
               </span>
               {conv.reason && (
@@ -1068,6 +1082,20 @@ export function ConversationPane({
                 {m.at ? timeAgo(m.at) : ""}
               </span>
             </div>
+            {/* Recipients — m.to was captured but never rendered anywhere, so
+                multi-recipient threads hid who each message actually went to
+                (round 2). recipientPartsOf keeps quoted display-names with
+                commas intact; the title carries the full raw list. */}
+            {m.to && (() => {
+              const parts = recipientPartsOf(m.to);
+              if (parts.length === 0) return null;
+              return (
+                <div className="mt-0.5 truncate text-[11px]" style={{ color: "var(--color-text-tertiary)" }} title={m.to}>
+                  {t("inbox.toRecipient", { name: senderNameOf(parts[0]) })}
+                  {parts.length > 1 ? ` +${parts.length - 1}` : ""}
+                </div>
+              );
+            })()}
             {m.subject && m.subject !== conv.subject && (
               <div className="mt-0.5 text-[11px]" style={{ color: "var(--color-text-tertiary)" }} dir={dirOf(decodeDisplay(m.subject))}>{decodeDisplay(m.subject)}</div>
             )}

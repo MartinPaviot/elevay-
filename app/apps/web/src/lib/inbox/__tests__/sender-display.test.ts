@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { senderNameOf, senderEmailOf } from "../sender-display";
+import { senderNameOf, senderEmailOf, recipientPartsOf } from "../sender-display";
 
 // Regression for the live audit 2026-07-02: raw RFC headers rendered verbatim
 // across the inbox (list rows, pane header ×2, message lines, booking payload).
@@ -26,5 +26,16 @@ describe("sender-display", () => {
   it("extracts + lowercases the address", () => {
     expect(senderEmailOf("Marc Delorme <Marc.Delorme@AtelierFrancais.test>")).toBe("marc.delorme@atelierfrancais.test");
     expect(senderEmailOf("noreply@saasweekly.test")).toBe("noreply@saasweekly.test");
+  });
+
+  it("splits multi-recipient headers, keeping quoted display-names with commas intact", () => {
+    expect(recipientPartsOf('a@x.com, "Doe, Jane" <j@y.com>, Bob <b@z.com>')).toEqual([
+      "a@x.com",
+      '"Doe, Jane" <j@y.com>',
+      "Bob <b@z.com>",
+    ]);
+    expect(recipientPartsOf("solo@x.com")).toEqual(["solo@x.com"]);
+    expect(recipientPartsOf("")).toEqual([]);
+    expect(recipientPartsOf(null)).toEqual([]);
   });
 });

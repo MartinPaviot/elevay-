@@ -545,7 +545,14 @@ export function buildConversations(input: {
       ),
       reason,
       reasonSource,
-      slaHoursOverdue,
+      // A noise thread (newsletter, automated sender) is never "awaiting your
+      // reply" — surfacing an SLA on it is a false urgency signal, glaring now
+      // that the row chip is always visible (round 2: real-data newsletters
+      // showed "13d overdue"). Machine-sent mail is excluded outright, and so
+      // is a thread with NO repliable counterparty (empty fromAddress — e.g.
+      // legacy captures that lost their From header): you cannot be late
+      // replying to a sender you cannot reply to.
+      slaHoursOverdue: noise || inboundIsAutomated || !fromAddress ? null : slaHoursOverdue,
       importanceScore: noiseScore,
       importanceTier: noiseTier,
       importanceFactors: importance.factors.map((f) => f.label),

@@ -10,9 +10,11 @@
  *  • compact — one dense single line [sender · subject · snippet] with a soft
  *    right-edge fade and the time on the right. Height var(--inbox-row-height-compact).
  *
- * Shared anatomy: checkbox(hover) + star + unread dot + avatar lead the row; the
- * SLA/follow-up chip, labels and a per-mailbox dot sit on the right. The reason
- * lives on the row tooltip. Dense like an email client, not a stacked CRM card.
+ * Shared anatomy: checkbox (faint at rest, full on hover/selection) + star
+ * (faint) + unread dot + avatar lead the row; the SLA chip (always visible —
+ * the row's one urgency signal), follow-up hint (hover), labels and a
+ * per-mailbox dot sit on the right. The reason lives on the row tooltip.
+ * Dense like an email client, not a stacked CRM card.
  */
 
 import { memo } from "react";
@@ -65,11 +67,14 @@ export const InboxRow = memo(function InboxRow({
   const reasonTitle = c.reason ? `${c.reason}${reasonTooltip(c.reasonSource) ? ` — ${reasonTooltip(c.reasonSource)}` : ""}` : undefined;
   const compact = density === "compact";
 
-  // SLA / follow-up chip — shared by both densities (hover-revealed, calm).
+  // SLA / follow-up chip. The SLA chip is ALWAYS visible — it is the row's one
+  // urgency signal, and hover-revealed meant touch/keyboard users never saw an
+  // overdue thread (audit 2026-07-02 round 2). The softer follow-up hint keeps
+  // the calm hover-reveal.
   const chip =
     c.slaHoursOverdue != null ? (
       <span
-        className="flex items-center gap-1 text-[12px] opacity-0 transition-opacity group-hover:opacity-100"
+        className="flex items-center gap-1 text-[12px]"
         style={{ color: "var(--color-warning)" }}
         title="Awaiting your reply, past the response SLA"
       >
@@ -145,7 +150,7 @@ export const InboxRow = memo(function InboxRow({
             onToggleSelect(c.key, e.shiftKey);
           }}
           className={`flex h-4 w-4 shrink-0 items-center justify-center transition-opacity ${
-            multiSelected || hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            multiSelected || hasSelection ? "opacity-100" : "opacity-40 group-hover:opacity-100"
           }`}
           style={{ color: multiSelected ? "var(--color-accent)" : "var(--color-text-muted)" }}
           title="Select (x) · Shift-click for a range"
@@ -163,7 +168,7 @@ export const InboxRow = memo(function InboxRow({
             e.stopPropagation();
             onToggleStar(c.key, !c.starred);
           }}
-          className={`shrink-0 cursor-pointer transition-opacity ${c.starred ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          className={`shrink-0 cursor-pointer transition-opacity ${c.starred ? "opacity-100" : "opacity-30 group-hover:opacity-100"}`}
           style={{ color: c.starred ? "var(--color-warning)" : "var(--color-text-muted)" }}
           title={c.starred ? "Unstar" : "Star"}
           aria-label={c.starred ? "Unstar conversation" : "Star conversation"}

@@ -31,3 +31,17 @@ export function senderNameOf(header: string | null | undefined): string {
   const name = m ? m[1].trim().replace(/^"|"$/g, "").trim() : "";
   return name || senderEmailOf(header);
 }
+
+/**
+ * Split a multi-recipient header ('a@x.com, "Doe, Jane" <j@y.com>') into its
+ * individual mailbox parts, comma-splitting OUTSIDE quoted display-names so
+ * '"Doe, Jane"' stays one recipient. Client-safe twin of user-scope.ts's
+ * headerAddresses (which lives in a db-importing module the pane can't pull).
+ */
+export function recipientPartsOf(header: string | null | undefined): string[] {
+  if (!header) return [];
+  return header
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
