@@ -144,7 +144,7 @@ Tiers en EUR / mois / identité (sélecteur de devise € / $ / £ ; toggles de 
 - Remise 50 % pour les « social companies » (entreprises à impact social/environnemental), via le support (007-pricing.html FAQ).
 - Leads activables : « As many as you want. La Growth Machine does not limit you in any way » (borné de fait par les limites journalières des comptes) (007-pricing.html FAQ).
 
-## 5. Approche LinkedIn : automatisation directe + discours conformité
+## 5. Automatisation directe sur LinkedIn + discours conformité
 
 - **Automatisation directe (full-auto), cloud-based** — pas de mode semi-auto documenté. « LGM runs entirely in the cloud, invisible to LinkedIn's detection systems » (001-home.png).
 - Infrastructure de furtivité revendiquée : **« Dedicated 5G mobile proxies — Every identity gets its own mobile connection, near their real location. Making it indistinguishable from a human browsing on their phone. »** (001-home.png) ; page safety : « 4G Proxies — real mobile connections […] making it impossible for LinkedIn to detect automation », « One IP, one user: guaranteed exclusivity » (006-linkedin-safety.png). (Le site dit « 5G » sur la home et « 4G » sur la page safety.)
