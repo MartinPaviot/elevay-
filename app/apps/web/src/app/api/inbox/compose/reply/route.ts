@@ -65,7 +65,9 @@ export async function POST(req: Request) {
       instructions,
       context,
       mode,
-      threadSubject: conversation.subject,
+      // rawSubject, not subject: `subject` prefers the AI summary for display —
+      // a reply under "Re: <summary>" would break the recipient's threading.
+      threadSubject: conversation.rawSubject,
     });
     return Response.json(result);
   } catch (error) {

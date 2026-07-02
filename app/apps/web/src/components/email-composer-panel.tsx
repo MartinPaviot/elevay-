@@ -295,13 +295,19 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
 
   // Restore a previously auto-saved draft for this context (run once, client
   // only — avoids an SSR/hydration mismatch by restoring AFTER the first paint).
+  // A parent-supplied BODY (a fresh AI generation, a prepared agent draft) wins
+  // over the cache: restoring here used to silently replace a draft the user
+  // just generated with the stale cached one (audit 2026-07-02). The cache only
+  // fills fields the incoming draft left empty.
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
+    if ((draft.body ?? "").trim()) return;
     const saved = loadDraftFromStorage(storageKey);
     if (!saved) return;
     if (saved.body != null) setEditBody(saved.body);
-    if (saved.subject != null) setEditSubject(saved.subject);
+    // The incoming subject (the thread's Re: subject) beats a cached AI one.
+    if (saved.subject != null && !(draft.subject ?? "").trim()) setEditSubject(saved.subject);
     if (saved.to?.length) setToEmails(saved.to);
     if (saved.cc?.length) {
       setCcEmails(saved.cc);
@@ -312,6 +318,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
       setShowBcc(true);
     }
     if (saved.savedAt) setDraftSavedAt(saved.savedAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
   // Debounced auto-save: persist the in-progress draft ~0.8s after the last

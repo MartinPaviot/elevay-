@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { pickKeyMessages } from "./thread-summary-prep";
+import { replySubjectFor } from "./reply-subject";
 import type { ThreadMessage } from "./summarize-thread";
 
 export interface ReplyDraft {
@@ -44,19 +45,16 @@ export interface ComposeReplyOpts {
   threadSubject?: string;
 }
 
-/** "Scaling outbound" -> "Re: Scaling outbound"; keeps an existing Re:/RE:/Fwd: prefix as-is. */
-export function replySubjectFor(threadSubject: string): string {
-  const s = threadSubject.trim();
-  if (!s) return "";
-  return /^(re|fwd|fw|tr)\s*:/i.test(s) ? s : `Re: ${s}`;
-}
+// Canonical implementation lives in reply-subject.ts (pure, client-safe);
+// re-exported here so the draft pipeline and its tests keep one import.
+export { replySubjectFor } from "./reply-subject";
 
 /** The task sentence per mode — the only part of the prompt that varies. */
 function taskSentence(mode: "reply" | "nudge"): string {
   if (mode === "nudge") {
     return `Write a brief, friendly follow-up nudge from the salesperson ("You") because OUR last message in this thread went unanswered. Gently re-surface our open question or proposed next step and reference what we already said. Stay warm and low-pressure — never pushy, never guilt-trip, add no new facts, commitments, deadlines, or urgency, and never imply the email has already been sent. Keep it short and natural.`;
   }
-  return `Write a complete reply to the LATEST message in this email thread, as the salesperson ("You"). Answer their actual question and move the deal forward with one clear next step. If the context below lists open objections, address each one directly and honestly — do not ignore it, defer vaguely, or paper over it with warmth; give a grounded response or propose a concrete next step to resolve it. CRITICAL — never invent specifics: ground every claim in the thread or the provided context. This covers figures (a price, quote, discount, percentage, seat cost, date, or metric) AND facts about your own product or company: pricing model or structure, certifications and compliance posture (SOC 2, ISO, GDPR, DPA), data hosting or residency, integrations, product capabilities, and customer references. If it is not stated in the thread or the provided context, do not assert it — say you'll follow up with the exact answer, or propose a quick call to go over it. Never propose a specific meeting date or time slot unless it appears in the provided context (you cannot see the calendar); ask for their availability or offer to send times instead. Write in the language of THEIR latest message. In French, mirror their register exactly: if they write "vous", use "vous" throughout — never mix "tu" and "vous". Never imply the email has already been sent. Keep it concise and natural.`;
+  return `Write a complete reply to the LATEST message in this email thread, as the salesperson ("You"). Answer their actual question and move the deal forward with one clear next step. If the context below lists open objections, address each one directly and honestly — do not ignore it, defer vaguely, or paper over it with warmth; give a grounded response or propose a concrete next step to resolve it. CRITICAL — never invent specifics: ground every claim in the thread or the provided context. This covers figures (a price, quote, discount, percentage, seat cost, date, or metric) AND facts about your own product or company: pricing model or structure, certifications and compliance posture (SOC 2, ISO, GDPR, DPA), data hosting or residency, integrations, product capabilities, and customer references. If it is not stated in the thread or the provided context, do not assert it — say you'll follow up with the exact answer, or propose a quick call to go over it. Never propose a specific meeting date or time slot unless it appears in the provided context (you cannot see the calendar); ask for their availability or offer to send times instead. Write in the language of THEIR latest message. In French, mirror their register exactly: if they write "vous", use "vous" throughout — never mix "tu" and "vous". Never imply the email has already been sent. Write plain text — no markdown, no asterisks, no bullets-by-symbol. Keep it concise and natural.`;
 }
 
 export function buildReplyPrompt(messages: ThreadMessage[], opts: ComposeReplyOpts = {}): string {
