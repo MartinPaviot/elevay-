@@ -2,7 +2,10 @@ import { inngest } from "./client";
 import { db } from "@/db";
 import { releaseEnrollmentById } from "@/lib/anti-collision/enroll-guard";
 import { isSequenceEngineV2Enabled, tickEnrollmentV2 } from "@/lib/sequence/db-conductor";
-import { companies, contacts, sequenceSteps, sequenceEnrollments, activities, outboundEmails, emailOptouts } from "@/db/schema";
+import { companies, contacts, sequenceSteps, sequenceEnrollments, activities, outboundEmails, emailOptouts, replyReviewQueue } from "@/db/schema";
+// T10 — the live classifier shares the spec-26 confidence floor (one source of truth).
+import { DEFAULT_MIN_CONFIDENCE } from "@/lib/reply/classify";
+import { REPLY_CLASSIFICATIONS } from "@/lib/reply/classifications";
 import { eq, and, sql } from "drizzle-orm";
 import { addBusinessDays } from "@/lib/util/business-days";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
@@ -1005,20 +1008,18 @@ export const processReply = inngest.createFunction(
         const { object } = await tracedGenerateObject({
           model: model!,
           schema: z.object({
-            classification: z.enum([
-              "interested",
-              "meeting_request",
-              "objection_price",
-              "objection_timing",
-              "objection_competitor",
-              "objection_authority",
-              "ooo",
-              "unsubscribe",
-            ]),
+            // M8-R1 (T10) — one shared vocabulary (lib/reply/classifications);
+            // "objection" is FIRST-LEVEL: a pushback fitting no sub-type.
+            classification: z.enum(REPLY_CLASSIFICATIONS),
             reason: z.string(),
             objectionDetail: z.string().optional().describe("Specific concern if objection"),
             nextAction: z.string().describe("Recommended next action"),
             urgency: z.enum(["high", "medium", "low"]),
+            confidence: z
+              .number()
+              .min(0)
+              .max(1)
+              .describe("How certain you are of the classification (0-1)"),
           }),
           prompt: `Classify this email reply with precision:
 
@@ -1027,6 +1028,7 @@ export const processReply = inngest.createFunction(
 Classifications:
 - interested: wants to learn more, asks questions, open to conversation
 - meeting_request: explicitly asks for a call, demo, or meeting
+- objection: a clear pushback or concern that fits NONE of the specific objection types below
 - objection_price: too expensive, budget concerns, ROI questions
 - objection_timing: not now, maybe later, bad quarter, busy period
 - objection_competitor: already using something else, comparing tools
@@ -1037,12 +1039,45 @@ Classifications:
 Also determine:
 - objectionDetail: the specific concern or question (if applicable)
 - nextAction: what should happen next (e.g., "send case study", "propose meeting times", "follow up in Q2")
-- urgency: high (ready to act), medium (interested but not urgent), low (lukewarm or future)`,
-          _trace: { agentId: "process-reply", tenantId: "default" },
+- urgency: high (ready to act), medium (interested but not urgent), low (lukewarm or future)
+- confidence: 0-1. Be honest: ambiguous, short, or mixed-signal replies deserve LOW confidence.`,
+          _trace: { agentId: "process-reply", tenantId: tenantId ?? "default" },
         });
         return object as any;
       });
       classification = result.classification;
+
+      // M8-R2 (T10) — a classification below the confidence floor lands in
+      // the review queue. OVERLAY, not a gate: routing continues below (a
+      // hot lead must never wait on a human review); the founder's 1-click
+      // correction re-routes the reply and persists the label (M11-R3).
+      // Same floor as the spec-26 classifier (single source of truth).
+      const confidence: number =
+        typeof result.confidence === "number" ? result.confidence : 0;
+      if (outboundEmailId && confidence < DEFAULT_MIN_CONFIDENCE) {
+        await step.run("queue-review", async () => {
+          try {
+            await db
+              .insert(replyReviewQueue)
+              .values({
+                tenantId: tenantId ?? "default",
+                outboundEmailId,
+                enrollmentId,
+                contactId: (event.data as { contactId?: string }).contactId ?? null,
+                classification: {
+                  classification: result.classification,
+                  confidence,
+                  reason: result.reason,
+                },
+              })
+              .onConflictDoNothing();
+          } catch (err) {
+            // The queue is an overlay — losing an entry must never break
+            // the reply pipeline.
+            console.warn("process-reply: review-queue insert failed (non-fatal)", err);
+          }
+        });
+      }
 
       // Persist the classification on the replied outbound email — the
       // inbox triage lanes and outcome-detector both read this column

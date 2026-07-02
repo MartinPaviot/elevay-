@@ -282,9 +282,12 @@ ADDITIONAL RULES:
       return { enrollmentId, result: effectiveAutoSend ? "auto_queued" : "draft_created", classification, urgency };
     }
 
-    if (classification.startsWith("objection_")) {
+    if (classification === "objection" || classification.startsWith("objection_")) {
       // ── Objection: use knowledge base to craft response ──
-      const objectionType = classification.replace("objection_", "");
+      // M8-R1 (T10) — bare "objection" is a first-level intent (a pushback
+      // fitting no specific sub-type); same draft-only path, general type.
+      const objectionType =
+        classification === "objection" ? "general" : classification.replace("objection_", "");
 
       // Find relevant knowledge
       const relevantKnowledge = ctx.knowledge

@@ -7,10 +7,13 @@
 import type { ReplyEvent } from "./ingest";
 
 export type Sentiment = "positive" | "neutral" | "negative";
-export type Intent = "interested" | "not_now" | "referral" | "opt_out" | "ooo";
+// M8-R1 (T10) — "objection" is a FIRST-LEVEL intent: a clear pushback is the
+// highest-value reply to route precisely (it feeds the objection knowledge
+// path), not a flavor of "not_now".
+export type Intent = "interested" | "objection" | "not_now" | "referral" | "opt_out" | "ooo";
 
 export const SENTIMENTS: ReadonlySet<string> = new Set<Sentiment>(["positive", "neutral", "negative"]);
-export const INTENTS: ReadonlySet<string> = new Set<Intent>(["interested", "not_now", "referral", "opt_out", "ooo"]);
+export const INTENTS: ReadonlySet<string> = new Set<Intent>(["interested", "objection", "not_now", "referral", "opt_out", "ooo"]);
 
 export interface ReplyClassification {
   sentiment: Sentiment;
@@ -34,7 +37,9 @@ export interface ClassifyDeps {
   minConfidence?: number;
 }
 
-const DEFAULT_MIN_CONFIDENCE = 0.6;
+/** Exported (T10): the LIVE classifier (inngest processReply) shares this
+ *  floor so "below confidence -> review queue" has ONE source of truth. */
+export const DEFAULT_MIN_CONFIDENCE = 0.6;
 
 const REVIEW: ReplyClassification = { sentiment: "neutral", intent: "not_now", confidence: 0, needsReview: true };
 
