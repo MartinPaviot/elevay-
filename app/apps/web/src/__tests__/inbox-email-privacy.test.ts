@@ -99,4 +99,33 @@ describe("applyEmailPrivacy (R02/R07)", () => {
   it("returns zeroed result for empty input", () => {
     expect(applyEmailPrivacy("")).toEqual({ html: "", blockedRemoteImages: 0, suspiciousLinks: 0 });
   });
+
+  // Regression (found live 2026-07-02): the <a> branch early-continued WITHOUT
+  // recursing, so a LINKED image — every newsletter logo/footer is
+  // <a><img src=remote></a> — was never visited: it loaded direct from the
+  // sender's domain, leaking the recipient's IP/open-signal past the proxy.
+  describe("images inside links (the newsletter logo case)", () => {
+    it("blocks a remote <img> wrapped in an <a> by default", () => {
+      const res = applyEmailPrivacy(`<a href="https://example.com"><img src="https://cdn.example/logo.png" width="200" height="60"></a>`);
+      expect(res.blockedRemoteImages).toBe(1);
+      // The live src is gone (only the data-blocked-src memo remains).
+      expect(res.html).not.toMatch(/<img[^>]* src=/);
+      expect(res.html).toContain("data-blocked-src");
+    });
+
+    it("proxies a remote <img> wrapped in an <a> when images are loaded", () => {
+      const res = applyEmailPrivacy(`<a href="https://example.com"><img src="https://cdn.example/logo.png" width="200" height="60"></a>`, {
+        loadRemoteImages: true,
+        proxyBase: "/api/inbox/image-proxy?url=",
+      });
+      expect(res.html).toContain("/api/inbox/image-proxy?url=");
+      expect(res.html).toContain(encodeURIComponent("https://cdn.example/logo.png"));
+      expect(res.html).not.toMatch(/src="https:\/\/cdn\.example/);
+    });
+
+    it("removes a tracking pixel hidden inside a link", () => {
+      const res = applyEmailPrivacy(`<a href="https://example.com"><img src="https://t.example/open.gif" width="1" height="1"></a>`);
+      expect(res.html).not.toContain("t.example");
+    });
+  });
 });

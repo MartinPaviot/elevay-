@@ -143,6 +143,19 @@ describe("EmailComposerPanel — inline vs drawer", () => {
     expect(JSON.stringify(store)).toContain("dernier mot");
   });
 
+  it("has the paperclip: an attach button + a hidden multiple file input", async () => {
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<EmailComposerPanel draft={DRAFT} inline onClose={() => {}} />));
+    });
+    await flush();
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).not.toBeNull();
+    expect(fileInput.multiple).toBe(true);
+    expect(fileInput.className).toContain("hidden");
+    expect(container.querySelector('button[title="Attach files"]')).not.toBeNull();
+  });
+
   it("drawer (default): portals a slide-over + backdrop to <body>", async () => {
     let container!: HTMLElement;
     await act(async () => {

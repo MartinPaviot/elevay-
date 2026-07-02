@@ -146,6 +146,12 @@ function walk(node: Node, opts: EmailPrivacyOptions, counts: { remote: number; l
           el.after(chip);
         }
       }
+      // STILL recurse into the link's children: a linked image
+      // (<a><img src=remote></a> — every newsletter logo/footer) was skipped
+      // by the early continue, so it loaded DIRECT from the sender's domain,
+      // leaking the recipient's IP + open-signal past the proxy (found live
+      // 2026-07-02: an Infomaniak footer image loaded with zero proxy hits).
+      walk(el, opts, counts);
       continue;
     }
 

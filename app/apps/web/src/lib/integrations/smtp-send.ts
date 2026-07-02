@@ -35,6 +35,8 @@ export interface OutgoingMessage {
    * email the attendee itself, so we send the REQUEST ourselves.
    */
   icsInvite?: { method: "REQUEST" | "PUBLISH" | "CANCEL" | "REPLY"; content: string; filename?: string };
+  /** Regular file attachments — base64 content (the composer's paperclip). */
+  attachments?: { filename: string; contentBase64: string; contentType?: string }[];
   /** Extra RFC headers (e.g. List-Unsubscribe for CAN-SPAM on the queue path). */
   headers?: Record<string, string>;
 }
@@ -91,6 +93,12 @@ export async function sendViaSmtp(
             content: msg.icsInvite.content,
           }
         : undefined,
+      attachments: msg.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.contentBase64,
+        encoding: "base64" as const,
+        contentType: a.contentType,
+      })),
     });
     return { messageId: info.messageId };
   } catch (err) {
