@@ -10,6 +10,8 @@ const valuesSpy = vi.fn();
 // the G1 facts; both injectable.
 let g1: { freshSignalCount: number; icpScore: number | null; icpScoringActive: boolean } = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
 const loadG1Mock = vi.fn(async () => ({ forCompany: () => g1 }));
+// M13 T6 — the G1 verdict writer is injected: the default touches the real db.
+const recordGateMock = vi.fn(async (rows: unknown[]) => rows.length);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const database = {
   insert: () => ({ values: valuesSpy }),
@@ -22,6 +24,7 @@ const deps = (): EnrollOneDeps => ({
   recordDraft: recordDraftMock as unknown as typeof recordAgentAction,
   database,
   loadG1: loadG1Mock as unknown as EnrollOneDeps["loadG1"],
+  recordGate: recordGateMock as unknown as EnrollOneDeps["recordGate"],
 });
 
 beforeEach(() => {
@@ -31,6 +34,7 @@ beforeEach(() => {
   valuesSpy.mockReset().mockReturnValue({ onConflictDoNothing: () => Promise.resolve(undefined) });
   g1 = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
   loadG1Mock.mockClear();
+  recordGateMock.mockClear();
 });
 
 describe("enrollOne", () => {
@@ -89,5 +93,29 @@ describe("enrollOne — M13-G1 (T5)", () => {
     guardMock.mockResolvedValue({ proceed: true });
     const res = await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
     expect(res.outcome).toBe("enrolled");
+  });
+
+  // M13 T6 — every G1 verdict becomes a gate_decisions row.
+  it("ineligible -> ONE blocked verdict row with the machine reason", async () => {
+    g1 = { freshSignalCount: 0, icpScore: 80, icpScoringActive: true };
+    await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
+    expect(recordGateMock).toHaveBeenCalledTimes(1);
+    expect(recordGateMock.mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        gate: 1,
+        subjectType: "enrollment",
+        subjectId: "c1",
+        verdict: "blocked",
+        reasons: expect.objectContaining({ reason: "no_fresh_signal", sequenceId: "s1" }),
+      }),
+    ]);
+  });
+
+  it("eligible -> ONE pass verdict row", async () => {
+    guardMock.mockResolvedValue({ proceed: true });
+    await enrollOne({ tenantId: "t1", contactId: "c1", sequenceId: "s1", action: "auto" }, deps());
+    expect(recordGateMock.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ gate: 1, verdict: "pass" }),
+    ]);
   });
 });

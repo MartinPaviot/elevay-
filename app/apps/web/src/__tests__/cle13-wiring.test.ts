@@ -97,8 +97,58 @@ describe("M13-G1 wiring guards (enrollment chokepoints)", () => {
       "lib/chat/tools/action.ts",
       "inngest/signal-to-sequence.ts",
       "lib/autopilot/enroll.ts",
+      // T6 — the two holes T5 missed: the approval executor is the REAL
+      // write for every deferred enrollment (re-verifies freshness at
+      // approval time, M2-R4).
+      "lib/agents/action-executors.ts",
     ]) {
       expect(read(f), f).toContain("loadG1Context");
     }
+  });
+});
+
+describe("M13-T6 wiring guards (gate_decisions verdicts)", () => {
+  it("every G1 chokepoint writes its verdict into gate_decisions", () => {
+    for (const f of [
+      "app/api/sequences/[id]/enroll/route.ts",
+      "app/api/sequences/[id]/autopilot/route.ts",
+      "lib/chat/tools/account-lists.ts",
+      "lib/chat/tools/action.ts",
+      "inngest/signal-to-sequence.ts",
+      "lib/autopilot/enroll.ts",
+      "lib/agents/action-executors.ts",
+    ]) {
+      expect(read(f), f).toMatch(/recordGateDecisions?|recordGate/);
+    }
+  });
+
+  it("G5 at transport and the manual pregate write their verdicts", () => {
+    expect(read("lib/guardrails/sending-gate.ts")).toContain("recordGateDecision");
+    expect(read("app/api/send/pregate/route.ts")).toContain("recordGateDecisions");
+  });
+
+  it("the sequence-generator logs G2 + G4 verdicts", () => {
+    const src = read("lib/agents/sequence-generator.ts");
+    expect(src).toContain("recordGateDecision");
+    expect(src).toContain("GATE_RUBRICS.g2Deterministic");
+    expect(src).toContain("GATE_RUBRICS.g4Sequence");
+  });
+
+  it("the draft router runs the G4 gate — drafts are born gates_running", () => {
+    const src = read("inngest/sequence-draft-router.ts");
+    expect(src).toContain("runDraftG4Gate");
+    expect(src).toContain('status: "gates_running"');
+  });
+
+  it("the expiry cron reaps drafts stuck mid-gate", () => {
+    const src = read("inngest/sequence-draft-expiry.ts");
+    for (const s of ["gates_running", "blocked", "reworking"]) {
+      expect(src).toContain(s);
+    }
+  });
+
+  it("the G4 threshold stays the central passThresholdFor — no new knob", () => {
+    expect(read("inngest/sequence-draft-router.ts")).toContain("passThresholdFor");
+    expect(read("lib/sequence-drafts/gate-runner.ts")).not.toMatch(/process\.env/);
   });
 });
