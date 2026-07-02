@@ -46,6 +46,12 @@ export interface OpenerInputs {
   todos: OpenerTodo[];
   draftsPending: number;
   lastThread: OpenerThread | null;
+  /**
+   * v2 recipe-catalog chips (gated + slot-filled by the route via
+   * selectRecipeChips). Undefined → static fallback trio (v1 behavior);
+   * empty array → the tenant's data can't demo any recipe, show none.
+   */
+  recipes?: OpenerChip[];
 }
 
 export interface OpenerPayload {
@@ -62,6 +68,12 @@ export const OPENER_ALL_CLEAR =
 export const OPENER_MAX_CHIPS = 4;
 /** When real work yields fewer than this, recipe chips fill the gap. */
 const MIN_CHIPS = 3;
+/**
+ * Work chips stop at 3 so a busy tenant still gets one capability-
+ * discovery slot — the founder's ask: the opener must showcase what the
+ * product can do, not only what's waiting.
+ */
+const MAX_WORK_CHIPS = 3;
 
 const truncate = (s: string, n: number): string =>
   s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
@@ -166,13 +178,13 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
   }
   const text = sentences.slice(0, 3).join(" ") || OPENER_ALL_CLEAR;
 
-  // ── Chips: same priority, cap 4; recipes fill to 3; resume goes last ──
-  const chips: OpenerChip[] = [];
+  // ── Chips: work (≤3) > recipes (≥1 when eligible) > resume; cap 4 ──
+  const workChips: OpenerChip[] = [];
   if (replies.length > 0 && topFrom) {
     const top = replies[0];
     const subject = top.subtitle ? truncate(top.subtitle, 40) : null;
     const chipName = topFrom.name ?? shortAddress(topFrom.address);
-    chips.push({
+    workChips.push({
       id: "reply:top",
       kind: "reply",
       label: subject ? `Reply to ${chipName}: "${subject}"` : `Reply to ${chipName}`,
@@ -182,7 +194,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
     });
   }
   if (drafts > 0) {
-    chips.push({
+    workChips.push({
       id: "drafts",
       kind: "drafts",
       label: drafts === 1 ? "Review 1 pending draft" : `Review ${drafts} pending drafts`,
@@ -192,7 +204,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
   if (deals.length > 0) {
     const d = deals[0];
     const days = parseSilentDays(d.why);
-    chips.push({
+    workChips.push({
       id: `deal:${d.entityId ?? "top"}`,
       kind: "deal_risk",
       label: `Coach me on ${truncate(d.title, 28)}`,
@@ -204,7 +216,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
   }
   if (meetings.length > 0) {
     const m = meetings[0];
-    chips.push({
+    workChips.push({
       id: `meeting:${m.entityId ?? "top"}`,
       kind: "meeting",
       label: `Prep me for ${truncate(m.title, 26)}`,
@@ -213,12 +225,18 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
         : `Prepare me for the meeting "${m.title}".`,
     });
   }
-  for (const recipe of RECIPE_CHIPS) {
-    if (chips.length >= MIN_CHIPS) break;
-    chips.push(recipe);
+  // Assembly: up to 3 work chips, then recipes fill to 3 — plus the 4th
+  // slot when all three are work, so at least one recipe always shows
+  // (when any is eligible). Resume takes the last free slot.
+  const finalChips = workChips.slice(0, MAX_WORK_CHIPS);
+  const recipes = inputs.recipes ?? RECIPE_CHIPS;
+  const recipeTarget = finalChips.length >= MAX_WORK_CHIPS ? OPENER_MAX_CHIPS : MIN_CHIPS;
+  for (const recipe of recipes) {
+    if (finalChips.length >= recipeTarget) break;
+    finalChips.push(recipe);
   }
-  if (inputs.lastThread && chips.length < OPENER_MAX_CHIPS) {
-    chips.push({
+  if (inputs.lastThread && finalChips.length < OPENER_MAX_CHIPS) {
+    finalChips.push({
       id: `resume:${inputs.lastThread.id}`,
       kind: "resume",
       label: `Continue: ${truncate(inputs.lastThread.title || "last conversation", 32)}`,
@@ -226,5 +244,5 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
     });
   }
 
-  return { text, chips: chips.slice(0, OPENER_MAX_CHIPS), hasWork, counts };
+  return { text, chips: finalChips.slice(0, OPENER_MAX_CHIPS), hasWork, counts };
 }
