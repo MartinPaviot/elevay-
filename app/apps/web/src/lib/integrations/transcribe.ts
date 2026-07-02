@@ -48,7 +48,11 @@ export async function transcribeAudio(file: File): Promise<string> {
   const res = await client.audio.transcriptions.create({
     model,
     file,
-    response_format: "verbose_json",
+    // 'json' everywhere: the gpt-4o-*-transcribe models reject 'verbose_json'
+    // (400 on EVERY audio upload since they became the default — found live
+    // 2026-07-02 by the kMeet sweep), whisper-1 accepts 'json' too, and we
+    // only ever read `.text`.
+    response_format: "json",
   });
   return res.text;
 }
