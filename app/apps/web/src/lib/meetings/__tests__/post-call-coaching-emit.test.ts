@@ -71,6 +71,15 @@ describe("processPostCall — coaching/post-interaction emit", () => {
     });
   });
 
+  it("does NOT emit when skipCoaching is set, even on a real run", async () => {
+    // The kMeet sweep already emits coaching/post-interaction from
+    // processMeetingTranscript, then delegates tasks + follow-up here — a second
+    // emit would duplicate the (un-deduped) coaching insight.
+    const r = await processPostCall({ ...minimalOpts, skipCoaching: true } as never);
+    expect(r.success).toBe(true);
+    expect(h.sendMock).not.toHaveBeenCalled();
+  });
+
   it("does NOT emit on the idempotent already-processed path", async () => {
     h.state.activity = { ...baseActivity, metadata: { ...baseActivity.metadata, postCallProcessedAt: "2026-01-01T00:00:00Z" } };
     const r = await processPostCall({ activityId: "act-1", tenantId: "t1", userId: "u1" } as never);
