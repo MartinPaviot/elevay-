@@ -18,6 +18,7 @@ export function SnippetBar({
   currentBody,
   getCurrentBody,
   contact,
+  bare = false,
 }: {
   snippets: Snippet[];
   onChange: (next: Snippet[]) => void;
@@ -27,6 +28,9 @@ export function SnippetBar({
   /** Live body at call time — used for the actual save so it captures edits. */
   getCurrentBody?: () => string;
   contact: { name: string; email: string | null } | null;
+  /** Render as a chip GROUP inside an existing toolbar row (no own padding/row).
+   *  Standalone (default) keeps the original full-width row for other hosts. */
+  bare?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -70,7 +74,7 @@ export function SnippetBar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+    <div className={bare ? "flex flex-wrap items-center gap-1.5" : "flex flex-wrap items-center gap-1.5 px-4 pt-2"}>
       <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
         Snippets
       </span>

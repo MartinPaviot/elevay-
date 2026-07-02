@@ -53,6 +53,9 @@ interface EmailComposerPanelProps {
    *  thread) instead of the right-edge slide-over drawer. The drawer (default)
    *  stays for standalone "new email" compose; the inbox reply passes inline. */
   inline?: boolean;
+  /** Extra chips rendered inside the AI toolbar row (e.g. the inbox SnippetBar)
+   *  so hosts don't stack another full-width row above the writing box. */
+  toolbarExtra?: React.ReactNode;
 }
 
 /**
@@ -187,7 +190,7 @@ function EmailField({
 /* ------------------------------------------------------------------ */
 
 export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerPanelProps>(function EmailComposerPanel(
-  { draft, onClose, onSent, mailboxes = [], inline = false },
+  { draft, onClose, onSent, mailboxes = [], inline = false, toolbarExtra },
   ref,
 ) {
   const { toast } = useToast();
@@ -671,22 +674,23 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
 
   if (!mounted) return null;
 
-  // Inline (Gmail/Outlook reply): an in-flow block under the thread. `flex-1 min-h-0`
-  // shares the pane height with the message list; `overflow-y-auto` makes the WHOLE
-  // composer (its tall To/Cc/Subject chrome + body + Send footer) scroll as one unit
-  // when squeezed — so Send is always reachable, even on the founder's half-screen +
-  // 200% zoom viewport where the chrome alone exceeds the composer's share and a
-  // body-only scroll would push Send off-screen. Drawer (default): the right-edge
-  // slide-over for standalone compose.
+  // Inline (Gmail/Outlook reply): an in-flow CARD inside the pane's single
+  // scroll container — the draft and the thread it answers share ONE scroll, so
+  // reading flows straight from the reply into the received mail with no seam
+  // (founder, UI pass 2026-07-02: "pourquoi une coupure entre le mail reçu et
+  // le mail qu'on s'apprête à écrire"). The card sizes to its content; a long
+  // draft grows the card and the PANE scrolls — no nested scrollbar fighting
+  // the thread's. Drawer (default): the right-edge slide-over for standalone
+  // compose.
   const panel = (
       <div
         className={inline
-          ? "flex min-h-0 flex-1 flex-col overflow-y-auto"
+          ? "flex flex-col rounded-lg border"
           : "slide-in-right fixed right-0 top-0 z-50 flex h-full flex-col"}
         style={inline
           ? {
               background: "var(--color-bg-card)",
-              borderTop: "1px solid var(--color-border-default)",
+              borderColor: "var(--color-border-default)",
             }
           : {
               width: "min(var(--detail-panel-width, 480px), 100vw)",
@@ -697,20 +701,39 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               boxShadow: "var(--shadow-panel)",
             }}
       >
-        {/* Header. Inline replies keep it a THIN strip with a small "Reply"
-            label — the subject already reads twice on screen (pane title +
-            Subject field); repeating it a third time at 14px semibold burned
-            ~44px of the composer's scarce height (UI pass 2026-07-02). */}
+        {/* Header. An inline reply gets ONE thin row carrying everything the
+            writer needs to glance at: the "Reply" label AND the collapsed
+            To/Subject summary (click to expand the full field set). They were
+            two stacked rows — pure chrome between the user and the textarea
+            (founder, UI pass 2026-07-02: "encore beaucoup trop haut"). */}
         <div
-          className={`flex items-center justify-between px-4 ${inline && draft.threadId ? "py-1.5" : "py-3"}`}
+          className={`flex items-center gap-2 px-4 ${inline && draft.threadId ? "py-1.5" : "py-3"}`}
           style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <Mail size={inline && draft.threadId ? 13 : 15} style={{ color: "var(--color-accent)" }} />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Mail size={inline && draft.threadId ? 13 : 15} className="shrink-0" style={{ color: "var(--color-accent)" }} />
             {inline && draft.threadId ? (
-              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
-                {t("inbox.compose.replyLabel")}
-              </span>
+              <>
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+                  {t("inbox.compose.replyLabel")}
+                </span>
+                {collapseFields && (
+                  <button
+                    type="button"
+                    onClick={() => setFieldsExpanded(true)}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    title={`${t("inbox.compose.to")}: ${toEmails.join(", ")} — ${editSubject}`}
+                  >
+                    <span className="shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                      {toEmails[0]}{toEmails.length > 1 ? ` +${toEmails.length - 1}` : ""}
+                    </span>
+                    <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-muted)" }}>
+                      · {editSubject}
+                    </span>
+                    <ChevronDown size={12} className="shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+                  </button>
+                )}
+              </>
             ) : (
               <h3
                 className="truncate text-[14px] font-semibold"
@@ -722,7 +745,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           </div>
           <button
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors"
             style={{ color: "var(--color-text-tertiary)" }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "var(--color-bg-hover)";
@@ -745,29 +768,9 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
 
         {/* Email fields. On an inline REPLY they are all pre-known (To = the
             sender, Subject = the thread's Re:) and rarely touched — collapsed
-            to ONE summary line so the writing box is the base element (founder:
-            "quand on clique sur reply, écrire doit être l'élément de base",
-            UI pass 2026-07-02). Click expands the full field set. */}
-        {collapseFields && (
-          <button
-            type="button"
-            onClick={() => setFieldsExpanded(true)}
-            className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
-            style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
-            title={`${t("inbox.compose.to")}: ${toEmails.join(", ")} — ${editSubject}`}
-          >
-            <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-              {t("inbox.compose.to")}
-            </span>
-            <span className="shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-              {toEmails[0]}{toEmails.length > 1 ? ` +${toEmails.length - 1}` : ""}
-            </span>
-            <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-muted)" }}>
-              · {editSubject}
-            </span>
-            <ChevronDown size={12} className="ml-auto shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
-          </button>
-        )}
+            into the header row above (founder: "quand on clique sur reply,
+            écrire doit être l'élément de base", UI pass 2026-07-02). Click the
+            summary to expand the full field set below. */}
         {!collapseFields && (<>
         {/* A2: From selector — which connected mailbox this leaves from. Default
             = the thread's own box. One box → static label; many → a menu. */}
@@ -1020,6 +1023,9 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                 <Undo2 size={12} /> {t("inbox.compose.undo")}
               </Button>
             )}
+            {/* Host extras (inbox SnippetBar chips) join THIS row instead of
+                stacking their own full-width row above the textarea. */}
+            {toolbarExtra}
             {/* B1 edit-with-AI (Upstream canonical position): an always-visible
                 instruction field, the flex-1 tail of the toolbar row. Submits to
                 the SAME handleRewrite; Cmd/Ctrl+J focuses or submits it. */}
@@ -1057,10 +1063,10 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             style={{
               color: "var(--color-text-primary)",
               fontWeight: 400,
-              // The inline reply is now the pane's primary area (it sits above the
-              // thread, 3:2 share), so give the writing box a generous floor that
-              // scales with the viewport — not the old cramped 88px. It still
-              // autoResizes + scrolls as you type; the drawer keeps a flat 200px.
+              // The inline reply is the FIRST card of the pane's single scroll,
+              // so give the writing box a generous floor that scales with the
+              // viewport — not the old cramped 88px. autoResize grows it with
+              // the draft; overflow past the viewport just scrolls the pane.
               minHeight: inline ? "clamp(160px, 30vh, 380px)" : "200px",
               whiteSpace: "pre-wrap",
             }}

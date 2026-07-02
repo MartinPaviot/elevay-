@@ -152,6 +152,10 @@ export function ConversationPane({
   // composer is open) scrollable thread region; reveal it when it opens so the
   // action isn't a no-op when the thread is scrolled down.
   const schedCardRef = useRef<HTMLDivElement>(null);
+  // The pane's single scroll container (composer card + thread in one flow) —
+  // scrolled back to top when a composer opens, so Reply is never a no-op on a
+  // thread the user had scrolled deep into.
+  const paneScrollRef = useRef<HTMLDivElement>(null);
   const [autoDraftOn, setAutoDraftOn] = useState(false);
   // A2: the user's SENDABLE mailboxes for the composer From selector.
   const [sendableMailboxes, setSendableMailboxes] = useState<SendableMailbox[]>([]);
@@ -450,15 +454,22 @@ export function ConversationPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replySignal]);
 
-  // Reveal the scheduler card when it opens — it mounts at scrollTop 0 of the
-  // reading region, which (with the composer open) is only 2/5 of the pane, so a
-  // scrolled thread would leave it above the fold and Book would look like a no-op.
-  // block:"start", not "nearest": the card is often TALLER than the reading
-  // region's share, and "nearest" then reveals its BOTTOM half — footer without
-  // the week strip (prod audit 2026-07-02, screenshot 040).
+  // Reveal the scheduler card when it opens — it mounts near the top of the
+  // pane scroll, so a scrolled thread would leave it above the fold and Book
+  // would look like a no-op. block:"start", not "nearest": the card is often
+  // TALLER than the viewport share, and "nearest" then reveals its BOTTOM half —
+  // footer without the week strip (prod audit 2026-07-02, screenshot 040).
   useEffect(() => {
     if (schedOpen) schedCardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [schedOpen]);
+
+  // Reveal the composer when it opens — it's the FIRST card of the single
+  // scroll, so "Reply" from a deep-scrolled thread must snap back to top or the
+  // draft appears off-screen and the action reads as a no-op.
+  useEffect(() => {
+    if (composer) paneScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composer !== null]);
 
   // B1 Cmd/Ctrl+J: with no composer open, generate a voice-matched draft for a
   // reply-worthy thread (R2.1). When the composer IS open, it owns this key for
@@ -658,25 +669,11 @@ export function ConversationPane({
   return (
     <div className="flex h-full flex-col">
       {/* While a composer session is open, the full header (subject H1, sender,
-          assignment, the whole action bar) collapses to ONE slim line — none of
-          it helps WRITING, and stacked it pushed the reply box past half the
-          viewport (founder: "80% de la hauteur avant de pouvoir écrire",
-          UI pass 2026-07-02). Closing the composer restores it. */}
-      {composer && (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5"
-          style={{ borderColor: "var(--color-border-default)" }}
-        >
-          <span
-            className="min-w-0 truncate text-[13px] font-medium"
-            style={{ color: "var(--color-text-secondary)" }}
-            dir={dirOf(decodeDisplay(conv.subject))}
-            title={decodeDisplay(conv.subject)}
-          >
-            {decodeDisplay(conv.subject)}
-          </span>
-        </div>
-      )}
+          assignment, the whole action bar) hides entirely — none of it helps
+          WRITING (founder passes 2026-07-02: "80% de la hauteur avant de
+          pouvoir écrire", then "encore beaucoup trop haut"). The composer
+          card's own header row carries the context (Reply · To · subject);
+          closing the composer restores the full header. */}
       {/* ── Header: who, subject, actions ── */}
       <div className={composer ? "hidden" : "border-b px-4 py-3"} style={{ borderColor: "var(--color-border-default)" }}>
         <div className="flex items-start justify-between gap-3">
@@ -901,105 +898,116 @@ export function ConversationPane({
 
       </div>
 
-      {composer && (
-        // The reply composer sits ABOVE the thread it answers, so the original
-        // mail reads BELOW it (Gmail/Outlook style). It takes the larger 3:2 share
-        // of the pane for a generous writing area; min-h-0 + the panel's own
-        // overflow-y-auto keep Send reachable on a narrow/zoomed view. While the
-        // scheduler card is open the composer MINIMIZES to the slim bar below
-        // (Gmail pattern) — the earlier 1:3 share-flip left a clipped composer
-        // stub that read as overlapping cards (UI pass 2026-07-02, u960-04).
-        // display:none, NOT unmount: the panel owns its edited body, and the
-        // localStorage restore deliberately defers to a non-empty incoming
-        // draft — a remount would discard the user's edits.
-        <div
-          className="flex min-h-0 flex-col"
-          style={{ flex: "3 1 0%", display: schedOpen && canBook ? "none" : undefined }}
-        >
-          {replyTones.length > 1 && (
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
-              <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                {t("inbox.tone")}
-              </span>
-              {replyTones.map((r) => {
-                const active = activeTone === r.tone;
-                return (
-                  <button
-                    key={r.tone}
-                    type="button"
-                    onClick={() => {
-                      // Body only — switching tone must never rewrite the reply
-                      // subject away from the thread's (F3).
-                      composerRef.current?.setBody(r.body);
-                      setActiveTone(r.tone);
-                    }}
-                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                    style={{
-                      border: "1px solid var(--color-border-default)",
-                      background: active ? "var(--color-accent-soft)" : "transparent",
-                      color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
-                    }}
-                  >
-                    {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <SnippetBar
-            snippets={snippets}
-            onChange={setSnippets}
-            currentBody={composer.body}
-            getCurrentBody={() => stripSignature(composerRef.current?.getBody() ?? composer.body)}
-            contact={detail?.contact ?? null}
-            onInsert={(text) => composerRef.current?.appendBody(text)}
-          />
-          <EmailComposerPanel
-            ref={composerRef}
-            draft={composer}
-            mailboxes={sendableMailboxes}
-            inline
-            onClose={() => {
-              setComposer(null);
-              setReplyTones([]);
-            }}
-            onSent={() => void handleSent()}
-          />
-        </div>
-      )}
-      {/* Minimized-draft bar while the scheduler is open — one glance says the
-          draft is safe, one click brings it back (closing the card restores it
-          too). */}
-      {composer && schedOpen && canBook && (
-        <button
-          type="button"
-          onClick={() => setSchedOpen(false)}
-          className="flex shrink-0 items-center gap-2 border-t px-4 py-2 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
-          style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
-        >
-          <Mail size={13} className="shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
-          <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-            {t("inbox.draftMinimized", { subject: composer.subject || "" })}
-          </span>
-          <span className="ml-auto shrink-0 text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
-            {t("inbox.draftReopen")}
-          </span>
-        </button>
-      )}
-
       <div
-        // pb-16 keeps the last interactive control (the scheduler's Confirm)
-        // clear of the fixed chat launcher (bottom-5 right-5, z-45) that
-        // otherwise half-covers it (prod audit 2026-07-02, screenshot 040). The
-        // top border marks the composer/reading boundary — without it the
-        // composer's clipped last line ran visually straight into the card
-        // below and read as overlapping text.
-        className="min-h-0 overflow-y-auto px-4 py-3 pb-16"
-        style={{
-          flex: composer && !(schedOpen && canBook) ? "2 1 0%" : "1 1 0%",
-          ...(composer ? { borderTop: "1px solid var(--color-border-default)" } : {}),
-        }}
+        // THE pane's single scroll. The reply composer is its FIRST card, the
+        // thread reads directly below it in the SAME flow — scrolling the draft
+        // runs straight into the received mail, no separate regions, no seam
+        // (founder, UI pass 2026-07-02: "pourquoi une coupure entre le mail
+        // reçu et le mail qu'on s'apprête à écrire"). pb-16 keeps the last
+        // interactive control clear of the fixed chat launcher (bottom-5
+        // right-5, z-45) that otherwise half-covers it (prod audit 2026-07-02,
+        // screenshot 040).
+        ref={paneScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 pb-16"
       >
+        {composer && (
+          // The reply card leads (Gmail/Outlook: the original mail reads below).
+          // While the scheduler card is open the composer MINIMIZES to the slim
+          // bar below (Gmail pattern). display:none, NOT unmount: the panel owns
+          // its edited body, and the localStorage restore deliberately defers to
+          // a non-empty incoming draft — a remount would discard the user's edits.
+          <div className="mb-3" style={{ display: schedOpen && canBook ? "none" : undefined }}>
+            {replyTones.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 pb-1.5">
+                <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  {t("inbox.tone")}
+                </span>
+                {replyTones.map((r) => {
+                  const active = activeTone === r.tone;
+                  return (
+                    <button
+                      key={r.tone}
+                      type="button"
+                      onClick={() => {
+                        // Body only — switching tone must never rewrite the reply
+                        // subject away from the thread's (F3).
+                        composerRef.current?.setBody(r.body);
+                        setActiveTone(r.tone);
+                      }}
+                      className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        border: "1px solid var(--color-border-default)",
+                        background: active ? "var(--color-accent-soft)" : "transparent",
+                        color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
+                      }}
+                    >
+                      {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <EmailComposerPanel
+              ref={composerRef}
+              draft={composer}
+              mailboxes={sendableMailboxes}
+              inline
+              // Snippet chips ride the panel's AI toolbar row instead of
+              // stacking another full-width row above the textarea. The
+              // calendar chip keeps the scheduler reachable WHILE writing —
+              // the header action bar (its usual home) hides when a composer
+              // is open, and proposing a slot mid-draft is the Gmail move.
+              toolbarExtra={
+                <>
+                  {canBook && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => { setPrefillWhen(null); setSchedOpen(true); }}
+                      title={t("inbox.scheduleMeeting")}
+                    >
+                      <CalendarPlus size={12} />
+                    </Button>
+                  )}
+                  <SnippetBar
+                    bare
+                    snippets={snippets}
+                    onChange={setSnippets}
+                    currentBody={composer.body}
+                    getCurrentBody={() => stripSignature(composerRef.current?.getBody() ?? composer.body)}
+                    contact={detail?.contact ?? null}
+                    onInsert={(text) => composerRef.current?.appendBody(text)}
+                  />
+                </>
+              }
+              onClose={() => {
+                setComposer(null);
+                setReplyTones([]);
+              }}
+              onSent={() => void handleSent()}
+            />
+          </div>
+        )}
+        {/* Minimized-draft bar while the scheduler is open — one glance says the
+            draft is safe, one click brings it back (closing the card restores it
+            too). */}
+        {composer && schedOpen && canBook && (
+          <button
+            type="button"
+            onClick={() => setSchedOpen(false)}
+            className="mb-3 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+          >
+            <Mail size={13} className="shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+            <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+              {t("inbox.draftMinimized", { subject: composer.subject || "" })}
+            </span>
+            <span className="ml-auto shrink-0 text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+              {t("inbox.draftReopen")}
+            </span>
+          </button>
+        )}
         {/* Meeting scheduler — rendered in the SCROLLABLE reading area (not the
              fixed header) so its full height + the Confirm button stay reachable
              on a narrow or zoomed viewport (the header doesn't scroll). */}
