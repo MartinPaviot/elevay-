@@ -3,13 +3,19 @@ import { actionOutcomes, outboundEmails, activities, tasks } from "@/db/schema";
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
-const POSITIVITY: Record<string, number> = {
-  replied_positive: 1.0,
-  meeting_booked: 0.9,
+// Ordering invariant (outcome hierarchy): meeting_held > meeting_booked >
+// replied_positive, and every reply-flywheel-promotable outcome stays >= 0.8
+// (reply-flywheel.ts). `email_opened` is deliberately ABSENT: Apple Mail
+// Privacy Protection auto-opens every message, so opens are deliverability
+// diagnostics, never a learning signal — they must not resolve a watcher
+// (a phantom open would consume it before the real reply arrives).
+export const POSITIVITY: Record<string, number> = {
+  meeting_held: 1.0,
+  meeting_booked: 0.95,
+  replied_positive: 0.9,
   deal_advanced: 0.8,
   replied_neutral: 0.4,
   email_clicked: 0.3,
-  email_opened: 0.1,
   no_response: 0.0,
   replied_negative: -0.3,
   unsubscribed: -0.6,
@@ -64,6 +70,12 @@ export async function checkEmailOutcomes(
   contactId: string,
   eventType: "opened" | "clicked" | "replied_positive" | "replied_negative" | "bounced",
 ): Promise<void> {
+  // Opens never resolve an outcome: MPP fires them for unread mail, and
+  // resolving here would consume the watcher before a real reply/bounce.
+  // The watcher either resolves on a real event or times out to
+  // no_response (inngest/outcome-detector.ts).
+  if (eventType === "opened") return;
+
   const watchingOutcomes = await db
     .select()
     .from(actionOutcomes)
@@ -77,7 +89,6 @@ export async function checkEmailOutcomes(
     .limit(10);
 
   const outcomeType =
-    eventType === "opened" ? "email_opened" :
     eventType === "clicked" ? "email_clicked" :
     eventType === "bounced" ? "bounced" :
     eventType;
