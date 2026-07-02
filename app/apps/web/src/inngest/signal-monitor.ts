@@ -14,7 +14,6 @@ import { companies, tenants, sequenceEnrollments, contacts } from "@/db/schema";
 import { eq, and, desc, isNotNull, sql, ne } from "drizzle-orm";
 import { invalidateBrief, buildIntelligenceBrief } from "@/lib/campaign-engine/build-intelligence-brief";
 import { selectStrategy } from "@/lib/campaign-engine/select-strategy";
-import { fetchRecentNews } from "@/lib/campaign-engine/sources/news";
 import { scrapeJobPostings } from "@/lib/campaign-engine/sources/jobs";
 import { getSignalMultipliers } from "@/lib/scoring/signal-outcomes";
 import { KAIROS_WEIGHT_THRESHOLD } from "@/lib/scoring/priority-score";
@@ -167,59 +166,71 @@ async function checkCompanySignals(
   const detected: DetectedSignal[] = [];
   const now = new Date().toISOString();
 
-  // Check news for funding/acquisition signals
-  try {
-    const news = await fetchRecentNews(company.name, 7); // only last 7 days
-    for (const item of news) {
-      const lower = item.title.toLowerCase();
-      // Dedup key is DERIVED from the pushed signalType (not a separate literal):
-      // the prior code checked `funding_recent_new` while pushing `funding_recent`,
-      // so the guard never matched → the same funding news was re-detected every
-      // 4h, re-triggering outreach + the kairos accelerator and appending a
-      // duplicate signal entry each pass.
-      if (lower.includes("raise") || lower.includes("funding") || lower.includes("series")) {
-        const signalType = "funding_recent";
-        if (!existingTypes.has(signalType)) {
-          detected.push({ companyId: company.id, tenantId, signalType, confidence: "high", detail: item.title, detectedAt: now });
-        }
-      }
-      if (lower.includes("acqui") || lower.includes("merger")) {
-        const signalType = "acquisition";
-        if (!existingTypes.has(signalType)) {
-          detected.push({ companyId: company.id, tenantId, signalType, confidence: "medium", detail: item.title, detectedAt: now });
-        }
-      }
-    }
-  } catch { /* non-blocking */ }
+  // NO news-derived funding/acquisition signals. This block used to search
+  // Google News by BARE COMPANY NAME (news.ts) and fire funding_recent /
+  // acquisition on a substring match of "raise"/"funding"/"series". On real
+  // prod data that produced almost only garbage: name collisions (the
+  // philanthropy "Arcadia" → "Arcadia Biosciences Raises $4M"; "BTG Group"
+  // machinery → "Banco BTG Pactual"), and keyword false positives ("government
+  // funding", "Climate Voices series"). A funding event needs entity
+  // resolution + real-event verification, not a headline substring — so news
+  // is kept for the human-read intelligence brief (build-intelligence-brief.ts)
+  // and dropped as an autonomous scoring signal. Apollo's structured funding
+  // field (funding-signal-monitor) remains the funding source of record.
+  // Hiring stays: it's domain-based (job scraping), not name-guessed.
 
-  // Check job postings for hiring surge
+  // Check job postings for hiring surge (domain-based, not name-guessed).
   try {
     const jobs = await scrapeJobPostings(company.domain);
-    if (jobs.length >= 5 && !existingTypes.has("hiring_surge")) {
-      detected.push({
-        companyId: company.id,
-        tenantId,
-        signalType: "hiring_surge",
-        confidence: "high",
-        detail: `${jobs.length} open roles detected (${jobs.slice(0, 3).map(j => j.title).join(", ")})`,
-        detectedAt: now,
-      });
-    }
-    // VP/C-level hire = strong signal
-    const seniorHires = jobs.filter((j) => j.senioritySignal === "vp_hire" || j.senioritySignal === "c_level_hire");
-    if (seniorHires.length > 0 && !existingTypes.has("executive_hire")) {
-      detected.push({
-        companyId: company.id,
-        tenantId,
-        signalType: "executive_hire",
-        confidence: "high",
-        detail: `Hiring: ${seniorHires[0].title}`,
-        detectedAt: now,
-      });
-    }
+    detected.push(...detectJobSignals(jobs, existingTypes, { companyId: company.id, tenantId, now }));
   } catch { /* non-blocking */ }
 
   return detected;
+}
+
+/** Structural subset of a scraped job posting the hiring detector reads.
+ *  Compatible with campaign-engine's JobPosting (title + nullable seniority). */
+export interface JobPosting {
+  title: string;
+  senioritySignal?: string | null;
+}
+
+/**
+ * Pure: derive hiring signals from a company's open roles. The ONLY signal
+ * family this monitor emits — funding/acquisition were removed (name-guessed
+ * news headlines, net-negative on real data; see checkCompanySignals). Hiring
+ * is trustworthy because it reads the company's OWN job board by domain, not a
+ * fuzzy news search. Exported for unit tests.
+ */
+export function detectJobSignals(
+  jobs: JobPosting[],
+  existingTypes: ReadonlySet<string>,
+  ctx: { companyId: string; tenantId: string; now: string },
+): DetectedSignal[] {
+  const out: DetectedSignal[] = [];
+  if (jobs.length >= 5 && !existingTypes.has("hiring_surge")) {
+    out.push({
+      companyId: ctx.companyId,
+      tenantId: ctx.tenantId,
+      signalType: "hiring_surge",
+      confidence: "high",
+      detail: `${jobs.length} open roles detected (${jobs.slice(0, 3).map((j) => j.title).join(", ")})`,
+      detectedAt: ctx.now,
+    });
+  }
+  // VP/C-level hire = strong signal
+  const seniorHires = jobs.filter((j) => j.senioritySignal === "vp_hire" || j.senioritySignal === "c_level_hire");
+  if (seniorHires.length > 0 && !existingTypes.has("executive_hire")) {
+    out.push({
+      companyId: ctx.companyId,
+      tenantId: ctx.tenantId,
+      signalType: "executive_hire",
+      confidence: "high",
+      detail: `Hiring: ${seniorHires[0].title}`,
+      detectedAt: ctx.now,
+    });
+  }
+  return out;
 }
 
 /**
