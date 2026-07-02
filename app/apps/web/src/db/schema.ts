@@ -9,6 +9,7 @@ export * from "./schema/ledger";
 export * from "./schema/gates";
 export * from "./schema/quality-gates";
 export * from "./schema/outreach-learning";
+export * from "./schema/decision-insights";
 export * from "./schema/agent-run";
 export * from "./schema/canonical";
 export * from "./schema/outbound";
