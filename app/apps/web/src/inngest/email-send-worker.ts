@@ -18,6 +18,7 @@ import { checkPlanLimit } from "@/lib/billing/plan-limits";
 import { trackUsage } from "@/lib/billing/billing";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { evaluateSend } from "@/lib/guardrails/sending-gate";
+import { recordOutreachDecision } from "@/lib/outreach/decision-record";
 import { isWithinSendWindow } from "@/lib/emails/send-window";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
@@ -448,6 +449,26 @@ export const processOutboundEmails = inngest.createFunction(
           return;
         }
 
+        // M12-R1 (T7) — one outreach_decisions learning record per OUTREACH
+        // send, written the moment the gate allows (the cap slot is consumed
+        // here). The gate's resolved class is authoritative (an unverifiable
+        // reply claim it downgraded must record); the row's inReplyTo is only
+        // the fallback for a legacy/mocked gate without the field. A reply
+        // records nothing (the writer skips). Best-effort by contract — a
+        // failed write never blocks the send. Dedup key = the outbound row id
+        // (unique), so an Inngest retry of this step writes exactly one row.
+        await recordOutreachDecision({
+          tenantId: email.tenantId,
+          sendClass: sendGate.sendClass ?? (email.inReplyTo ? "reply" : "outreach"),
+          contactId: email.contactId,
+          enrollmentId: email.enrollmentId,
+          stepIndex: email.stepNumber,
+          outboundEmailId: email.id,
+          toAddress: email.toAddress,
+          subject: email.subject,
+          bodyText: email.bodyText,
+        });
+
         // Plan limit enforcement: monthly email cap
         const planCheck = await checkPlanLimit(email.tenantId, "emails");
         if (!planCheck.allowed) {
@@ -794,6 +815,22 @@ export const sendSingleEmail = inngest.createFunction(
         .where(eq(outboundEmails.id, emailId));
       return { emailId, sent: false, reason: singleGate.reason };
     }
+
+    // M12-R1 (T7) — outreach_decisions learning record (C2, event-driven
+    // single send). Same contract as the batch path above: gate-resolved
+    // class, inReplyTo fallback, reply records nothing, best-effort, deduped
+    // on the outbound row id across Inngest retries of this function.
+    await recordOutreachDecision({
+      tenantId: email.tenantId,
+      sendClass: singleGate.sendClass ?? (email.inReplyTo ? "reply" : "outreach"),
+      contactId: email.contactId,
+      enrollmentId: email.enrollmentId,
+      stepIndex: email.stepNumber,
+      outboundEmailId: email.id,
+      toAddress: email.toAddress,
+      subject: email.subject,
+      bodyText: email.bodyText,
+    });
 
     if (!resend) {
       return { emailId, sent: false, reason: "RESEND_API_KEY not configured" };

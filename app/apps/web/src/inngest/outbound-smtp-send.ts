@@ -24,6 +24,7 @@ import { decryptSecret } from "@/lib/crypto/settings-encryption";
 import { logger } from "@/lib/observability/logger";
 import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient-guardrail";
 import { evaluateSend } from "@/lib/guardrails/sending-gate";
+import { recordOutreachDecision } from "@/lib/outreach/decision-record";
 import { isSendableBody } from "@/lib/guardrails/empty-body";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { isWithinSendWindow } from "@/lib/emails/send-window";
@@ -140,6 +141,25 @@ export const dispatchOutboundSmtp = inngest.createFunction(
             .where(eq(outboundEmails.id, o.id));
           return "failed";
         }
+
+        // M12-R1 (T7) — outreach_decisions learning record (C3), written the
+        // moment the gate allows. Gate-resolved class, inReplyTo fallback for
+        // a legacy/mocked gate; a reply records nothing (writer skips);
+        // best-effort — never blocks. The campaign-worker cron drains the same
+        // "queued" rows and records too: the unique outbound row id + ON
+        // CONFLICT DO NOTHING keeps exactly one record whichever cron wins
+        // the claim below.
+        await recordOutreachDecision({
+          tenantId: o.tenantId,
+          sendClass: smtpGate.sendClass ?? (o.inReplyTo ? "reply" : "outreach"),
+          contactId: o.contactId,
+          enrollmentId: o.enrollmentId,
+          stepIndex: o.stepNumber,
+          outboundEmailId: o.id,
+          toAddress: o.toAddress,
+          subject: o.subject,
+          bodyText: o.bodyText,
+        });
 
         // Empty-body backstop: never put a blank message on the wire. The copy
         // engine can assemble an empty body when no copy assets exist (see

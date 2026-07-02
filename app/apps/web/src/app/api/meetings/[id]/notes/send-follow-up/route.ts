@@ -9,6 +9,7 @@ import { Resend } from "resend";
 import { buildCtaFootersForActivity, appendFooterIfExternal } from "@/lib/recording/cta";
 import { isRecipientAllowed, recipientBlockReason } from "@/lib/emails/recipient-guardrail";
 import { evaluateSend } from "@/lib/guardrails/sending-gate";
+import { recordOutreachDecision } from "@/lib/outreach/decision-record";
 import { captureOutboundEmail } from "@/lib/capture/outbound-email-capture";
 
 const resend = process.env.RESEND_API_KEY
@@ -217,6 +218,31 @@ export async function POST(
         if (data?.id) messageIds.push(data.id);
       }
     }
+    // M12-R1 (T7) — one outreach_decisions learning record per recipient the
+    // gate allowed as OUTREACH (attendees with prior correspondence resolve to
+    // reply in-gate and record nothing — the writer skips them). Recorded
+    // POST-transport, next to the followUpSentAt write: a failed dispatch
+    // 500s above and records nothing, and the 409 guard makes a retry after
+    // SUCCESS impossible — so the NULL dedup key (this route queues no
+    // outbound_emails row) can never duplicate. Best-effort by contract.
+    const decisionContactIdByEmail = new Map<string, string>();
+    for (const m of meta.matchedContacts ?? []) {
+      if (m.email && m.contactId) decisionContactIdByEmail.set(m.email.toLowerCase(), m.contactId);
+    }
+    for (const r of gateResults) {
+      const outcome = r.outcome;
+      if (!outcome.send) continue;
+      await recordOutreachDecision({
+        tenantId: authCtx.tenantId,
+        sendClass: outcome.sendClass,
+        contactId: decisionContactIdByEmail.get(r.email.toLowerCase()) ?? null,
+        outboundEmailId: null,
+        toAddress: r.email,
+        subject: draft.subject,
+        bodyText: draft.body,
+      });
+    }
+
     const nextMeta: Record<string, unknown> = {
       ...meta,
       followUpSentAt: new Date().toISOString(),
