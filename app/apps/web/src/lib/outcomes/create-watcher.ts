@@ -8,6 +8,10 @@ const WINDOW_HOURS: Record<string, number> = {
   "task-create": 168,     // 7 days
   "sequence-enrollment": 336, // 14 days
   "contact-create": 72,   // 3 days (enrichment)
+  // T8 (outreach-autopilot) — a regular outreach send recorded by
+  // lib/outreach/decision-record.ts. Same 7-day reply window as the other
+  // email actions.
+  "outreach-send": 168,
   send_followup: 168,
   draft_reply: 168,
   advance_deal: 336,
@@ -29,6 +33,11 @@ const EXPECTED_OUTCOMES: Record<string, string> = {
   alert_founder: "acknowledged",
   research_company: "enrichment_complete",
   enrich_contact: "enrichment_complete",
+  // T8 — MUST be "email_reply": that's the shape the outcome-detector cron
+  // actually resolves (inngest/outcome-detector.ts matches
+  // expectedOutcome='email_reply' against outbound_emails.repliedAt for the
+  // watcher's contact entityId). Anything else would only ever expire.
+  "outreach-send": "email_reply",
 };
 
 export async function createOutcomeWatcher(params: {

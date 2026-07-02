@@ -30,6 +30,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { filterFreshSignals } from "@/lib/signals/freshness";
 import { extractMessageFeatures } from "@/lib/emails/message-features";
+import { createOutcomeWatcher } from "@/lib/outcomes/create-watcher";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -100,8 +101,11 @@ function freshestSignal(
 }
 
 /**
- * Record one outreach decision. Returns rows written (0 on skip/failure) —
- * callers must never branch on it. See the module contract above.
+ * Record one outreach decision. Returns rows ACTUALLY written (0 on skip,
+ * failure, or an ON CONFLICT no-op) — callers must never branch on it. When
+ * the row writes and a contact is in scope, also opens the T8 outcome watcher
+ * (action_outcomes) whose resolution backfills outcome_id
+ * (lib/outcomes/resolve.ts). See the module contract above.
  */
 export async function recordOutreachDecision(
   input: RecordOutreachDecisionInput,
@@ -237,7 +241,7 @@ export async function recordOutreachDecision(
       messageFeatures = null;
     }
 
-    await database
+    const returned = await database
       .insert(outreachDecisions)
       .values({
         tenantId: input.tenantId,
@@ -261,8 +265,44 @@ export async function recordOutreachDecision(
       // Bare ON CONFLICT DO NOTHING matches the partial unique index on
       // outbound_email_id: an Inngest retry (or the C1/C3 cron race on the
       // same queued row) writes exactly one record, silently.
-      .onConflictDoNothing();
-    return 1;
+      .onConflictDoNothing()
+      // RETURNING is the write detector: the driver returns the row only when
+      // the insert actually wrote ([] on the conflict no-op), so a replayed
+      // send step never creates a SECOND watcher below.
+      .returning({ id: outreachDecisions.id });
+
+    const rows = Array.isArray(returned) ? returned : [];
+    const decisionId = rows[0]?.id ?? null;
+
+    // ── T8 — the outcome watcher for a REGULAR outreach send. ──
+    // No watcher existed for these (only the agent-reactor created them), so
+    // outreach_decisions.outcome_id could never backfill. Create one here,
+    // only when the insert actually wrote (retry-safe) and only when a
+    // contact is in scope: the detector (inngest/outcome-detector.ts) resolves
+    // 'email_reply' watchers by matching outbound_emails.contact_id to the
+    // watcher's entityId — a contact-less watcher could only ever expire to a
+    // no_response the decision never earned. The snapshot carries the join
+    // keys the resolver reads (decisionId → outreach_decisions.outcome_id).
+    if (decisionId && input.contactId) {
+      try {
+        await createOutcomeWatcher({
+          tenantId: input.tenantId,
+          actionId: decisionId, // the decision row IS the watched action
+          entityType: "contact",
+          entityId: input.contactId,
+          actionType: "outreach-send", // → expectedOutcome "email_reply"
+          entitySnapshot: {
+            decisionId,
+            outboundEmailId: input.outboundEmailId ?? null,
+          },
+        });
+      } catch {
+        // Watcher creation is best-effort too: the learning record stands on
+        // its own; a failed watcher must never fail the writer (nor the send).
+      }
+    }
+
+    return rows.length;
   } catch {
     // Best-effort: losing a learning record must never block a send.
     return 0;

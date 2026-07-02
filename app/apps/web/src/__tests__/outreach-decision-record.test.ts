@@ -9,9 +9,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *     company, a duplicate (ON CONFLICT no-op) all resolve without throwing —
  *     the writer must never fail a send.
  *
+ * T8 additions: the writer opens the outcome watcher (action_outcomes) when —
+ * and ONLY when — the insert actually wrote (RETURNING is the write detector,
+ * so an ON CONFLICT no-op never creates a second watcher) and a contact is in
+ * scope. The watcher's snapshot carries decisionId + outboundEmailId (the
+ * resolver's join keys) and a watcher failure never fails the writer.
+ *
  * The db is mocked; the REAL @/db/schema and drizzle-orm are used so the
  * query construction paths run for real. Select queries are routed on their
- * projection keys (gate query projects `gate`, company-only projects `props`).
+ * projection keys (gate query projects `gate`, company-only projects `props`);
+ * inserts are routed on their values shape (the watcher insert carries
+ * `expectedOutcome`).
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -20,10 +28,13 @@ let contactRows: unknown[] = [];
 let companyRows: unknown[] = [];
 let gateRows: unknown[] = [];
 const inserted: Array<Record<string, unknown>> = [];
+const watchers: Array<Record<string, unknown>> = [];
+const writtenOutboundIds = new Set<string>();
 let selectCalls = 0;
 let selectThrows = false;
 let insertThrows = false;
 let insertRejects = false;
+let watcherRejects = false;
 
 vi.mock("@/db", () => ({
   db: {
@@ -62,13 +73,33 @@ vi.mock("@/db", () => ({
     insert: () => {
       if (insertThrows) throw new Error("insert down");
       return {
-        values: (v: Record<string, unknown>) => ({
-          onConflictDoNothing: () => {
-            if (insertRejects) return Promise.reject(new Error("db down"));
-            inserted.push(v);
-            return Promise.resolve(undefined);
-          },
-        }),
+        values: (v: Record<string, unknown>) => {
+          // The T8 watcher insert (create-watcher.ts): values().returning().
+          if ("expectedOutcome" in v) {
+            return {
+              returning: () => {
+                if (watcherRejects) return Promise.reject(new Error("watcher down"));
+                watchers.push(v);
+                return Promise.resolve([{ id: "w1" }]);
+              },
+            };
+          }
+          // The decision insert: values().onConflictDoNothing().returning().
+          return {
+            onConflictDoNothing: () => ({
+              returning: () => {
+                if (insertRejects) return Promise.reject(new Error("db down"));
+                // Simulate the partial unique index on outbound_email_id: a
+                // duplicate is DO NOTHING → RETURNING [] (no row written).
+                const key = v.outboundEmailId as string | null;
+                if (key && writtenOutboundIds.has(key)) return Promise.resolve([]);
+                if (key) writtenOutboundIds.add(key);
+                inserted.push(v);
+                return Promise.resolve([{ id: `dec-${inserted.length}` }]);
+              },
+            }),
+          };
+        },
       };
     },
   },
@@ -81,10 +112,13 @@ beforeEach(() => {
   companyRows = [];
   gateRows = [];
   inserted.length = 0;
+  watchers.length = 0;
+  writtenOutboundIds.clear();
   selectCalls = 0;
   selectThrows = false;
   insertThrows = false;
   insertRejects = false;
+  watcherRejects = false;
 });
 
 const daysAgoIso = (d: number) => new Date(Date.now() - d * DAY_MS).toISOString();
@@ -277,10 +311,12 @@ describe("recordOutreachDecision — the outreach learning row", () => {
 
   it("duplicate (ON CONFLICT DO NOTHING no-op) resolves without throwing — Inngest-retry safe", async () => {
     contactRows = [fullContactRow()];
-    // The server silently no-ops a duplicate key; the client sees a normal
-    // resolution — same call twice must not throw and must not error.
+    // The server silently no-ops a duplicate key (RETURNING []); the client
+    // sees a normal resolution — same call twice must not throw, and the
+    // second call reports 0 rows written.
     await expect(recordOutreachDecision(fullInput)).resolves.toBe(1);
-    await expect(recordOutreachDecision(fullInput)).resolves.toBe(1);
+    await expect(recordOutreachDecision(fullInput)).resolves.toBe(0);
+    expect(inserted).toHaveLength(1);
   });
 
   it("minimal input (C5 shape: no ids, no outbound row) writes a null-keyed row", async () => {
@@ -303,5 +339,64 @@ describe("recordOutreachDecision — the outreach learning row", () => {
       signal: null,
       gateScores: null,
     });
+  });
+});
+
+describe("recordOutreachDecision — the T8 outcome watcher", () => {
+  it("a successful insert opens ONE watcher whose snapshot carries decisionId + outboundEmailId", async () => {
+    contactRows = [fullContactRow()];
+    await expect(recordOutreachDecision(fullInput)).resolves.toBe(1);
+    expect(watchers).toHaveLength(1);
+    const w = watchers[0];
+    expect(w).toMatchObject({
+      tenantId: "t1",
+      actionId: "dec-1", // the decision row id IS the watched action
+      entityType: "contact",
+      entityId: "c1", // the detector matches outbound_emails.contact_id here
+      actionType: "outreach-send",
+      // The shape the outcome detector actually resolves (email_reply +
+      // outbound_emails.replied_at) — anything else would only expire.
+      expectedOutcome: "email_reply",
+    });
+    expect(w.entitySnapshot).toEqual({
+      decisionId: "dec-1",
+      outboundEmailId: "ob1",
+    });
+  });
+
+  it("NO watcher on an ON CONFLICT no-op (Inngest retry never doubles the watcher)", async () => {
+    contactRows = [fullContactRow()];
+    await recordOutreachDecision(fullInput);
+    await recordOutreachDecision(fullInput); // retry: DO NOTHING → RETURNING []
+    expect(watchers).toHaveLength(1);
+  });
+
+  it("NO watcher when the insert never wrote (reply class / rejected insert)", async () => {
+    contactRows = [fullContactRow()];
+    await recordOutreachDecision({ ...fullInput, sendClass: "reply" });
+    expect(watchers).toHaveLength(0);
+    insertRejects = true;
+    await expect(recordOutreachDecision(fullInput)).resolves.toBe(0);
+    expect(watchers).toHaveLength(0);
+  });
+
+  it("NO watcher without a contact in scope (the detector could never resolve it)", async () => {
+    companyRows = [{ size: "11-50", industry: "software", props: {} }];
+    const written = await recordOutreachDecision({
+      tenantId: "t1",
+      sendClass: "outreach",
+      companyId: "co9",
+      bodyText: "Take a look when you have a minute.",
+    });
+    expect(written).toBe(1); // the learning row still writes
+    expect(watchers).toHaveLength(0);
+  });
+
+  it("a REJECTING watcher insert never fails the writer (row stands on its own)", async () => {
+    contactRows = [fullContactRow()];
+    watcherRejects = true;
+    await expect(recordOutreachDecision(fullInput)).resolves.toBe(1);
+    expect(inserted).toHaveLength(1);
+    expect(watchers).toHaveLength(0);
   });
 });
