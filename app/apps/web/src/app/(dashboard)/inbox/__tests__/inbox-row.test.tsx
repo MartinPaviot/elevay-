@@ -62,11 +62,11 @@ describe("InboxRow (F1)", () => {
     expect(screen.getByText("Re: pricing question").className).toMatch(/font-normal/);
   });
 
-  it("checkbox is hidden at rest, shown when multi-selected", () => {
+  it("checkbox is faint at rest (discoverable on touch), full when multi-selected", () => {
     const { rerender } = render(
       <InboxRow item={sample()} lane="attention" selected={false} multiSelected={false} hasSelection={false} onSelect={vi.fn()} onToggleSelect={vi.fn()} />,
     );
-    expect(screen.getByRole("checkbox").className).toMatch(/opacity-0/);
+    expect(screen.getByRole("checkbox").className).toMatch(/opacity-40/);
     rerender(
       <InboxRow item={sample()} lane="attention" selected={false} multiSelected={true} hasSelection={true} onSelect={vi.fn()} onToggleSelect={vi.fn()} />,
     );
@@ -81,7 +81,7 @@ describe("InboxRow (F1)", () => {
     expect(onSelect).toHaveBeenCalledWith("k1");
   });
 
-  it("renders the SLA-overdue indicator when overdue (calm: hours, hover-revealed)", () => {
+  it("renders the SLA-overdue indicator when overdue (calm: hours, always visible)", () => {
     render(<InboxRow item={sample({ slaHoursOverdue: 5 })} lane="attention" selected={false} multiSelected={false} hasSelection={false} onSelect={vi.fn()} />);
     expect(screen.getByText("5h")).toBeTruthy(); // concise "5h" (no loud "overdue" pill)
   });
