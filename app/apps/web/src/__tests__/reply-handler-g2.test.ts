@@ -367,4 +367,40 @@ describe("reply-handler G2 gate — objection path (draft-only)", () => {
     expect(logged.reasons).toMatchObject({ path: "reply_objection", ungrounded: ["n8n"] });
     expect(logged.reasons.autoSendDowngraded).toBeUndefined();
   });
+
+  it("clean objection reply -> draft with verdict pass (path reply_objection)", async () => {
+    const res = await handler({ event: makeEvent("objection_price"), step: fakeStep });
+    expect(res).toMatchObject({ result: "draft_created", objectionType: "price" });
+
+    expect(insertedValues[0]).toMatchObject({ status: "draft", bodyText: "clean body" });
+    expect(tracedGenerateObject).toHaveBeenCalledTimes(1); // no rework on a clean pass
+
+    const logged = recordGateDecision.mock.calls[0][0];
+    expect(logged).toMatchObject({ subjectType: "draft", subjectId: "email1", gate: 2, verdict: "pass" });
+    expect(logged.reasons).toMatchObject({ path: "reply_objection", ungrounded: [] });
+  });
+});
+
+describe("reply-handler G2 gate — corrective regeneration failure", () => {
+  it("regen THROWS after a blocked verdict -> ORIGINAL body kept, forced draft, verdict blocked WITHOUT failClosed", async () => {
+    tracedGenerateObject
+      .mockResolvedValueOnce({ object: { subject: "Re: Quick idea", body: "fabricated body" } })
+      .mockRejectedValueOnce(new Error("model down"));
+    decideFabricationGate.mockReturnValueOnce(BLOCKED);
+
+    const res = await handler({ event: makeEvent("interested"), step: fakeStep });
+    expect(res).toMatchObject({ classification: "interested" });
+
+    // The blocked ORIGINAL must stay draft-only — never queued, never the
+    // (nonexistent) corrected body, and never a deterministic re-pass on the
+    // unchanged body (a semantic-only block would false-pass to "reworked").
+    expect(insertedValues[0]).toMatchObject({ status: "draft", bodyText: "fabricated body" });
+    expect(insertedValues[0].queuedAt ?? null).toBeNull();
+    expect(decideFabricationGate).toHaveBeenCalledTimes(1); // NO recheck after a failed roll
+
+    const logged = recordGateDecision.mock.calls[0][0];
+    expect(logged.verdict).toBe("blocked");
+    expect(logged.reasons).toMatchObject({ path: "reply_positive", autoSendDowngraded: true, ungrounded: ["n8n", "500 clients"] });
+    expect(logged.reasons.failClosed).toBeUndefined(); // the gate itself worked; only the roll failed
+  });
 });
