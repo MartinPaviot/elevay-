@@ -143,6 +143,12 @@ export const sequenceDraftStatusEnum = pgEnum("sequence_draft_status", [
   "rejected",
   "expired",
   "sent",
+  // M13 (outreach-autopilot T6) — quality-gate lifecycle. Appended in DB
+  // order (ALTER TYPE ADD VALUE appends; migration 0113).
+  "gates_running",
+  "blocked",
+  "reworking",
+  "set_aside",
 ]);
 
 export const sequenceDrafts = pgTable(

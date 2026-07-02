@@ -45,6 +45,11 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Rejected",
   expired: "Expired",
   sent: "Sent",
+  // M13 T6 — quality-gate lifecycle.
+  gates_running: "Checking",
+  blocked: "Blocked",
+  reworking: "Reworking",
+  set_aside: "Set aside",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -53,6 +58,10 @@ const STATUS_COLOR: Record<string, string> = {
   rejected: "var(--color-error)",
   expired: "var(--color-text-tertiary)",
   sent: "var(--color-accent)",
+  gates_running: "var(--color-text-tertiary)",
+  blocked: "var(--color-error)",
+  reworking: "var(--color-warning)",
+  set_aside: "var(--color-text-tertiary)",
 };
 
 function timeAgo(iso: string): string {
