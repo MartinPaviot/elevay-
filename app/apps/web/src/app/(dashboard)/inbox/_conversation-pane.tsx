@@ -886,10 +886,16 @@ export function ConversationPane({
         // mail reads BELOW it (Gmail/Outlook style). It takes the larger 3:2 share
         // of the pane for a generous writing area; min-h-0 + the panel's own
         // overflow-y-auto keep Send reachable on a narrow/zoomed view. While the
-        // scheduler card is open the shares flip (1:3) — picking a slot is the
-        // active task, and at 3:2 the card's week strip sat below the fold of its
-        // cramped region (prod audit 2026-07-02, screenshot 040).
-        <div className="flex min-h-0 flex-col" style={{ flex: schedOpen && canBook ? "1 1 0%" : "3 1 0%" }}>
+        // scheduler card is open the composer MINIMIZES to the slim bar below
+        // (Gmail pattern) — the earlier 1:3 share-flip left a clipped composer
+        // stub that read as overlapping cards (UI pass 2026-07-02, u960-04).
+        // display:none, NOT unmount: the panel owns its edited body, and the
+        // localStorage restore deliberately defers to a non-empty incoming
+        // draft — a remount would discard the user's edits.
+        <div
+          className="flex min-h-0 flex-col"
+          style={{ flex: "3 1 0%", display: schedOpen && canBook ? "none" : undefined }}
+        >
           {replyTones.length > 1 && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
               <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
@@ -941,6 +947,25 @@ export function ConversationPane({
           />
         </div>
       )}
+      {/* Minimized-draft bar while the scheduler is open — one glance says the
+          draft is safe, one click brings it back (closing the card restores it
+          too). */}
+      {composer && schedOpen && canBook && (
+        <button
+          type="button"
+          onClick={() => setSchedOpen(false)}
+          className="flex shrink-0 items-center gap-2 border-t px-4 py-2 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+          style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
+        >
+          <Mail size={13} className="shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+          <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
+            {t("inbox.draftMinimized", { subject: composer.subject || "" })}
+          </span>
+          <span className="ml-auto shrink-0 text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
+            {t("inbox.draftReopen")}
+          </span>
+        </button>
+      )}
 
       <div
         // pb-16 keeps the last interactive control (the scheduler's Confirm)
@@ -951,7 +976,7 @@ export function ConversationPane({
         // below and read as overlapping text.
         className="min-h-0 overflow-y-auto px-4 py-3 pb-16"
         style={{
-          flex: composer ? (schedOpen && canBook ? "3 1 0%" : "2 1 0%") : "1 1 0%",
+          flex: composer && !(schedOpen && canBook) ? "2 1 0%" : "1 1 0%",
           ...(composer ? { borderTop: "1px solid var(--color-border-default)" } : {}),
         }}
       >

@@ -219,6 +219,9 @@ export const messages: Record<Locale, Messages> = {
     "inbox.toast.noActiveSequence": "Aucune séquence active sur cette conversation.",
     // New-email composer (the Compose overlay).
     "inbox.compose.newEmail": "Nouvel e-mail",
+    "inbox.compose.replyLabel": "Réponse",
+    "inbox.draftMinimized": "Brouillon — {subject}",
+    "inbox.draftReopen": "Rouvrir",
     "inbox.compose.from": "De",
     "inbox.compose.to": "À",
     "inbox.compose.bcc": "Cci",
@@ -821,6 +824,9 @@ export const messages: Record<Locale, Messages> = {
     "inbox.toast.noActiveSequence": "No active sequence on this conversation.",
     // New-email composer (the Compose overlay).
     "inbox.compose.newEmail": "New Email",
+    "inbox.compose.replyLabel": "Reply",
+    "inbox.draftMinimized": "Draft — {subject}",
+    "inbox.draftReopen": "Reopen",
     "inbox.compose.from": "From",
     "inbox.compose.to": "To",
     "inbox.compose.bcc": "Bcc",

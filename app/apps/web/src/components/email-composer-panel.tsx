@@ -658,19 +658,28 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
               boxShadow: "var(--shadow-panel)",
             }}
       >
-        {/* Header */}
+        {/* Header. Inline replies keep it a THIN strip with a small "Reply"
+            label — the subject already reads twice on screen (pane title +
+            Subject field); repeating it a third time at 14px semibold burned
+            ~44px of the composer's scarce height (UI pass 2026-07-02). */}
         <div
-          className="flex items-center justify-between px-4 py-3"
+          className={`flex items-center justify-between px-4 ${inline && draft.threadId ? "py-1.5" : "py-3"}`}
           style={{ borderBottom: "1px solid var(--color-border-default)" }}
         >
-          <div className="flex items-center gap-2">
-            <Mail size={15} style={{ color: "var(--color-accent)" }} />
-            <h3
-              className="truncate text-[14px] font-semibold"
-              style={{ color: "var(--color-text-primary)" }}
-            >
-              {editSubject || t("inbox.compose.newEmail")}
-            </h3>
+          <div className="flex min-w-0 items-center gap-2">
+            <Mail size={inline && draft.threadId ? 13 : 15} style={{ color: "var(--color-accent)" }} />
+            {inline && draft.threadId ? (
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-tertiary)" }}>
+                {t("inbox.compose.replyLabel")}
+              </span>
+            ) : (
+              <h3
+                className="truncate text-[14px] font-semibold"
+                style={{ color: "var(--color-text-primary)" }}
+              >
+                {editSubject || t("inbox.compose.newEmail")}
+              </h3>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -806,9 +815,11 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
         </div>
 
         {/* Body — plain textarea, keeps markdown formatting */}
-        <div className={inline ? "p-4" : "flex-1 overflow-auto p-4"}>
-          {/* Rewrite toolbar (INBOX-C04): GTM presets + free-form, with undo. */}
-          <div className="mb-2 flex items-center gap-2">
+        <div className={inline ? "px-4 pb-3 pt-2" : "flex-1 overflow-auto p-4"}>
+          {/* Rewrite toolbar (INBOX-C04): GTM presets + free-form, with undo.
+              One row WITH the edit-with-AI field (flex-1 tail) — stacked they
+              cost ~80px of the inline composer's height (UI pass 2026-07-02). */}
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <div className="relative">
               <Button
                 size="sm"
@@ -944,14 +955,13 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
                 <Undo2 size={12} /> {t("inbox.compose.undo")}
               </Button>
             )}
-          </div>
-          {/* B1 edit-with-AI (Upstream canonical position): an always-visible
-              instruction field directly above the body. Submits to the SAME
-              handleRewrite (no new endpoint); Cmd/Ctrl+J focuses or submits it. */}
-          <div
-            className="mb-2 flex items-center gap-1.5 rounded-lg border px-2 py-1"
-            style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
-          >
+            {/* B1 edit-with-AI (Upstream canonical position): an always-visible
+                instruction field, the flex-1 tail of the toolbar row. Submits to
+                the SAME handleRewrite; Cmd/Ctrl+J focuses or submits it. */}
+            <div
+              className="flex min-w-[200px] flex-1 items-center gap-1.5 rounded-lg border px-2 py-1"
+              style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-page)" }}
+            >
             <Sparkles size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} aria-hidden />
             <input
               ref={aiInstructionRef}
@@ -971,6 +981,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             {rewriting && (
               <RefreshCw size={12} className="shrink-0 animate-spin" style={{ color: "var(--color-text-tertiary)" }} aria-hidden />
             )}
+            </div>
           </div>
           <textarea
             ref={bodyRef}
