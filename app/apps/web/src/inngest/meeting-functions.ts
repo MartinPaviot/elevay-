@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { db } from "@/db";
-import { activities, authAccounts, authUsers, users, tenants } from "@/db/schema";
+import { activities, authAccounts, authUsers, users, tenants, contacts as contactsTable } from "@/db/schema";
 import { eq, and, sql, gte, lte, isNull, desc } from "drizzle-orm";
 import { fetchMicrosoftMeetings } from "@/lib/integrations/calendar-microsoft";
 import { fetchRecentMeetings, type SyncedMeeting } from "@/lib/integrations/calendar";
@@ -462,4 +462,150 @@ export const generateMeetingPrep = inngest.createFunction(
 
     return { success: true, activityId };
   }
+);
+
+/**
+ * kMeet recording sweep (the sovereign meeting-intelligence loop, zero-touch):
+ * every 10 minutes, find booked meetings that ENDED with an Elevay-minted
+ * kMeet room and no notes yet, fetch their recording from the tenant's kDrive
+ * (correlated EXACTLY by room name — we mint it at booking, kMeet names the
+ * file after it), transcribe (Whisper accepts the mp4 directly, <=25 MB) and
+ * run the same pipeline as a manual upload. The founder's bar (2026-07-02):
+ * "le meeting se termine -> les notes apparaissent", nobody uploads anything.
+ *
+ * Idempotent: candidates are rows WITHOUT structuredNotes and WITHOUT a
+ * recordingSweepStatus verdict; a recording not deposited yet simply retries
+ * next cycle (kMeet takes a few minutes to publish after Stop).
+ */
+export const cronMeetingRecordingSweep = inngest.createFunction(
+  {
+    id: "cron-meeting-recording-sweep",
+    name: "kMeet Recording Sweep (kDrive -> transcript pipeline)",
+    retries: 1,
+    triggers: [{ cron: "*/10 * * * *" }],
+  },
+  async ({ step }) => {
+    const { kdriveConfigured, findRecordingByRoom, downloadKdriveFile } = await import(
+      "@/lib/integrations/kdrive"
+    );
+    const { transcriptionConfigured, transcribeAudio } = await import(
+      "@/lib/integrations/transcribe"
+    );
+    if (!kdriveConfigured() || !transcriptionConfigured()) {
+      return { skipped: "not_configured" };
+    }
+
+    const candidates = await step.run("find-ended-kmeet-meetings", async () => {
+      const rows = await db
+        .select({
+          id: activities.id,
+          tenantId: activities.tenantId,
+          actorId: activities.actorId,
+          entityType: activities.entityType,
+          entityId: activities.entityId,
+          summary: activities.summary,
+          metadata: activities.metadata,
+        })
+        .from(activities)
+        .where(
+          and(
+            eq(activities.activityType, "meeting_scheduled"),
+            isNull(activities.deletedAt),
+            sql`metadata->>'roomName' is not null`,
+            sql`metadata->'structuredNotes' is null`,
+            sql`metadata->>'recordingSweepStatus' is null`,
+            // Ended (start + duration passed), but recent enough to still care.
+            sql`(metadata->>'startTime')::timestamptz + make_interval(mins => coalesce((metadata->>'durationMinutes')::int, 30)) < now()`,
+            sql`(metadata->>'startTime')::timestamptz > now() - interval '48 hours'`,
+          ),
+        )
+        .limit(10);
+      return rows;
+    });
+
+    let processed = 0;
+    for (const activity of candidates) {
+      const ok = await step.run(`process-${activity.id}`, async () => {
+        const meta = (activity.metadata ?? {}) as Record<string, unknown>;
+        const roomName = String(meta.roomName ?? "");
+        if (!roomName) return false;
+
+        const file = await findRecordingByRoom(roomName);
+        // Not deposited yet (kMeet publishes a few minutes after Stop, and the
+        // organizer may simply not have recorded) — retry next cycle until the
+        // 48h window closes.
+        if (!file) return false;
+
+        const markStatus = async (status: string, extra: Record<string, unknown> = {}) => {
+          await db
+            .update(activities)
+            .set({ metadata: { ...meta, recordingSweepStatus: status, ...extra } })
+            .where(eq(activities.id, activity.id));
+        };
+
+        if (file.size > 25 * 1024 * 1024) {
+          // Whisper's hard ceiling — mark so we don't loop forever; the
+          // storage-side compression path is the noted v2.
+          await markStatus("too_large", { recordingFileId: file.id, recordingFileName: file.name });
+          return false;
+        }
+
+        const buf = await downloadKdriveFile(file.id);
+        // Uint8Array.from copies into a fresh ArrayBuffer-backed view — a raw
+        // Buffer's ArrayBufferLike backing is not assignable to BlobPart.
+        const transcript = await transcribeAudio(
+          new File([Uint8Array.from(buf)], file.name, { type: "video/mp4" }),
+        );
+        if (transcript.trim().length < 50) {
+          await markStatus("empty_transcript", { recordingFileId: file.id });
+          return false;
+        }
+
+        // The booked meeting's contact email helps participant matching.
+        let attendeeEmails: string[] | undefined;
+        if (activity.entityType === "contact" && activity.entityId) {
+          const [c] = await db
+            .select({ email: contactsTable.email })
+            .from(contactsTable)
+            .where(eq(contactsTable.id, activity.entityId))
+            .limit(1);
+          if (c?.email) attendeeEmails = [c.email];
+        }
+
+        const { processMeetingTranscript } = await import(
+          "@/lib/meetings/process-transcript-core"
+        );
+        await processMeetingTranscript({
+          tenantId: activity.tenantId,
+          actorAppUserId: activity.actorId ?? "system",
+          transcript,
+          meetingTitle:
+            (meta.title as string | undefined) ??
+            activity.summary?.replace(/^Meeting booked: /, "") ??
+            undefined,
+          meetingDate: (meta.startTime as string | undefined) ?? undefined,
+          attendeeEmails,
+          activityId: activity.id,
+          source: "kdrive_kmeet",
+        });
+        // processMeetingTranscript merged structuredNotes into metadata; add
+        // the sweep's own provenance on top (re-read not needed — merge again).
+        await db
+          .update(activities)
+          .set({
+            metadata: sql`metadata || ${JSON.stringify({
+              recordingSweepStatus: "processed",
+              recordingFileId: file.id,
+              recordingFileName: file.name,
+              recordingProcessedAt: new Date().toISOString(),
+            })}::jsonb`,
+          })
+          .where(eq(activities.id, activity.id));
+        return true;
+      });
+      if (ok) processed++;
+    }
+
+    return { candidates: candidates.length, processed };
+  },
 );

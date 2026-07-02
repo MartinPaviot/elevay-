@@ -7,7 +7,7 @@ import { dailyRollup } from "@/inngest/daily-rollup";
 import { weeklyOptimizer } from "@/inngest/weekly-optimizer";
 import { aiAutoFill } from "@/inngest/ai-autofill";
 import { executeWorkflow } from "@/inngest/workflow-engine";
-import { cronCalendarSync, autoMeetingPrep, generateMeetingPrep } from "@/inngest/meeting-functions";
+import { cronCalendarSync, autoMeetingPrep, generateMeetingPrep, cronMeetingRecordingSweep } from "@/inngest/meeting-functions";
 import { scheduleRecallBots } from "@/inngest/recall-functions";
 import { onOnboardingCompleted } from "@/inngest/onboarding-functions";
 import { processOutboundEmails, sendSingleEmail, cronDailyMailboxReset } from "@/inngest/email-send-worker";
@@ -131,6 +131,7 @@ export const { GET, POST, PUT } = serve({
     cronCalendarSync,
     autoMeetingPrep,
     generateMeetingPrep,
+    cronMeetingRecordingSweep,
     scheduleRecallBots,
     onOnboardingCompleted,
     processOutboundEmails,
