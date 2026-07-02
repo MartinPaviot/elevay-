@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { StreamingSkeleton } from "@/components/chat/streaming-skeleton";
 import { ToolCallGroup, ToolCallPanel } from "@/components/tool-call-panel";
+import { AgentThinkingDots, AgentWorkingInline } from "@/components/chat/agent-working";
 
 /**
  * Agent-working motion (landing language in-product): thinking dots on
@@ -11,6 +12,33 @@ import { ToolCallGroup, ToolCallPanel } from "@/components/tool-call-panel";
  * CSS; these tests pin the class/state wiring so a refactor can't
  * silently drop the working-state identity.
  */
+
+describe("AgentWorking primitives (shared app-wide)", () => {
+  it("AgentThinkingDots: three brand-stop dots on the landing rhythm", () => {
+    const { container } = render(<AgentThinkingDots />);
+    const dots = container.querySelectorAll(".agent-dot");
+    expect([...dots].map((d) => (d as HTMLElement).style.background)).toEqual([
+      "#17C3B2",
+      "#2C6BED",
+      "#FF7A3D",
+    ]);
+    expect([...dots].map((d) => (d as HTMLElement).style.animationDelay)).toEqual([
+      "0ms",
+      "180ms",
+      "360ms",
+    ]);
+  });
+
+  it("AgentWorkingInline: one brand-gradient dot + gradient-swept label, announced", () => {
+    const { container, getByText } = render(<AgentWorkingInline label="Preparing…" />);
+    const dot = container.querySelector(".agent-dot") as HTMLElement;
+    expect(dot.style.background).toContain("var(--gradient-brand)");
+    expect(getByText("Preparing…").className).toContain("gradient-text-active");
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    // Never a flat spinner.
+    expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+});
 
 describe("StreamingSkeleton (thinking)", () => {
   it("renders the three brand-stop dots on the landing rhythm", () => {

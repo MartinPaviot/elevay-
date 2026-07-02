@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Rocket, Loader2, X, ArrowRight, TrendingUp, Users, UserCog, Cpu, Globe, Star, Swords, Package } from "lucide-react";
+import { Sparkles, Rocket, X, ArrowRight, TrendingUp, Users, UserCog, Cpu, Globe, Star, Swords, Package } from "lucide-react";
 import Link from "next/link";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { AgentWorkingInline } from "@/components/chat/agent-working";
 
 /**
  * home-proposed-lane — "Proposed by Elevay", the review surface. Mirrors
@@ -218,9 +219,9 @@ export function ProposedByElevayCard() {
                   <div className="mt-2 flex items-center gap-2">
                     <Button size="sm" onClick={() => void launch(p)} disabled={isBusy}>
                       {isBusy ? (
-                        <>
-                          <Loader2 size={12} className="animate-spin" /> Preparing…
-                        </>
+                        /* Agent working now (building the draft + enrolling):
+                           the #648 brand-gradient motion, not a flat spinner. */
+                        <AgentWorkingInline label="Preparing…" />
                       ) : (
                         <>
                           <Rocket size={12} /> Launch draft
