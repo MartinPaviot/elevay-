@@ -28,6 +28,32 @@ import {
 } from "@/db/schema";
 import { and, asc, eq, desc, isNull } from "drizzle-orm";
 
+/**
+ * T11c — a human, one-line "why" from a gate's reasons jsonb. Each gate
+ * stores a different shape (G1: reason code; G2: ungrounded tokens; G4:
+ * grader issues; G5: transport failures), so extraction is per-gate. Returns
+ * null when there is nothing quotable.
+ */
+export function gateReasonText(gate: number, reasons: unknown): string | null {
+  const r = (reasons ?? {}) as Record<string, unknown>;
+  const list = (v: unknown, n = 3): string | null =>
+    Array.isArray(v) && v.length > 0 ? v.slice(0, n).map(String).join(", ") : null;
+  if (gate === 1) return typeof r.reason === "string" ? r.reason : null;
+  if (gate === 2) {
+    const ung = list(r.ungrounded);
+    return ung ? `Unverifiable: ${ung}` : null;
+  }
+  if (gate === 4) {
+    const issues = list(r.issues);
+    return issues ?? (typeof r.threshold === "number" ? `Below quality threshold ${r.threshold}` : null);
+  }
+  if (gate === 5) {
+    const fail = list(r.failures);
+    return fail ? `Content: ${fail}` : null;
+  }
+  return null;
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -146,9 +172,19 @@ export async function GET(
     )
     .orderBy(asc(gateDecisions.createdAt));
 
-  const gateScores: Record<string, { score: number | null; verdict: string }> = {};
+  const gateScores: Record<
+    string,
+    { score: number | null; verdict: string; reason: string | null }
+  > = {};
   for (const row of gateRows) {
-    gateScores[`g${row.gate}`] = { score: row.score ?? null, verdict: row.verdict };
+    gateScores[`g${row.gate}`] = {
+      score: row.score ?? null,
+      verdict: row.verdict,
+      // T11c — the WHY behind a non-pass verdict, extracted per gate from the
+      // heterogeneous reasons jsonb (each gate stores a different shape). Null
+      // for a pass. Surfaced as the "gate fautif ET la raison" (Done).
+      reason: row.verdict === "pass" ? null : gateReasonText(row.gate, row.reasons),
+    };
   }
 
   return Response.json({
