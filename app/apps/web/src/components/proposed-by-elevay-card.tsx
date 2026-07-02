@@ -173,7 +173,8 @@ export function ProposedByElevayCard() {
             const Icon = visual.icon;
             const isBusy = busy === p.id;
             const done = launched[p.id];
-            const extra = p.companyCount - p.companyNames.length;
+            const shown = p.companyNames.slice(0, 3);
+            const extra = p.companyCount - shown.length;
             return (
               <div
                 key={p.id}
@@ -197,7 +198,7 @@ export function ProposedByElevayCard() {
                   </div>
                 </div>
                 <p className="mt-2 text-[12px]" style={{ color: "var(--color-text-secondary)" }}>
-                  {p.companyNames.slice(0, 3).join(", ")}
+                  {shown.join(", ")}
                   {extra > 0 ? ` +${extra} more` : ""}
                 </p>
                 {done ? (
