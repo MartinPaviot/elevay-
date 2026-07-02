@@ -11,6 +11,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── In-memory backing stores the mocked db reads from ──
 let optoutRows: Array<{ tenantId: string; emailAddress: string }> = [];
 let activityRows: Array<{ tenantId: string; to?: string; from?: string }> = [];
+// INV-1 — rows for the INBOUND-only lookup (hasInboundEmailFrom). Distinct from
+// activityRows: coldness checks to+from, the reply verification checks from ONLY.
+let inboundRows: Array<{ tenantId: string; from: string }> = [];
 // When set, the next db.select(...).limit() throws — proves fail-closed.
 let throwOnSelect = false;
 // Captures the WHERE clause of the opt-out select so a test can pin its SQL shape
@@ -51,6 +54,12 @@ vi.mock("@/db", () => ({
               // opt-out lookup — return the first matching row (or none)
               return Promise.resolve(optoutRows.length > 0 ? [{ id: "o1" }] : []);
             }
+            // Two {n}-projected activity queries exist: coldness (matches
+            // metadata->>'to' AND 'from') and the INV-1 inbound-only reply
+            // verification (matches 'from' only). Disambiguate on the clause.
+            if (!JSON.stringify(clause).includes("->>'to'")) {
+              return Promise.resolve(inboundRows.length > 0 ? [{ n: 1 }] : []);
+            }
             // activity (coldness) lookup — any row -> warm
             return Promise.resolve(activityRows.length > 0 ? [{ n: 1 }] : []);
           },
@@ -62,7 +71,7 @@ vi.mock("@/db", () => ({
 
 // getTenantSettings + DEFAULTS — DEFAULTS mirrors tenant-settings.ts. Hoisted so
 // the vi.mock factory (also hoisted) can reference it without a TDZ error.
-const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState, guardState, rateLimitState } = vi.hoisted(() => ({
+const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState, guardState, rateLimitState, capState } = vi.hoisted(() => ({
   DEFAULTS: {
     sendingMailboxMode: "primary-with-caps" as const,
     sendingDailyCapPrimary: 20,
@@ -89,6 +98,15 @@ const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingSt
   // OTHER 90+ cases in this file (which all share tenantId "t1") never trip
   // the real in-memory rate-limit store. Default: always allowed.
   rateLimitState: { burstOk: true, hourlyOk: true },
+  // INV-1 — tenant daily outreach cap, mocked at the boundary. Default: slot
+  // granted, so the existing allow-cases are unaffected; the dedicated
+  // describe block flips it to exercise cap exhaustion + fail-closed.
+  capState: {
+    granted: true,
+    sentCount: 1,
+    throwOnConsume: false,
+    calls: [] as Array<{ tenantId: string; day: string }>,
+  },
 }));
 
 vi.mock("@/lib/suppression/db-store", () => ({
@@ -137,14 +155,31 @@ vi.mock("@/lib/infra/rate-limit", () => ({
       : { success: false, remaining: 0, resetAt: Date.now() + 3_600_000 },
   ),
 }));
+// INV-1 — outreach cap mocked at the boundary (the real atomic-consume SQL is
+// covered by src/__tests__/outreach-cap.test.ts). tenantDayKey echoes the tz so
+// tests can pin that the TENANT's timezone drives the day key.
+vi.mock("@/lib/guardrails/outreach-cap", () => ({
+  OUTREACH_DAILY_TENANT_CAP: 100,
+  tenantDayKey: vi.fn((tz?: string | null) => `day:${tz ?? "UTC"}`),
+  consumeOutreachCapSlot: vi.fn(async (tenantId: string, day: string) => {
+    if (capState.throwOnConsume) throw new Error("cap store boom");
+    capState.calls.push({ tenantId, day });
+    return { granted: capState.granted, sentCount: capState.sentCount };
+  }),
+}));
 
 import { evaluateSend, isSuppressed, isColdRecipient, emailBracketLikePattern, isInteractiveRecipientSendable } from "@/lib/guardrails/sending-gate";
 
 beforeEach(() => {
   optoutRows = [];
   activityRows = [];
+  inboundRows = [];
   throwOnSelect = false;
   capturedOptoutWhere = null;
+  capState.granted = true;
+  capState.sentCount = 1;
+  capState.throwOnConsume = false;
+  capState.calls = [];
   settingsState.throwOnSettings = false;
   settingsState.settingsToReturn = { ...DEFAULTS };
   suppressionState.hit = null;
@@ -539,5 +574,86 @@ describe("evaluateSend — spec-35 SAFE_MODE targeting gate (check-3)", () => {
     const r = await evaluateSend({ ...warm, targetingStatus: "archived", accountKey: null });
     expect(r.send).toBe(false);
     if (!r.send) expect(r.code).toBe("not_targeted");
+  });
+});
+
+describe("INV-1 — tenant daily outreach cap (consume-last, verified reply exemption)", () => {
+  // Warm recipient under DEFAULTS (primary-with-caps) so the identity core allows.
+  const base = { tenantId: "t1", toAddress: "warm@a.com", sentTodayFromPrimary: 1, contactId: "c1" };
+  beforeEach(() => {
+    activityRows = [{ tenantId: "t1", to: "warm@a.com" }]; // warm (outbound history)
+  });
+
+  it("an allowed outreach send consumes exactly one slot", async () => {
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(true);
+    expect(capState.calls).toEqual([{ tenantId: "t1", day: "day:UTC" }]);
+  });
+
+  it("the TENANT's timezone drives the day key (midnight boundary is the tenant's)", async () => {
+    settingsState.settingsToReturn = { ...DEFAULTS, timezone: "Europe/Paris" };
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(true);
+    expect(capState.calls[0]?.day).toBe("day:Europe/Paris");
+  });
+
+  it("cap exhausted -> blocked with daily_cap_reached and the count in the reason", async () => {
+    capState.granted = false;
+    capState.sentCount = 100;
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(false);
+    if (!r.send) {
+      expect(r.code).toBe("daily_cap_reached");
+      expect(r.reason).toContain("100/100");
+    }
+  });
+
+  it("a send blocked upstream (suppressed) never consumes a slot", async () => {
+    suppressionState.hit = { entry: { type: "dnc", level: "address" } };
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(false);
+    expect(capState.calls).toHaveLength(0);
+  });
+
+  it("a send blocked by the identity core (primary cap) never consumes a slot — consume runs LAST", async () => {
+    const r = await evaluateSend({ ...base, sentTodayFromPrimary: 20 }); // at the 20/day primary cap
+    expect(r.send).toBe(false);
+    expect(capState.calls).toHaveLength(0);
+  });
+
+  it("a VERIFIED reply (recipient has written to us) is exempt from the cap", async () => {
+    inboundRows = [{ tenantId: "t1", from: "warm@a.com" }];
+    const r = await evaluateSend({ ...base, sendClass: "reply" });
+    expect(r.send).toBe(true);
+    expect(capState.calls).toHaveLength(0);
+  });
+
+  it("a reply CLAIM without any inbound email still consumes (no request-body bypass)", async () => {
+    inboundRows = []; // never wrote to us
+    const r = await evaluateSend({ ...base, sendClass: "reply" });
+    expect(r.send).toBe(true);
+    expect(capState.calls).toHaveLength(1);
+  });
+
+  it("an interactive send to a real correspondent auto-classifies as reply (exempt)", async () => {
+    inboundRows = [{ tenantId: "t1", from: "warm@a.com" }];
+    const r = await evaluateSend({ ...base, interactive: true });
+    expect(r.send).toBe(true);
+    expect(capState.calls).toHaveLength(0);
+  });
+
+  it("an interactive COLD compose consumes a slot (manual cold outreach is outreach)", async () => {
+    settingsState.settingsToReturn = { ...DEFAULTS, sendingAllowColdOnPrimary: true };
+    activityRows = []; // cold stranger
+    inboundRows = [];
+    const r = await evaluateSend({ ...base, toAddress: "stranger@acme.io", interactive: true });
+    expect(r.send).toBe(true);
+    expect(capState.calls).toHaveLength(1);
+  });
+
+  it("a failing cap store FAILS CLOSED (blocked, never a free send)", async () => {
+    capState.throwOnConsume = true;
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(false);
   });
 });

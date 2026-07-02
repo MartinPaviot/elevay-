@@ -760,3 +760,22 @@ export const notificationPreferences = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   }
 );
+
+/**
+ * INV-1 (outreach-autopilot) — per-tenant daily OUTREACH send counter backing
+ * the hard 100/day cap. One row per (tenant, calendar day in the tenant's
+ * timezone); the slot is granted by an atomic conditional UPDATE
+ * (lib/guardrails/outreach-cap.ts), never by read-then-write, so concurrent
+ * workers can never overshoot. `day` is a YYYY-MM-DD string computed in the
+ * tenant's timezone — NOT a timestamp — so the reset boundary is the tenant's
+ * midnight and never shifts with server TZ.
+ */
+export const tenantSendCounters = pgTable(
+  "tenant_send_counters",
+  {
+    tenantId: text("tenant_id").references(() => tenants.id).notNull(),
+    day: text("day").notNull(),
+    sentCount: integer("sent_count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.day] })]
+);

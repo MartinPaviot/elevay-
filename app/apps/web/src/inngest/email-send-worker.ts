@@ -407,13 +407,16 @@ export const processOutboundEmails = inngest.createFunction(
           toAddress: email.toAddress,
           sentTodayFromPrimary: mailbox.sentToday,
           contactId: email.contactId, // spec 35 — account-scope suppression + targeting
+          // INV-1 — server-side class from OUR row, never from a request body;
+          // the gate re-verifies a reply claim against a real inbound email.
+          sendClass: email.inReplyTo ? "reply" : "outreach",
         });
         if (!sendGate.send) {
           // P4: rate_limited is the same transient-condition shape as
           // primary-cap-hit (a window that resets shortly) — requeue, don't
           // fail the row, or a tenant-level rate-limit hit would silently
           // drop a legitimate queued send instead of retrying it.
-          if (sendGate.code === "primary-cap-hit" || sendGate.code === "rate_limited") {
+          if (sendGate.code === "primary-cap-hit" || sendGate.code === "rate_limited" || sendGate.code === "daily_cap_reached") {
             await db
               .update(outboundEmails)
               .set({
@@ -746,13 +749,15 @@ export const sendSingleEmail = inngest.createFunction(
       toAddress: email.toAddress,
       sentTodayFromPrimary: primaryToday,
       contactId: email.contactId, // spec 35 — account-scope suppression + targeting
+      // INV-1 — server-side class from OUR row (see batch path above).
+      sendClass: email.inReplyTo ? "reply" : "outreach",
     });
     if (!singleGate.send) {
       // P4: rate_limited is the same transient-condition shape as
       // primary-cap-hit (a window that resets shortly) — requeue, don't fail
       // the row, or a tenant-level rate-limit hit would silently drop a
       // legitimate queued send instead of retrying it.
-      if (singleGate.code === "primary-cap-hit" || singleGate.code === "rate_limited") {
+      if (singleGate.code === "primary-cap-hit" || singleGate.code === "rate_limited" || singleGate.code === "daily_cap_reached") {
         await db
           .update(outboundEmails)
           .set({

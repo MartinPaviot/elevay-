@@ -50,3 +50,26 @@ describe("CLE-13 wiring guards", () => {
     expect(src).toContain("recordAgentAction");
   });
 });
+
+describe("INV-1 wiring guards (tenant daily outreach cap)", () => {
+  it("the cap is a compiled constant — no env, no config read anywhere in the module", () => {
+    const src = read("lib/guardrails/outreach-cap.ts");
+    expect(src).toContain("OUTREACH_DAILY_TENANT_CAP = 100");
+    expect(src).not.toMatch(/process\.env/);
+    // Guard the IMPORT, not the prose (the module's doc comment legitimately
+    // says "no tenant-settings key" — that must not trip the guard).
+    expect(src).not.toMatch(/from\s+["']@\/lib\/config\/tenant-settings["']/);
+  });
+
+  it("the shared gate consumes the cap slot and exposes the block code", () => {
+    const src = read("lib/guardrails/sending-gate.ts");
+    expect(src).toContain("consumeOutreachCapSlot");
+    expect(src).toContain("daily_cap_reached");
+  });
+
+  it("the cap never becomes a tenant setting", () => {
+    const src = read("lib/config/tenant-settings.ts");
+    expect(src).not.toContain("OUTREACH_DAILY_TENANT_CAP");
+    expect(src).not.toMatch(/outreachDailyCap/i);
+  });
+});

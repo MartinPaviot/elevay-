@@ -111,13 +111,15 @@ export const dispatchOutboundSmtp = inngest.createFunction(
           toAddress: o.toAddress,
           sentTodayFromPrimary: mb.sentToday ?? 0,
           contactId: o.contactId, // spec 35 — account-scope suppression + targeting
+          // INV-1 — server-side class from OUR row (gate re-verifies replies).
+          sendClass: o.inReplyTo ? "reply" : "outreach",
         });
         if (!smtpGate.send) {
           // P4: rate_limited is the same transient-condition shape as
           // primary-cap-hit (a window that resets shortly) — requeue, don't
           // fail the row, or a tenant-level rate-limit hit would silently
           // drop a legitimate queued send instead of retrying it.
-          if (smtpGate.code === "primary-cap-hit" || smtpGate.code === "rate_limited") return "skipped";
+          if (smtpGate.code === "primary-cap-hit" || smtpGate.code === "rate_limited" || smtpGate.code === "daily_cap_reached") return "skipped";
           await db
             .update(outboundEmails)
             .set({
