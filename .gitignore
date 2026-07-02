@@ -83,3 +83,6 @@ _*/**/*.jpg
 _*/**/*.jpeg
 _*/**/*.gif
 _*/**/*.webp
+
+# Founder-filled messaging seed (real positioning/pricing/objections) - local only
+app/apps/web/scripts/*.local.json

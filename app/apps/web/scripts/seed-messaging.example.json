@@ -1,0 +1,49 @@
+{
+  "_readme": "Copy this file to seed-messaging.local.json (gitignored), fill every section with YOUR real messaging, then run: npx tsx --env-file=.env.local scripts/seed-messaging.ts (dry-run) and add --apply to write. See scripts/seed-messaging.ts header for details.",
+  "tenantId": "fdf9b795-d0e3-4ca8-bb76-b298aa81e3b5",
+  "createdByEmail": "contact@elevay.app",
+  "lang": "en",
+  "assets": {
+    "positioning": "ONE short paragraph: who you help + the painful status quo you replace. This opens every outbound email body. Example shape: 'Early-stage founders doing founder-led sales lose deals to CRM busywork — logging calls, updating stages, writing follow-ups — instead of selling.'",
+    "offer": "ONE short paragraph: what Elevay concretely does about that pain, stated as outcomes not features. This is the middle of every outbound body.",
+    "cta": "ONE sentence: the low-friction ask that closes every outbound email. Example shape: 'Worth a quick 15-min look this week?'"
+  },
+  "voice": {
+    "bannedWords": ["leverage", "synergy", "revolutionize"],
+    "favoredPhrasings": [],
+    "formats": [],
+    "frFormality": "vouvoiement"
+  },
+  "knowledge": [
+    {
+      "title": "Pricing",
+      "category": "product",
+      "content": "Your real pricing tiers, per-seat cost, annual vs monthly, pilot terms. Replies will ONLY quote figures that appear here — anything absent gets 'I'll follow up with the exact number'."
+    },
+    {
+      "title": "Objection: too expensive",
+      "category": "objections",
+      "content": "Your REAL rebuttal, the one you say on calls: reframe, ROI math you actually use, pilot/structure options you are willing to offer."
+    },
+    {
+      "title": "Objection: we already have a CRM",
+      "category": "objections",
+      "content": "Your real answer: what Elevay does that the incumbent CRM does not, and what stays."
+    },
+    {
+      "title": "Objection: security / data",
+      "category": "objections",
+      "content": "Where data lives, what is shared with LLM providers, retention, EU hosting — the honest answer you give when asked."
+    },
+    {
+      "title": "Capabilities",
+      "category": "product",
+      "content": "The 5-8 things Elevay actually does today (no roadmap): capture every interaction, draft grounded replies, autonomous outbound with approval, deal briefs, meeting prep…"
+    },
+    {
+      "title": "Competitor positioning",
+      "category": "competitors",
+      "content": "Per named competitor (Monaco, Lightfield, Claap…): the one honest sentence on where they are strong and where Elevay wins. Replies use this instead of inventing comparisons."
+    }
+  ]
+}
