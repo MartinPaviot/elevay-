@@ -49,13 +49,13 @@ vi.mock("@/db", () => ({
     })),
     select: vi.fn(() => ({
       from: () => ({
-        where: Object.assign(
-          () => {
-            const p = Promise.resolve([]) as Promise<unknown[]> & { limit: () => Promise<unknown[]> };
-            p.limit = () => Promise.resolve([]);
-            return p;
-          },
-        ),
+        where: () => {
+          const p = Promise.resolve([]) as unknown as Promise<unknown[]> & {
+            limit: () => Promise<unknown[]>;
+          };
+          p.limit = () => Promise.resolve([]);
+          return p;
+        },
       }),
     })),
   },
