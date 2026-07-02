@@ -19,6 +19,7 @@ import { getPlaybookPromptBlock } from "../playbook/get-playbook";
 import { getCoachingPromptBlock } from "../coaching/get-coaching-guidance";
 import { getObjectionsPromptBlock } from "../emails/get-objections";
 import { getWinLossPromptBlock } from "../analysis/get-winloss";
+import { getDecisionInsightsPromptBlock } from "../decision-insights/get-decision-insights";
 import { enforceLlmBudget } from "../billing/llm-budget";
 import logger from "../observability/logger";
 import { isAiDisabled } from "./ai-provider";
@@ -116,6 +117,12 @@ const DRAFTING_AGENT_IDS = new Set([
   "follow-up-email",
   "suggest-reply",
   "send-sequence-step",
+  // T9: the campaign decision engine drafts outreach emails inline
+  // (inngest/campaign-decision-engine.ts, _trace passes tenantId), so it
+  // gets the learned context too. Note: membership means ALL learned blocks
+  // (playbook / coaching / objections / win-loss / decision insights) now
+  // flow into its prompt, not only the T9 insights.
+  "decision-engine",
 ]);
 
 export async function applyLearnedContext(
@@ -145,9 +152,11 @@ export async function applyLearnedContext(
   //  - objections: per-CONTACT (open concerns to pre-empt) when a
   //    contactId is supplied;
   //  - win/loss: per-COMPANY (lessons from prior deals here) when a
-  //    companyId is supplied.
+  //    companyId is supplied;
+  //  - decision insights: tenant-scoped (T9 weekly persona x signal
+  //    patterns + rejection anti-patterns, published rows only).
   if (tenantId && DRAFTING_AGENT_IDS.has(agentId)) {
-    const [playbook, coaching, objections, winloss] = await Promise.all([
+    const [playbook, coaching, objections, winloss, insights] = await Promise.all([
       getPlaybookPromptBlock(tenantId).catch(() => ""),
       getCoachingPromptBlock(tenantId).catch(() => ""),
       entity?.contactId
@@ -156,8 +165,9 @@ export async function applyLearnedContext(
       entity?.companyId
         ? getWinLossPromptBlock(tenantId, entity.companyId).catch(() => "")
         : Promise.resolve(""),
+      getDecisionInsightsPromptBlock(tenantId).catch(() => ""),
     ]);
-    for (const block of [playbook, coaching, objections, winloss]) {
+    for (const block of [playbook, coaching, objections, winloss, insights]) {
       if (block) {
         aiParams.system = aiParams.system ? `${aiParams.system}\n\n${block}` : block;
       }
