@@ -5,6 +5,7 @@ import { enrichOrganization } from "@/lib/integrations/apollo-client";
 import { recordCompanySignal } from "@/lib/signals/record-signal";
 import type { SkillRunOptions } from "@/skills/types";
 import type { FundingSignalMonitorInput, FundingSignalMonitorOutput } from "./schema";
+import { classifyFundingSignal } from "./classify";
 
 export async function fundingSignalMonitorHandler(
   input: FundingSignalMonitorInput,
@@ -33,36 +34,27 @@ export async function fundingSignalMonitorHandler(
     const currentFunding = org.total_funding;
     const currentStage = org.latest_funding_stage;
 
-    // Detect new funding
-    const isNewFunding = !!(
-      currentFunding &&
-      currentFunding >= input.minFundingAmount &&
-      (
-        !previousFunding ||
-        currentFunding > previousFunding * 1.1 || // 10%+ increase
-        (currentStage && previousStage && currentStage !== previousStage)
-      )
-    );
+    // "New" funding requires an OBSERVED CHANGE against a prior baseline — first
+    // sight is not new (see classify.ts). This is what stops a UN agency's
+    // Apollo budget number from firing "just raised, reach out this week".
+    const { qualifies, isNewFunding, isTargetStage, signalType, signalStrength } = classifyFundingSignal({
+      currentFunding,
+      currentStage,
+      previousFunding,
+      previousStage,
+      minFundingAmount: input.minFundingAmount,
+      targetFundingStages: input.targetFundingStages,
+    });
 
-    const isTargetStage = currentStage
-      ? input.targetFundingStages.some((s) => currentStage.toLowerCase().includes(s.toLowerCase()))
-      : false;
-
-    if (currentFunding && currentFunding >= input.minFundingAmount) {
-      let signalStrength: "high" | "medium" | "low";
+    if (qualifies && currentFunding) {
       let recommendation: string;
-
       if (isNewFunding && isTargetStage) {
-        signalStrength = "high";
         recommendation = `New ${currentStage} funding detected ($${(currentFunding / 1_000_000).toFixed(1)}M total). Reach out within 1 week — companies actively invest in tools post-funding.`;
       } else if (isNewFunding) {
-        signalStrength = "medium";
         recommendation = `Funding increase detected (${previousFunding ? `$${(previousFunding / 1_000_000).toFixed(1)}M → ` : ""}$${(currentFunding / 1_000_000).toFixed(1)}M). Good time to re-engage.`;
       } else if (isTargetStage) {
-        signalStrength = "medium";
         recommendation = `${currentStage} company with $${(currentFunding / 1_000_000).toFixed(1)}M total funding. Well-funded target.`;
       } else {
-        signalStrength = "low";
         recommendation = `Funded company ($${(currentFunding / 1_000_000).toFixed(1)}M) — monitor for future rounds.`;
       }
 
@@ -93,7 +85,7 @@ export async function fundingSignalMonitorHandler(
       // merges only the signals key, preserving lastKnownFunding). `funding_recent`
       // / `funding` map to the 180-day TTL in lib/signals/freshness.ts.
       await recordCompanySignal(options.tenantId, company.id, {
-        type: isNewFunding ? "funding_recent" : "funding",
+        type: signalType,
         detectedAt: new Date().toISOString(),
         strength: signalStrength,
         source: "apollo",
