@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, contacts, companies } from "@/db/schema";
 import { eq, sql, and, isNotNull, gte, isNull } from "drizzle-orm";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
@@ -66,6 +67,7 @@ export async function POST(
         id: contacts.id,
         email: contacts.email,
         deletedAt: contacts.deletedAt,
+        companyId: contacts.companyId,
         companyExcludedReason: companies.excludedReason,
       })
       .from(contacts)
@@ -83,6 +85,9 @@ export async function POST(
 
     // P0-5 — load the tenant suppression-list once; never enroll a burned address.
     const suppressedSet = await loadSuppressedEmails(authCtx.tenantId, candidates.map((c) => c.email));
+    // M13-G1 (T5) — INV-11: even with budget available, a candidate without a
+    // fresh signal never fills the quota. One batched load.
+    const g1Ctx = await loadG1Context(authCtx.tenantId, candidates.map((c) => c.companyId));
 
     // Filter to the eligible, not-yet-enrolled set (capped at maxEnroll).
     const toEnroll: string[] = [];
@@ -98,6 +103,7 @@ export async function POST(
         deletedAt: contact.deletedAt,
         companyExcludedReason: contact.companyExcludedReason,
         suppressedReason: contact.email && suppressedSet.has(contact.email.toLowerCase()) ? "hard_bounce" : null,
+        g1: g1Ctx.forCompany(contact.companyId),
       });
       if (!eligibility.eligible) {
         skippedCount++;

@@ -16,12 +16,15 @@
  */
 
 import { db as defaultDb } from "@/db";
-import { sequenceEnrollments } from "@/db/schema";
+import { sequenceEnrollments, contacts } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { guardEnrollment } from "@/lib/anti-collision/enroll-guard";
 import { recordAgentAction } from "@/lib/agents/agent-actions";
+import { G1_MIN_ICP_SCORE } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import type { AutopilotEnrollAction } from "./enroll-decision";
 
-export type EnrollOutcome = "enrolled" | "drafted" | "collision";
+export type EnrollOutcome = "enrolled" | "drafted" | "collision" | "ineligible";
 
 export interface EnrollOneInput {
   tenantId: string;
@@ -37,6 +40,7 @@ export interface EnrollOneDeps {
   guard?: typeof guardEnrollment;
   recordDraft?: typeof recordAgentAction;
   database?: typeof defaultDb;
+  loadG1?: typeof loadG1Context;
 }
 
 /** Enroll or draft one prospect. Never throws on a normal disposition; returns the outcome. */
@@ -44,6 +48,26 @@ export async function enrollOne(input: EnrollOneInput, deps: EnrollOneDeps = {})
   const guard = deps.guard ?? guardEnrollment;
   const recordDraft = deps.recordDraft ?? recordAgentAction;
   const database = deps.database ?? defaultDb;
+  const loadG1 = deps.loadG1 ?? loadG1Context;
+
+  // M13-G1 (T5) — this primitive previously trusted SELECTION entirely; it is
+  // now G1-gated itself (defense in depth): no fresh signal = no enrollment
+  // AND no draft — a prospect without a "why now" is not even queued for
+  // review (INV-2/INV-11). The ICP threshold bites only when the tenant
+  // scores fit (M11-R5 sane default).
+  const [contactRow] = await database
+    .select({ companyId: contacts.companyId })
+    .from(contacts)
+    .where(and(eq(contacts.tenantId, input.tenantId), eq(contacts.id, input.contactId)))
+    .limit(1);
+  const g1 = (await loadG1(input.tenantId, [contactRow?.companyId]))
+    .forCompany(contactRow?.companyId);
+  if (
+    g1.freshSignalCount < 1 ||
+    (g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE)
+  ) {
+    return { outcome: "ineligible" };
+  }
 
   if (input.action === "draft") {
     await recordDraft({

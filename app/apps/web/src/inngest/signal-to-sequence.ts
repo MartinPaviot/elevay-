@@ -30,7 +30,8 @@ import {
 } from "@/db/schema";
 import { and, eq, notInArray, inArray, desc } from "drizzle-orm";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
-import { isCompanyEligible } from "@/lib/sequences/enrollment-eligibility";
+import { isCompanyEligible, G1_MIN_ICP_SCORE } from "@/lib/sequences/enrollment-eligibility";
+import { loadG1Context } from "@/lib/sequences/eligibility-context";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import {
@@ -142,6 +143,24 @@ export const signalAutoEnroll = inngest.createFunction(
     });
     if (enrollableContacts.length === 0) {
       return { skipped: true, reason: "All contacts suppressed (bounce/complaint/opt-out)" };
+    }
+
+    // M13-G1 (T5) — re-verify the "why now" AT DISPATCH: this function fires
+    // on a fresh signal, but an event processed late may find it expired
+    // (M2-R4) — the loader then counts ZERO fresh signals and we skip. The
+    // ICP threshold applies only when the tenant actually scores fit.
+    const g1Gate = await step.run("g1-gate", async () => {
+      const g1 = (await loadG1Context(tenantId, [companyId])).forCompany(companyId);
+      if (g1.freshSignalCount < 1) {
+        return { ok: false as const, reason: "No fresh signal left at dispatch (expired)" };
+      }
+      if (g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE) {
+        return { ok: false as const, reason: `ICP fit below threshold (${g1.icpScore ?? 0} < ${G1_MIN_ICP_SCORE})` };
+      }
+      return { ok: true as const, reason: "" };
+    });
+    if (!g1Gate.ok) {
+      return { skipped: true, reason: g1Gate.reason };
     }
 
     // 3. Find an active outbound sequence for this tenant whose
