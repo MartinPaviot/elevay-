@@ -22,6 +22,7 @@ interface Row {
   contactId: string | null;
   enrollmentId: string | null;
   campaignId: string | null;
+  inReplyTo?: string | null;
   errorMessage?: string | null;
 }
 
@@ -136,6 +137,15 @@ vi.mock("@/lib/emails/send-window", () => ({ isWithinSendWindow: () => true }));
 const evaluateSend = vi.fn();
 vi.mock("@/lib/guardrails/sending-gate", () => ({ evaluateSend: (...a: unknown[]) => evaluateSend(...a) }));
 
+// T7 — the outreach_decisions writer, mocked at ITS boundary so we can assert
+// the worker calls it with the transport row's id + the gate's resolved class.
+// (Only mocked HERE: its production contract is best-effort/fail-soft, so the
+// other four chokepoint test files run it unmocked as a harmless no-op.)
+const recordOutreachDecision = vi.fn().mockResolvedValue(1);
+vi.mock("@/lib/outreach/decision-record", () => ({
+  recordOutreachDecision: (...a: unknown[]) => recordOutreachDecision(...a),
+}));
+
 // resend transport — assert it is never called when the gate blocks.
 const resendSend = vi.fn().mockResolvedValue({ data: { id: "m1" }, error: null });
 vi.mock("resend", () => ({ Resend: vi.fn(() => ({ emails: { send: resendSend } })) }));
@@ -160,6 +170,7 @@ beforeEach(() => {
   store = [];
   evaluateSend.mockReset();
   resendSend.mockClear();
+  recordOutreachDecision.mockClear();
   activeMailbox.sentToday = 0;
 });
 
@@ -232,5 +243,63 @@ describe("C1 processOutboundEmails — sending gate wired", () => {
     // It did NOT stop at the gate (errorMessage is not the gate's block reason).
     expect(store[0].errorMessage).not.toBe("cold blocked");
     expect(store[0].errorMessage).toMatch(/RESEND_API_KEY/);
+  });
+});
+
+// M12-R1 (outreach-autopilot T7): once the gate allows, the worker records
+// ONE outreach_decisions learning row through recordOutreachDecision, keyed
+// by the outbound row id (the Inngest-retry dedup key), carrying the class
+// the GATE resolved. Reply handling: the worker forwards the resolved class
+// unchanged; the writer's own unit contract (outreach-decision-record.test.ts)
+// proves a reply-class call records zero rows.
+describe("T7 outreach_decisions — recorded at transport (C1)", () => {
+  it("outreach send -> writer called ONCE with the outbound row id + the gate's resolved class", async () => {
+    store = [row({ id: "r1", contactId: "c1", enrollmentId: "e1" })];
+    evaluateSend.mockResolvedValue({ send: true, reason: "ok", sendClass: "outreach" });
+    await handler({ step: fakeStep });
+    expect(recordOutreachDecision).toHaveBeenCalledTimes(1);
+    expect(recordOutreachDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "t1",
+        sendClass: "outreach",
+        outboundEmailId: "r1",
+        contactId: "c1",
+        enrollmentId: "e1",
+        toAddress: "cold@prospect.com",
+        subject: "s",
+        bodyText: "x",
+      }),
+    );
+  });
+
+  it("reply send (inReplyTo set) -> the writer receives the reply class and records nothing", async () => {
+    store = [row({ id: "r1", inReplyTo: "<m1@remote>" })];
+    evaluateSend.mockResolvedValue({ send: true, reason: "verified reply", sendClass: "reply" });
+    await handler({ step: fakeStep });
+    // The worker never overrides the gate's resolution with its own guess...
+    expect(recordOutreachDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ sendClass: "reply" }),
+    );
+    // ...and never labels a reply as outreach. The writer's skip on
+    // sendClass !== "outreach" (unit-covered) makes this record nothing.
+    expect(recordOutreachDecision).not.toHaveBeenCalledWith(
+      expect.objectContaining({ sendClass: "outreach" }),
+    );
+  });
+
+  it("blocked send -> the writer is never called (no phantom learning rows)", async () => {
+    store = [row({ id: "r1" })];
+    evaluateSend.mockResolvedValue({ send: false, code: "cold-on-primary-blocked", reason: "x" });
+    await handler({ step: fakeStep });
+    expect(recordOutreachDecision).not.toHaveBeenCalled();
+  });
+
+  it("legacy gate outcome without sendClass -> class falls back to the row's inReplyTo", async () => {
+    store = [row({ id: "r1" })]; // no inReplyTo -> outreach
+    evaluateSend.mockResolvedValue({ send: true, reason: "ok" });
+    await handler({ step: fakeStep });
+    expect(recordOutreachDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ sendClass: "outreach" }),
+    );
   });
 });
