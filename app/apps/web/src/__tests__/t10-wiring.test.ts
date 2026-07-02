@@ -59,8 +59,11 @@ describe("T10 wiring guards (backend — classifier + queue + correction)", () =
     expect(src).toContain("DEFAULT_MIN_CONFIDENCE");
     expect(src).toContain("z.enum(REPLY_CLASSIFICATIONS)");
     // The queue is an OVERLAY: the insert is conflict-absorbed and the
-    // routing event fires regardless of confidence.
-    expect(src).toMatch(/replyReviewQueue[\s\S]{0,400}onConflictDoNothing/);
+    // routing event fires regardless of confidence. Anchored on the insert
+    // CALL with a generous lazy window — the 400-char version measured 429
+    // on main (CRLF-sensitive at the margin) and broke the main run while
+    // green on the PR ref; a guard checks structure, not a byte count.
+    expect(src).toMatch(/\.insert\(replyReviewQueue\)[\s\S]{0,800}?\.onConflictDoNothing\(\)/);
   });
 
   it("objection is FIRST-LEVEL: canonical list + spec-26 intents + the handler branch", () => {
