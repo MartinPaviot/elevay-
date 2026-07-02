@@ -1,7 +1,7 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
 import { chatThreads, chatMessages } from "@/db/schema";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, desc } from "drizzle-orm";
 
 /**
  * GET: Load messages for a thread.
@@ -35,11 +35,16 @@ export async function GET(
   const conditions = [eq(chatMessages.threadId, id)];
   if (branchIdFilter) conditions.push(eq(chatMessages.branchId, branchIdFilter));
 
+  // A saved turn is bulk-inserted (user + assistant share one createdAt),
+  // so createdAt alone is an UNSTABLE sort — restores randomly flipped a
+  // turn's order (observed live 2026-07-02). Tiebreak on role desc: at an
+  // equal instant the user message precedes the assistant's ('user' >
+  // 'system' > 'assistant' descending), which is exactly turn semantics.
   const messages = await db
     .select()
     .from(chatMessages)
     .where(and(...conditions))
-    .orderBy(asc(chatMessages.createdAt));
+    .orderBy(asc(chatMessages.createdAt), desc(chatMessages.role));
 
   // Build branches summary for tree UI
   const branches: Record<
