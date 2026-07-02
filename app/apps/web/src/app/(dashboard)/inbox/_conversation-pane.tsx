@@ -85,7 +85,8 @@ const SNOOZE_OPTIONS: Array<{ key: string; until: () => Date }> = [
  * degrade cleanly when no conversation is selected.
  */
 export interface ConversationPaneApi {
-  /** Open the reply composer (prepared draft if present, else AI-suggested). Does NOT send. */
+  /** Open the reply composer INSTANTLY (prepared draft if present, else blank).
+   *  Never calls AI — that's Generate draft (founder 2026-07-02). Does NOT send. */
   openReply: () => Promise<void>;
   /** Open the meeting scheduler card. */
   bookMeeting: () => void;
@@ -140,11 +141,6 @@ export function ConversationPane({
   const [snoozeText, setSnoozeText] = useState("");
   const [stopping, setStopping] = useState(false);
   const [trustedSenders, setTrustedSenders] = useState<string[]>([]);
-  const [replyTones, setReplyTones] = useState<Array<{ tone: string; subject: string; body: string }>>([]);
-  // Which tone chip is highlighted. Tracked explicitly because the composer owns
-  // its body (parent composer.body no longer mirrors the textarea), so the old
-  // `composer.body === r.body` derivation can't drive the highlight.
-  const [activeTone, setActiveTone] = useState<string | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   // Imperative handle to push parent-driven edits (booked join link, tone, snippet)
   // INTO the inline composer's textarea — it ignores draft-prop mutations post-mount.
@@ -262,8 +258,6 @@ export function ConversationPane({
 
   useEffect(() => {
     setComposer(null);
-    setReplyTones([]);
-    setActiveTone(null);
     setSchedOpen(false);
     // Clear the proposed-time prefill too — else it leaks to the next thread and
     // the plain Book button there reopens the scheduler at THIS thread's time.
@@ -314,9 +308,14 @@ export function ConversationPane({
     return extractProposedTime(lastInbound?.body);
   }, [detail]);
 
+  // Reply opens the composer IMMEDIATELY — the agent-prepared draft when one
+  // exists (precomputed, zero wait), else BLANK with the cursor in the body.
+  // NO AI runs on this path (founder 2026-07-02: "quand on clique reply il ne
+  // faut pas que l'IA intervienne — l'IA c'est Generate draft"): it used to
+  // block 5-8s on suggest-reply before the composer even appeared. AI drafting
+  // lives on Generate draft / Cmd+J only.
   const openReply = useCallback(async () => {
     if (!detail) return;
-    setReplyTones([]); // clear any tone chips from a prior thread (INBOX-C02)
     const conv = detail.conversation;
     // The reply subject is NEVER a model output (audit 2026-07-02, F3): thread
     // under the literal RFC subject; conv.subject (summary-preferring, display
@@ -333,44 +332,8 @@ export function ConversationPane({
       });
       return;
     }
-    const lastInbound = [...conv.messages].reverse().find((m) => m.direction === "inbound");
-    if (!lastInbound?.body) {
-      setComposer({ to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
-      return;
-    }
-    setDrafting(true);
-    try {
-      const res = await fetch("/api/emails/suggest-reply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emailContent: lastInbound.body,
-          senderName: detail.contact?.name ?? null,
-          senderEmail: lastInbound.from || replyTo,
-        }),
-      });
-      const data = res.ok
-        ? ((await res.json()) as { replies?: Array<{ tone: string; subject: string; body: string }> })
-        : {};
-      setReplyTones(data.replies ?? []); // one-tap tone switcher (INBOX-C02)
-      const brief = data.replies?.find((r) => r.tone === "brief") ?? data.replies?.[0];
-      setComposer({
-        to: replyTo,
-        subject: threadRe,
-        body: brief?.body ?? "",
-        contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined,
-        threadId: conversationKey ?? undefined,
-      });
-      // Highlight the seeded tone (the body is the brief/first tone's text).
-      setActiveTone(brief?.tone ?? null);
-      if (!brief) toast(t("inbox.toastSuggestFailed"), "warning");
-    } catch {
-      setComposer({ to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
-      toast(t("inbox.toastSuggestFailed"), "warning");
-    } finally {
-      setDrafting(false);
-    }
-  }, [detail, replyTo, toast]);
+    setComposer({ to: replyTo, subject: threadRe, body: "", contactId: detail.contact?.id, mailboxId: detail.conversation.mailboxId ?? undefined, threadId: conversationKey ?? undefined });
+  }, [detail, replyTo, conversationKey]);
 
   // B1 primary draft: a complete, VOICE-MATCHED reply via /api/inbox/compose/reply
   // (folds the user's writing voice + standing memory server-side), landed in the
@@ -381,7 +344,6 @@ export function ConversationPane({
     if (!detail || !conversationKey) return;
     const conv = detail.conversation;
     const threadRe = replySubjectFor(conv.rawSubject) || `Re: ${conv.subject}`;
-    setReplyTones([]); // the voice-matched draft is the primary path, not tone variants
     setDrafting(true);
     try {
       const res = await fetch("/api/inbox/compose/reply", {
@@ -421,7 +383,6 @@ export function ConversationPane({
   const generateNudge = useCallback(async () => {
     if (!detail || !conversationKey) return;
     const conv = detail.conversation;
-    setReplyTones([]);
     setDrafting(true);
     try {
       const res = await fetch("/api/inbox/compose/reply", {
@@ -941,36 +902,6 @@ export function ConversationPane({
           // its edited body, and the localStorage restore deliberately defers to
           // a non-empty incoming draft — a remount would discard the user's edits.
           <div className="mb-3" style={{ display: schedOpen && canBook ? "none" : undefined }}>
-            {replyTones.length > 1 && (
-              <div className="flex flex-wrap items-center gap-1.5 pb-1.5">
-                <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  {t("inbox.tone")}
-                </span>
-                {replyTones.map((r) => {
-                  const active = activeTone === r.tone;
-                  return (
-                    <button
-                      key={r.tone}
-                      type="button"
-                      onClick={() => {
-                        // Body only — switching tone must never rewrite the reply
-                        // subject away from the thread's (F3).
-                        composerRef.current?.setBody(r.body);
-                        setActiveTone(r.tone);
-                      }}
-                      className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                      style={{
-                        border: "1px solid var(--color-border-default)",
-                        background: active ? "var(--color-accent-soft)" : "transparent",
-                        color: active ? "var(--color-accent)" : "var(--color-text-secondary)",
-                      }}
-                    >
-                      {r.tone.charAt(0).toUpperCase() + r.tone.slice(1)}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
             <EmailComposerPanel
               ref={composerRef}
               draft={composer}
@@ -1005,10 +936,7 @@ export function ConversationPane({
                   />
                 </>
               }
-              onClose={() => {
-                setComposer(null);
-                setReplyTones([]);
-              }}
+              onClose={() => setComposer(null)}
               onSent={() => void handleSent()}
             />
           </div>

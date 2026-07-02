@@ -302,15 +302,18 @@ describe("CLE-14 /inbox — selection / lane / mailbox (instant, no network)", (
 });
 
 describe("CLE-14 /inbox — reply opens the composer, NEVER sends", () => {
-  it("reply opens the composer (suggest-reply) and fires NO triage/send", async () => {
+  it("reply opens the composer INSTANTLY — no AI call, no triage, no send", async () => {
     await mountLoaded();
     const r = await runRegisteredAction("inbox.reply", { conversationKey: CONV_KEY });
     await flush();
     expect(r.ok).toBe(true);
     expect(r.summary).toContain("composer");
-    // The reply was drafted via suggest-reply (no prepared draft in the fixture).
-    expect(callsTo("/api/emails/suggest-reply").length).toBe(1);
-    // Crucially: nothing was sent or triaged by drafting a reply.
+    // Reply is the MANUAL path (founder 2026-07-02: "quand on clique reply il
+    // ne faut pas que l'IA intervienne") — no suggest-reply, no compose/reply.
+    // AI drafting belongs to Generate draft / Cmd+J only.
+    expect(callsTo("/api/emails/suggest-reply").length).toBe(0);
+    expect(callsTo("/api/inbox/compose/reply").length).toBe(0);
+    // Crucially: nothing was sent or triaged by opening a reply.
     expect(callsTo("/api/inbox/triage").length).toBe(0);
     expect(fetchMock.mock.calls.some((c) => {
       const u = String(c[0]);
