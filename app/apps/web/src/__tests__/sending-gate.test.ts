@@ -71,7 +71,7 @@ vi.mock("@/db", () => ({
 
 // getTenantSettings + DEFAULTS — DEFAULTS mirrors tenant-settings.ts. Hoisted so
 // the vi.mock factory (also hoisted) can reference it without a TDZ error.
-const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState, guardState, rateLimitState, capState } = vi.hoisted(() => ({
+const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingState, lawfulState, guardState, rateLimitState, capState, qcState } = vi.hoisted(() => ({
   DEFAULTS: {
     sendingMailboxMode: "primary-with-caps" as const,
     sendingDailyCapPrimary: 20,
@@ -106,6 +106,12 @@ const { DEFAULTS, settingsState, suppressionState, emailStatusState, targetingSt
     sentCount: 1,
     throwOnConsume: false,
     calls: [] as Array<{ tenantId: string; day: string }>,
+  },
+  // M13-G5 (T3) — transport content QC mocked at the boundary (the pure
+  // profile is covered by lib/emails/__tests__/transport-content-qc.test.ts).
+  qcState: {
+    result: { passed: true, failures: [] as string[] },
+    calls: [] as Array<Record<string, unknown>>,
   },
 }));
 
@@ -158,6 +164,12 @@ vi.mock("@/lib/infra/rate-limit", () => ({
 // INV-1 — outreach cap mocked at the boundary (the real atomic-consume SQL is
 // covered by src/__tests__/outreach-cap.test.ts). tenantDayKey echoes the tz so
 // tests can pin that the TENANT's timezone drives the day key.
+vi.mock("@/lib/emails/transport-content-qc", () => ({
+  runTransportContentQc: vi.fn((input: Record<string, unknown>) => {
+    qcState.calls.push(input);
+    return qcState.result;
+  }),
+}));
 vi.mock("@/lib/guardrails/outreach-cap", () => ({
   OUTREACH_DAILY_TENANT_CAP: 100,
   OUTREACH_CAP_REASON_PREFIX: "Tenant daily outreach cap reached",
@@ -181,6 +193,8 @@ beforeEach(() => {
   capState.sentCount = 1;
   capState.throwOnConsume = false;
   capState.calls = [];
+  qcState.result = { passed: true, failures: [] };
+  qcState.calls = [];
   settingsState.throwOnSettings = false;
   settingsState.settingsToReturn = { ...DEFAULTS };
   suppressionState.hit = null;
@@ -656,5 +670,47 @@ describe("INV-1 — tenant daily outreach cap (consume-last, verified reply exem
     capState.throwOnConsume = true;
     const r = await evaluateSend({ ...base });
     expect(r.send).toBe(false);
+  });
+});
+
+describe("M13-G5 — transport content QC (outreach only, before the cap)", () => {
+  const base = { tenantId: "t1", toAddress: "warm@a.com", sentTodayFromPrimary: 1, contactId: "c1" };
+  const content = { subject: "s", bodyText: "corps propre, se désinscrire en un clic", unsubscribeProvided: true };
+  beforeEach(() => {
+    activityRows = [{ tenantId: "t1", to: "warm@a.com" }]; // warm
+  });
+
+  it("outreach content failing QC -> content_blocked, and the cap slot is NEVER consumed", async () => {
+    qcState.result = { passed: false, failures: ["spam:x", "unsubscribe:missing"] };
+    const r = await evaluateSend({ ...base, content });
+    expect(r.send).toBe(false);
+    if (!r.send) {
+      expect(r.code).toBe("content_blocked");
+      expect(r.reason).toContain("spam:x");
+    }
+    expect(capState.calls).toHaveLength(0);
+  });
+
+  it("outreach content passing QC -> sends and consumes exactly one slot", async () => {
+    qcState.result = { passed: true, failures: [] };
+    const r = await evaluateSend({ ...base, content });
+    expect(r.send).toBe(true);
+    expect(qcState.calls).toHaveLength(1);
+    expect(capState.calls).toHaveLength(1);
+  });
+
+  it("a VERIFIED reply is never content-gated (QC not even called)", async () => {
+    inboundRows = [{ tenantId: "t1", from: "warm@a.com" }];
+    qcState.result = { passed: false, failures: ["spam:x"] };
+    const r = await evaluateSend({ ...base, sendClass: "reply", content });
+    expect(r.send).toBe(true);
+    expect(qcState.calls).toHaveLength(0);
+  });
+
+  it("content absent -> no-op (legacy callers unaffected)", async () => {
+    qcState.result = { passed: false, failures: ["spam:x"] };
+    const r = await evaluateSend({ ...base });
+    expect(r.send).toBe(true);
+    expect(qcState.calls).toHaveLength(0);
   });
 });

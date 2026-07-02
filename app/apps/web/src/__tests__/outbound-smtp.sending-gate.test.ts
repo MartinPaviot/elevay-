@@ -109,6 +109,10 @@ vi.mock("@/lib/observability/logger", () => ({ logger: { warn: vi.fn(), error: v
 const sendViaSmtp = vi.fn().mockResolvedValue({ messageId: "smtp-1" });
 vi.mock("@/lib/integrations/smtp-send", () => ({ sendViaSmtp: (...a: unknown[]) => sendViaSmtp(...a) }));
 
+// T3: the smtp path now builds a real unsubscribe URL for outreach rows —
+// the real builder throws without AUTH_SECRET (absent in the CI test env).
+vi.mock("@/lib/emails/unsubscribe-token", () => ({ buildUnsubscribeUrl: () => "http://u" }));
+
 const evaluateSend = vi.fn();
 vi.mock("@/lib/guardrails/sending-gate", () => ({ evaluateSend: (...a: unknown[]) => evaluateSend(...a) }));
 
@@ -198,6 +202,32 @@ describe("C3 dispatchOutboundSmtp — opt-out gap closed + gate wired", () => {
     expect(sendViaSmtp).toHaveBeenCalledTimes(1);
     expect(store[0].status).toBe("sent");
     expect(res.sent).toBe(1);
+  });
+
+  // M13-G5/M9-R2 (T3): outreach rows now carry a real unsubscribe mechanism on
+  // this path (it previously sent with NONE); replies thread into a human
+  // conversation and get neither header nor footer.
+  it("outreach row -> RFC-8058 headers + text footer; gate receives the content", async () => {
+    store = [row({ id: "o1" })];
+    evaluateSend.mockResolvedValue({ send: true, reason: "ok" });
+    await handler({ step: fakeStep });
+    const gateArgs = evaluateSend.mock.calls[0][0] as Record<string, unknown>;
+    expect((gateArgs.content as Record<string, unknown>).unsubscribeProvided).toBe(true);
+    const msg = sendViaSmtp.mock.calls[0][1] as { text?: string; headers?: Record<string, string> };
+    expect(msg.headers?.["List-Unsubscribe"]).toBe("<http://u>");
+    expect(msg.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+    expect(msg.text).toContain("Unsubscribe: http://u");
+  });
+
+  it("reply row (inReplyTo) -> no unsubscribe header, body untouched", async () => {
+    store = [row({ id: "o1", inReplyTo: "<msg-1@x>" })];
+    evaluateSend.mockResolvedValue({ send: true, reason: "ok" });
+    await handler({ step: fakeStep });
+    const gateArgs = evaluateSend.mock.calls[0][0] as Record<string, unknown>;
+    expect(gateArgs.sendClass).toBe("reply");
+    const msg = sendViaSmtp.mock.calls[0][1] as { text?: string; headers?: Record<string, string> };
+    expect(msg.headers).toBeUndefined();
+    expect(msg.text ?? "").not.toContain("Unsubscribe:");
   });
 
   it("atomic claim: sends ONCE across a re-run / concurrent cron (no double-send)", async () => {
