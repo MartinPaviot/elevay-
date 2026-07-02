@@ -7,6 +7,12 @@ import {
   mapAddBatches,
   formatCallDuration,
   shouldSurfaceInboundEvent,
+  shouldShowReplyTodo,
+  emailDomainOf,
+  isSeedAddress,
+  isCalendarRsvpSubject,
+  internalDomainsFromEmails,
+  REPLY_MAX_AGE_DAYS,
   isTestLabel,
   money,
   type ReplyInput,
@@ -75,6 +81,70 @@ describe("buildNeedsYou — À faire (genuine human work only)", () => {
       ],
     });
     expect(new Set(items.map((i) => i.why)).size).toBe(2);
+  });
+});
+
+describe("address hygiene — emailDomainOf / isSeedAddress / internalDomains / RSVP", () => {
+  it("extracts the domain from a bare email or a full From header", () => {
+    expect(emailDomainOf("prospect@acme.ch")).toBe("acme.ch");
+    expect(emailDomainOf('"Paul Madelénat" <paul.madelenat@pilae.ch>')).toBe("pilae.ch");
+    expect(emailDomainOf("Sarah Chen <sarah.chen@Northwind.SeedTest.io>")).toBe("northwind.seedtest.io");
+    expect(emailDomainOf("no-at-sign")).toBeNull();
+    expect(emailDomainOf("dangling@")).toBeNull();
+    expect(emailDomainOf(null)).toBeNull();
+  });
+  it("flags seed/demo domains (the exact prod pollution) and RFC 2606 domains", () => {
+    expect(isSeedAddress("sarah.chen@northwind.seedtest.io")).toBe(true);
+    expect(isSeedAddress("x@seedtest.io")).toBe(true);
+    expect(isSeedAddress("x@example.com")).toBe(true);
+    expect(isSeedAddress("x@demo.test")).toBe(true);
+    expect(isSeedAddress("real@acme.ch")).toBe(false);
+    // "test" inside a real company domain must NOT match
+    expect(isSeedAddress("x@testard-associes.fr")).toBe(false);
+  });
+  it("derives internal domains from member emails, skipping freemail", () => {
+    expect(
+      internalDomainsFromEmails(["martin.paviot@pilae.ch", "paul.madelenat@pilae.ch", "perso@gmail.com", null]),
+    ).toEqual(["pilae.ch"]);
+  });
+  it("flags calendar RSVP receipts in FR and EN, not real subjects", () => {
+    expect(isCalendarRsvpSubject("Accepté : Test Elevay — boucle meeting IA")).toBe(true);
+    expect(isCalendarRsvpSubject("Accepted: Intro call @ Thu Jul 2")).toBe(true);
+    expect(isCalendarRsvpSubject("Refusée : Point hebdo")).toBe(true);
+    expect(isCalendarRsvpSubject("Tentative: Demo")).toBe(true);
+    expect(isCalendarRsvpSubject("Re: Elevay for our SDR team")).toBe(false);
+    expect(isCalendarRsvpSubject("Notre offre acceptée par le client")).toBe(false);
+  });
+});
+
+describe("shouldShowReplyTodo — Needs you shows prospects the founder owes an answer", () => {
+  const NOW = new Date("2026-07-02T12:00:00Z");
+  const base = {
+    subject: "Re: Elevay",
+    fromAddress: "prospect@acme.ch",
+    lastInboundAt: "2026-07-01T10:00:00Z",
+    internalDomains: ["pilae.ch"],
+    now: NOW,
+  };
+  it("keeps a fresh external prospect reply", () => {
+    expect(shouldShowReplyTodo(base)).toBe(true);
+  });
+  it("drops seed senders (the 4 seedtest.io rows that sat on /home for 12+ days)", () => {
+    expect(shouldShowReplyTodo({ ...base, fromAddress: "Sarah Chen <sarah.chen@northwind.seedtest.io>" })).toBe(false);
+  });
+  it("drops colleagues by workspace domain", () => {
+    expect(shouldShowReplyTodo({ ...base, fromAddress: '"Paul Madelénat" <paul.madelenat@pilae.ch>' })).toBe(false);
+  });
+  it("drops calendar RSVP receipts", () => {
+    expect(
+      shouldShowReplyTodo({ ...base, subject: "Accepté : Test Elevay — boucle meeting IA" }),
+    ).toBe(false);
+  });
+  it(`ages a reply out after ${REPLY_MAX_AGE_DAYS} days, keeps younger and undated ones`, () => {
+    expect(shouldShowReplyTodo({ ...base, lastInboundAt: "2026-06-10T10:00:00Z" })).toBe(false); // 22d
+    expect(shouldShowReplyTodo({ ...base, lastInboundAt: "2026-06-25T10:00:00Z" })).toBe(true); // 7d
+    expect(shouldShowReplyTodo({ ...base, lastInboundAt: null })).toBe(true); // no date → never decays
+    expect(shouldShowReplyTodo({ ...base, lastInboundAt: "not-a-date" })).toBe(true); // unparseable → keep
   });
 });
 
@@ -271,6 +341,26 @@ describe("shouldSurfaceInboundEvent — feed shows prospects, not noise", () => 
   it("drops unassigned events (service/newsletter mail with no contact)", () => {
     expect(shouldSurfaceInboundEvent({ ...base, entityType: "unassigned" })).toBe(false);
     expect(shouldSurfaceInboundEvent({ ...base, entityType: null })).toBe(false);
+  });
+
+  it("drops seed/demo contacts even when engaged (they were enrolled, so the engaged gate alone lets them through)", () => {
+    expect(
+      shouldSurfaceInboundEvent({
+        ...base,
+        fromHeader: "Sarah Chen <sarah.chen@northwind.seedtest.io>",
+        contactEmail: "sarah.chen@northwind.seedtest.io",
+        engaged: true,
+      }),
+    ).toBe(false);
+    // #260 clobbered rows: no From header — the contact-email fallback must catch it
+    expect(
+      shouldSurfaceInboundEvent({
+        ...base,
+        fromHeader: null,
+        contactEmail: "marc.dubois@lemonade.seedtest.io",
+        engaged: true,
+      }),
+    ).toBe(false);
   });
 
   it("drops machine senders by the From header (bots, notifications)", () => {

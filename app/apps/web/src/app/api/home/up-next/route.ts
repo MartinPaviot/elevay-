@@ -8,6 +8,7 @@ import {
   calls,
   outboundEmails,
   sequenceEnrollments,
+  users,
 } from "@/db/schema";
 import { and, eq, isNull, isNotNull, desc, inArray, sql } from "drizzle-orm";
 import { GET as getSummary } from "@/app/api/dashboard/summary/route";
@@ -20,6 +21,8 @@ import {
   mapAddBatches,
   formatCallDuration,
   shouldSurfaceInboundEvent,
+  shouldShowReplyTodo,
+  internalDomainsFromEmails,
   type AddBatch,
   type ReplyInput,
   type DealRiskInput,
@@ -102,8 +105,12 @@ async function loadReplies(
       await loadConversationRows(tenantId),
       scope,
     );
+    // Only threads whose LATEST message is inbound: once the founder replied,
+    // the ball is in the prospect's court (awaiting-their-reply) and the thread
+    // must leave "Needs you" — before this filter, an answered thread kept its
+    // "Reply" button on /home forever (the lane alone doesn't encode direction).
     const attention = buildConversations({ inbound, outbound, triage }).filter(
-      (c) => c.lane === "attention",
+      (c) => c.lane === "attention" && c.awaitingOurReply,
     );
     // Exclude a conversation when (a) the user/LLM ruled the contact "not a
     // lead", or (b) the contact's address is an automated/role sender
@@ -113,20 +120,37 @@ async function loadReplies(
     // email still can. See _specs/inbound-lead-recognition/.
     const cids = [...new Set(attention.map((c) => c.contactId).filter((x): x is string => !!x))];
     const excludedIds = new Set<string>();
-    if (cids.length) {
-      const rows = await db
-        .select({ id: contacts.id, email: contacts.email, properties: contacts.properties })
-        .from(contacts)
-        .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, cids)));
-      for (const r of rows) {
-        const machine = r.email ? classifyInboundSender({ fromHeader: r.email }).isMachineSent : false;
-        if (machine || isExcludedAsLead(r.properties as Record<string, unknown> | null)) {
-          excludedIds.add(r.id);
+    // Workspace member emails → internal domains: colleague mail is never
+    // founder work (shouldShowReplyTodo). Freemail domains are ignored there.
+    const [memberRows] = await Promise.all([
+      db.select({ email: users.email }).from(users).where(eq(users.tenantId, tenantId)),
+      (async () => {
+        if (!cids.length) return;
+        const rows = await db
+          .select({ id: contacts.id, email: contacts.email, properties: contacts.properties })
+          .from(contacts)
+          .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, cids)));
+        for (const r of rows) {
+          const machine = r.email ? classifyInboundSender({ fromHeader: r.email }).isMachineSent : false;
+          if (machine || isExcludedAsLead(r.properties as Record<string, unknown> | null)) {
+            excludedIds.add(r.id);
+          }
         }
-      }
-    }
+      })(),
+    ]);
+    const internalDomains = internalDomainsFromEmails(memberRows.map((r) => r.email));
+    const now = new Date();
     return attention
       .filter((c) => !(c.contactId && excludedIds.has(c.contactId)))
+      .filter((c) =>
+        shouldShowReplyTodo({
+          subject: c.subject,
+          fromAddress: c.fromAddress,
+          lastInboundAt: c.lastInboundAt,
+          internalDomains,
+          now,
+        }),
+      )
       .slice(0, 25)
       .map((c) => ({
         conversationKey: c.key,
