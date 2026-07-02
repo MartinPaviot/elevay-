@@ -76,7 +76,6 @@ export function SplitStrip({
   noiseCount,
   active,
   onSelect,
-  trailing,
 }: {
   /** Built-in (Primary/Needs Reply/...) + custom per-sender splits, with counts. */
   splits: SplitCount[];
