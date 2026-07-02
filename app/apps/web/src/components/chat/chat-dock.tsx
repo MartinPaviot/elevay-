@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Compass, Send, X, Maximize2, Plus, Loader2, Mail, ArrowUpRight,
-  Building2, User, TrendingUp, Calendar, List, Globe,
+  Building2, User, TrendingUp, Calendar, List, Globe, History,
 } from "lucide-react";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import { ElevayMark } from "@/components/ui/elevay-mark";
@@ -27,6 +27,7 @@ import { deriveSurface, type SurfaceIcon } from "@/lib/chat/surface-from-path";
 import { useUiDirectives, runUiDirective } from "@/components/chat/use-ui-directives";
 import { getActionManifest, locateEntity, highlightEntity } from "@/lib/chat/page-actions/registry";
 import type { UiDirective, HighlightAnchor } from "@/lib/chat/ui-directives";
+import type { OpenerChip, OpenerPayload } from "@/lib/chat/opener";
 
 const ICONS: Record<SurfaceIcon, typeof Compass> = {
   building: Building2,
@@ -36,6 +37,43 @@ const ICONS: Record<SurfaceIcon, typeof Compass> = {
   list: List,
   globe: Globe,
 };
+
+const OPENER_CHIP_ICONS: Record<OpenerChip["kind"], typeof Compass> = {
+  reply: Mail,
+  drafts: List,
+  deal_risk: TrendingUp,
+  meeting: Calendar,
+  resume: History,
+  recipe: Compass,
+};
+
+// CHAT-OPENER: sessionStorage cache so reopening the dock is instant and
+// repeated opens don't re-run the (heavy) up-next assembly server-side.
+const OPENER_CACHE_KEY = "elevay:chat-opener:v1";
+const OPENER_CACHE_TTL_MS = 60_000;
+
+function readOpenerCache(): OpenerPayload | null {
+  try {
+    const raw = window.sessionStorage.getItem(OPENER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; data: OpenerPayload };
+    if (!parsed?.data || Date.now() - parsed.at > OPENER_CACHE_TTL_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeOpenerCache(data: OpenerPayload) {
+  try {
+    window.sessionStorage.setItem(
+      OPENER_CACHE_KEY,
+      JSON.stringify({ at: Date.now(), data }),
+    );
+  } catch {
+    // Quota/privacy-mode failures just cost a refetch next open.
+  }
+}
 
 /** Page-aware starter prompts keyed by the derived context type. */
 function suggestionsFor(contextType?: string): string[] {
@@ -112,6 +150,13 @@ export function ChatDock() {
   const [lastSavedCount, setLastSavedCount] = useState(0);
   const savingRef = useRef(false);
   const { toast } = useToast();
+
+  // CHAT-OPENER: the agent's first turn (deterministic briefing) + metrics.
+  // "fallback" renders the legacy static suggestions (scoped pages, errors).
+  const [opener, setOpener] = useState<OpenerPayload | null>(null);
+  const [openerState, setOpenerState] = useState<"loading" | "ready" | "fallback">("loading");
+  const openedAtRef = useRef(0);
+  const firstActionSentRef = useRef(false);
 
   const transport = useMemo(
     () =>
@@ -230,6 +275,53 @@ export function ChatDock() {
     el.style.overflowY = el.scrollHeight > MAX ? "auto" : "hidden";
   }, [localInput]);
 
+  // CHAT-OPENER metrics anchor: one time-to-first-action window per open.
+  useEffect(() => {
+    if (!open) return;
+    openedAtRef.current = Date.now();
+    firstActionSentRef.current = false;
+  }, [open]);
+
+  // CHAT-OPENER fetch: only when the dock opens EMPTY on the global surface.
+  // Scoped pages (account/contact/deal/...) keep their page-aware static
+  // chips in v1. Failure or non-JSON → legacy fallback, never an error state.
+  // Re-runs when messages drop back to 0 (New chat) so the opener returns.
+  useEffect(() => {
+    if (!open || chat.messages.length > 0) return;
+    if (surfaceRef.current.contextType) {
+      setOpenerState("fallback");
+      return;
+    }
+    const cached = readOpenerCache();
+    if (cached) {
+      setOpener(cached);
+      setOpenerState("ready");
+      trackEvent("", "chat_opener_shown", { ...cached.counts, hasWork: cached.hasWork, cached: true });
+      return;
+    }
+    let cancelled = false;
+    setOpenerState("loading");
+    fetch("/api/chat/opener", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: OpenerPayload | null) => {
+        if (cancelled) return;
+        if (data && typeof data.text === "string" && Array.isArray(data.chips)) {
+          writeOpenerCache(data);
+          setOpener(data);
+          setOpenerState("ready");
+          trackEvent("", "chat_opener_shown", { ...data.counts, hasWork: data.hasWork, cached: false });
+        } else {
+          setOpenerState("fallback");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOpenerState("fallback");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, chat.messages.length]);
+
   // Persist the conversation to a thread after the assistant finishes. Creates
   // the thread on the first exchange (scoped to the current page context), then
   // appends each new turn — identical to the /chat page's saveMessages, reusing
@@ -311,9 +403,22 @@ export function ChatDock() {
     }
   }, [chat.status, chat.messages.length, lastSavedCount, saveMessages]);
 
+  // CHAT-OPENER metric: fires once per dock open, whatever came first —
+  // an opener chip ("chip") or a typed message ("composer"). Chip handlers
+  // call this BEFORE send(), so the ref guard keeps the chip attribution.
+  function markFirstAction(source: "chip" | "composer") {
+    if (firstActionSentRef.current) return;
+    firstActionSentRef.current = true;
+    trackEvent("", "chat_dock_first_action", {
+      ms: openedAtRef.current ? Date.now() - openedAtRef.current : null,
+      source,
+    });
+  }
+
   function send(text: string) {
     const t = text.trim();
     if (!t || chat.status === "streaming") return;
+    markFirstAction("composer");
     chat.sendMessage({ text: t });
     trackEvent("", "chat_dock_message_sent", {
       queryLength: t.length,
@@ -321,6 +426,54 @@ export function ChatDock() {
     });
     setLocalInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
+  }
+
+  // CHAT-OPENER continuity: load the last thread's main branch into the dock.
+  // lastSavedCount is set past the restored turns so saveMessages only appends
+  // genuinely new exchanges to the same thread.
+  async function resumeThread(id: string) {
+    try {
+      const res = await fetch(`/api/chat/threads/${id}?branchId=main`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as {
+        messages?: Array<{ id: string; role: string; content: string | null }>;
+      };
+      const restored = (data.messages ?? [])
+        .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+        .map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          parts: [{ type: "text" as const, text: m.content as string }],
+        }));
+      if (restored.length === 0) {
+        toast("That conversation has no messages to restore.", "warning");
+        return;
+      }
+      chat.setMessages(restored);
+      threadIdRef.current = id;
+      setThreadId(id);
+      setLastSavedCount(restored.length);
+    } catch {
+      toast("Couldn't load that conversation.", "warning");
+    }
+  }
+
+  function onOpenerChip(chip: OpenerChip, position: number) {
+    trackEvent("", "chat_opener_chip_clicked", { kind: chip.kind, id: chip.id, position });
+    markFirstAction("chip");
+    if (chip.resumeThreadId) {
+      void resumeThread(chip.resumeThreadId);
+      return;
+    }
+    if (chip.href) {
+      // Deterministic navigation (drafts review) — the user left the chat.
+      router.push(chip.href);
+      setOpen(false);
+      return;
+    }
+    if (chip.send) send(chip.send);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -436,44 +589,105 @@ export function ChatDock() {
         {/* Messages */}
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {!hasMessages ? (
-            <div className="flex h-full flex-col items-center justify-center px-2 text-center">
-              <div
-                className="flex h-11 w-11 items-center justify-center rounded-xl"
-                style={{
-                  background: "var(--color-bg-surface)",
-                  border: "1px solid var(--color-border-default)",
-                }}
-              >
-                <ElevayMark size={20} />
+            openerState === "ready" && opener ? (
+              /* CHAT-OPENER: the agent speaks first — a deterministic briefing
+                 rendered as a normal assistant turn with one-tap chips. */
+              <div className="pt-1">
+                <div
+                  className="mb-1.5 flex items-center gap-1.5 text-[11px]"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  <ElevayMark size={11} />
+                  <span style={{ fontWeight: 500 }}>Elevay</span>
+                </div>
+                <p
+                  style={{
+                    fontSize: "13.5px",
+                    lineHeight: "20px",
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {opener.text}
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  {opener.chips.map((c, i) => {
+                    const ChipKindIcon = OPENER_CHIP_ICONS[c.kind] ?? Compass;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => onOpenerChip(c, i)}
+                        className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px] transition-colors"
+                        style={{
+                          color: "var(--color-text-secondary)",
+                          border: "1px solid var(--color-border-default)",
+                          background: "var(--color-bg-surface)",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "var(--color-bg-surface)"; }}
+                      >
+                        <ChipKindIcon size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} />
+                        <span className="flex-1 truncate">{c.label}</span>
+                        <ArrowUpRight size={13} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <p className="mt-3 text-[14px] font-medium" style={{ color: "var(--color-text-primary)" }}>
-                Ask about {surface.scopeNoun}
-              </p>
-              <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-                Or anything across your CRM.
-              </p>
+            ) : openerState === "loading" ? (
+              /* Skeleton mirroring the opener footprint — no canned-text swap
+                 (same rule as /chat starter suggestions). */
+              <div className="animate-pulse pt-1" aria-hidden>
+                <div className="h-3 w-16 rounded" style={{ background: "var(--color-bg-muted)" }} />
+                <div className="mt-2.5 h-4 w-full rounded" style={{ background: "var(--color-bg-muted)" }} />
+                <div className="mt-1.5 h-4 w-3/4 rounded" style={{ background: "var(--color-bg-muted)" }} />
+                <div className="mt-4 space-y-1.5">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="h-9 w-full rounded-lg" style={{ background: "var(--color-bg-muted)" }} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Legacy empty state: scoped pages (page-aware chips) and the
+                 opener's error fallback. */
+              <div className="flex h-full flex-col items-center justify-center px-2 text-center">
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl"
+                  style={{
+                    background: "var(--color-bg-surface)",
+                    border: "1px solid var(--color-border-default)",
+                  }}
+                >
+                  <ElevayMark size={20} />
+                </div>
+                <p className="mt-3 text-[14px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+                  Ask about {surface.scopeNoun}
+                </p>
+                <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                  Or anything across your CRM.
+                </p>
 
-              <div className="mt-4 w-full space-y-1.5">
-                {suggestionsFor(surface.contextType).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => send(s)}
-                    className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px] transition-colors"
-                    style={{
-                      color: "var(--color-text-secondary)",
-                      border: "1px solid var(--color-border-default)",
-                      background: "var(--color-bg-surface)",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "var(--color-bg-surface)"; }}
-                  >
-                    <ChipIcon size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} />
-                    <span className="flex-1 truncate">{s}</span>
-                    <ArrowUpRight size={13} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </button>
-                ))}
+                <div className="mt-4 w-full space-y-1.5">
+                  {suggestionsFor(surface.contextType).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { markFirstAction("chip"); send(s); }}
+                      className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px] transition-colors"
+                      style={{
+                        color: "var(--color-text-secondary)",
+                        border: "1px solid var(--color-border-default)",
+                        background: "var(--color-bg-surface)",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "var(--color-bg-surface)"; }}
+                    >
+                      <ChipIcon size={13} className="shrink-0" style={{ color: "var(--color-accent)" }} />
+                      <span className="flex-1 truncate">{s}</span>
+                      <ArrowUpRight size={13} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <>
               {chat.messages.map((message) => {
