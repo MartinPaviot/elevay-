@@ -1,5 +1,19 @@
-import { describe, it, expect } from "vitest";
-import { resolveWhisperConfig, transcriptionConfigured } from "@/lib/integrations/transcribe";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  resolveWhisperConfig,
+  transcriptionConfigured,
+  transcribeAudio,
+  TRANSCRIPTION_VOCAB_PROMPT,
+} from "@/lib/integrations/transcribe";
+
+// Capture the args every transcription call receives so we can assert on the
+// prompt without hitting the network. vi.mock is hoisted above the imports.
+const createMock = vi.fn(async (_args: unknown) => ({ text: "transcript" }));
+vi.mock("openai", () => ({
+  default: class {
+    audio = { transcriptions: { create: createMock } };
+  },
+}));
 
 describe("transcribe — STT seam", () => {
   it("defaults to OpenAI (no baseURL) with the default model", () => {
@@ -30,5 +44,35 @@ describe("transcribe — STT seam", () => {
     expect(transcriptionConfigured({ OPENAI_API_KEY: "ok" })).toBe(true);
     expect(transcriptionConfigured({ WHISPER_BASE_URL: "https://whisper.pilae.ch" })).toBe(true);
     expect(transcriptionConfigured({ WHISPER_API_KEY: "wk" })).toBe(true);
+  });
+});
+
+describe("transcribeAudio — vocabulary prompt", () => {
+  const file = new File([new Uint8Array([1, 2, 3])], "rec.mp4", { type: "video/mp4" });
+  beforeEach(() => createMock.mockClear());
+
+  it("seeds the brand-vocabulary prompt and asks for json", async () => {
+    await transcribeAudio(file);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const arg = createMock.mock.calls[0][0] as { prompt: string; response_format: string };
+    expect(arg.prompt).toBe(TRANSCRIPTION_VOCAB_PROMPT);
+    expect(arg.prompt).toContain("Elevay");
+    expect(arg.prompt).toContain("kMeet");
+    // gpt-4o-*-transcribe reject verbose_json — the seam only ever asks for json.
+    expect(arg.response_format).toBe("json");
+  });
+
+  it("appends a caller-supplied prompt without dropping the brand vocabulary", async () => {
+    await transcribeAudio(file, { prompt: "Attendees: Sarah Chen; company: Northwind." });
+    const arg = createMock.mock.calls[0][0] as { prompt: string };
+    expect(arg.prompt.startsWith(TRANSCRIPTION_VOCAB_PROMPT)).toBe(true);
+    expect(arg.prompt).toContain("Sarah Chen");
+    expect(arg.prompt).toContain("Northwind");
+  });
+
+  it("ignores a blank override and keeps the default prompt intact", async () => {
+    await transcribeAudio(file, { prompt: "   " });
+    const arg = createMock.mock.calls[0][0] as { prompt: string };
+    expect(arg.prompt).toBe(TRANSCRIPTION_VOCAB_PROMPT);
   });
 });
