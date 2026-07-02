@@ -73,7 +73,9 @@ export default async function SignInPage({
             Elevay
           </h1>
           <p className="mt-1.5 text-[13px]" style={{ color: "var(--color-text-secondary)" }}>
-            Sign in to your sales engine
+            {/* "revenue engine", never "sales engine" — standing directive
+                2026-06-25; this subtitle regressed once already. */}
+            Sign in to your revenue engine
           </p>
         </div>
 

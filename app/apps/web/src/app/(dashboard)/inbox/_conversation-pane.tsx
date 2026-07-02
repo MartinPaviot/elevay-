@@ -453,8 +453,11 @@ export function ConversationPane({
   // Reveal the scheduler card when it opens — it mounts at scrollTop 0 of the
   // reading region, which (with the composer open) is only 2/5 of the pane, so a
   // scrolled thread would leave it above the fold and Book would look like a no-op.
+  // block:"start", not "nearest": the card is often TALLER than the reading
+  // region's share, and "nearest" then reveals its BOTTOM half — footer without
+  // the week strip (prod audit 2026-07-02, screenshot 040).
   useEffect(() => {
-    if (schedOpen) schedCardRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (schedOpen) schedCardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [schedOpen]);
 
   // B1 Cmd/Ctrl+J: with no composer open, generate a voice-matched draft for a
@@ -868,8 +871,11 @@ export function ConversationPane({
         // The reply composer sits ABOVE the thread it answers, so the original
         // mail reads BELOW it (Gmail/Outlook style). It takes the larger 3:2 share
         // of the pane for a generous writing area; min-h-0 + the panel's own
-        // overflow-y-auto keep Send reachable on a narrow/zoomed view.
-        <div className="flex min-h-0 flex-col" style={{ flex: "3 1 0%" }}>
+        // overflow-y-auto keep Send reachable on a narrow/zoomed view. While the
+        // scheduler card is open the shares flip (1:3) — picking a slot is the
+        // active task, and at 3:2 the card's week strip sat below the fold of its
+        // cramped region (prod audit 2026-07-02, screenshot 040).
+        <div className="flex min-h-0 flex-col" style={{ flex: schedOpen && canBook ? "1 1 0%" : "3 1 0%" }}>
           {replyTones.length > 1 && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-4 pt-2">
               <span className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
@@ -923,8 +929,17 @@ export function ConversationPane({
       )}
 
       <div
-        className="min-h-0 overflow-y-auto px-4 py-3"
-        style={{ flex: composer ? "2 1 0%" : "1 1 0%" }}
+        // pb-16 keeps the last interactive control (the scheduler's Confirm)
+        // clear of the fixed chat launcher (bottom-5 right-5, z-45) that
+        // otherwise half-covers it (prod audit 2026-07-02, screenshot 040). The
+        // top border marks the composer/reading boundary — without it the
+        // composer's clipped last line ran visually straight into the card
+        // below and read as overlapping text.
+        className="min-h-0 overflow-y-auto px-4 py-3 pb-16"
+        style={{
+          flex: composer ? (schedOpen && canBook ? "3 1 0%" : "2 1 0%") : "1 1 0%",
+          ...(composer ? { borderTop: "1px solid var(--color-border-default)" } : {}),
+        }}
       >
         {/* Meeting scheduler — rendered in the SCROLLABLE reading area (not the
              fixed header) so its full height + the Confirm button stay reachable

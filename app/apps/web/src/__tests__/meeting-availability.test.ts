@@ -57,6 +57,28 @@ describe("freeSlotsFromBusy", () => {
     expect(slots[0].end.getTime() - slots[0].start.getTime()).toBe(45 * 60_000);
   });
 
+  // Prod audit 2026-07-02: taking the FIRST maxPerDay slots of each day offered
+  // 09:00–12:00 only — a prospect asking for the afternoon never saw a matching
+  // pill. The per-day pick must span the whole free window.
+  it("spreads the per-day pick across the day (afternoon slots included)", () => {
+    const slots = freeSlotsFromBusy([], { max: 100, maxPerDay: 6 }, NOW);
+    const byDay = new Map<string, Date[]>();
+    for (const s of slots) {
+      const k = `${s.start.getFullYear()}-${s.start.getMonth()}-${s.start.getDate()}`;
+      byDay.set(k, [...(byDay.get(k) ?? []), s.start]);
+    }
+    expect(byDay.size).toBeGreaterThan(0);
+    for (const [, starts] of byDay) {
+      expect(starts.length).toBe(6);
+      const hours = starts.map((d) => d.getHours());
+      expect(Math.min(...hours)).toBeLessThan(12); // still offers a morning slot
+      expect(Math.max(...hours)).toBeGreaterThanOrEqual(15); // AND a late-afternoon one
+      for (let i = 1; i < starts.length; i++) {
+        expect(starts[i].getTime()).toBeGreaterThan(starts[i - 1].getTime()); // chronological
+      }
+    }
+  });
+
   it("with a timeZone, every slot falls inside the user's local 09:00–17:00", () => {
     // 2026-06-22 06:00 UTC = 08:00 Monday in Zurich (UTC+2, CEST).
     const nowUtc = new Date(Date.UTC(2026, 5, 22, 6, 0, 0));

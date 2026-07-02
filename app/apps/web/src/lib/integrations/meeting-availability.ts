@@ -161,8 +161,12 @@ export function freeSlotsFromBusy(
     const day = dayParts(now, dayOffset, timeZone);
     if (day.dow === 0 || day.dow === 6) continue; // skip weekends
 
-    let dayCount = 0;
-    hours: for (let h = startH; h < endH; h++) {
+    // Collect the WHOLE day's free slots, then spread the maxPerDay pick across
+    // them. Taking the first N walked the window from 09:00 and offered
+    // mornings only — a prospect asking for the afternoon never saw a matching
+    // pill (prod audit 2026-07-02).
+    const daySlots: FreeSlot[] = [];
+    for (let h = startH; h < endH; h++) {
       for (let m = 0; m < 60; m += slotDurationMinutes) {
         // Wall-clock window fit (tz-independent): the slot must finish by windowEnd.
         if (h * 60 + m + slotDurationMinutes > endH * 60) continue;
@@ -170,15 +174,32 @@ export function freeSlotsFromBusy(
         if (slotStart.getTime() <= now.getTime()) continue; // past
         const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
         const overlaps = busy.some((b) => slotStart < b.end && slotEnd > b.start);
-        if (!overlaps) {
-          out.push({ start: slotStart, end: slotEnd });
-          if (out.length >= max) return out;
-          if (++dayCount >= maxPerDay) break hours; // this day is full → next day
-        }
+        if (!overlaps) daySlots.push({ start: slotStart, end: slotEnd });
       }
+    }
+    for (const slot of spreadPick(daySlots, maxPerDay)) {
+      out.push(slot);
+      if (out.length >= max) return out;
     }
   }
   return out;
+}
+
+/**
+ * Pick up to k items evenly spread across arr — always including the first and
+ * last — instead of the first k. Keeps a morning-to-late-afternoon range in
+ * every day column of the scheduler week strip.
+ */
+function spreadPick<T>(arr: T[], k: number): T[] {
+  if (!Number.isFinite(k) || arr.length <= k) return arr;
+  if (k <= 1) return arr.slice(0, 1);
+  const picked: T[] = [];
+  for (let i = 0; i < k; i++) {
+    // Nondecreasing indices; rounding collisions are skipped via the !== check.
+    const idx = Math.round((i * (arr.length - 1)) / (k - 1));
+    if (picked[picked.length - 1] !== arr[idx]) picked.push(arr[idx]);
+  }
+  return picked;
 }
 
 /* ------------------------------------------------------------------ */
