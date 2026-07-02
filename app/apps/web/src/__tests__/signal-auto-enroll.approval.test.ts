@@ -50,6 +50,15 @@ vi.mock("@/lib/analytics/pipeline-tracker", () => ({ trackPipeline: vi.fn().mock
 vi.mock("@/lib/sequences/enrollment-eligibility", () => ({ isCompanyEligible: () => true }));
 vi.mock("@/lib/icp/enrollment-routing", () => ({ pickIcpScopedSequence: () => ({ reason: "no_match", sequenceId: null }) }));
 vi.mock("@/lib/sequences/triggers", () => ({ pickSequenceForSignal: () => ({ id: "seq1", name: "Default" }) }));
+// M13-G1 (T5) — this file tests the APPROVAL gate; keep G1 permissive here
+// (G1 has its own coverage). Mocking the loader (not drizzle) also keeps the
+// call-ordered db.select sequence below intact — the real loader would
+// consume two extra select calls.
+vi.mock("@/lib/sequences/eligibility-context", () => ({
+  loadG1Context: async () => ({
+    forCompany: () => ({ freshSignalCount: 1, icpScore: null, icpScoringActive: false }),
+  }),
+}));
 
 // ── Track DB writes so we can assert NO enroll / NO deal on deferral ──
 const inserted: string[] = [];
