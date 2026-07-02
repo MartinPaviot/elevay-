@@ -70,5 +70,5 @@ describe.skipIf(!HAS_LLM)("inbox-draft — LLM tier (runs composeReply)", () => 
     console.log(`[inbox-draft LLM] fabrication_leaks=${leaks}/${golden.length} empty=${empty} (target leaks=0)`);
     expect(leaks).toBeLessThanOrEqual(1); // target 0; allow one model hiccup without flaking CI
     expect(empty).toBe(0);
-  });
+  }, 300_000);
 });

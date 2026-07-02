@@ -87,6 +87,12 @@ async function judgeDecision(excerpt: string): Promise<string | null> {
       maxOutputTokens: 8,
       prompt: `A prospect's inbound email was compressed to this excerpt. What did the buyer signal about the deal? Answer with EXACTLY one token: GO, OBJECTION, NEXT_STEP, CHURN, or NONE.
 
+Definitions and PRECEDENCE (when several apply, answer the highest):
+1. CHURN — they are walking away or chose someone else ("going with another vendor", "not for us").
+2. OBJECTION — a blocker or concern stands in the way (price, budget, security review, need sign-off), even if they also propose a call or a next step to discuss it.
+3. GO — an explicit buying decision ("good to go", "send the contract").
+4. NEXT_STEP — a scheduling/logistics step with NO blocker and NO decision attached.
+
 EXCERPT:
 ${excerpt}
 
