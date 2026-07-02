@@ -85,7 +85,10 @@ const CATALOG: RecipeDef[] = [
     tool: "getCallList",
     priority: 20,
     gate: (s) => s.contactsWithPhone >= 10,
-    label: (s) => `Build today's call list (${s.contactsWithPhone} callable)`,
+    // "with phones" not "callable": the Call Mode queue then filters to
+    // verified/reachable (DNC, quiet hours) — live on Pilae 152 phones
+    // yielded a 1-contact queue. The chip must not overpromise.
+    label: (s) => `Build today's call list (${s.contactsWithPhone} with phones)`,
     send: () => "Build my call list for today. Who should I call first?",
   },
   {

@@ -25,6 +25,7 @@ import { trackEvent } from "@/components/posthog-provider";
 import { starterSuggestions, STARTER_SUGGESTION_COUNT } from "./_starter-suggestions";
 import type { OpenerChip } from "@/lib/chat/opener";
 import { readOpenerCache, writeOpenerCache, type OpenerResponse } from "@/lib/chat/opener-cache";
+import { greetingForHour } from "@/lib/home/greeting";
 
 /** Opener chip icons, page-sized (16px rows). Mirrors the dock's mapping. */
 const OPENER_CHIP_ICONS: Record<OpenerChip["kind"], typeof Compass> = {
@@ -127,8 +128,9 @@ export default function ChatPage() {
   // identical (empty), then fills the greeting in.
   const [greeting, setGreeting] = useState<string>("");
   useEffect(() => {
-    const hour = new Date().getHours();
-    setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+    // Shared thresholds with /home (greetingForHour) — the two surfaces
+    // disagreed at 17:00 before.
+    setGreeting(greetingForHour(new Date().getHours()));
   }, []);
 
   // Action card approval state: keyed by "messageId-toolIdx"
