@@ -46,6 +46,65 @@ export const outcomeDetectorCron = inngest.createFunction(
       });
     }
 
+    // ── T12: meeting catch-up sweep — BEFORE the email check ──
+    // A watcher is consumed ONCE: if the reply check ran first, a contact who
+    // replied AND booked would resolve at replied_positive (0.9) and the
+    // meeting outcome (0.95/1.0 — the TOP of the POSITIVITY hierarchy) would
+    // be lost forever. Real-time producers (booking route, attendance mark,
+    // recall webhook) cover the live paths; this sweep catches meetings that
+    // arrived via calendar SYNC, which writes meeting_scheduled/completed
+    // activities with no producer call. held outranks booked, checked first.
+    const meetingWatchers = await step.run("fetch-meeting-watchers", async () => {
+      return db
+        .select({
+          id: actionOutcomes.id,
+          entityId: actionOutcomes.entityId,
+          tenantId: actionOutcomes.tenantId,
+          watchingSince: actionOutcomes.watchingSince,
+        })
+        .from(actionOutcomes)
+        .where(
+          and(
+            eq(actionOutcomes.status, "watching"),
+            eq(actionOutcomes.expectedOutcome, "email_reply"),
+          ),
+        )
+        .limit(200);
+    });
+
+    if (meetingWatchers.length > 0) {
+      await step.run("check-meeting-outcomes", async () => {
+        for (const watcher of meetingWatchers) {
+          const findMeeting = (type: "meeting_completed" | "meeting_scheduled") =>
+            db
+              .select({ id: activities.id })
+              .from(activities)
+              .where(
+                and(
+                  eq(activities.tenantId, watcher.tenantId),
+                  eq(activities.entityType, "contact"),
+                  eq(activities.entityId, watcher.entityId),
+                  eq(activities.activityType, type),
+                  gte(activities.occurredAt, watcher.watchingSince),
+                ),
+              )
+              .limit(1);
+
+          const [held] = await findMeeting("meeting_completed");
+          if (held) {
+            await resolveOutcome(watcher.id, "meeting_held");
+            resolved++;
+            continue;
+          }
+          const [booked] = await findMeeting("meeting_scheduled");
+          if (booked) {
+            await resolveOutcome(watcher.id, "meeting_booked");
+            resolved++;
+          }
+        }
+      });
+    }
+
     // ── Check email outcomes (opened/replied) ──
     const emailWatchers = await step.run("find-email-watchers", async () => {
       return db
@@ -139,6 +198,11 @@ export const outcomeDetectorCron = inngest.createFunction(
       });
     }
 
-    return { resolved, expired, checked: emailWatchers.length + dealWatchers.length + expiredOutcomes.length };
+    return {
+      resolved,
+      expired,
+      checked:
+        emailWatchers.length + dealWatchers.length + meetingWatchers.length + expiredOutcomes.length,
+    };
   },
 );

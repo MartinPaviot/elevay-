@@ -359,6 +359,20 @@ async function processTranscriptFromBot(
     } catch { /* non-critical */ }
   }
 
+  // 6b. T12 (outreach-autopilot) — a recording IS proof the meeting was
+  // HELD (resolveAttendance's `recorded` rule): resolve each matched
+  // contact's watching outcome as meeting_held (positivity 1.0) so the
+  // decision-record joins the strongest outcome in the hierarchy.
+  // Best-effort per contact — never breaks transcript processing.
+  try {
+    const { checkMeetingOutcomes } = await import("@/lib/outcomes/resolve");
+    for (const m of matchedContacts) {
+      if (m.contactId) {
+        await checkMeetingOutcomes(tenantId, m.contactId, "meeting_held").catch(() => {});
+      }
+    }
+  } catch { /* non-critical */ }
+
   // 6b. Index the FULL transcript into transcript_chunks (pgvector), speaker- and
   // timestamp-aware, exactly like the calls path (indexTranscript, source
   // "cold_call"). Until now only the ~3k-char head reached RAG via embedEntity;
