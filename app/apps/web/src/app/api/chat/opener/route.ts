@@ -41,12 +41,13 @@ export async function GET() {
   const authCtx = await getAuthContext();
   if (!authCtx) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [todos, draftsPending, lastThread, signals] = await Promise.all([
-    loadTodos(),
+  const [upNext, draftsPending, lastThread, signals] = await Promise.all([
+    loadUpNext(),
     loadDraftsPending(authCtx.tenantId),
     loadLastThread(authCtx.appUserId),
     loadTenantSignals(authCtx.tenantId),
   ]);
+  const todos = upNext.todos;
 
   // v2 recipe catalog: gate on what the tenant's data can demo, slot-fill
   // with its real counts, and skip recipes a work chip already covers.
@@ -59,6 +60,8 @@ export async function GET() {
 
   return Response.json({
     ...buildOpener({ todos, draftsPending, lastThread, recipes }),
+    // The /chat page greets by name; up-next already resolved it.
+    firstName: upNext.firstName,
     generatedAt: new Date().toISOString(),
   });
 }
@@ -177,12 +180,13 @@ async function loadTenantSignals(tenantId: string): Promise<TenantSignals> {
   return s;
 }
 
-/** NeedsYouItem rows from up-next, projected to what the opener uses. */
-async function loadTodos(): Promise<OpenerTodo[]> {
+/** NeedsYouItem rows + firstName from up-next, projected for the opener. */
+async function loadUpNext(): Promise<{ todos: OpenerTodo[]; firstName: string | null }> {
   try {
     const res = await getUpNext();
-    if (!res.ok) return [];
+    if (!res.ok) return { todos: [], firstName: null };
     const data = (await res.json()) as {
+      firstName?: string | null;
       todos?: Array<{
         kind: OpenerTodo["kind"];
         title: string;
@@ -193,17 +197,20 @@ async function loadTodos(): Promise<OpenerTodo[]> {
         entityId: string | null;
       }>;
     };
-    return (data.todos ?? []).map((t) => ({
-      kind: t.kind,
-      title: t.title,
-      subtitle: t.subtitle,
-      why: t.why,
-      stakes: t.stakes,
-      toAddress: t.toAddress,
-      entityId: t.entityId,
-    }));
+    return {
+      firstName: data.firstName ?? null,
+      todos: (data.todos ?? []).map((t) => ({
+        kind: t.kind,
+        title: t.title,
+        subtitle: t.subtitle,
+        why: t.why,
+        stakes: t.stakes,
+        toAddress: t.toAddress,
+        entityId: t.entityId,
+      })),
+    };
   } catch {
-    return [];
+    return { todos: [], firstName: null };
   }
 }
 

@@ -20,9 +20,21 @@ import type { UiDirective } from "@/lib/chat/ui-directives";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ElevayMark } from "@/components/ui/elevay-mark";
-import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles, ArrowUpRight } from "lucide-react";
+import { Compass, Send, Mail, Check, Paperclip, Mic, MicOff, Loader2, Search, Target, AlertTriangle, ListChecks, Lightbulb, Sparkles, ArrowUpRight, Calendar, History } from "lucide-react";
 import { trackEvent } from "@/components/posthog-provider";
 import { starterSuggestions, STARTER_SUGGESTION_COUNT } from "./_starter-suggestions";
+import type { OpenerChip } from "@/lib/chat/opener";
+import { readOpenerCache, writeOpenerCache, type OpenerResponse } from "@/lib/chat/opener-cache";
+
+/** Opener chip icons, page-sized (16px rows). Mirrors the dock's mapping. */
+const OPENER_CHIP_ICONS: Record<OpenerChip["kind"], typeof Compass> = {
+  reply: Mail,
+  drafts: ListChecks,
+  deal_risk: Target,
+  meeting: Calendar,
+  resume: History,
+  recipe: Compass,
+};
 
 /** Pick a lucide icon for a starter suggestion by intent, so the empty
  *  state reads as a set of capabilities rather than a wall of grey text.
@@ -66,6 +78,12 @@ export default function ChatPage() {
   const [emailComposer, setEmailComposer] = useState<EmailComposerDraft | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
+
+  // CHAT-OPENER (v2.1): the /chat empty state opens on the agent's first
+  // turn, same payload as the dock (shared sessionStorage cache). "fallback"
+  // keeps the onboarding-personalized starter list below.
+  const [opener, setOpener] = useState<OpenerResponse | null>(null);
+  const [openerState, setOpenerState] = useState<"loading" | "ready" | "fallback">("loading");
 
   // Command layer: execute UI directives carried on tool results (open a
   // record/view, or the composer) exactly once per turn. Replayed thread
@@ -134,7 +152,8 @@ export default function ChatPage() {
     })();
   }, [searchParams, threadLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch contextual suggestions based on onboarding data
+  // Fetch contextual suggestions based on onboarding data (kept as the
+  // opener's fallback prompt list; also the firstName fallback).
   useEffect(() => {
     (async () => {
       try {
@@ -142,7 +161,7 @@ export default function ChatPage() {
         if (!res.ok) return;
         const data = await res.json();
         if (data.suggestions) setSuggestions(data.suggestions);
-        if (data.firstName) setFirstName(data.firstName);
+        if (data.firstName) setFirstName((prev) => prev || data.firstName);
       } catch {
         // Silent fail — generic fallback will show once loaded
       } finally {
@@ -150,6 +169,86 @@ export default function ChatPage() {
       }
     })();
   }, []);
+
+  // CHAT-OPENER fetch — skipped when landing on an existing thread (the
+  // empty state never renders there). Shares the dock's 60s cache, so
+  // dock → /chat within the TTL is instant and shows the same briefing.
+  useEffect(() => {
+    if (searchParams.get("thread")) return;
+    const cached = readOpenerCache();
+    if (cached) {
+      setOpener(cached);
+      setOpenerState("ready");
+      if (cached.firstName) setFirstName(cached.firstName);
+      trackEvent("", "chat_opener_shown", { ...cached.counts, hasWork: cached.hasWork, cached: true, surface: "chat-page" });
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/chat/opener", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: OpenerResponse | null) => {
+        if (cancelled) return;
+        if (data && typeof data.text === "string" && Array.isArray(data.chips)) {
+          writeOpenerCache(data);
+          setOpener(data);
+          setOpenerState("ready");
+          if (data.firstName) setFirstName(data.firstName);
+          trackEvent("", "chat_opener_shown", { ...data.counts, hasWork: data.hasWork, cached: false, surface: "chat-page" });
+        } else {
+          setOpenerState("fallback");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOpenerState("fallback");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; ?thread= navigations render the thread, not the empty state
+  }, []);
+
+  // CHAT-OPENER: resume chip — load a thread inline (same as the dock's
+  // resumeThread): restore turns, then point saves at that thread so new
+  // exchanges append without duplicating the restored ones.
+  async function resumeThread(id: string) {
+    try {
+      const res = await fetch(`/api/chat/threads/${id}?branchId=main`, { credentials: "include" });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as {
+        messages?: Array<{ id: string; role: string; content: string | null }>;
+      };
+      const restored = (data.messages ?? [])
+        .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+        .map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          parts: [{ type: "text" as const, text: m.content as string }],
+        }));
+      if (restored.length === 0) {
+        toast("That conversation has no messages to restore.", "warning");
+        return;
+      }
+      chat.setMessages(restored);
+      setThreadId(id);
+      setLastSavedCount(restored.length);
+      window.history.replaceState({}, "", `/chat?thread=${id}`);
+    } catch {
+      toast("Couldn't load that conversation.", "warning");
+    }
+  }
+
+  function onOpenerChip(chip: OpenerChip, position: number) {
+    trackEvent("", "chat_opener_chip_clicked", { kind: chip.kind, id: chip.id, position, surface: "chat-page" });
+    if (chip.resumeThreadId) {
+      void resumeThread(chip.resumeThreadId);
+      return;
+    }
+    if (chip.href) {
+      router.push(chip.href);
+      return;
+    }
+    if (chip.send) chat.sendMessage({ text: chip.send });
+  }
 
   // Auto-send query from persistent chat bar
   useEffect(() => {
@@ -505,12 +604,21 @@ export default function ChatPage() {
             >
               {greeting ? (firstName ? `${greeting}, ${firstName}` : greeting) : "How can I help?"}
             </h1>
-            <p
-              className="mt-2 text-[14px]"
-              style={{ color: "var(--color-text-tertiary)" }}
-            >
-              Ask about your pipeline, draft outreach, or research an account.
-            </p>
+            {openerState === "loading" ? (
+              /* Briefing line placeholder — same height as the <p>, no swap. */
+              <div className="mt-2 flex h-[21px] items-center" aria-hidden>
+                <div className="h-3.5 w-72 animate-pulse rounded" style={{ background: "var(--color-bg-hover)" }} />
+              </div>
+            ) : (
+              <p
+                className="mt-2 max-w-[480px] text-center text-[14px]"
+                style={{ color: openerState === "ready" && opener?.hasWork ? "var(--color-text-secondary)" : "var(--color-text-tertiary)" }}
+              >
+                {openerState === "ready" && opener?.hasWork
+                  ? opener.text
+                  : "Ask about your pipeline, draft outreach, or research an account."}
+              </p>
+            )}
 
             {/* Composer — the focal point of the empty state */}
             <div className="mt-7 w-full">{renderComposer(null, true)}</div>
@@ -521,7 +629,34 @@ export default function ChatPage() {
               style={{ borderColor: "var(--color-border-default)", background: "var(--color-bg-card)" }}
             >
               {(() => {
-                const starter = starterSuggestions(suggestionsLoaded, suggestions);
+                // CHAT-OPENER: the agent's one-tap chips replace the static
+                // starter prompts; those remain as the error fallback.
+                if (openerState === "ready" && opener) {
+                  return opener.chips.map((c, i) => {
+                    const Icon = OPENER_CHIP_ICONS[c.kind] ?? Compass;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => onOpenerChip(c, i)}
+                        className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
+                        style={{
+                          color: "var(--color-text-secondary)",
+                          borderTop: i ? "1px solid var(--color-border-default)" : undefined,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--color-bg-hover)"; e.currentTarget.style.color = "var(--color-text-primary)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--color-text-secondary)"; }}
+                      >
+                        <Icon size={16} className="shrink-0" style={{ color: "var(--color-accent)" }} />
+                        <span className="flex-1 truncate text-[14px]">{c.label}</span>
+                        <ArrowUpRight size={14} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                      </button>
+                    );
+                  });
+                }
+                const starter =
+                  openerState === "loading"
+                    ? null
+                    : starterSuggestions(suggestionsLoaded, suggestions);
                 if (starter === null) {
                   // Still loading — skeleton rows matching the final shape so the
                   // personalised prompts don't visibly swap in over the fallback.
