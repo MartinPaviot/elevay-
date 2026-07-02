@@ -403,10 +403,15 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
     }
   }, [mounted]);
 
-  // Escape to close
+  // Escape to close. When the chat dock is open ON TOP of the composer, Escape
+  // belongs to the dock — one press must close the topmost layer only, not
+  // throw away the editing session underneath (audit 2026-07-02, F6). The dock
+  // is a sibling tree, so presence is read from its DOM marker.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (document.querySelector("[data-chat-dock-open]")) return;
+      onClose();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);

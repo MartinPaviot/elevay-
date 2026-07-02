@@ -1175,6 +1175,10 @@ export default function InboxPage() {
 
   // Cmd/Ctrl+K toggles the palette — registered separately from the j/k
   // handler (which ignores modifier keys) so it fires even from a text field.
+  // CAPTURE phase so this contextual palette claims the key BEFORE the global
+  // nav palette's document listener — with both on the bubble path, one press
+  // stacked BOTH palettes on top of each other (audit 2026-07-02, F5). The
+  // global palette defers on defaultPrevented.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -1182,8 +1186,8 @@ export default function InboxPage() {
         setPaletteOpen((o) => !o);
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, []);
 
   // Surface the inbox shortcuts in the global `?` cheatsheet (INBOX-K02).
