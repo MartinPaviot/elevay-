@@ -275,6 +275,12 @@ export async function POST(req: Request) {
       summary: `Meeting booked: ${title || `Rendez-vous avec ${contactName}`}`,
       metadata: {
         eventId: booking.eventId,
+        // Same id under the calendar-sync's key so the 15-min cron dedupes
+        // against this row instead of inserting a duplicate meeting_scheduled
+        // (found live 2026-07-02); meetingLink so bot-deployment reads the
+        // visio from THIS row too.
+        calendarEventId: booking.eventId,
+        meetingLink: booking.joinUrl,
         joinUrl: booking.joinUrl,
         // Back-compat: older readers keyed on `meetLink`.
         meetLink: booking.joinUrl,

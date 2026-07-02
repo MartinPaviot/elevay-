@@ -30,7 +30,12 @@ async function importCronMeeting(opts: {
     .where(
       and(
         eq(activities.tenantId, tenantId),
-        sql`metadata->>'calendarEventId' = ${meeting.calendarEventId}`,
+        // Match BOTH key spellings: the in-product booking route stores the
+        // event id under `eventId`, this sync under `calendarEventId` — with
+        // only the latter checked, every meeting booked in-product DUPLICATED
+        // at the next 15-min sync (found live 2026-07-02 on the founder's
+        // AI-loop test booking).
+        sql`(metadata->>'calendarEventId' = ${meeting.calendarEventId} or metadata->>'eventId' = ${meeting.calendarEventId})`,
       ),
     )
     .limit(1);
