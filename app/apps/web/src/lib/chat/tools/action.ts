@@ -36,6 +36,7 @@ import { generateInviteToken } from "@/lib/auth/invite-token";
 import { makeTool, type ToolContext } from "./context";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
 import { loadSuppressedEmails, isEmailSuppressed } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import { readApprovalMode, enforceAgentApprovalMode } from "@/lib/guardrails/approval-mode";
@@ -617,6 +618,7 @@ RULES:
           .from(contacts)
           .where(and(eq(contacts.tenantId, tenantId), inArray(contacts.id, idBatch)));
         const g1Ctx = await loadG1Context(tenantId, companyRows.map((r) => r.companyId));
+        const g1Rows: GateDecisionInput[] = [];
         for (const contactId of idBatch) {
           const [contact] = await db
             .select({
@@ -645,6 +647,13 @@ RULES:
             suppressedReason: suppressed ? "hard_bounce" : null,
             g1: g1Ctx.forCompany(contact.companyId),
           });
+          const g1Row = g1DecisionRow({
+            tenantId,
+            contactId,
+            result: eligibility,
+            reasons: { sequenceId: input.sequenceId, source: "chat_enroll" },
+          });
+          if (g1Row) g1Rows.push(g1Row);
           if (!eligibility.eligible) {
             skipped++;
             continue;
@@ -679,6 +688,9 @@ RULES:
           }).onConflictDoNothing();
           enrolled++;
         }
+
+        // M13 T6 — best-effort verdict log (never blocks the tool result).
+        await recordGateDecisions(g1Rows);
 
         return { enrolled, skipped, sequenceId: input.sequenceId };
       },
@@ -725,6 +737,7 @@ RULES:
             id: contacts.id,
             email: contacts.email,
             deletedAt: contacts.deletedAt,
+            companyId: contacts.companyId,
             companyExcludedReason: companies.excludedReason,
           })
           .from(contacts)
@@ -742,9 +755,14 @@ RULES:
 
         // P0-5 — load the tenant suppression-list once; never enroll a burned address.
         const suppressedSet = await loadSuppressedEmails(tenantId, candidates.map((c) => c.email));
+        // M13-G1 (T6 — hole found during T6: this tool selected candidates
+        // WITHOUT the fresh-signal/ICP rule, unlike the /autopilot route it
+        // mirrors). INV-11: budget never fills below the G1 bar.
+        const autoG1Ctx = await loadG1Context(tenantId, candidates.map((c) => c.companyId));
 
         const toEnroll: string[] = [];
         let skippedCount = 0;
+        const autoG1Rows: GateDecisionInput[] = [];
         for (const contact of candidates) {
           if (toEnroll.length >= maxEnroll) break;
           if (enrolledIds.has(contact.id)) {
@@ -756,13 +774,23 @@ RULES:
             deletedAt: contact.deletedAt,
             companyExcludedReason: contact.companyExcludedReason,
             suppressedReason: contact.email && suppressedSet.has(contact.email.toLowerCase()) ? "hard_bounce" : null,
+            g1: autoG1Ctx.forCompany(contact.companyId),
           });
+          const g1Row = g1DecisionRow({
+            tenantId,
+            contactId: contact.id,
+            result: eligibility,
+            reasons: { sequenceId: input.sequenceId, source: "chat_autopilot" },
+          });
+          if (g1Row) autoG1Rows.push(g1Row);
           if (!eligibility.eligible) {
             skippedCount++;
             continue;
           }
           toEnroll.push(contact.id);
         }
+        // M13 T6 — best-effort verdict log (never blocks the tool result).
+        await recordGateDecisions(autoG1Rows);
 
         if (toEnroll.length === 0) {
           return { enrolled: 0, queued: 0, skipped: skippedCount, eligibleConsidered: candidates.length };

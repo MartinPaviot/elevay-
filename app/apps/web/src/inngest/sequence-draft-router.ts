@@ -32,11 +32,12 @@ import {
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { decideRouteMode, buildDraftRow } from "@/lib/sequence-drafts/router";
+import { runDraftG4Gate } from "@/lib/sequence-drafts/gate-runner";
 import { buildProspectContext } from "@/lib/context/prospect-context";
 import { deriveSourcesFromContext, type DraftSource } from "@/lib/sequence-drafts/claims-from-context";
 import { personalizeStepEmail } from "@/lib/agents/sequence-generator";
 import { STEP_STRATEGIES, getMethodology } from "@/lib/scoring/outbound-methodologies";
-import { gradeGeneratedStep } from "@/lib/evals/sequence-quality";
+import { gradeGeneratedStep, passThresholdFor } from "@/lib/evals/sequence-quality";
 import {
   generateShadowCopy,
   generateCopyMessage,
@@ -324,10 +325,85 @@ export const routeSequenceStepToDraft = inngest.createFunction(
     const inserted = await step.run("insert-draft", async () => {
       const [row] = await db
         .insert(sequenceDrafts)
-        .values(draftRow)
+        // M13 T6 — drafts are born in `gates_running`: the G4 gate below
+        // decides whether they reach the founder's review queue
+        // (pending_approval) or get set aside. buildDraftRow's
+        // pending_approval default stays for any legacy caller.
+        .values({ ...draftRow, status: "gates_running" })
         .returning({ id: sequenceDrafts.id });
       return row;
     });
+
+    // 6a) M13 T6 — G4 copy-quality gate on the draft AS STORED (the
+    // copy-engine's output when primary, the legacy personalisation
+    // otherwise). One fresh-roll rework, then set_aside — never sent.
+    // Verdicts land in gate_decisions; the walk is enforced by
+    // canTransition inside the runner. Grader/context crash = fail-open
+    // to pending_approval (the human gate still holds).
+    const gateOutcome = inserted?.id
+      ? await step.run("g4-gate", async () => {
+          let gateCtx: Awaited<ReturnType<typeof buildProspectContext>> | null = null;
+          const loadGateCtx = async () => {
+            if (!gateCtx) gateCtx = await buildProspectContext(contact.id, tenantId);
+            if (!gateCtx) throw new Error("missing_prospect_context");
+            return gateCtx;
+          };
+          const strategy =
+            STEP_STRATEGIES.find(
+              (s) => s.stepNumber === (enrollment.currentStep ?? 1),
+            ) ?? STEP_STRATEGIES[0];
+          return runDraftG4Gate(
+            {
+              tenantId,
+              draftId: inserted.id,
+              contactId: contact.id,
+              enrollmentId,
+              stepNumber: enrollment.currentStep ?? 1,
+              content: { subject: finalSubject, body: finalBody },
+            },
+            {
+              updateDraft: async (fields) => {
+                await db
+                  .update(sequenceDrafts)
+                  .set(fields as Partial<typeof sequenceDrafts.$inferInsert>)
+                  .where(eq(sequenceDrafts.id, inserted.id));
+              },
+              grade: async (content) => {
+                const ctx = await loadGateCtx();
+                return gradeGeneratedStep(
+                  {
+                    subject: content.subject,
+                    body: content.body,
+                    stepNumber: enrollment.currentStep ?? 1,
+                  },
+                  ctx,
+                  getMethodology(ctx.contact.seniority),
+                );
+              },
+              threshold: await (async () => {
+                try {
+                  const ctx = await loadGateCtx();
+                  return passThresholdFor(getMethodology(ctx.contact.seniority));
+                } catch {
+                  return passThresholdFor(getMethodology(null));
+                }
+              })(),
+              regenerate: async () => {
+                const ctx = await loadGateCtx();
+                const out = await personalizeStepEmail(
+                  ctx,
+                  {
+                    subject: stepTemplate.subjectTemplate,
+                    body: stepTemplate.bodyTemplate,
+                  },
+                  strategy,
+                );
+                return { subject: out.subject, body: out.body };
+              },
+            },
+          );
+        })
+      : null;
 
     // 6b) Spec 19/20 shadow — generate the grounded copy engine's version of this
     // draft for side-by-side comparison in the review queue. Gated by
@@ -356,6 +432,9 @@ export const routeSequenceStepToDraft = inngest.createFunction(
       stepNumber: enrollment.currentStep,
       personalised: personalised.ok,
       personalisationFallbackReason: personalised.ok ? null : personalised.reason,
+      // M13 T6 — where the G4 gate left the draft (pending_approval | set_aside).
+      gateStatus: gateOutcome?.finalStatus ?? null,
+      gateScore: gateOutcome?.score ?? null,
     };
   },
 );

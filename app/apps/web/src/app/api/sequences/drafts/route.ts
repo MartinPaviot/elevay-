@@ -27,6 +27,11 @@ const VALID_STATUSES = new Set([
   "rejected",
   "expired",
   "sent",
+  // M13 T6 — quality-gate lifecycle.
+  "gates_running",
+  "blocked",
+  "reworking",
+  "set_aside",
 ]);
 
 export async function GET(req: Request) {

@@ -9,6 +9,7 @@ import {
   readCachedBrief,
   toResearchBriefContext,
 } from "@/lib/campaign-engine/build-intelligence-brief";
+import { GATE_RUBRICS, recordGateDecisions } from "@/lib/gates/gate-decisions";
 
 /**
  * `POST /api/send/pregate` — M13-R8 (T4): manual sends pass G2 (factual) +
@@ -129,6 +130,30 @@ export async function POST(req: Request) {
         detail: `Unverifiable claim(s) about this prospect: ${g2.ungrounded.join(", ")} — we hold no data supporting them. Remove or rephrase.`,
       });
     }
+
+    // M13 T6 — log both verdicts (pass AND blocked) so reporting can compute
+    // per-gate block rates on the manual path too. Best-effort by contract.
+    const subjectId = input.contactId ?? to;
+    await recordGateDecisions([
+      {
+        tenantId: authCtx.tenantId,
+        subjectType: "manual",
+        subjectId,
+        gate: 5,
+        rubricVersion: GATE_RUBRICS.g5Transport,
+        verdict: g5.passed ? "pass" : "blocked",
+        reasons: { failures: g5.failures },
+      },
+      {
+        tenantId: authCtx.tenantId,
+        subjectType: "manual",
+        subjectId,
+        gate: 2,
+        rubricVersion: GATE_RUBRICS.g2Deterministic,
+        verdict: g2.blocked ? "blocked" : "pass",
+        reasons: { ungrounded: g2.ungrounded.slice(0, 8), briefHasFacts: g2.briefHasFacts },
+      },
+    ]);
 
     return Response.json({
       allowed: failures.length === 0,

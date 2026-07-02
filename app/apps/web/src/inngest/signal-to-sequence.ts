@@ -32,6 +32,7 @@ import { and, eq, notInArray, inArray, desc } from "drizzle-orm";
 import { trackPipeline } from "@/lib/analytics/pipeline-tracker";
 import { isCompanyEligible, G1_MIN_ICP_SCORE } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { GATE_RUBRICS, recordGateDecision } from "@/lib/gates/gate-decisions";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
 import {
@@ -151,13 +152,27 @@ export const signalAutoEnroll = inngest.createFunction(
     // ICP threshold applies only when the tenant actually scores fit.
     const g1Gate = await step.run("g1-gate", async () => {
       const g1 = (await loadG1Context(tenantId, [companyId])).forCompany(companyId);
-      if (g1.freshSignalCount < 1) {
-        return { ok: false as const, reason: "No fresh signal left at dispatch (expired)" };
-      }
-      if (g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE) {
-        return { ok: false as const, reason: `ICP fit below threshold (${g1.icpScore ?? 0} < ${G1_MIN_ICP_SCORE})` };
-      }
-      return { ok: true as const, reason: "" };
+      const outcome =
+        g1.freshSignalCount < 1
+          ? { ok: false as const, reason: "No fresh signal left at dispatch (expired)", code: "no_fresh_signal" }
+          : g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE
+            ? { ok: false as const, reason: `ICP fit below threshold (${g1.icpScore ?? 0} < ${G1_MIN_ICP_SCORE})`, code: "below_icp_threshold" }
+            : { ok: true as const, reason: "", code: null };
+      // M13 T6 — log the G1 verdict (best-effort; the check above enforces).
+      // subjectId = companyId: this path gates the SIGNAL's company before
+      // contacts are even selected.
+      await recordGateDecision({
+        tenantId,
+        subjectType: "enrollment",
+        subjectId: companyId,
+        gate: 1,
+        rubricVersion: GATE_RUBRICS.g1,
+        verdict: outcome.ok ? "pass" : "blocked",
+        reasons: outcome.ok
+          ? { source: "signal_dispatch" }
+          : { source: "signal_dispatch", reason: outcome.code },
+      });
+      return { ok: outcome.ok, reason: outcome.reason };
     });
     if (!g1Gate.ok) {
       return { skipped: true, reason: g1Gate.reason };

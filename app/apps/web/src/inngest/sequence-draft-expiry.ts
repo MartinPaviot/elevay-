@@ -16,7 +16,7 @@
 import { inngest } from "./client";
 import { db } from "@/db";
 import { sequenceDrafts, tenants } from "@/db/schema";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import {
   resolveExpiryHours,
   expiryCutoff,
@@ -75,7 +75,16 @@ export const cronExpireSequenceDrafts = inngest.createFunction(
           .where(
             and(
               eq(sequenceDrafts.tenantId, t.id),
-              eq(sequenceDrafts.status, "pending_approval"),
+              // M13 T6 — also reap drafts stuck mid-gate (a crashed gate run
+              // would otherwise linger invisible forever). canTransition
+              // allows `expire` from all four states; the sweep stays
+              // idempotent.
+              inArray(sequenceDrafts.status, [
+                "pending_approval",
+                "gates_running",
+                "blocked",
+                "reworking",
+              ]),
               lt(sequenceDrafts.generatedAt, cutoff),
             ),
           )

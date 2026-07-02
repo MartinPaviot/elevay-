@@ -11,6 +11,7 @@ import {
 import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
 import { isEmailSuppressed } from "@/lib/sequences/suppression";
 import { guardEnrollment, releaseEnrollment } from "@/lib/anti-collision/enroll-guard";
 
@@ -61,6 +62,8 @@ export async function POST(
     let enrolled = 0;
     let skipped = 0;
     const skippedReasons: Record<string, number> = {};
+    // M13 T6 — G1 verdicts (pass + blocked) batched into gate_decisions.
+    const g1Rows: GateDecisionInput[] = [];
 
     // M13-G1 (T5) — batch the G1 facts (fresh signals + ICP fit) for every
     // involved company in ONE load; the manual path is G1-gated like every
@@ -125,6 +128,13 @@ export async function POST(
         suppressedReason: suppressed ? "hard_bounce" : null,
         g1: g1Ctx.forCompany(contact.companyId),
       });
+      const g1Row = g1DecisionRow({
+        tenantId: authCtx.tenantId,
+        contactId,
+        result: eligibility,
+        reasons: { sequenceId: id, source: "manual_enroll" },
+      });
+      if (g1Row) g1Rows.push(g1Row);
       if (!eligibility.eligible) {
         skipped++;
         skippedReasons[eligibility.reason] =
@@ -178,6 +188,9 @@ export async function POST(
 
       enrolled++;
     }
+
+    // M13 T6 — best-effort verdict log (never blocks the response).
+    await recordGateDecisions(g1Rows);
 
     // The reasons make a G1 refusal EXPLICIT to the founder (M13-G1 done
     // criterion) instead of a silent skip count.

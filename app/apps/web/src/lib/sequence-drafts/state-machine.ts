@@ -28,7 +28,16 @@ export type DraftStatus =
   | "approved"
   | "rejected"
   | "expired"
-  | "sent";
+  | "sent"
+  // M13 (outreach-autopilot T6) — quality-gate lifecycle, upstream of review:
+  //   gates_running ──gates_pass──→ pending_approval
+  //   gates_running ──gate_block──→ blocked ──rework──→ reworking
+  //   reworking ──gates_rerun──→ gates_running
+  //   blocked ──set_aside──→ set_aside (terminal; blocked twice, never sent)
+  | "gates_running"
+  | "blocked"
+  | "reworking"
+  | "set_aside";
 
 export type DraftAction =
   | "approve"
@@ -36,7 +45,13 @@ export type DraftAction =
   | "edit"
   | "expire"
   | "mark_sent"
-  | "recall";
+  | "recall"
+  // M13 T6 — gate-lifecycle actions (system-side, never user-initiated).
+  | "gates_pass"
+  | "gate_block"
+  | "rework"
+  | "gates_rerun"
+  | "set_aside";
 
 export interface TransitionResult {
   allowed: boolean;
@@ -93,7 +108,16 @@ export function canTransition(
       };
 
     case "expire":
-      if (from === "pending_approval") {
+      // M13 T6 — the gate states are also expirable: a draft stuck in
+      // gates_running/blocked/reworking past the tenant's expiry window
+      // means the gate run crashed mid-flight; the cron reaps it so it
+      // never lingers invisible forever.
+      if (
+        from === "pending_approval" ||
+        from === "gates_running" ||
+        from === "blocked" ||
+        from === "reworking"
+      ) {
         return { allowed: true, nextStatus: "expired" };
       }
       // Expiry on a non-pending draft is a no-op, not an error —
@@ -128,6 +152,61 @@ export function canTransition(
         nextStatus: from,
         reason: `Only 'approved' drafts can be recalled (was '${from}')`,
       };
+
+    // ── M13 T6 — gate lifecycle (system-side) ──
+
+    case "gates_pass":
+      if (from === "gates_running") {
+        return { allowed: true, nextStatus: "pending_approval" };
+      }
+      return {
+        allowed: false,
+        nextStatus: from,
+        reason: `Gates can only pass a draft in 'gates_running' (was '${from}')`,
+      };
+
+    case "gate_block":
+      if (from === "gates_running") {
+        return { allowed: true, nextStatus: "blocked" };
+      }
+      return {
+        allowed: false,
+        nextStatus: from,
+        reason: `Gates can only block a draft in 'gates_running' (was '${from}')`,
+      };
+
+    case "rework":
+      if (from === "blocked") {
+        return { allowed: true, nextStatus: "reworking" };
+      }
+      return {
+        allowed: false,
+        nextStatus: from,
+        reason: `Only 'blocked' drafts can be reworked (was '${from}')`,
+      };
+
+    case "gates_rerun":
+      if (from === "reworking") {
+        return { allowed: true, nextStatus: "gates_running" };
+      }
+      return {
+        allowed: false,
+        nextStatus: from,
+        reason: `Only 'reworking' drafts can re-enter the gates (was '${from}')`,
+      };
+
+    case "set_aside":
+      // Terminal: the draft was blocked on its LAST rework attempt. It is
+      // never sent and never auto-retried — the founder sees it with the
+      // gate's explanation (reviewReason) and decides.
+      if (from === "blocked") {
+        return { allowed: true, nextStatus: "set_aside" };
+      }
+      return {
+        allowed: false,
+        nextStatus: from,
+        reason: `Only 'blocked' drafts can be set aside (was '${from}')`,
+      };
   }
 }
 
@@ -137,7 +216,12 @@ export function canTransition(
  * count terminal-rejection rates.
  */
 export function isTerminal(status: DraftStatus): boolean {
-  return status === "rejected" || status === "expired" || status === "sent";
+  return (
+    status === "rejected" ||
+    status === "expired" ||
+    status === "sent" ||
+    status === "set_aside"
+  );
 }
 
 /**

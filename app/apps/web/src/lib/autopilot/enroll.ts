@@ -22,6 +22,7 @@ import { guardEnrollment } from "@/lib/anti-collision/enroll-guard";
 import { recordAgentAction } from "@/lib/agents/agent-actions";
 import { G1_MIN_ICP_SCORE } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { GATE_RUBRICS, recordGateDecisions } from "@/lib/gates/gate-decisions";
 import type { AutopilotEnrollAction } from "./enroll-decision";
 
 export type EnrollOutcome = "enrolled" | "drafted" | "collision" | "ineligible";
@@ -41,6 +42,8 @@ export interface EnrollOneDeps {
   recordDraft?: typeof recordAgentAction;
   database?: typeof defaultDb;
   loadG1?: typeof loadG1Context;
+  /** M13 T6 — gate_decisions verdict writer (best-effort, injectable). */
+  recordGate?: typeof recordGateDecisions;
 }
 
 /** Enroll or draft one prospect. Never throws on a normal disposition; returns the outcome. */
@@ -62,10 +65,30 @@ export async function enrollOne(input: EnrollOneInput, deps: EnrollOneDeps = {})
     .limit(1);
   const g1 = (await loadG1(input.tenantId, [contactRow?.companyId]))
     .forCompany(contactRow?.companyId);
-  if (
-    g1.freshSignalCount < 1 ||
-    (g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE)
-  ) {
+  const g1Reason =
+    g1.freshSignalCount < 1
+      ? "no_fresh_signal"
+      : g1.icpScoringActive && (g1.icpScore ?? 0) < G1_MIN_ICP_SCORE
+        ? "below_icp_threshold"
+        : null;
+  // M13 T6 — log the verdict (best-effort by contract; never blocks).
+  const recordGate = deps.recordGate ?? recordGateDecisions;
+  await recordGate([
+    {
+      tenantId: input.tenantId,
+      subjectType: "enrollment",
+      subjectId: input.contactId,
+      gate: 1,
+      rubricVersion: GATE_RUBRICS.g1,
+      verdict: g1Reason ? "blocked" : "pass",
+      reasons: {
+        sequenceId: input.sequenceId,
+        source: "autopilot_enroll_one",
+        ...(g1Reason ? { reason: g1Reason } : {}),
+      },
+    },
+  ]);
+  if (g1Reason) {
     return { outcome: "ineligible" };
   }
 

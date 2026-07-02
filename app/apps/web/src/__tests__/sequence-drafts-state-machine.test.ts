@@ -143,6 +143,69 @@ describe("validateRejectionReason", () => {
   });
 });
 
+describe("canTransition — gate lifecycle (M13 T6)", () => {
+  it("gates_running → pending_approval on gates_pass", () => {
+    const r = canTransition("gates_running", "gates_pass");
+    expect(r).toMatchObject({ allowed: true, nextStatus: "pending_approval" });
+  });
+
+  it("gates_running → blocked on gate_block", () => {
+    const r = canTransition("gates_running", "gate_block");
+    expect(r).toMatchObject({ allowed: true, nextStatus: "blocked" });
+  });
+
+  it("blocked → reworking → gates_running (the rework loop)", () => {
+    expect(canTransition("blocked", "rework")).toMatchObject({ allowed: true, nextStatus: "reworking" });
+    expect(canTransition("reworking", "gates_rerun")).toMatchObject({ allowed: true, nextStatus: "gates_running" });
+  });
+
+  it("blocked → set_aside (terminal, never sent)", () => {
+    const r = canTransition("blocked", "set_aside");
+    expect(r).toMatchObject({ allowed: true, nextStatus: "set_aside" });
+    expect(isTerminal("set_aside")).toBe(true);
+  });
+
+  it.each<DraftStatus>(["pending_approval", "approved", "rejected", "expired", "sent", "blocked", "reworking", "set_aside"])(
+    "rejects gates_pass from %s (only gates_running passes gates)",
+    (from) => {
+      expect(canTransition(from, "gates_pass").allowed).toBe(false);
+    },
+  );
+
+  it.each<DraftStatus>(["pending_approval", "gates_running", "reworking", "set_aside"])(
+    "rejects set_aside from %s (only blocked can be set aside)",
+    (from) => {
+      expect(canTransition(from, "set_aside").allowed).toBe(false);
+    },
+  );
+
+  it("a set_aside draft can never be approved or sent", () => {
+    expect(canTransition("set_aside", "approve").allowed).toBe(false);
+    expect(canTransition("set_aside", "mark_sent").allowed).toBe(false);
+  });
+
+  it("the cron can expire drafts stuck mid-gate (crashed run)", () => {
+    for (const from of ["gates_running", "blocked", "reworking"] as const) {
+      expect(canTransition(from, "expire")).toMatchObject({ allowed: true, nextStatus: "expired" });
+    }
+  });
+
+  it("expire on set_aside stays a no-op (terminal)", () => {
+    expect(canTransition("set_aside", "expire").allowed).toBe(false);
+  });
+
+  it("regression — gate states never reachable via user actions", () => {
+    // approve/reject/edit only operate on pending_approval; a draft still in
+    // the gates can't be short-circuited into the send path.
+    for (const from of ["gates_running", "blocked", "reworking"] as const) {
+      expect(canTransition(from, "approve").allowed).toBe(false);
+      expect(canTransition(from, "reject").allowed).toBe(false);
+      expect(canTransition(from, "edit").allowed).toBe(false);
+      expect(canTransition(from, "mark_sent").allowed).toBe(false);
+    }
+  });
+});
+
 describe("canTransition — recall (OUT-02 citation gate)", () => {
   it("allows approved → pending_approval (source died between approval and send)", () => {
     const r = canTransition("approved", "recall");

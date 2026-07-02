@@ -65,6 +65,29 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("@/lib/emails/deliver-interactive", () => ({ deliverInteractiveEmail: vi.fn() }));
 
+// M13 T6 — the executor now re-verifies G1 at approval time (M2-R4). Mock the
+// LOADER (permissive by default, mutable for the staleness test) so the
+// sequenced db.select queue above stays aligned; suppression likewise (the
+// fixtures now carry emails, which would otherwise trigger a real query).
+let g1Facts = { freshSignalCount: 1, icpScore: null as number | null, icpScoringActive: false };
+vi.mock("@/lib/sequences/eligibility-context", () => ({
+  loadG1Context: vi.fn(async () => ({ forCompany: () => g1Facts })),
+}));
+vi.mock("@/lib/sequences/suppression", () => ({
+  loadSuppressedEmails: vi.fn(async () => new Set<string>()),
+}));
+const recordedGateRows: Array<Record<string, unknown>> = [];
+vi.mock("@/lib/gates/gate-decisions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/gates/gate-decisions")>();
+  return {
+    ...actual,
+    recordGateDecisions: vi.fn(async (rows: Array<Record<string, unknown>>) => {
+      recordedGateRows.push(...rows);
+      return rows.length;
+    }),
+  };
+});
+
 import { executeAgentAction } from "@/lib/agents/action-executors";
 
 const action = (payload: Record<string, unknown>) => ({
@@ -78,6 +101,8 @@ beforeEach(() => {
   selectQueue.length = 0;
   insertedValues.length = 0;
   wherePredicates.length = 0;
+  recordedGateRows.length = 0;
+  g1Facts = { freshSignalCount: 1, icpScore: null, icpScoringActive: false };
 });
 
 describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)", () => {
@@ -85,7 +110,10 @@ describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)"
     // 1) sequence belongs to tenant
     selectQueue.push([{ id: "seq1" }]);
     // 2) valid contacts: c2 is excluded (cross-tenant / soft-deleted)
-    selectQueue.push([{ id: "c1" }, { id: "c3" }]);
+    selectQueue.push([
+      { id: "c1", email: "c1@x.co", companyId: "co1" },
+      { id: "c3", email: "c3@x.co", companyId: "co3" },
+    ]);
     // 3) existing-enrollment check for c1 -> none; 4) for c3 -> already enrolled
     selectQueue.push([]); // c1
     selectQueue.push([{ id: "e1" }]); // c3 already enrolled
@@ -140,5 +168,44 @@ describe("sequence-enrollment executor — tenant/deletedAt trust boundary (H1)"
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.detail).toBe("Enrolled 0 contacts in the sequence (2 skipped).");
     expect(insertedValues).toHaveLength(0);
+  });
+
+  // M13 T6 — the payload was G1-checked when RECORDED; the executor re-checks
+  // at APPROVAL time because the founder may approve days later (M2-R4).
+  it("re-verifies G1 at approval: a signal that expired since recording skips the contact", async () => {
+    g1Facts = { freshSignalCount: 0, icpScore: null, icpScoringActive: false };
+    selectQueue.push([{ id: "seq1" }]); // sequence ok
+    selectQueue.push([{ id: "c1", email: "c1@x.co", companyId: "co1" }]); // contact still valid
+    const r = await executeAgentAction(
+      "t1",
+      action({ sequenceId: "seq1", sequenceName: "Hot leads", contactIds: ["c1"] }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.detail).toBe("Enrolled 0 contacts in Hot leads (1 skipped).");
+    expect(insertedValues).toHaveLength(0);
+    // The verdict is on record: blocked, gate 1, with the machine reason.
+    expect(recordedGateRows).toEqual([
+      expect.objectContaining({
+        gate: 1,
+        subjectId: "c1",
+        verdict: "blocked",
+        reasons: expect.objectContaining({ reason: "no_fresh_signal", source: "approval_executor" }),
+      }),
+    ]);
+  });
+
+  it("G1 pass at approval -> pass verdict row alongside the enrollment", async () => {
+    selectQueue.push([{ id: "seq1" }]);
+    selectQueue.push([{ id: "c1", email: "c1@x.co", companyId: "co1" }]);
+    selectQueue.push([]); // not already enrolled
+    const r = await executeAgentAction(
+      "t1",
+      action({ sequenceId: "seq1", sequenceName: "Hot leads", contactIds: ["c1"] }),
+    );
+    expect(r.ok).toBe(true);
+    expect(insertedValues).toHaveLength(1);
+    expect(recordedGateRows).toEqual([
+      expect.objectContaining({ gate: 1, subjectId: "c1", verdict: "pass" }),
+    ]);
   });
 });

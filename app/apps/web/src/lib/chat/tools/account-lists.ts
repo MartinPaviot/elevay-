@@ -27,6 +27,7 @@ import {
 } from "@/lib/accounts/account-lists-db";
 import { checkContactEligibility } from "@/lib/sequences/enrollment-eligibility";
 import { loadG1Context } from "@/lib/sequences/eligibility-context";
+import { g1DecisionRow, recordGateDecisions, type GateDecisionInput } from "@/lib/gates/gate-decisions";
 import { loadSuppressedEmails } from "@/lib/sequences/suppression";
 import { guardEnrollment } from "@/lib/anti-collision/enroll-guard";
 import { getTenantSettings } from "@/lib/config/tenant-settings";
@@ -202,6 +203,7 @@ export function buildAccountListTools(ctx: ToolContext) {
 
         let skipped = 0;
         const eligible: string[] = [];
+        const g1Rows: GateDecisionInput[] = [];
         for (const r of rows) {
           if (already.has(r.id)) { skipped++; continue; }
           const elig = checkContactEligibility({
@@ -211,11 +213,20 @@ export function buildAccountListTools(ctx: ToolContext) {
             suppressedReason: r.email && suppressed.has(r.email.toLowerCase()) ? "hard_bounce" : null,
             g1: g1Ctx.forCompany(r.companyId),
           });
+          const g1Row = g1DecisionRow({
+            tenantId,
+            contactId: r.id,
+            result: elig,
+            reasons: { sequenceId: seq.id, source: "chat_list_enroll" },
+          });
+          if (g1Row) g1Rows.push(g1Row);
           if (!elig.eligible) { skipped++; continue; }
           eligible.push(r.id);
         }
         // contacts with no row loaded (shouldn't happen — ids came from a join) count as skipped
         skipped += ids.length - rows.length;
+        // M13 T6 — best-effort verdict log (never blocks the tool result).
+        await recordGateDecisions(g1Rows);
 
         if (eligible.length === 0) {
           return { enrolled: 0, skipped, queued: 0, list: list.name, sequence: seq.name, capped };
