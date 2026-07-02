@@ -1,4 +1,4 @@
-# Requirements — "Proposed by Elevay" (/home agentic sequence proposals)
+﻿# Requirements — "Proposed by Elevay" (/home agentic sequence proposals)
 
 Founder ask (2026-07-02): "mettre en avant des actions agentiques comme des propositions
 de séquences ultra qualifiées et précises sur une ICP qui a un type de signal
@@ -18,7 +18,7 @@ hiring_surge×3, acquisition×2, funding×1 (entries duplicate per company — B
   that (a) has ≥ MIN_COHORT(2) distinct non-excluded, non-deleted companies with
   a FRESH signal (`isSignalFresh`, lib/signals/freshness.ts), (b) maps to a
   proven template (catalog.ts) via an explicit family→trigger bridge, and
-  (c) has ≥ 1 enrollable contact (email or linkedin_url) in the cohort.
+  (c) has >= 1 enrollable contact (EMAIL — the enrollment stack rejects no_email, enrollment-eligibility.ts:71) in the cohort.
 - **R1.2** Signal entries MUST be deduped per company (freshest per family) —
   19 funding_recent entries = 7 companies, never "19 accounts".
 - **R1.3** Proposals MUST be ranked by `multiplier(family) × cohortSize` using
@@ -36,8 +36,7 @@ hiring_surge×3, acquisition×2, funding×1 (entries duplicate per company — B
   with no template bridge (acquisition, warm_connection) → skipped, counted in
   cron output, never a broken proposal; company in 2 families → appears in
   both cohorts (different why-now); all contacts suppressed/ineligible →
-  contactableCount counts only plausible candidates (email OR linkedin, not
-  suppression-checked at propose time — launch rechecks for real).
+  contactableCount counts email-holders only (not suppression-checked at propose time — launch rechecks for real).
 
 ## R2 — Card on /home
 
@@ -78,8 +77,8 @@ hiring_surge×3, acquisition×2, funding×1 (entries duplicate per company — B
 - **Edge cases**: cohort went stale between render and Launch (companies
   excluded since) → launch enrolls the still-eligible subset and reports
   {enrolled, skipped}; 0 still-eligible → 409 with reason, row stays pending;
-  contact without email but with linkedin → enrolls (LinkedIn steps are
-  action-validated downstream per founder decision).
+  LinkedIn-only contacts do NOT enroll (platform rule: `no_email` is
+  ineligible) — LinkedIn steps still fire for enrolled email-holders.
 
 ## Out of scope (flagged)
 
@@ -90,3 +89,4 @@ hiring_surge×3, acquisition×2, funding×1 (entries duplicate per company — B
 - acquisition/warm_connection templates (no proven template yet — add to
   catalog later, the bridge map makes it one line).
 - Enrollment-row signal stamping (no metadata column; needs its own migration).
+

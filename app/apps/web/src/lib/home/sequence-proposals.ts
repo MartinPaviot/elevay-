@@ -68,7 +68,8 @@ export interface CompanySignalRow {
 }
 
 export interface CohortContactStats {
-  /** Contacts of the company with an email or a LinkedIn URL. */
+  /** Contacts of the company the enrollment stack can actually take —
+   *  EMAIL-holders only (checkContactEligibility rejects `no_email`). */
   contactable: number;
 }
 
