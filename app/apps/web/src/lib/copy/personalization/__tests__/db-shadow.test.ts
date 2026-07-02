@@ -248,7 +248,8 @@ describe("generateCopyMessage — G2 factual gate (deterministic layer)", () => 
     ctxState.ctx = ctx;
     const res = await generateCopyMessage("c1", "t1", {
       database: stubDb({ assets: assetsRow }),
-      generate: async () => JSON.stringify({ line: "Congrats on the $4,200,000 raise — relevant to onboarding speed.", citedIds: ["funding"] }),
+      // No em-dash in the line: brandViolations enforces the editorial ban in code.
+      generate: async () => JSON.stringify({ line: "Congrats on the $4,200,000 raise, relevant to onboarding speed.", citedIds: ["funding"] }),
     });
     expect(res.message?.personalization_level).toBe("high");
     expect(gateState.calls[0]).toMatchObject({ verdict: "pass" });
