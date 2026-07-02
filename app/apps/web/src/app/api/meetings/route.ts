@@ -4,7 +4,7 @@ import { fetchMicrosoftMeetings } from "@/lib/integrations/calendar-microsoft";
 import { fetchCalDavMeetingsForTenant } from "@/lib/integrations/caldav-sync";
 import { db } from "@/db";
 import { activities, authAccounts, companies, contacts, connectedMailboxes } from "@/db/schema";
-import { eq, and, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, sql, isNull, isNotNull, inArray } from "drizzle-orm";
 import { logger } from "@/lib/observability/logger";
 import { resolveAttendance } from "@/lib/meetings/attendance";
 
@@ -260,7 +260,11 @@ export async function GET(req: Request) {
           and(
             eq(contacts.tenantId, authCtx.tenantId),
             isNull(contacts.deletedAt),
-            sql`lower(${contacts.email}) = ANY(${attendeeEmails})`,
+            // inArray, NOT sql`= ANY(${jsArray})`: drizzle spreads a JS array
+            // into a scalar param list, so ANY got a string where PG wants an
+            // array — every /meetings load with ≥1 attendee 500'd (found live
+            // 2026-07-02 with the first real upcoming meeting).
+            inArray(sql`lower(${contacts.email})`, attendeeEmails),
           ),
         );
       const contactByEmail = new Map(
@@ -274,7 +278,7 @@ export async function GET(req: Request) {
         const comps = await db
           .select({ id: companies.id, name: companies.name, domain: companies.domain })
           .from(companies)
-          .where(and(eq(companies.tenantId, authCtx.tenantId), sql`${companies.id} = ANY(${companyIds})`));
+          .where(and(eq(companies.tenantId, authCtx.tenantId), inArray(companies.id, companyIds)));
         for (const c of comps) companyById.set(c.id, c);
       }
       for (const m of enriched) {
