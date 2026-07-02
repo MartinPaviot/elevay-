@@ -32,6 +32,9 @@ jobs:
         working-directory: app
     steps:
       - name: Guard — the key must exist (a keyless run would skip every LLM tier and lie green)
+        # Runs BEFORE checkout, so the job-level working-directory (app) does not
+        # exist yet — override or the step cannot even start.
+        working-directory: ${{ github.workspace }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "::error::ANTHROPIC_API_KEY repository secret is not set — the LLM eval tiers would all skip. Add it in Settings → Secrets → Actions."
