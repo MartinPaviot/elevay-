@@ -56,7 +56,9 @@ describe("INV-1 wiring guards (tenant daily outreach cap)", () => {
     const src = read("lib/guardrails/outreach-cap.ts");
     expect(src).toContain("OUTREACH_DAILY_TENANT_CAP = 100");
     expect(src).not.toMatch(/process\.env/);
-    expect(src).not.toMatch(/tenant-settings/);
+    // Guard the IMPORT, not the prose (the module's doc comment legitimately
+    // says "no tenant-settings key" — that must not trip the guard).
+    expect(src).not.toMatch(/from\s+["']@\/lib\/config\/tenant-settings["']/);
   });
 
   it("the shared gate consumes the cap slot and exposes the block code", () => {
