@@ -40,6 +40,13 @@ export interface OpenerChip {
   href?: string;
   /** Loads this thread's messages into the dock (continuity). */
   resumeThreadId?: string;
+  /**
+   * Pre-routing (v3): the tool this chip targets. Sent as forcedTool to
+   * /api/chat, which forces it on the first agent step — no selection
+   * detour. Only set where ONE tool clearly answers the send; multi-step
+   * flows (cold sequence, enroll) keep the free loop.
+   */
+  tool?: string;
 }
 
 export interface OpenerInputs {
@@ -112,18 +119,21 @@ const RECIPE_CHIPS: OpenerChip[] = [
     kind: "recipe",
     label: "Build today's call list",
     send: "Build my call list for today. Who should I call first?",
+    tool: "getCallList",
   },
   {
     id: "recipe:inbound-recap",
     kind: "recipe",
     label: "Recap this week's inbound email",
     send: "Summarize the emails I received in the last 7 days. What needs attention?",
+    tool: "searchEmailsByMetadata",
   },
   {
     id: "recipe:deals-at-risk",
     kind: "recipe",
     label: "Which deals are at risk?",
     send: "Which deals are at risk?",
+    tool: "getDealsAtRisk",
   },
 ];
 
@@ -191,6 +201,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
       send: top.subtitle
         ? `Draft a reply to ${topFrom.address} about "${top.subtitle}"`
         : `Draft a reply to ${topFrom.address}`,
+      tool: "suggestEmailReply",
     });
   }
   if (drafts > 0) {
@@ -212,6 +223,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
         days === null
           ? `Coach me on the "${d.title}" deal. What is my next move?`
           : `Coach me on the "${d.title}" deal. It has been silent for ${days} days. What is my next move?`,
+      tool: "getDealCoaching",
     });
   }
   if (meetings.length > 0) {
@@ -223,6 +235,7 @@ export function buildOpener(inputs: OpenerInputs): OpenerPayload {
       send: m.stakes
         ? `Prepare me for the meeting "${m.title}" at ${m.stakes} today.`
         : `Prepare me for the meeting "${m.title}".`,
+      tool: "generateMeetingPrep",
     });
   }
   // Assembly: up to 3 work chips, then recipes fill to 3 — plus the 4th

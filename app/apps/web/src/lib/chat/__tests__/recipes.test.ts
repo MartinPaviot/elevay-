@@ -137,6 +137,16 @@ describe("rotation and caps", () => {
       expect(RECIPE_IDS).toContain(c.id);
     }
   });
+
+  it("single-tool recipes carry their pre-routing tool; multi-step ones do not", () => {
+    const s = sig({ companiesTotal: 100, icpCount: 0, contactsWithPhone: 20, knowledgeEntries: 3, contactsTotal: 100 });
+    const chips = selectRecipeChips(s, RECIPE_IDS.length, DAY0);
+    const byId = Object.fromEntries(chips.map((c) => [c.id, c]));
+    expect(byId["recipe:define-icp"].tool).toBe("defineICP");
+    expect(byId["recipe:call-list"].tool).toBe("getCallList");
+    expect(byId["recipe:signals-scan"].tool).toBe("scanSignals");
+    expect(byId["recipe:cold-sequence"].tool).toBeUndefined();
+  });
 });
 
 function pick(s: TenantSignals): string[] {

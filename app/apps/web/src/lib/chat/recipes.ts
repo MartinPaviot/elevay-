@@ -51,6 +51,12 @@ interface RecipeDef {
   priority: number;
   /** Skip this recipe when a work chip of this kind already covers it. */
   redundantWithWorkKind?: OpenerChip["kind"];
+  /**
+   * Pre-routing hint: the single tool that answers this recipe (forced
+   * on the first agent step by /api/chat). Multi-step recipes
+   * (cold-sequence, enroll-list) leave it unset and keep the free loop.
+   */
+  tool?: string;
   gate(s: TenantSignals): boolean;
   label(s: TenantSignals): string;
   send(s: TenantSignals): string;
@@ -67,6 +73,7 @@ const CATALOG: RecipeDef[] = [
   {
     // The cold-start unlock: fdf9b795-class tenants have companies but no ICP.
     id: "recipe:define-icp",
+    tool: "defineICP",
     priority: 10,
     gate: (s) => s.icpCount === 0 && s.companiesTotal >= 50,
     label: (s) => `Define my ICP from my ${s.companiesTotal} accounts`,
@@ -75,6 +82,7 @@ const CATALOG: RecipeDef[] = [
   },
   {
     id: "recipe:call-list",
+    tool: "getCallList",
     priority: 20,
     gate: (s) => s.contactsWithPhone >= 10,
     label: (s) => `Build today's call list (${s.contactsWithPhone} callable)`,
@@ -97,6 +105,7 @@ const CATALOG: RecipeDef[] = [
   },
   {
     id: "recipe:inbound-recap",
+    tool: "searchEmailsByMetadata",
     priority: 40,
     gate: (s) => s.inbound7d > 0,
     label: (s) => `Recap the ${plural(s.inbound7d, "email")} received this week`,
@@ -105,6 +114,7 @@ const CATALOG: RecipeDef[] = [
   },
   {
     id: "recipe:deals-at-risk",
+    tool: "getDealsAtRisk",
     priority: 50,
     redundantWithWorkKind: "deal_risk",
     gate: (s) => s.openDeals > 0,
@@ -122,6 +132,7 @@ const CATALOG: RecipeDef[] = [
   },
   {
     id: "recipe:signals-scan",
+    tool: "scanSignals",
     priority: 70,
     gate: (s) => s.companiesTotal >= 50,
     label: (s) => `Scan my ${s.companiesTotal} accounts for buying signals`,
@@ -130,6 +141,7 @@ const CATALOG: RecipeDef[] = [
   },
   {
     id: "recipe:sequence-performance",
+    tool: "analyzeSequencePerformance",
     priority: 80,
     gate: (s) => s.sequencesWithEnrollments > 0,
     label: () => "How are my campaigns performing?",
@@ -178,5 +190,6 @@ export function selectRecipeChips(
     kind: "recipe" as const,
     label: r.label(signals),
     send: r.send(signals),
+    ...(r.tool ? { tool: r.tool } : {}),
   }));
 }
