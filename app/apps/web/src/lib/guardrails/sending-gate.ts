@@ -48,6 +48,7 @@ import { isRecipientAllowed } from "@/lib/emails/recipient-guardrail";
 import { rateLimitTenantSendBurst, rateLimitTenantSendHourly } from "@/lib/infra/rate-limit";
 import {
   consumeOutreachCapSlot,
+  OUTREACH_CAP_REASON_PREFIX,
   OUTREACH_DAILY_TENANT_CAP,
   tenantDayKey,
 } from "@/lib/guardrails/outreach-cap";
@@ -445,7 +446,7 @@ export async function evaluateSend(
         return {
           send: false,
           code: "daily_cap_reached",
-          reason: `Tenant daily outreach cap reached (${slot.sentCount}/${OUTREACH_DAILY_TENANT_CAP}) — resets at midnight ${settings?.timezone ?? "UTC"}`,
+          reason: `${OUTREACH_CAP_REASON_PREFIX} (${slot.sentCount}/${OUTREACH_DAILY_TENANT_CAP}) — resets at midnight ${settings?.timezone ?? "UTC"}`,
         };
       }
     }
