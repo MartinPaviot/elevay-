@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { FileBarChart, TrendingUp, CalendarDays, Trophy, Loader2, Copy, Check, Clock, ClipboardCopy, Timer } from "lucide-react";
 import { RevenueForecast } from "./_revenue-forecast";
 import { CohortInsights } from "./_cohort-insights";
+import { OutreachLearning } from "./_outreach-learning";
 
 interface ReportData {
   title: string;
@@ -269,9 +270,14 @@ export default function ReportsPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
+        {/* T11 (M11-R1) — outcomes-first strip: meetings held/booked and
+            positive replies lead; sends are grayed; open rate stays on the
+            deliverability screen. Additive, above the always-on cards. */}
+        <OutreachLearning />
+
         {/* Always-on pipeline intelligence — honest forecast + cohorts,
             computed from real data (no AI generation, no waiting). */}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="mt-8 grid gap-4 lg:grid-cols-2">
           <RevenueForecast />
           <CohortInsights />
         </div>
