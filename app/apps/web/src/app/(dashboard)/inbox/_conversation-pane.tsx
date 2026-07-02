@@ -27,6 +27,7 @@ import {
   ListChecks,
   Trash2,
   RotateCcw,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +106,7 @@ export function ConversationPane({
   onSpam,
   isSpamView,
   apiRef,
+  onClose,
 }: {
   conversationKey: string | null;
   lane: InboxLane;
@@ -123,6 +125,9 @@ export function ConversationPane({
   isSpamView?: boolean;
   /** CLE-14: set by the page to drive reply/book/stop from the chat. */
   apiRef?: Ref<ConversationPaneApi | null>;
+  /** Close the open mail and return to the full-width row view (the X — the
+   *  3-column layout had NO way back; "< Inbox" only exists below 960px). */
+  onClose?: () => void;
 }) {
   const { toast } = useToast();
   const t = useT();
@@ -628,14 +633,48 @@ export function ConversationPane({
     });
   }
 
+  // The DKIM verdict of the LATEST inbound message — shown next to the sender
+  // name in both header variants (the per-message shield went away with the
+  // attribution fold, #625).
+  const lastInboundVerified = [...conv.messages].reverse().find((m) => m.direction === "inbound")?.senderVerified;
+  const senderShield =
+    lastInboundVerified === "pass" ? (
+      <ShieldCheck size={13} className="shrink-0" style={{ color: "var(--color-success)" }} aria-label="Sender domain verified (SPF/DKIM/DMARC)" />
+    ) : lastInboundVerified === "fail" ? (
+      <ShieldAlert size={13} className="shrink-0" style={{ color: "var(--color-warning)" }} aria-label="Sender failed domain authentication" />
+    ) : null;
+  const senderName = detail.contact ? detail.contact.name : conv.displayName;
+
   return (
     <div className="flex h-full flex-col">
-      {/* While a composer session is open, the full header (subject H1, sender,
-          assignment, the whole action bar) hides entirely — none of it helps
-          WRITING (founder passes 2026-07-02: "80% de la hauteur avant de
-          pouvoir écrire", then "encore beaucoup trop haut"). The composer
-          card's own header row carries the context (Reply · To · subject);
-          closing the composer restores the full header. */}
+      {/* While a composer session is open, the full header (subject H1,
+          assignment, the whole action bar) collapses to ONE slim line that
+          keeps the SENDER in view (founder 2026-07-02: "garde la vue où on
+          voit le sender constamment") + the X back to the row view. Closing
+          the composer restores the full header. */}
+      {composer && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5"
+          style={{ borderColor: "var(--color-border-default)" }}
+        >
+          <SenderAvatar name={senderName} email={senderEmailOf(conv.fromAddress)} size={18} />
+          <span className="min-w-0 truncate text-[12px] font-medium" style={{ color: "var(--color-text-secondary)" }}>
+            {senderName}
+          </span>
+          {senderShield}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              title={t("inbox.backToList")}
+              className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
       {/* ── Header: who, subject, actions ── */}
       <div className={composer ? "hidden" : "border-b px-4 py-3"} style={{ borderColor: "var(--color-border-default)" }}>
         <div className="flex items-start justify-between gap-3">
@@ -696,20 +735,7 @@ export function ConversationPane({
                   {conv.displayName}
                 </span>
               )}
-              {(() => {
-                const lastInbound = [...conv.messages].reverse().find((m) => m.direction === "inbound");
-                if (lastInbound?.senderVerified === "pass") {
-                  return (
-                    <ShieldCheck size={13} className="shrink-0" style={{ color: "var(--color-success)" }} aria-label="Sender domain verified (SPF/DKIM/DMARC)" />
-                  );
-                }
-                if (lastInbound?.senderVerified === "fail") {
-                  return (
-                    <ShieldAlert size={13} className="shrink-0" style={{ color: "var(--color-warning)" }} aria-label="Sender failed domain authentication" />
-                  );
-                }
-                return null;
-              })()}
+              {senderShield}
               {/* Parsed address as secondary metadata — hidden when it IS the
                   display name, so the header never shows the same string twice
                   (audit 2026-07-02, F7). */}
@@ -749,6 +775,20 @@ export function ConversationPane({
               );
             })()}
           </div>
+          {/* X back to the full-width row view — the 3-column layout had NO
+              close affordance ("< Inbox" only renders below 960px), so an open
+              mail was a one-way door (founder 2026-07-02). */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              title={t("inbox.backToList")}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-hover)]"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* Thread metadata (Upstream-clean: not toolbar actions): assignee, shared
