@@ -21,13 +21,39 @@ export type ContactEligibilityInput = {
   // P0-5 — presence in the tenant's email_optouts (hard bounce / complaint /
   // opt-out). Any non-null reason suppresses; null/undefined = not suppressed.
   suppressedReason?: "hard_bounce" | "complaint" | "opt_out" | null;
+  /**
+   * M13-G1 (outreach-autopilot T5) — the "why NOW" rule: an enrollment needs
+   * at least one FRESH signal, and — when the tenant actually scores ICP fit —
+   * a minimum fit. Populate via `loadG1Context` (lib/sequences/
+   * eligibility-context.ts); omitted = legacy caller = G1 not evaluated (the
+   * drift-guard tracks adoption).
+   */
+  g1?: G1Context;
 };
+
+export type G1Context = {
+  /** Fresh (non-expired) signals on the contact's company — TTL per type. */
+  freshSignalCount: number;
+  /** companies.score — primary-ICP fit 0-100, null when never scored. */
+  icpScore: number | null;
+  /**
+   * True when the tenant has ANY ICP-scored company. With no ICP model the
+   * threshold is meaningless — G1 then degrades to the fresh-signal rule
+   * alone (sane default, M11-R5) instead of blocking every enrollment.
+   */
+  icpScoringActive: boolean;
+};
+
+/** G1 fit threshold (companies.score is 0-100). One reviewed constant. */
+export const G1_MIN_ICP_SCORE = 50;
 
 export type EligibilityReason =
   | "deleted"
   | "no_email"
   | "suppressed" // P0-5
-  | "excluded_company";
+  | "excluded_company"
+  | "no_fresh_signal" // M13-G1 / INV-2
+  | "below_icp_threshold"; // M13-G1
 
 export type EligibilityResult =
   | { eligible: true }
@@ -48,6 +74,20 @@ export function checkContactEligibility(
   if (input.suppressedReason) return { eligible: false, reason: "suppressed" };
   if (input.companyExcludedReason) {
     return { eligible: false, reason: "excluded_company" };
+  }
+  // M13-G1 — no fresh signal = no enrollment, whatever the static fit (INV-2:
+  // "pas de signal pertinent = pas d'entrée en séquence"). The ICP threshold
+  // only bites when the tenant actually scores fit.
+  if (input.g1) {
+    if (input.g1.freshSignalCount < 1) {
+      return { eligible: false, reason: "no_fresh_signal" };
+    }
+    if (
+      input.g1.icpScoringActive &&
+      (input.g1.icpScore ?? 0) < G1_MIN_ICP_SCORE
+    ) {
+      return { eligible: false, reason: "below_icp_threshold" };
+    }
   }
   return { eligible: true };
 }
