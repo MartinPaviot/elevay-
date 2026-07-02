@@ -81,6 +81,14 @@ export interface EnqueueOutboundInput {
    * personalisation. Preserved when that path routes through this seam.
    */
   errorMessage?: string | null;
+  /**
+   * T6b — G2 factual-gate downgrade. When true the row is written
+   * status:"draft" (queuedAt/holdUntil null): the send worker only picks up
+   * queued/held rows, so the email cannot go out; it surfaces in the inbox
+   * drafts view for founder review instead. Overrides the undo window — a
+   * draft is not a send, so there is nothing to hold.
+   */
+  forceDraft?: boolean;
   /** Tenant settings — read for the window. */
   settings: Pick<TenantSettings, "outboundUndoWindowSeconds"> | null | undefined;
 }
@@ -109,7 +117,7 @@ export async function enqueueOutbound(
   input: EnqueueOutboundInput,
 ): Promise<EnqueueOutboundResult> {
   const windowSec = readOutboundUndoWindowSeconds(input.settings);
-  const held = windowSec > 0;
+  const held = !input.forceDraft && windowSec > 0;
   const holdUntil = held ? new Date(Date.now() + windowSec * 1000) : null;
 
   const [row] = await db
@@ -129,8 +137,8 @@ export async function enqueueOutbound(
       messageId: input.messageId ?? null,
       qualityScore: input.qualityScore ?? null,
       errorMessage: input.errorMessage ?? null,
-      status: held ? "held" : "queued",
-      queuedAt: held ? null : new Date(),
+      status: input.forceDraft ? "draft" : held ? "held" : "queued",
+      queuedAt: input.forceDraft || held ? null : new Date(),
       holdUntil,
     })
     .returning({ id: outboundEmails.id });

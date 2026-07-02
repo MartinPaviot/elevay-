@@ -96,6 +96,11 @@ export interface ShadowOutcome {
   reason?: string;
   message?: Message;
   evidenceCount?: number;
+  /** T6b — the caller-verified whitelist this message was gated against
+   *  (evidence facts + tenant asset text). The insert-seam re-gate passes it
+   *  through as extraGroundTruth so a source-gate PASS is never re-flagged by
+   *  a weaker whitelist. */
+  groundTruth?: string[];
 }
 
 /** Whether the grounded copy engine is the PRIMARY draft path (cutover). Default OFF. */
@@ -160,16 +165,17 @@ export async function generateCopyMessage(
   // positioning+offer+cta). Both are CALLER-verified ground truth — whitelist
   // them so the gate flags fabrication, not the engine's own grounding. The
   // subject is gated WITH the body: it ships verbatim at every cutover site.
+  const groundTruth = [
+    ...evidence.map((e) => e.fact),
+    copyCtx.assets.positioning ?? "",
+    copyCtx.assets.offer ?? "",
+    copyCtx.assets.cta ?? "",
+  ].filter(Boolean);
   const fab = decideFabricationGate({
     body: [message.subject, message.body].filter(Boolean).join("\n"),
     brief: ctx.researchBrief,
     prospect,
-    extraGroundTruth: [
-      ...evidence.map((e) => e.fact),
-      copyCtx.assets.positioning ?? "",
-      copyCtx.assets.offer ?? "",
-      copyCtx.assets.cta ?? "",
-    ].filter(Boolean),
+    extraGroundTruth: groundTruth,
   });
   // Verdict log — best-effort by contract (recordGateDecision never throws);
   // honors the module's injection seam like persistShadowSample.
@@ -193,7 +199,7 @@ export async function generateCopyMessage(
     return { ran: true, reason: "g2_fabrication_blocked", evidenceCount: evidence.length };
   }
 
-  return { ran: true, message, evidenceCount: evidence.length };
+  return { ran: true, message, evidenceCount: evidence.length, groundTruth };
 }
 
 /**

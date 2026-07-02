@@ -160,10 +160,21 @@ describe("M13-T6b wiring guards (G2 on every generation path)", () => {
       "inngest/reply-agent.ts", // delegated classifications (can auto-send)
       "lib/chat/tools/action.ts", // generateFollowUpEmail + suggestEmailReply
       "lib/copy/personalization/db-shadow.ts", // copy engine source
+      "inngest/functions.ts", // sendSequenceStep — the default AUTO-mode path
+      "lib/sequence/db-conductor.ts", // V2 conductor sendEmail port
     ]) {
       expect(read(f), f).toMatch(/applyG2FabricationGate|decideFabricationGate/);
       expect(read(f), f).toMatch(/recordGateDecisions?\(/);
     }
+  });
+
+  it("a blocked auto-send can only ever become a draft (forceDraft seam)", () => {
+    const hold = read("lib/emails/outbound-hold.ts");
+    expect(hold).toContain("forceDraft");
+    // The downgrade must clear queuedAt — the send worker picks up queued/held only.
+    expect(hold).toMatch(/forceDraft\s*\?\s*"draft"/);
+    expect(read("inngest/functions.ts")).toContain("forceDraft: g2.blocked");
+    expect(read("lib/sequence/db-conductor.ts")).toContain("forceDraft");
   });
 
   it("the reply gate helper stays the single shared implementation", () => {
