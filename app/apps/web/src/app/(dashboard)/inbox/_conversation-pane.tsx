@@ -45,6 +45,7 @@ import { type Snippet } from "@/lib/inbox/snippets";
 import { stripSignature } from "@/lib/inbox/mailbox-signature";
 import { SnippetBar } from "./_snippet-bar";
 import { extractSenderEmail } from "@/lib/inbox/image-trust";
+import { senderNameOf, senderEmailOf } from "@/lib/inbox/sender-display";
 import { ProspectBriefSection } from "./_prospect-brief";
 import { IntelligencePanel } from "./_intelligence-panel";
 import { ThreadSummarySection } from "./_thread-summary";
@@ -682,11 +683,15 @@ export function ConversationPane({
                   {conv.displayName}
                 </span>
               )}
-              {conv.fromAddress && (
-                <span className="truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
-                  {conv.fromAddress}
-                </span>
-              )}
+              {/* Parsed address as secondary metadata — hidden when it IS the
+                  display name, so the header never shows the same string twice
+                  (audit 2026-07-02, F7). */}
+              {senderEmailOf(conv.fromAddress) &&
+                senderEmailOf(conv.fromAddress) !== (detail.contact ? detail.contact.name : conv.displayName) && (
+                  <span className="truncate text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+                    {senderEmailOf(conv.fromAddress)}
+                  </span>
+                )}
             </div>
             {/* Last interaction of any channel (INBOX-G03) — recency beyond this thread. */}
             {detail.lastInteraction && (
@@ -1010,7 +1015,7 @@ export function ConversationPane({
                   </span>
                 )}
                 <span className="truncate">
-                  {m.direction === "inbound" ? m.from || conv.displayName : t("inbox.you")}
+                  {m.direction === "inbound" ? senderNameOf(m.from) || conv.displayName : t("inbox.you")}
                 </span>
                 {m.direction === "inbound" && m.senderVerified === "pass" && (
                   <ShieldCheck

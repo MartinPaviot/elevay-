@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { outboundEmails } from "@/db/schema";
 import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
+import { senderNameOf } from "@/lib/inbox/sender-display";
 import { BUILT_IN_SPLITS, resolveCustomSplit } from "@/lib/inbox/splits";
 import { isFollowupDue } from "@/lib/inbox/followup-due";
 import { getUserSplits } from "@/lib/inbox/split-store";
@@ -374,7 +375,9 @@ export async function GET(req: Request) {
         priority: c.priority,
         subject: c.subject,
         contactId: c.contactId,
-        displayName: (c.contactId && names[c.contactId]?.name) || c.fromAddress || "Unknown sender",
+        // Parsed, never the raw RFC header — "Sarah Kimura", not
+        // "Sarah Kimura <sarah@…>" (audit 2026-07-02, F8).
+        displayName: (c.contactId && names[c.contactId]?.name) || senderNameOf(c.fromAddress) || "Unknown sender",
         fromAddress: c.fromAddress,
         snippet: c.snippet,
         reason: c.reason,
