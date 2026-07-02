@@ -1,6 +1,6 @@
 import { getAuthContext } from "@/lib/auth/auth-utils";
 import { db } from "@/db";
-import { outboundEmails } from "@/db/schema";
+import { outboundEmails, replyReviewQueue } from "@/db/schema";
 import { and, eq, isNotNull, inArray, sql } from "drizzle-orm";
 import { buildConversations, laneCounts, type Lane } from "@/lib/inbox/conversations";
 import { senderNameOf } from "@/lib/inbox/sender-display";
@@ -172,6 +172,20 @@ export async function GET(req: Request) {
           scope.hasMailbox && outboundMailboxIds.length > 0
             ? inArray(outboundEmails.mailboxId, outboundMailboxIds)
             : sql`false`,
+        ),
+      );
+
+    // T10 — pending low-confidence reply classifications, for the trailing
+    // "To classify" pseudo-tab (the noiseCount model: rides this payload so
+    // the strip badge needs no extra request). Cheap tenant-scoped COUNT(*);
+    // the queue is a founder surface, so tenant scope — not per-mailbox.
+    const [reviewCountRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(replyReviewQueue)
+      .where(
+        and(
+          eq(replyReviewQueue.tenantId, authCtx.tenantId),
+          eq(replyReviewQueue.state, "pending"),
         ),
       );
 
@@ -403,6 +417,8 @@ export async function GET(req: Request) {
       counts: { ...counts, outbound: Number(outboundCountRow?.count || 0) },
       splits,
       noiseCount: visible.filter(({ c }) => c.noise).length,
+      // T10: pending reply-review items — the "To classify" pseudo-tab badge.
+      reviewCount: Number(reviewCountRow?.count || 0),
       followupsDueCount: visible.filter(({ c }) => isFollowupDue(c.followup)).length,
       starredCount: visible.filter(({ c }) => starredKeys.has(c.key)).length,
       draftsCount: visible.filter(({ c }) => draftThreadIds.has(c.key)).length,

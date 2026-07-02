@@ -3,7 +3,8 @@
 /**
  * Split-tab strip — the inbox's SECOND nav axis: a horizontal band above the
  * conversation list that sub-segments the attention lane by intention/category.
- * Primary · Needs Reply · Follow Ups · Promotions · Social · <custom> · Noise.
+ * Primary · Needs Reply · Follow Ups · Promotions · Social · <custom> · Noise ·
+ * To classify (T10 — pending low-confidence reply classifications).
  * Selecting a tab drives the page's activeSplit over the already-wired
  * `?split=` route; the sidebar's intention rows stay in sync. Frontend-only.
  *
@@ -15,7 +16,7 @@
  * multi-color tab bar in the app.
  */
 
-import { Inbox, Reply, Clock, Megaphone, Users, VolumeX, Hash } from "lucide-react";
+import { Inbox, Reply, Clock, Megaphone, Users, VolumeX, Tags, Hash } from "lucide-react";
 import type { SplitCount } from "@/lib/inbox/splits";
 import { useT } from "@/lib/i18n/locale";
 
@@ -36,6 +37,7 @@ const SPLIT_ICON: Record<string, React.ReactNode> = {
   promotions: <Megaphone size={12} />,
   social: <Users size={12} />,
   noise: <VolumeX size={12} />,
+  to_classify: <Tags size={12} />,
 };
 
 function Tab({
@@ -74,6 +76,7 @@ function Tab({
 export function SplitStrip({
   splits,
   noiseCount,
+  reviewCount,
   active,
   onSelect,
 }: {
@@ -81,6 +84,9 @@ export function SplitStrip({
   splits: SplitCount[];
   /** Demoted-noise count — the trailing Noise tab. */
   noiseCount: number;
+  /** Pending low-confidence reply classifications (T10) — the trailing
+   *  "To classify" pseudo-tab. Hidden at zero, exactly like Noise. */
+  reviewCount: number;
   /** The active split id, or null (the whole attention lane / Inbox). */
   active: string | null;
   /** Select a split; passing the active id again clears it (back to all). */
@@ -108,6 +114,9 @@ export function SplitStrip({
       ))}
       {noiseCount > 0 && (
         <Tab id="noise" name={t("inbox.split.noise")} count={noiseCount} active={active === "noise"} onClick={() => onSelect(active === "noise" ? null : "noise")} />
+      )}
+      {reviewCount > 0 && (
+        <Tab id="to_classify" name={t("inbox.split.toClassify")} count={reviewCount} active={active === "to_classify"} onClick={() => onSelect(active === "to_classify" ? null : "to_classify")} />
       )}
     </div>
   );
