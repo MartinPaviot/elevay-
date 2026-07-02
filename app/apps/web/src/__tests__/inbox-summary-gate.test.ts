@@ -88,5 +88,5 @@ describe.skipIf(!HAS_LLM)("inbox-summary — LLM tier (runs summarizeThread)", (
     expect(coverage).toBeGreaterThanOrEqual(0.8);
     expect(leaks).toBe(0);
     expect(cit).toBeGreaterThanOrEqual(0.85);
-  });
+  }, 300_000);
 });

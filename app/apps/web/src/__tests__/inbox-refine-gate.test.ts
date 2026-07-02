@@ -90,5 +90,5 @@ describe.skipIf(!HAS_LLM)("inbox-refine — LLM tier (runs rewrite)", () => {
     console.log(`[inbox-refine LLM] instruction_adherence=${adherence.toFixed(3)} fact_preservation=${fact.toFixed(3)} (target >=0.85 / >=0.95)`);
     expect(adherence).toBeGreaterThanOrEqual(0.75);
     expect(fact).toBeGreaterThanOrEqual(0.85);
-  });
+  }, 300_000);
 });
