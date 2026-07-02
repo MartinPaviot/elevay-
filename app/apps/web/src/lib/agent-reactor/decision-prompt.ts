@@ -1,7 +1,8 @@
 import type { ReactorContext, AgentTrigger } from "./types";
 
+// No "email_opened" entry on purpose (T8): opens are banned as decision
+// triggers — the reactor hard-skips them before any prompt is built.
 const TRIGGER_DESCRIPTIONS: Record<AgentTrigger, string> = {
-  email_opened: "A prospect opened an email you sent",
   email_replied: "A prospect replied to an email you sent",
   email_bounced: "An email you sent bounced (undeliverable)",
   email_clicked: "A prospect clicked a link in an email you sent",

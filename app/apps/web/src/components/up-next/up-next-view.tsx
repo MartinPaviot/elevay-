@@ -4,7 +4,7 @@
  * Up Next — the founder's dashboard.
  *
  * KPIs (the metrics that matter) + Actualités (a cross-page feed of REAL events:
- * replies, email opens, inbound forms, calls with outcomes, deal lifecycle
+ * replies, email clicks, inbound forms, calls with outcomes, deal lifecycle
  * events, meetings, adds with provenance) + À faire (genuine human work only —
  * replies to answer, calls to prep, live deals at risk). No reflexive agent
  * actions. Reads /api/home/up-next. DNA: dense data, 0.5px borders, lucide
@@ -15,7 +15,7 @@ import { useCallback, useEffect, useImperativeHandle, useState } from "react";
 import type { Ref } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Mail, MailOpen, AlertTriangle, Calendar, CheckSquare, CheckCircle2, CalendarPlus,
+  Mail, MousePointerClick, AlertTriangle, Calendar, CheckSquare, CheckCircle2, CalendarPlus,
   Building2, UserPlus, TrendingUp, ArrowRight, ArrowUpRight, Send,
   Inbox, Phone, BadgeCheck, XCircle,
 } from "lucide-react";
@@ -25,7 +25,7 @@ import { UpNextSkeleton } from "@/components/up-next/up-next-skeleton";
 
 interface Kpi { key: string; label: string; value: string; sub: string | null; delta: number | null; }
 type ActualiteKind =
-  | "deal" | "deal_won" | "deal_lost" | "reply" | "open" | "form" | "call"
+  | "deal" | "deal_won" | "deal_lost" | "reply" | "click" | "form" | "call"
   | "meeting_booked" | "meeting_done" | "account" | "contact" | "campaign";
 interface Actualite { id: string; kind: ActualiteKind; title: string; detail: string | null; at: string | null; href: string | null; }
 type TodoKind = "reply" | "deal_risk" | "meeting" | "task";
@@ -37,7 +37,7 @@ interface Todo {
 interface Payload { greeting: string; firstName: string | null; kpis: Kpi[]; actualites: Actualite[]; todos: Todo[]; }
 
 const ACT_ICON: Record<ActualiteKind, typeof Mail> = {
-  deal: TrendingUp, deal_won: BadgeCheck, deal_lost: XCircle, reply: Mail, open: MailOpen,
+  deal: TrendingUp, deal_won: BadgeCheck, deal_lost: XCircle, reply: Mail, click: MousePointerClick,
   form: Inbox, call: Phone, meeting_booked: CalendarPlus, meeting_done: CheckCircle2,
   account: Building2, contact: UserPlus, campaign: Send,
 };
@@ -48,7 +48,7 @@ const ACT_ICON: Record<ActualiteKind, typeof Mail> = {
 // the full 3-stop brand run. Linear only (no radial/blur — GPU-safe).
 const ACT_GRADIENT: Record<ActualiteKind, string> = {
   reply: "linear-gradient(135deg, #2C6BED 0%, #17C3B2 100%)",
-  open: "linear-gradient(135deg, #0EA5E9 0%, #2C6BED 100%)",
+  click: "linear-gradient(135deg, #0EA5E9 0%, #2C6BED 100%)",
   form: "linear-gradient(135deg, #FF7A3D 0%, #F59E0B 100%)",
   call: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%)",
   deal: "linear-gradient(135deg, #17C3B2 0%, #10B981 100%)",

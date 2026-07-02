@@ -1,5 +1,9 @@
+// "email_opened" is deliberately NOT a trigger (T8, founder ban): an open is
+// never a decision input — MPP auto-opens make it noise. The reactor also
+// hard-skips any in-flight/legacy "email_opened" event before decisioning
+// (inngest/agent-reactor.ts), so removing it here can't fall through to the
+// LLM.
 export type AgentTrigger =
-  | "email_opened"
   | "email_replied"
   | "email_bounced"
   | "email_clicked"
@@ -90,12 +94,11 @@ export interface AgentDecisionAction {
   expectedOutcome: string;
 }
 
+// NOTE: the old `email_opened: no actions` entry was the accidental guard
+// keeping opens away from the LLM. It is gone because the trigger itself is
+// banned — the reactor's hard early-skip (never enters decisioning) is the
+// real guard now, not a heuristic that an LLM-available path would bypass.
 export const HEURISTIC_DECISIONS: Partial<Record<AgentTrigger, AgentDecision>> = {
-  email_opened: {
-    actions: [],
-    reasoning: "Email opened — tracked, no action needed",
-    confidence: 1.0,
-  },
   email_bounced: {
     actions: [
       { type: "alert_founder", params: { severity: "high" }, expectedOutcome: "Founder aware of deliverability issue" },

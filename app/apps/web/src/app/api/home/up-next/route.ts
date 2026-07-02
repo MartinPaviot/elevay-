@@ -16,7 +16,7 @@ import {
   buildNeedsYou,
   buildKpis,
   buildActualites,
-  aggregateOpens,
+  aggregateClicks,
   mapAddBatches,
   formatCallDuration,
   shouldSurfaceInboundEvent,
@@ -167,7 +167,7 @@ const capWord = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 async function loadActualites(tenantId: string): Promise<Actualite[]> {
   try {
-    const [acts, opens, dealEvents, recentCalls, companyBatches, contactBatches] = await Promise.all([
+    const [acts, clicks, dealEvents, recentCalls, companyBatches, contactBatches] = await Promise.all([
       // Inbound / milestone events on contacts: replies, meetings, forms.
       db
         .select({
@@ -196,19 +196,14 @@ async function loadActualites(tenantId: string): Promise<Actualite[]> {
         )
         .orderBy(desc(activities.occurredAt))
         .limit(15),
-      // Email opens — the pixel writes the FIRST open of each outbound email.
+      // Email clicks — clicked_at records the FIRST click of each outbound
+      // email (track/click). Replaced opens (T8): opens are MPP noise and
+      // never feed the founder's dashboard.
       db
-        .select({ id: activities.id, entityId: activities.entityId, occurredAt: activities.occurredAt })
-        .from(activities)
-        .where(
-          and(
-            eq(activities.tenantId, tenantId),
-            isNull(activities.deletedAt),
-            eq(activities.activityType, "email_opened"),
-            eq(activities.entityType, "contact"),
-          ),
-        )
-        .orderBy(desc(activities.occurredAt))
+        .select({ id: outboundEmails.id, contactId: outboundEmails.contactId, clickedAt: outboundEmails.clickedAt })
+        .from(outboundEmails)
+        .where(and(eq(outboundEmails.tenantId, tenantId), isNotNull(outboundEmails.clickedAt)))
+        .orderBy(desc(outboundEmails.clickedAt))
         .limit(30),
       // Deal lifecycle EVENTS (created / stage changed / won / lost) — the
       // real thing, written by the progression engine, chat tools and
@@ -297,12 +292,12 @@ async function loadActualites(tenantId: string): Promise<Actualite[]> {
       `),
     ]);
 
-    // Resolve every referenced contact in ONE query (acts + opens + calls):
+    // Resolve every referenced contact in ONE query (acts + clicks + calls):
     // name for display, email + properties for the inbound-event lead gate.
     const contactIds = [
       ...new Set([
         ...acts.filter((a) => a.entityType === "contact" && a.entityId).map((a) => a.entityId as string),
-        ...opens.map((o) => o.entityId).filter((id): id is string => !!id),
+        ...clicks.map((c) => c.contactId).filter((id): id is string => !!id),
         ...recentCalls.map((c) => c.contactId).filter((id): id is string => !!id),
       ]),
     ];
@@ -414,12 +409,12 @@ async function loadActualites(tenantId: string): Promise<Actualite[]> {
     }
 
     items.push(
-      ...aggregateOpens(
-        opens.map((o) => ({
-          id: o.id,
-          contactId: o.entityId,
-          name: o.entityId ? contactInfo.get(o.entityId)?.name ?? null : null,
-          at: iso(o.occurredAt),
+      ...aggregateClicks(
+        clicks.map((c) => ({
+          id: c.id,
+          contactId: c.contactId,
+          name: c.contactId ? contactInfo.get(c.contactId)?.name ?? null : null,
+          at: iso(c.clickedAt),
         })),
       ),
     );

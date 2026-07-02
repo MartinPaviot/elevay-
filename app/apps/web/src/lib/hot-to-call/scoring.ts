@@ -33,7 +33,11 @@ export type HotSignal = {
 export const SIGNAL_WEIGHT: Record<HotSignalKind, number> = {
   click: 10,
   visit: 6,
-  open: 3,
+  // T8 (opens ban): opens never contribute to call PRIORITIZATION — Apple
+  // MPP auto-opens make them noise, and the founder ban covers every
+  // prioritization surface. The kind stays so cards can still show an open
+  // as context; weight 0 means it never ranks or headlines over real intent.
+  open: 0,
 };
 
 /** 5-minute speed-to-lead window — the "drop everything and call now" zone. */

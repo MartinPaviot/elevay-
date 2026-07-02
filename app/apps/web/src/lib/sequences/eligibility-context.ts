@@ -57,7 +57,14 @@ export async function loadG1Context(
       const raw = Array.isArray(props.signals) ? (props.signals as SignalEntry[]) : [];
       // Same defensive pre-filter as the outcome attribution path: a
       // type-less entry would throw inside normalizeType.
-      const entries = raw.filter((s) => s && typeof s.type === "string" && s.type.length > 0);
+      // T8 (opens ban): email_opened never counts as a "why now" — Apple MPP
+      // auto-opens every message, so a single tracked open would let G1
+      // qualify an autonomous enrollment on noise. Clicks/replies (real
+      // engagement) keep counting. Mirrors NEVER_ATTRIBUTE in
+      // lib/scoring/signal-outcomes.ts.
+      const entries = raw.filter(
+        (s) => s && typeof s.type === "string" && s.type.length > 0 && s.type !== "email_opened",
+      );
       byCompany.set(row.id, {
         freshSignalCount: filterFreshSignals(entries, now).length,
         icpScore: row.score ?? null,

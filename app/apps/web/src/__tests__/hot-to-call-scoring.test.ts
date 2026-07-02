@@ -62,24 +62,25 @@ describe("scoreSignal — composite of weight × recency", () => {
     ).toBe(30);
   });
 
-  it("an open in speed window scores 3 × 5 = 15", () => {
-    expect(
-      scoreSignal({ kind: "open", at: NOW }, NOW),
-    ).toBe(15);
+  it("an open scores 0 at ANY recency — the opens ban covers call prioritization (T8)", () => {
+    expect(scoreSignal({ kind: "open", at: NOW }, NOW)).toBe(0);
+    const dayOld = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+    expect(scoreSignal({ kind: "open", at: dayOld }, NOW)).toBe(0);
   });
 
-  it("orders correctly: click > visit > open at any single age", () => {
+  it("orders correctly: click > visit > open (open pinned to ZERO — T8 opens ban)", () => {
     expect(SIGNAL_WEIGHT.click).toBeGreaterThan(SIGNAL_WEIGHT.visit);
     expect(SIGNAL_WEIGHT.visit).toBeGreaterThan(SIGNAL_WEIGHT.open);
+    expect(SIGNAL_WEIGHT.open).toBe(0);
   });
 
-  it("a 1-day-old click (recency 0.3) scores 3.0 — below a fresh open (15)", () => {
+  it("a 1-day-old click (recency 0.3) scores 3.0 — and STILL beats a fresh open (0)", () => {
     const oldClick = new Date(NOW.getTime() - 25 * 60 * 60 * 1000);
     const freshOpen = NOW;
     expect(
       scoreSignal({ kind: "click", at: oldClick }, NOW),
     ).toBe(3);
-    expect(scoreSignal({ kind: "open", at: freshOpen }, NOW)).toBe(15);
+    expect(scoreSignal({ kind: "open", at: freshOpen }, NOW)).toBe(0);
   });
 
   it("a click at exactly 6h old scores 10 × 1.0 = 10", () => {
@@ -120,7 +121,7 @@ describe("computeHotness — sum across signals", () => {
 
   it("mixed signals: fresh click + 24h-old visit + fresh open", () => {
     const twentyFourHr = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
-    // click: 50, visit at exactly 24h: 6 × 0.3 = 1.8, open: 15
+    // click: 50, visit at exactly 24h: 6 × 0.3 = 1.8, open: 0 (banned)
     expect(
       computeHotness(
         [
@@ -130,7 +131,7 @@ describe("computeHotness — sum across signals", () => {
         ],
         NOW,
       ),
-    ).toBeCloseTo(66.8, 5);
+    ).toBeCloseTo(51.8, 5);
   });
 });
 
@@ -139,7 +140,7 @@ describe("pickHeadlineSignal", () => {
     expect(pickHeadlineSignal([], NOW)).toBeNull();
   });
 
-  it("picks the highest-scoring signal", () => {
+  it("picks the highest-scoring signal — a fresh open (0) never headlines over real intent", () => {
     const old = new Date(NOW.getTime() - 60 * 60 * 1000);
     const result = pickHeadlineSignal(
       [
@@ -148,8 +149,8 @@ describe("pickHeadlineSignal", () => {
       ],
       NOW,
     );
-    // click at 1h: 10 × 1.5 = 15 ; open at NOW: 3 × 5 = 15 → tie, NOW wins by recency
-    expect(result?.kind).toBe("open");
+    // click at 1h: 10 × 1.5 = 15 ; open at NOW: 0 × 5 = 0 → the click headlines.
+    expect(result?.kind).toBe("click");
   });
 
   it("breaks ties by recency (newer wins)", () => {

@@ -240,9 +240,11 @@ export async function POST(req: Request) {
     }
 
     // ── F001: Fire agent reactor event ──
-    if (email && (type === "email.opened" || type === "email.clicked" || type === "email.bounced" || type === "email.complained")) {
+    // "email.opened" is deliberately NOT fired at the reactor (T8): an open is
+    // never a decision trigger — MPP auto-opens make it noise. Opens above
+    // still update openedAt (deliverability diagnostics stay).
+    if (email && (type === "email.clicked" || type === "email.bounced" || type === "email.complained")) {
       const triggerMap: Record<string, AgentTrigger> = {
-        "email.opened": "email_opened",
         "email.clicked": "email_clicked",
         "email.bounced": "email_bounced",
         "email.complained": "email_bounced",

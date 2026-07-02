@@ -46,7 +46,7 @@ const FIXTURE_UP_NEXT = {
   kpis: [],
   actualites: [
     { id: "a1", kind: "reply", title: "Reply from Marie", detail: null, at: null, href: "/contacts/c9" },
-    { id: "a-nohref", kind: "open", title: "Email opened", detail: null, at: null, href: null },
+    { id: "a-nohref", kind: "click", title: "Email link clicked", detail: null, at: null, href: null },
   ],
   todos: [
     { id: "t1", kind: "reply", tone: "reply", title: "Marie Dubois", subtitle: "Pricing question", why: "Awaiting your reply", stakes: null, entityId: null, contactId: "c1", conversationKey: "k1", toAddress: "marie@ems.ch", href: null },

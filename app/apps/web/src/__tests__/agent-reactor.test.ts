@@ -68,7 +68,6 @@ import {
 describe("Agent Reactor — Types & Heuristics", () => {
   it("provides heuristic decisions for known triggers", () => {
     const triggers: AgentTrigger[] = [
-      "email_opened",
       "email_bounced",
       "deal_stale",
       "signal_detected",
@@ -84,9 +83,11 @@ describe("Agent Reactor — Types & Heuristics", () => {
     }
   });
 
-  it("email_opened heuristic takes no action", () => {
-    const decision = HEURISTIC_DECISIONS.email_opened!;
-    expect(decision.actions).toHaveLength(0);
+  it("email_opened is NOT a trigger — no heuristic entry (T8: the guard is the reactor's hard skip)", () => {
+    // The old `email_opened: []` heuristic was the accidental guard keeping
+    // opens away from the LLM; the ban now lives BEFORE decisioning
+    // (inngest/agent-reactor.ts early-skip), so the entry must stay gone.
+    expect("email_opened" in HEURISTIC_DECISIONS).toBe(false);
   });
 
   it("email_bounced heuristic alerts founder", () => {
@@ -149,9 +150,9 @@ describe("Agent Reactor — Decision Prompt", () => {
       triggerMetadata: {},
     };
 
-    const prompt = buildDecisionUserPrompt("email_opened", context);
+    const prompt = buildDecisionUserPrompt("email_clicked", context);
     expect(prompt).toContain("Unknown contact");
-    expect(prompt).toContain("prospect opened an email");
+    expect(prompt).toContain("prospect clicked a link");
   });
 });
 

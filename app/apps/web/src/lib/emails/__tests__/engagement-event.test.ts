@@ -21,20 +21,20 @@ describe("isCadenceBranchingEnabled", () => {
 });
 
 describe("buildEngagementEvent", () => {
-  it("builds the email/opened event for a sequenced send", () => {
-    expect(buildEngagementEvent("opened", { enrollmentId: "e1", tenantId: "t1", contactId: "c1" }))
-      .toEqual({ name: "email/opened", data: { enrollmentId: "e1", tenantId: "t1", contactId: "c1" } });
+  it("an 'opened' engagement builds NOTHING (T8 opens ban — the bridge no longer listens)", () => {
+    expect(buildEngagementEvent("opened", { enrollmentId: "e1", tenantId: "t1", contactId: "c1" })).toBeNull();
   });
 
   it("builds email/clicked", () => {
-    expect(buildEngagementEvent("clicked", { enrollmentId: "e1", tenantId: "t1", contactId: "c1" })?.name).toBe("email/clicked");
+    expect(buildEngagementEvent("clicked", { enrollmentId: "e1", tenantId: "t1", contactId: "c1" }))
+      .toEqual({ name: "email/clicked", data: { enrollmentId: "e1", tenantId: "t1", contactId: "c1" } });
   });
 
   it("returns null for a non-sequenced send (no enrollmentId) — the bridge would bail anyway", () => {
-    expect(buildEngagementEvent("opened", { enrollmentId: null, tenantId: "t1", contactId: "c1" })).toBeNull();
+    expect(buildEngagementEvent("clicked", { enrollmentId: null, tenantId: "t1", contactId: "c1" })).toBeNull();
   });
 
   it("coerces a null contactId to empty string", () => {
-    expect(buildEngagementEvent("opened", { enrollmentId: "e1", tenantId: "t1", contactId: null })?.data.contactId).toBe("");
+    expect(buildEngagementEvent("clicked", { enrollmentId: "e1", tenantId: "t1", contactId: null })?.data.contactId).toBe("");
   });
 });

@@ -25,15 +25,19 @@ export interface EngagementRow {
 }
 
 export interface EngagementEvent {
-  name: "email/opened" | "email/clicked";
+  name: "email/clicked";
   data: { enrollmentId: string; tenantId: string; contactId: string };
 }
 
-/** Build the decision-engine event for a tracked engagement, or null when it can't branch. */
+/** Build the decision-engine event for a tracked engagement, or null when it can't branch.
+ *  T8 (opens ban): an "opened" engagement builds NOTHING — the decision-engine
+ *  bridge no longer listens to opens, so emitting the event would only be a
+ *  consumerless code path that looks decisional. Clicks keep branching. */
 export function buildEngagementEvent(kind: "opened" | "clicked", row: EngagementRow): EngagementEvent | null {
+  if (kind === "opened") return null;
   if (!row.enrollmentId) return null;
   return {
-    name: kind === "opened" ? "email/opened" : "email/clicked",
+    name: "email/clicked",
     data: { enrollmentId: row.enrollmentId, tenantId: row.tenantId, contactId: row.contactId ?? "" },
   };
 }
