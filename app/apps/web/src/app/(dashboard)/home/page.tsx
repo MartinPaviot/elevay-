@@ -15,6 +15,7 @@ import { VisitorIdCapBanner } from "@/components/visitor-id-cap-banner";
 import { AutonomyNudgeBanner } from "@/components/autonomy-nudge-banner";
 import { HotInboundsWidget } from "@/components/hot-inbounds-widget";
 import { HotVisitorsWidget } from "@/components/hot-visitors-widget";
+import { CockpitStrip } from "@/components/cockpit-strip";
 import { HOT_INBOUNDS_WIDGET_ENABLED } from "@/lib/inbound/widget-visibility";
 import { UpNextView, type UpNextApi } from "@/components/up-next/up-next-view";
 import type { PageAction, PageActionResult } from "@/lib/chat/page-actions/types";
@@ -200,6 +201,10 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-auto px-4 py-6">
         <div className="mx-auto max-w-[1080px] space-y-4">
+          {/* T11b cockpit strip — send-cap gauge + deliverability light +
+              meetings this week, then the "Ready for you" queue (j/k/Enter).
+              Additive: mounts under the header, above the existing sections. */}
+          <CockpitStrip />
           <VisitorIdCapBanner />
           <AutonomyNudgeBanner />
 
