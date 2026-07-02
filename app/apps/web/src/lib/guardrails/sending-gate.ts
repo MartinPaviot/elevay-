@@ -46,6 +46,11 @@ import { evaluateLawfulBasisForSend } from "@/lib/compliance/lawful-basis/db-gat
 import { guardTrippedForTenant } from "@/lib/deliverability/db-guard";
 import { isRecipientAllowed } from "@/lib/emails/recipient-guardrail";
 import { rateLimitTenantSendBurst, rateLimitTenantSendHourly } from "@/lib/infra/rate-limit";
+import {
+  consumeOutreachCapSlot,
+  OUTREACH_DAILY_TENANT_CAP,
+  tenantDayKey,
+} from "@/lib/guardrails/outreach-cap";
 
 /** Spec 35 — SAFE_MODE targeting gate rollout guard (default off; flipped on at
  *  T14 after the targeting backfill so no currently-allowed send breaks). */
@@ -66,9 +71,20 @@ export type SendingGateOutcome =
         | "invalid_email"
         | "lawful_basis_blocked"
         | "not_targeted"
-        | "deliverability_paused";
+        | "deliverability_paused"
+        | "daily_cap_reached";
       reason: string;
     };
+
+/**
+ * INV-1 send classes. Only `outreach` consumes a daily cap slot: answering a
+ * prospect who wrote to us is not prospecting. SECURITY: the class is derived
+ * SERVER-SIDE by each chokepoint (worker rows: `inReplyTo`; interactive sends:
+ * auto-classified in-gate) and a `reply` claim is ALWAYS re-verified here
+ * against a real INBOUND email from the recipient — a request body can never
+ * buy a cap exemption.
+ */
+export type SendClass = "outreach" | "reply";
 
 /**
  * Has this tenant ever exchanged email with this address? Drives `isCold`.
@@ -84,6 +100,35 @@ export type SendingGateOutcome =
 export function emailBracketLikePattern(email: string): string {
   const e = email.toLowerCase().trim();
   return `%<${e.replace(/([\\%_])/g, "\\$1")}>%`;
+}
+
+/**
+ * Has this address ever WRITTEN to the tenant? (INBOUND only — stricter than
+ * `isColdRecipient`, whose outbound half would classify a second cold touch
+ * as a "reply".) This is the server-side verification behind every `reply`
+ * cap exemption. Matches the bare address and the RFC `Name <addr>` forms.
+ */
+export async function hasInboundEmailFrom(
+  tenantId: string,
+  email: string,
+): Promise<boolean> {
+  const e = email.toLowerCase().trim();
+  const bracket = emailBracketLikePattern(e);
+  const [row] = await db
+    .select({ n: sql<number>`1` })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.tenantId, tenantId),
+        eq(activities.channel, "email"),
+        sql`(
+          lower(metadata->>'from') = ${e}
+          OR lower(metadata->>'from') LIKE ${bracket}
+        )`,
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 export async function isColdRecipient(
@@ -193,6 +238,32 @@ export interface EvaluateSendArgs {
   /** True for human-initiated sends (composer, meeting follow-up): exempt from
    *  the SAFE_MODE targeting gate (D6). NEVER exempt from suppression. */
   interactive?: boolean;
+  /**
+   * INV-1 send class, derived SERVER-SIDE by the chokepoint (workers:
+   * `email.inReplyTo ? "reply" : "outreach"`). NEVER forward a client-supplied
+   * value. Omitted: interactive sends are auto-classified in-gate; everything
+   * else is `outreach`. A `reply` claim is re-verified against a real inbound
+   * email before it exempts the send from the daily cap.
+   */
+  sendClass?: SendClass;
+}
+
+/**
+ * Resolve the effective send class for cap accounting. Fail-toward-counting:
+ * an unverifiable or erroring `reply` claim is treated as `outreach` (consumes
+ * a slot) — the cap can only ever be tighter than intended, never looser.
+ */
+async function resolveOutreachClass(args: EvaluateSendArgs): Promise<SendClass> {
+  const candidate: SendClass =
+    args.sendClass ?? (args.interactive ? "reply" : "outreach");
+  if (candidate !== "reply") return "outreach";
+  try {
+    return (await hasInboundEmailFrom(args.tenantId, args.toAddress))
+      ? "reply"
+      : "outreach";
+  } catch {
+    return "outreach";
+  }
 }
 
 /**
@@ -354,13 +425,32 @@ export async function evaluateSend(
       sendingAllowColdOnPrimary: allowCold,
     });
 
-    return decision.allowed
-      ? { send: true, reason: decision.reason }
-      : {
+    if (!decision.allowed) {
+      return {
+        send: false,
+        code: decision.blockReason ?? "no-provider-connected",
+        reason: decision.reason,
+      };
+    }
+
+    // INV-1 — the tenant-wide 100/day OUTREACH cap, consumed LAST so a send
+    // blocked by any check above never burns a slot. Applies to EVERY mode
+    // (including external-connected, which has no per-mailbox cap). Only
+    // verified replies are exempt (resolveOutreachClass). A thrown consume
+    // fails closed via the outer catch.
+    if ((await resolveOutreachClass(args)) === "outreach") {
+      const day = tenantDayKey(settings?.timezone);
+      const slot = await consumeOutreachCapSlot(args.tenantId, day);
+      if (!slot.granted) {
+        return {
           send: false,
-          code: decision.blockReason ?? "no-provider-connected",
-          reason: decision.reason,
+          code: "daily_cap_reached",
+          reason: `Tenant daily outreach cap reached (${slot.sentCount}/${OUTREACH_DAILY_TENANT_CAP}) — resets at midnight ${settings?.timezone ?? "UTC"}`,
         };
+      }
+    }
+
+    return { send: true, reason: decision.reason };
   } catch (err) {
     return {
       send: false,
