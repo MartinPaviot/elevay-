@@ -513,7 +513,11 @@ export const cronMeetingRecordingSweep = inngest.createFunction(
             isNull(activities.deletedAt),
             sql`metadata->>'roomName' is not null`,
             sql`metadata->'structuredNotes' is null`,
-            sql`metadata->>'recordingSweepStatus' is null`,
+            // 'empty_transcript' stays a candidate: a silent/failed take must
+            // not permanently block the meeting — when the organizer records a
+            // NEW take of the same room, it gets processed (the step below
+            // skips while the latest file is still the one already tried).
+            sql`(metadata->>'recordingSweepStatus' is null or metadata->>'recordingSweepStatus' = 'empty_transcript')`,
             // Ended (start + duration passed), but recent enough to still care.
             sql`(metadata->>'startTime')::timestamptz + make_interval(mins => coalesce((metadata->>'durationMinutes')::int, 30)) < now()`,
             sql`(metadata->>'startTime')::timestamptz > now() - interval '48 hours'`,
@@ -535,6 +539,14 @@ export const cronMeetingRecordingSweep = inngest.createFunction(
         // organizer may simply not have recorded) — retry next cycle until the
         // 48h window closes.
         if (!file) return false;
+        // Already tried THIS take and it was silent — wait for a newer one
+        // (pickRecordingForRoom returns the latest take of the room).
+        if (
+          meta.recordingSweepStatus === "empty_transcript" &&
+          String(meta.recordingFileId ?? "") === String(file.id)
+        ) {
+          return false;
+        }
 
         const markStatus = async (status: string, extra: Record<string, unknown> = {}) => {
           await db
