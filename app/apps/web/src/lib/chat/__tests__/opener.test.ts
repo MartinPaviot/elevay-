@@ -169,6 +169,7 @@ describe("buildOpener chips", () => {
     const out = buildOpener(base({ todos: [reply({ title: addr, toAddress: addr, subtitle: null })] }));
     expect(out.chips[0].label).toBe("Reply to first.last.commercial");
     expect(out.chips[0].send).toBe(`Draft a reply to ${addr}`);
+    expect(out.chips[0].tool).toBe("suggestEmailReply");
   });
 
   it("drafts chip navigates to the review page instead of the agent loop", () => {
@@ -185,6 +186,7 @@ describe("buildOpener chips", () => {
     expect(chip?.send).toBe(
       'Coach me on the "Acme Corp" deal. It has been silent for 12 days. What is my next move?',
     );
+    expect(chip?.tool).toBe("getDealCoaching");
   });
 
   it("recipes fill up to 3 chips when work is scarce", () => {
