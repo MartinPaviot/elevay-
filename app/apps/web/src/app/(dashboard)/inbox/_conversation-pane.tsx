@@ -657,8 +657,28 @@ export function ConversationPane({
 
   return (
     <div className="flex h-full flex-col">
+      {/* While a composer session is open, the full header (subject H1, sender,
+          assignment, the whole action bar) collapses to ONE slim line — none of
+          it helps WRITING, and stacked it pushed the reply box past half the
+          viewport (founder: "80% de la hauteur avant de pouvoir écrire",
+          UI pass 2026-07-02). Closing the composer restores it. */}
+      {composer && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5"
+          style={{ borderColor: "var(--color-border-default)" }}
+        >
+          <span
+            className="min-w-0 truncate text-[13px] font-medium"
+            style={{ color: "var(--color-text-secondary)" }}
+            dir={dirOf(decodeDisplay(conv.subject))}
+            title={decodeDisplay(conv.subject)}
+          >
+            {decodeDisplay(conv.subject)}
+          </span>
+        </div>
+      )}
       {/* ── Header: who, subject, actions ── */}
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--color-border-default)" }}>
+      <div className={composer ? "hidden" : "border-b px-4 py-3"} style={{ borderColor: "var(--color-border-default)" }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {/* Subject leads (Upstream hierarchy): the thread title is the

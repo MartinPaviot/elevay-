@@ -207,6 +207,11 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
   const [showBcc, setShowBcc] = useState(Boolean(draft.bcc));
   const [editSubject, setEditSubject] = useState(draft.subject);
   const [editBody, setEditBody] = useState(draft.body);
+  // Inline replies fold From/To/Cc/Subject into one summary line (they are all
+  // pre-known); a click expands the full field set. Auto-expands when there is
+  // nothing to summarize (no recipient yet) or when Cc/Bcc came pre-filled.
+  const [fieldsExpanded, setFieldsExpanded] = useState(Boolean(draft.cc || draft.bcc));
+  const collapseFields = inline && Boolean(draft.threadId) && !fieldsExpanded && toEmails.length > 0;
 
   // Auto-save (per-context localStorage). storageKey is frozen for the panel's
   // life from the OPENING draft, so editing recipients doesn't move the slot.
@@ -704,7 +709,32 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
           </div>
         )}
 
-        {/* Email fields */}
+        {/* Email fields. On an inline REPLY they are all pre-known (To = the
+            sender, Subject = the thread's Re:) and rarely touched — collapsed
+            to ONE summary line so the writing box is the base element (founder:
+            "quand on clique sur reply, écrire doit être l'élément de base",
+            UI pass 2026-07-02). Click expands the full field set. */}
+        {collapseFields && (
+          <button
+            type="button"
+            onClick={() => setFieldsExpanded(true)}
+            className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+            style={{ borderBottom: "0.5px solid var(--color-border-default)" }}
+            title={`${t("inbox.compose.to")}: ${toEmails.join(", ")} — ${editSubject}`}
+          >
+            <span className="shrink-0 text-[12px]" style={{ color: "var(--color-text-tertiary)" }}>
+              {t("inbox.compose.to")}
+            </span>
+            <span className="shrink-0 text-[12px] font-medium" style={{ color: "var(--color-text-primary)" }}>
+              {toEmails[0]}{toEmails.length > 1 ? ` +${toEmails.length - 1}` : ""}
+            </span>
+            <span className="min-w-0 truncate text-[12px]" style={{ color: "var(--color-text-muted)" }}>
+              · {editSubject}
+            </span>
+            <ChevronDown size={12} className="ml-auto shrink-0" style={{ color: "var(--color-text-tertiary)" }} />
+          </button>
+        )}
+        {!collapseFields && (<>
         {/* A2: From selector — which connected mailbox this leaves from. Default
             = the thread's own box. One box → static label; many → a menu. */}
         {mailboxes.length > 0 && (() => {
@@ -813,6 +843,7 @@ export const EmailComposerPanel = forwardRef<EmailComposerHandle, EmailComposerP
             placeholder={t("inbox.compose.subjectPlaceholder")}
           />
         </div>
+        </>)}
 
         {/* Body — plain textarea, keeps markdown formatting */}
         <div className={inline ? "px-4 pb-3 pt-2" : "flex-1 overflow-auto p-4"}>
