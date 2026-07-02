@@ -11,8 +11,10 @@
  */
 
 import { db } from "@/db";
-import { activities, contacts, deals, tenants } from "@/db/schema";
+import { activities, contacts, deals, tenants, users } from "@/db/schema";
 import { eq, and, ilike, isNull } from "drizzle-orm";
+import { isInternalMeeting } from "@/lib/recording/branding";
+import { extractDomain } from "@/lib/util/email";
 import { tracedGenerateObject } from "@/lib/ai/traced-ai";
 import { anthropic } from "@/lib/ai/ai-provider";
 import { openai } from "@ai-sdk/openai";
@@ -80,6 +82,36 @@ export async function processMeetingTranscript(
       : null;
   if (!model) throw new TranscriptModelUnavailableError();
 
+  // Internal (cofounder / all-internal team) meetings get a recap-framed
+  // extraction instead of the sales/MEDDPICC prompt — the sales framing would
+  // otherwise push the model to invent a buying group where there is none.
+  // Resolve the org domain (tenant setting first, else an admin email) and fail
+  // toward "external" (the sales default) on any gap — the same rule
+  // post-call.ts uses for the follow-up draft. Non-fatal.
+  let orgPrimaryDomain: string | null = null;
+  try {
+    const [tRow] = await db
+      .select({ settings: tenants.settings })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+    const s = (tRow?.settings ?? null) as Record<string, unknown> | null;
+    const configured =
+      typeof s?.primaryDomain === "string" ? s.primaryDomain.trim().toLowerCase() : "";
+    orgPrimaryDomain = configured || null;
+    if (!orgPrimaryDomain) {
+      const [admin] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(and(eq(users.tenantId, tenantId), eq(users.role, "admin")))
+        .limit(1);
+      if (admin?.email) orgPrimaryDomain = extractDomain(admin.email);
+    }
+  } catch {
+    // Default to the sales prompt on any lookup failure.
+  }
+  const meetingIsInternal = isInternalMeeting(attendeeEmails ?? [], orgPrimaryDomain);
+
   // Extract structured notes from transcript. Wrapped in llmCall so cost /
   // latency / retries / fallback flow into `llm_calls`. Anthropic primary,
   // OpenAI gpt-4o-mini fallback when Anthropic errors terminally.
@@ -93,6 +125,7 @@ export async function processMeetingTranscript(
         transcript: transcript.slice(0, 15000),
         meetingTitle,
         meetingDate,
+        internal: meetingIsInternal,
       }),
       providerOptions: {
         anthropic: { cacheControl: { type: "ephemeral" } },
@@ -184,6 +217,7 @@ export async function processMeetingTranscript(
           ...((existingRow?.metadata as Record<string, unknown>) ?? {}),
           structuredNotes: notes,
           matchedContacts,
+          meetingIsInternal,
           transcriptLength: transcript.length,
           processedAt: new Date().toISOString(),
         },
@@ -233,6 +267,7 @@ export async function processMeetingTranscript(
           title: meetingTitle,
           structuredNotes: notes,
           matchedContacts,
+          meetingIsInternal,
           transcriptLength: transcript.length,
           processedAt: new Date().toISOString(),
         },
