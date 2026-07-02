@@ -74,6 +74,23 @@ describe("loadG1Context", () => {
     expect(ctx.forCompany("co1").icpScore).toBe(70);
   });
 
+  it("a FRESH email_opened never counts as a 'why now' (opens ban — MPP noise)", async () => {
+    state.companyRows = [
+      {
+        id: "co1",
+        score: 70,
+        properties: {
+          signals: [
+            { type: "email_opened", detectedAt: daysAgo(1) }, // fresh but BANNED
+            { type: "email_clicked", detectedAt: daysAgo(1) }, // fresh, real engagement
+          ],
+        },
+      },
+    ];
+    const ctx = await loadG1Context("t1", ["co1"]);
+    expect(ctx.forCompany("co1").freshSignalCount).toBe(1); // the click only
+  });
+
   it("icpScoringActive reflects the tenant EXISTS probe", async () => {
     state.scoredExists = true;
     state.companyRows = [{ id: "co1", score: null, properties: {} }];

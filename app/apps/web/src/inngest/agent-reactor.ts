@@ -99,6 +99,20 @@ export const agentReactor = inngest.createFunction(
       return { skipped: "AGENT_REACTOR_ENABLED=off" };
     }
     const data = event.data;
+
+    // T8 founder ban — opens are NEVER a decision trigger (Apple MPP
+    // auto-opens make them noise). Hard skip BEFORE decisioning: the trigger
+    // is gone from AgentTrigger and no emitter fires it anymore, but an
+    // in-flight/legacy/queued "email_opened" event must not fall through to
+    // the LLM (the old heuristic no-action entry that guarded this is gone).
+    if ((data.trigger as string) === "email_opened") {
+      logger.info("agent-reactor: skipped email_opened (opens are never decisional)", {
+        tenantId: data.tenantId,
+        entityId: data.entityId,
+      });
+      return { skipped: true, reason: "email_opened is banned as a decision trigger" };
+    }
+
     const startMs = Date.now();
 
     // ── Step 1: Deduplicate ──

@@ -1,6 +1,12 @@
 import { db } from "@/db";
-import { actionOutcomes, outboundEmails, activities, tasks } from "@/db/schema";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import {
+  actionOutcomes,
+  outboundEmails,
+  outreachDecisions,
+  activities,
+  tasks,
+} from "@/db/schema";
+import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { inngest } from "@/inngest/client";
 
 // Ordering invariant (outcome hierarchy): meeting_held > meeting_booked >
@@ -50,6 +56,15 @@ export async function resolveOutcome(
     })
     .where(eq(actionOutcomes.id, outcomeId));
 
+  // T8 — decision↔outcome join. EVERY resolution flows through this seam
+  // (real events via checkEmailOutcomes/checkDealOutcomes AND the expiry path
+  // in inngest/outcome-detector.ts — a no_response IS a learning outcome,
+  // positivity 0.0, and must backfill too).
+  await backfillOutreachDecision(
+    outcome.entitySnapshot as Record<string, unknown> | null,
+    outcomeId,
+  );
+
   await inngest.send({
     name: "outcome/resolved",
     data: {
@@ -63,6 +78,80 @@ export async function resolveOutcome(
       timeToOutcomeHours,
     },
   }).catch(() => {});
+}
+
+/**
+ * T8 (outreach-autopilot) — fill outreach_decisions.outcome_id from a resolved
+ * watcher whose entitySnapshot carries a decisionId (written by
+ * lib/outreach/decision-record.ts). Best-effort by contract: a backfill
+ * failure must never break outcome resolution.
+ *
+ * T7 amendment — phantom-send exclusion, as a POSITIVE list: the outbound
+ * row must prove the send left (sent/delivered/bounced, or a sentAt stamp)
+ * before the decision may join an outcome. 'failed' AND stuck-queued rows
+ * are both excluded — a never-sent email must not be read as "sent, no
+ * response" (T9 would learn from a phantom). A bounce is NOT excluded: it
+ * is a real send whose bounced outcome (positivity -0.8) is honest learning.
+ */
+async function backfillOutreachDecision(
+  entitySnapshot: Record<string, unknown> | null,
+  outcomeId: string,
+): Promise<void> {
+  try {
+    const snapshot = entitySnapshot ?? {};
+    const decisionId =
+      typeof snapshot.decisionId === "string" && snapshot.decisionId
+        ? snapshot.decisionId
+        : null;
+    if (!decisionId) return; // not an outreach-send watcher — nothing to join
+
+    // Read the decision's outbound key from the ROW (authoritative), not the
+    // snapshot: the snapshot is a convenience copy that could drift.
+    const [decision] = await db
+      .select({ outboundEmailId: outreachDecisions.outboundEmailId })
+      .from(outreachDecisions)
+      .where(eq(outreachDecisions.id, decisionId))
+      .limit(1);
+    if (!decision) return;
+
+    if (decision.outboundEmailId) {
+      const [outbound] = await db
+        .select({
+          status: outboundEmails.status,
+          sentAt: outboundEmails.sentAt,
+        })
+        .from(outboundEmails)
+        .where(eq(outboundEmails.id, decision.outboundEmailId))
+        .limit(1);
+      // POSITIVE-LIST predicate (review fix): the row must prove the send
+      // actually LEFT — sent/delivered, a bounce (a real send whose bounced
+      // outcome at -0.8 is legitimate learning), or a sentAt stamp. This
+      // covers every phantom class at once: 'failed', but also rows STUCK
+      // queued/held at resolution (e.g. a send path that returned before
+      // transport without flipping the status).
+      const left =
+        !!outbound &&
+        (outbound.status === "sent" ||
+          outbound.status === "delivered" ||
+          outbound.status === "bounced" ||
+          outbound.sentAt != null);
+      if (!left) return; // phantom send — leave outcome_id NULL
+    }
+
+    // Idempotent: `outcome_id IS NULL` makes a duplicate resolution pass a
+    // no-op — the FIRST resolution wins the join, exactly once.
+    await db
+      .update(outreachDecisions)
+      .set({ outcomeId })
+      .where(
+        and(
+          eq(outreachDecisions.id, decisionId),
+          isNull(outreachDecisions.outcomeId),
+        ),
+      );
+  } catch {
+    // Best-effort: losing the join must never break resolution.
+  }
 }
 
 export async function checkEmailOutcomes(
@@ -99,7 +188,10 @@ export async function checkEmailOutcomes(
       outcome.actionType === "draft_reply" ||
       outcome.actionType === "enroll_sequence" ||
       outcome.actionType === "email-send" ||
-      outcome.actionType === "email-reply"
+      outcome.actionType === "email-reply" ||
+      // T8 — regular outreach sends (lib/outreach/decision-record.ts) resolve
+      // on the same real-time email events as the other email actions.
+      outcome.actionType === "outreach-send"
     ) {
       await resolveOutcome(outcome.id, outcomeType);
     }

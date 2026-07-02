@@ -8,11 +8,13 @@
  * The dashboard is three things, all from REAL data:
  *   1. KPIs        — the founder metrics that matter (buildKpis).
  *   2. Actualités  — a cross-page feed of real events (buildActualites):
- *                    replies, email opens (aggregated), inbound forms, calls
- *                    with outcomes, deal lifecycle events (from the
- *                    deal_stage_changed/won/lost activities, NOT the
- *                    updatedAt proxy), meetings, and adds with provenance
- *                    (bulk imports grouped to one line per source).
+ *                    replies, email clicks (aggregated — opens are banned
+ *                    from every feed/decision surface: Apple MPP auto-opens
+ *                    make them noise), inbound forms, calls with outcomes,
+ *                    deal lifecycle events (from the deal_stage_changed/won/
+ *                    lost activities, NOT the updatedAt proxy), meetings, and
+ *                    adds with provenance (bulk imports grouped to one line
+ *                    per source).
  *   3. À faire     — only genuine human work (buildNeedsYou): replies to answer,
  *                    discovery calls to prep, live deals at risk, due tasks.
  *
@@ -145,7 +147,7 @@ export type ActualiteKind =
   | "deal_won"
   | "deal_lost"
   | "reply" // inbound reply received
-  | "open" // prospect opened an outbound email (pixel logs first open per email)
+  | "click" // prospect clicked a link in an outbound email (first click per email)
   | "form" // inbound form submission
   | "call" // outbound call with a meaningful outcome (Call Mode)
   | "meeting_booked"
@@ -164,10 +166,10 @@ export interface Actualite {
   href: string | null;
 }
 
-/** Per-kind feed caps so one chatty source (opens, bulk adds) can't drown a
+/** Per-kind feed caps so one chatty source (clicks, bulk adds) can't drown a
  *  reply. Kinds not listed are uncapped — the overall limit still rules. */
 export const ACTUALITE_KIND_CAPS: Partial<Record<ActualiteKind, number>> = {
-  open: 3,
+  click: 3,
   call: 4,
   account: 4,
   contact: 4,
@@ -207,17 +209,18 @@ export function buildActualites(
   return kept;
 }
 
-/** Raw email-open rows, one per outbound email. The tracking pixel records
- *  only the FIRST open of each email, so the honest per-contact aggregate is
- *  "N emails opened" — never "opened N times". */
-export interface OpenRow {
+/** Raw email-click rows, one per outbound email. `clicked_at` records only
+ *  the FIRST click of each email, so the honest per-contact aggregate is
+ *  "N emails clicked" — never "clicked N times". (Replaced opens — T8: opens
+ *  are MPP noise and never feed a founder surface.) */
+export interface ClickRow {
   id: string;
   contactId: string | null;
   name: string | null;
   at: string | null;
 }
 
-export function aggregateOpens(rows: OpenRow[]): Actualite[] {
+export function aggregateClicks(rows: ClickRow[]): Actualite[] {
   const byContact = new Map<string, { name: string | null; newest: string | null; count: number }>();
   for (const r of rows) {
     if (!r.contactId) continue; // unattributable — no feed value
@@ -230,10 +233,10 @@ export function aggregateOpens(rows: OpenRow[]): Actualite[] {
     byContact.set(r.contactId, g);
   }
   return [...byContact.entries()].map(([contactId, g]) => ({
-    id: `open:${contactId}`,
-    kind: "open" as const,
-    title: g.name ? `${g.name} opened your email` : "Email opened",
-    detail: g.count > 1 ? `${g.count} emails opened` : null,
+    id: `click:${contactId}`,
+    kind: "click" as const,
+    title: g.name ? `${g.name} clicked your email` : "Email link clicked",
+    detail: g.count > 1 ? `${g.count} emails clicked` : null,
     at: g.newest,
     href: `/contacts/${contactId}`,
   }));

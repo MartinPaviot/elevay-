@@ -24,7 +24,7 @@ export const UP_NEXT_DEMO = {
     { id: "a2", kind: "meeting_booked", title: "Meeting booked with Figma", detail: "Léa · Thu 10:00", at: agoMin(60), href: null },
     { id: "a3", kind: "deal_won", title: "Vercel · Closed Won", detail: "$44K · nicely done", at: agoMin(120), href: null },
     { id: "a4", kind: "call", title: "Call with Mercury · connected", detail: "Outcome: callback Friday", at: agoMin(180), href: null },
-    { id: "a5", kind: "open", title: "Ramp opened your email", detail: "3rd open this week", at: agoMin(240), href: null },
+    { id: "a5", kind: "click", title: "Ramp clicked your email", detail: "2 emails clicked", at: agoMin(240), href: null },
     { id: "a6", kind: "account", title: "12 accounts added", detail: "sourced by Elevay", at: agoMin(300), href: null },
   ],
   todos: [

@@ -3,7 +3,7 @@ import {
   buildNeedsYou,
   buildKpis,
   buildActualites,
-  aggregateOpens,
+  aggregateClicks,
   mapAddBatches,
   formatCallDuration,
   shouldSurfaceInboundEvent,
@@ -15,7 +15,7 @@ import {
   type TaskInput,
   type KpiMetrics,
   type Actualite,
-  type OpenRow,
+  type ClickRow,
   type AddBatch,
 } from "@/lib/home/up-next";
 
@@ -155,39 +155,39 @@ describe("buildActualites", () => {
     );
     expect(feed.map((f) => f.title)).toEqual(["Récent", "Vieux"]); // c dropped (test), b deduped, capped 2
   });
-  it("caps chatty kinds (opens ≤ 3) while replies stay uncapped", () => {
-    const opens = [1, 2, 3, 4, 5].map((n) =>
-      ev({ id: `o${n}`, at: `2026-06-11T1${n}:00:00Z`, kind: "open", title: `Contact ${n} opened your email` }),
+  it("caps chatty kinds (clicks ≤ 3) while replies stay uncapped", () => {
+    const clicks = [1, 2, 3, 4, 5].map((n) =>
+      ev({ id: `o${n}`, at: `2026-06-11T1${n}:00:00Z`, kind: "click", title: `Contact ${n} clicked your email` }),
     );
     const replies = [1, 2, 3, 4].map((n) =>
       ev({ id: `r${n}`, at: `2026-06-10T0${n}:00:00Z`, title: `Prospect ${n} replied` }),
     );
-    const feed = buildActualites([...opens, ...replies], 12);
-    expect(feed.filter((f) => f.kind === "open").map((f) => f.id)).toEqual(["o5", "o4", "o3"]); // newest win the cap
+    const feed = buildActualites([...clicks, ...replies], 12);
+    expect(feed.filter((f) => f.kind === "click").map((f) => f.id)).toEqual(["o5", "o4", "o3"]); // newest win the cap
     expect(feed.filter((f) => f.kind === "reply")).toHaveLength(4);
   });
 });
 
-describe("aggregateOpens", () => {
-  function row(over: Partial<OpenRow> & { id: string }): OpenRow {
+describe("aggregateClicks", () => {
+  function row(over: Partial<ClickRow> & { id: string }): ClickRow {
     return { contactId: "c1", name: "Marie Dupont", at: "2026-06-11T08:00:00.000Z", ...over };
   }
   it("one line per contact: counts emails, keeps the newest timestamp", () => {
-    const out = aggregateOpens([
+    const out = aggregateClicks([
       row({ id: "o1" }),
       row({ id: "o2", at: "2026-06-11T10:00:00.000Z" }),
       row({ id: "o3", contactId: "c2", name: "Jean Petit" }),
     ]);
     expect(out).toHaveLength(2);
-    const marie = out.find((o) => o.id === "open:c1")!;
-    expect(marie.title).toBe("Marie Dupont opened your email");
-    expect(marie.detail).toBe("2 emails opened"); // first-open-per-email semantics, never "opened 2×"
+    const marie = out.find((o) => o.id === "click:c1")!;
+    expect(marie.title).toBe("Marie Dupont clicked your email");
+    expect(marie.detail).toBe("2 emails clicked"); // first-click-per-email semantics, never "clicked 2×"
     expect(marie.at).toBe("2026-06-11T10:00:00.000Z");
     expect(marie.href).toBe("/contacts/c1");
-    expect(out.find((o) => o.id === "open:c2")!.detail).toBeNull();
+    expect(out.find((o) => o.id === "click:c2")!.detail).toBeNull();
   });
   it("skips unattributable and test-named rows", () => {
-    const out = aggregateOpens([
+    const out = aggregateClicks([
       row({ id: "o1", contactId: null }),
       row({ id: "o2", contactId: "c9", name: "E2E Tester" }),
     ]);

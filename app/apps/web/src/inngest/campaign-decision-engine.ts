@@ -2,8 +2,12 @@
  * Campaign Decision Engine — Campaign Engine 1000x
  *
  * Replaces the fixed waterfall sequence with an intelligent decision loop.
- * Triggered by behavioral events (open, click, reply, website visit, timer).
+ * Triggered by behavioral events (click, reply, website visit, timer).
  * Uses the Strategy Selector + Intelligence Brief to decide the NEXT action.
+ *
+ * Opens are BANNED here (T8, founder rule): Apple MPP auto-opens make them
+ * noise, so an open is never a decision trigger, never in the LLM state, and
+ * never bridged from tracking. Opens stay deliverability diagnostics only.
  */
 
 import { inngest } from "./client";
@@ -49,7 +53,7 @@ interface DecisionEvent {
     tenantId: string;
     contactId: string;
     companyId: string;
-    triggerEvent: string; // "email_opened", "email_clicked", "timer_elapsed", "website_visited"
+    triggerEvent: string; // "email_clicked", "timer_elapsed", "website_visited" — opens are banned as decision triggers
     metadata?: Record<string, unknown>;
   };
 }
@@ -95,7 +99,8 @@ export const campaignDecisionEngine = inngest.createFunction(
         enrollment,
         emailsSent: emails.filter(e => e.status === "sent" || e.status === "delivered").length,
         lastEmailSentAt: emails[0]?.sentAt?.toISOString() || null,
-        opens: emails.filter(e => e.openedAt).length,
+        // No opens count on purpose: feeding opens to a branching LLM is a
+        // sequence-branching input, banned (MPP noise). Clicks are real.
         clicks: emails.filter(e => e.clickedAt).length,
         contactName: `${contact?.firstName || ""} ${contact?.lastName || ""}`.trim(),
         contactTitle: contact?.title,
@@ -137,7 +142,6 @@ ${metadata ? `EVENT METADATA: ${JSON.stringify(metadata)}` : ""}
 CURRENT STATE:
 - Emails sent so far: ${state.emailsSent}
 - Last email sent: ${state.lastEmailSentAt || "never"}
-- Opens: ${state.opens}
 - Clicks: ${state.clicks}
 - Days since last touch: ${state.lastEmailSentAt ? Math.floor((Date.now() - new Date(state.lastEmailSentAt).getTime()) / 86400000) : "N/A"}
 
@@ -152,7 +156,6 @@ STRATEGY: ${strategy ? `${strategy.strategyId} (score: ${strategy.score}, reason
 ${strategyPrompt}
 
 DECISION RULES:
-- If prospect opened 3+ times without reply → they're interested but hesitant. Try a different angle or softer CTA.
 - If prospect clicked a link → they want more info. Send something specific about what they clicked.
 - If timer_elapsed and no engagement at all → consider stopping or switching channel.
 - If website_visited → high intent. Accelerate and reference the visit.
@@ -160,7 +163,7 @@ DECISION RULES:
 - Minimum 2 days between emails unless there's a reply or visit.
 - If strategy is "long_game", space emails 3-4 weeks apart.
 
-${state.emailsSent >= 5 ? "WARNING: Already sent 5 emails. Only continue if there's strong engagement signal (click, visit, or multi-open)." : ""}
+${state.emailsSent >= 5 ? "WARNING: Already sent 5 emails. Only continue if there's strong engagement signal (click or visit)." : ""}
 
 Generate the email content if action is "send_email". Keep it under 80 words.`,
         _trace: { agentId: "decision-engine", tenantId, inputPreview: `${triggerEvent} for ${state.contactName}` },
@@ -251,7 +254,9 @@ Generate the email content if action is "send_email". Keep it under 80 words.`,
 
 /**
  * Bridge: emit decision engine events from existing tracking webhooks.
- * Converts open/click/visit events into campaign-engine events.
+ * Converts click/visit events into campaign-engine events. `email/opened` is
+ * deliberately NOT bridged (T8): an open must never become a decision trigger
+ * (clicks, website visits and timers stay).
  */
 export const bridgeTrackingEvents = inngest.createFunction(
   {
@@ -259,7 +264,6 @@ export const bridgeTrackingEvents = inngest.createFunction(
     name: "Bridge Tracking to Decision Engine",
     retries: 0,
     triggers: [
-      { event: "email/opened" },
       { event: "email/clicked" },
       { event: "inbound/visit-identified" },
     ],

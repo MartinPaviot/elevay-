@@ -833,6 +833,18 @@ export const sendSingleEmail = inngest.createFunction(
     });
 
     if (!resend) {
+      // Mirror the batch path: the row must go TERMINAL (failed) or the T8
+      // decision watcher expires into a phantom "sent, no response" learning
+      // unit — the backfill only joins rows that actually left.
+      await db
+        .update(outboundEmails)
+        .set({
+          status: "failed",
+          failedAt: new Date(),
+          errorMessage: "RESEND_API_KEY not configured",
+          updatedAt: new Date(),
+        })
+        .where(eq(outboundEmails.id, emailId));
       return { emailId, sent: false, reason: "RESEND_API_KEY not configured" };
     }
 
