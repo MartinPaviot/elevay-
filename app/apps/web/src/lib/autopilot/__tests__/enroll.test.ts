@@ -8,7 +8,7 @@ const recordDraftMock = vi.fn();
 const valuesSpy = vi.fn();
 // M13-G1 (T5) — the primitive now resolves the contact's company then loads
 // the G1 facts; both injectable.
-let g1 = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
+let g1: { freshSignalCount: number; icpScore: number | null; icpScoringActive: boolean } = { freshSignalCount: 1, icpScore: 80, icpScoringActive: true };
 const loadG1Mock = vi.fn(async () => ({ forCompany: () => g1 }));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const database = {
