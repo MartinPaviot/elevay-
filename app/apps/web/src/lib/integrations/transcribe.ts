@@ -41,13 +41,34 @@ export function transcriptionConfigured(env: WhisperEnv = process.env): boolean 
   return !!(env.WHISPER_BASE_URL || env.OPENAI_API_KEY || env.WHISPER_API_KEY);
 }
 
-/** Transcribe an audio File to plain text. */
-export async function transcribeAudio(file: File): Promise<string> {
+/**
+ * Free-text context passed to gpt-4o-*-transcribe (and whisper-1) to bias the
+ * spelling of our own proper nouns. The 2026-07-02 kMeet loop test transcribed
+ * "Elevay" as "Elvay", "kMeet" as "Commit" and "Recall" as "BotryCall" — none
+ * are in the model's prior. gpt-4o-*-transcribe read this as free-text context
+ * (like any GPT-4o prompt); whisper-1 reads it as a keyword list (224-tok cap,
+ * this is ~40). Callers add per-meeting attendee/company names via `opts.prompt`.
+ */
+export const TRANSCRIPTION_VOCAB_PROMPT =
+  "Sales or team meeting for Elevay (the leadsens platform). " +
+  "Correct spellings for likely proper nouns: Elevay, leadsens, Pilae, " +
+  "kMeet, kDrive, Infomaniak, Recall, Inngest, Instantly, Unipile, Neon.";
+
+/**
+ * Transcribe an audio File to plain text. Always seeds {@link
+ * TRANSCRIPTION_VOCAB_PROMPT}; `opts.prompt` is appended (not replaced) so a
+ * caller can add per-meeting names without losing the brand vocabulary.
+ */
+export async function transcribeAudio(
+  file: File,
+  opts: { prompt?: string } = {},
+): Promise<string> {
   const { baseURL, apiKey, model } = resolveWhisperConfig();
   const client = new OpenAI({ apiKey, baseURL });
   const res = await client.audio.transcriptions.create({
     model,
     file,
+    prompt: [TRANSCRIPTION_VOCAB_PROMPT, opts.prompt?.trim()].filter(Boolean).join(" "),
     // 'json' everywhere: the gpt-4o-*-transcribe models reject 'verbose_json'
     // (400 on EVERY audio upload since they became the default — found live
     // 2026-07-02 by the kMeet sweep), whisper-1 accepts 'json' too, and we
@@ -58,11 +79,14 @@ export async function transcribeAudio(file: File): Promise<string> {
 }
 
 /** Fetch a (sovereign, our-infra) audio URL and transcribe it. */
-export async function transcribeFromUrl(audioUrl: string): Promise<string> {
+export async function transcribeFromUrl(
+  audioUrl: string,
+  opts: { prompt?: string } = {},
+): Promise<string> {
   const resp = await fetch(audioUrl);
   if (!resp.ok) throw new Error(`Failed to fetch recording (${resp.status})`);
   const blob = await resp.blob();
   const name = new URL(audioUrl).pathname.split("/").pop() || "recording.webm";
   const file = new File([blob], name, { type: blob.type || "audio/webm" });
-  return transcribeAudio(file);
+  return transcribeAudio(file, opts);
 }
