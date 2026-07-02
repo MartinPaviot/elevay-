@@ -27,6 +27,7 @@ import {
   gateDecisions,
 } from "@/db/schema";
 import { and, asc, eq, desc, isNull } from "drizzle-orm";
+import { gateReasonText } from "@/lib/sequence-drafts/gate-reason";
 
 export async function GET(
   _req: Request,
@@ -146,9 +147,19 @@ export async function GET(
     )
     .orderBy(asc(gateDecisions.createdAt));
 
-  const gateScores: Record<string, { score: number | null; verdict: string }> = {};
+  const gateScores: Record<
+    string,
+    { score: number | null; verdict: string; reason: string | null }
+  > = {};
   for (const row of gateRows) {
-    gateScores[`g${row.gate}`] = { score: row.score ?? null, verdict: row.verdict };
+    gateScores[`g${row.gate}`] = {
+      score: row.score ?? null,
+      verdict: row.verdict,
+      // T11c — the WHY behind a non-pass verdict, extracted per gate from the
+      // heterogeneous reasons jsonb (each gate stores a different shape). Null
+      // for a pass. Surfaced as the "gate fautif ET la raison" (Done).
+      reason: row.verdict === "pass" ? null : gateReasonText(row.gate, row.reasons),
+    };
   }
 
   return Response.json({

@@ -46,6 +46,8 @@ interface DraftCitation {
 interface GateScore {
   score: number | null;
   verdict: string;
+  // The one-line "why" behind a non-pass verdict (null on pass).
+  reason?: string | null;
 }
 
 interface ContextBundle {
@@ -485,24 +487,32 @@ export function SequenceDraftPreview({
                 const g = context.gateScores?.[key];
                 if (!g) return null;
                 return (
-                  <div key={key} className="flex items-center justify-between text-[12px]">
-                    <span style={{ color: "var(--color-text-secondary)" }}>{label}</span>
-                    <span className="inline-flex items-center gap-2">
-                      {typeof g.score === "number" ? (
-                        <span style={{ color: "var(--color-text-tertiary)" }}>
-                          {(g.score * 100).toFixed(0)}%
+                  <div key={key} className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span style={{ color: "var(--color-text-secondary)" }}>{label}</span>
+                      <span className="inline-flex items-center gap-2">
+                        {typeof g.score === "number" ? (
+                          <span style={{ color: "var(--color-text-tertiary)" }}>
+                            {(g.score * 100).toFixed(0)}%
+                          </span>
+                        ) : null}
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider"
+                          style={{
+                            color: verdictColor(g.verdict),
+                            border: `1px solid ${verdictColor(g.verdict)}`,
+                          }}
+                        >
+                          {g.verdict}
                         </span>
-                      ) : null}
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider"
-                        style={{
-                          color: verdictColor(g.verdict),
-                          border: `1px solid ${verdictColor(g.verdict)}`,
-                        }}
-                      >
-                        {g.verdict}
                       </span>
-                    </span>
+                    </div>
+                    {/* T11c — the WHY behind a blocked/reworked gate (Done). */}
+                    {g.verdict !== "pass" && g.reason ? (
+                      <p className="text-[11px]" style={{ color: "var(--color-text-tertiary)" }}>
+                        {g.reason}
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
