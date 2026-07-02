@@ -87,3 +87,18 @@ describe("M13-R8 wiring guards (manual-send pregate)", () => {
     expect(src).not.toMatch(/generateText|generateObject|anthropic|judgeFabrication/);
   });
 });
+
+describe("M13-G1 wiring guards (enrollment chokepoints)", () => {
+  it("every enrollment chokepoint loads the G1 context (fresh signal + ICP fit)", () => {
+    for (const f of [
+      "app/api/sequences/[id]/enroll/route.ts",
+      "app/api/sequences/[id]/autopilot/route.ts",
+      "lib/chat/tools/account-lists.ts",
+      "lib/chat/tools/action.ts",
+      "inngest/signal-to-sequence.ts",
+      "lib/autopilot/enroll.ts",
+    ]) {
+      expect(read(f), f).toContain("loadG1Context");
+    }
+  });
+});
